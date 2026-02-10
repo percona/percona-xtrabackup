@@ -16,6 +16,8 @@ INSERT INTO t_25380000 VALUES(1);
 --source include/search_pattern.inc
 
 --echo #MYSQLIMPORT
+--let $executed_gtid_set= `SELECT @@GLOBAL.GTID_EXECUTED`
+--replace_result "$executed_gtid_set" GTID_SET
 --exec $MYSQL_DUMP --ssl-mode=DISABLED --ssl-ca=$MYSQL_TEST_DIR/std_data/cacert.pem --ssl-key=$MYSQL_TEST_DIR/std_data/client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/client-cert.pem --tab=$MYSQLTEST_VARDIR/tmp/  db_25380000
 
 --exec $MYSQL_IMPORT --ssl-mode=DISABLED --ssl-ca=$MYSQL_TEST_DIR/std_data/cacert.pem --ssl-key=$MYSQL_TEST_DIR/std_data/client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/client-cert.pem  db_25380000 $MYSQLTEST_VARDIR/tmp/t_25380000.txt > $MYSQLTEST_VARDIR/tmp/25380000_import_result 2> $MYSQLTEST_VARDIR/tmp/25380000_stderr

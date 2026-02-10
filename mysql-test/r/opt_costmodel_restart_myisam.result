@@ -35,6 +35,7 @@ ANALYZE TABLE t1_myisam;
 Table	Op	Msg_type	Msg_text
 test.t1_myisam	analyze	status	Table is already up to date
 "Explain with cost estimate against MyISAM"
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON SELECT * FROM t1_myisam;
 EXPLAIN
 {
@@ -93,6 +94,7 @@ engine_name	cost_name	cost_value
 default	io_block_read_cost	2
 default	memory_block_read_cost	2
 "Explain with cost estimate against MyISAM"
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON SELECT * FROM t1_myisam;
 EXPLAIN
 {
@@ -152,6 +154,7 @@ InnoDB	io_block_read_cost	4
 default	memory_block_read_cost	NULL
 InnoDB	memory_block_read_cost	4
 "Explain with cost estimate against MyISAM"
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON SELECT * FROM t1_myisam;
 EXPLAIN
 {

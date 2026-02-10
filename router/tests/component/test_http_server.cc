@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -307,11 +307,6 @@ TempDirectory HttpServerPlainTest::http_base_dir_;
  */
 TEST_P(HttpServerPlainTest, ensure_http11) {
   ASSERT_NO_FATAL_FAILURE(testcase_ensure());
-}
-
-TEST_P(HttpServerPlainTest, ensure_http2) {
-  const bool k_use_http2 = true;
-  ASSERT_NO_FATAL_FAILURE(testcase_ensure(k_use_http2));
 }
 
 const std::string localhost_ipv4("127.0.0.1");
@@ -1292,11 +1287,6 @@ class HttpServerSecureTest
 
 TEST_P(HttpServerSecureTest, ensure_http11) {
   ASSERT_NO_FATAL_FAILURE(this->testcase_ensure());
-}
-
-TEST_P(HttpServerSecureTest, ensure_http2) {
-  const bool k_use_http2 = true;
-  ASSERT_NO_FATAL_FAILURE(this->testcase_ensure(k_use_http2));
 }
 
 constexpr const char kErrmsgRegexNoSslCertKey[]{

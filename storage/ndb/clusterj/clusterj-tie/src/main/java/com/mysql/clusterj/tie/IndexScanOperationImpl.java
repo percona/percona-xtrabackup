@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+ *  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License, version 2.0,
@@ -77,7 +77,7 @@ class IndexScanOperationImpl extends ScanOperationImpl implements IndexScanOpera
         Utility.convertValue(buffer, storeColumn, value);
         int returnCode = ndbIndexScanOperation.setBound(storeColumn.getName(), convertBoundType(type),
                 buffer);
-        bufferManager.returnBuffer(1, buffer);
+        bufferManager.returnBuffer(buffer);
         handleError(returnCode, ndbIndexScanOperation);
     }
 
@@ -86,7 +86,7 @@ class IndexScanOperationImpl extends ScanOperationImpl implements IndexScanOpera
         Utility.convertValue(buffer, storeColumn, value);
         int returnCode = ndbIndexScanOperation.setBound(storeColumn.getName(), convertBoundType(type),
                 buffer);
-        bufferManager.returnBuffer(value.length + 3, buffer);
+        bufferManager.returnBuffer(buffer);
         handleError(returnCode, ndbIndexScanOperation);
     }
 
@@ -113,7 +113,7 @@ class IndexScanOperationImpl extends ScanOperationImpl implements IndexScanOpera
         Utility.convertValue(buffer, storeColumn, value);
         int returnCode = ndbIndexScanOperation.setBound(storeColumn.getName(), convertBoundType(type),
                 buffer);
-        bufferManager.returnBuffer(2, buffer);
+        bufferManager.returnBuffer(buffer);
         handleError(returnCode, ndbIndexScanOperation);
     }
 
@@ -122,7 +122,7 @@ class IndexScanOperationImpl extends ScanOperationImpl implements IndexScanOpera
         Utility.convertValue(buffer, storeColumn, value);
         int returnCode = ndbIndexScanOperation.setBound(storeColumn.getName(), convertBoundType(type),
                 buffer);
-        bufferManager.returnBuffer(4, buffer);
+        bufferManager.returnBuffer(buffer);
         handleError(returnCode, ndbIndexScanOperation);
     }
 
@@ -131,7 +131,7 @@ class IndexScanOperationImpl extends ScanOperationImpl implements IndexScanOpera
         Utility.convertValue(buffer, storeColumn, value);
         int returnCode = ndbIndexScanOperation.setBound(storeColumn.getName(), convertBoundType(type),
                 buffer);
-        bufferManager.returnBuffer(4, buffer);
+        bufferManager.returnBuffer(buffer);
         handleError(returnCode, ndbIndexScanOperation);
     }
 
@@ -140,7 +140,7 @@ class IndexScanOperationImpl extends ScanOperationImpl implements IndexScanOpera
         Utility.convertValue(buffer, storeColumn, value);
         int returnCode = ndbIndexScanOperation.setBound(storeColumn.getName(), convertBoundType(type),
                 buffer);
-        bufferManager.returnBuffer(8, buffer);
+        bufferManager.returnBuffer(buffer);
         handleError(returnCode, ndbIndexScanOperation);
     }
 

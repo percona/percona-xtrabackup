@@ -17,6 +17,8 @@ GRANT replication slave ON *.* TO 'rec_ssl_user'@'%';
 GRANT BACKUP_ADMIN ON *.* TO "rec_ssl_user";
 GRANT GROUP_REPLICATION_STREAM ON *.* TO 'rec_ssl_user'@'%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET SESSION sql_log_bin=1;
 SET GLOBAL group_replication_ssl_mode= REQUIRED;
 CHANGE REPLICATION SOURCE TO SOURCE_USER="rec_ssl_user" FOR CHANNEL "group_replication_recovery";
@@ -37,6 +39,8 @@ GRANT replication slave ON *.* TO 'rec_ssl_user'@'%';
 GRANT BACKUP_ADMIN ON *.* TO "rec_ssl_user";
 GRANT GROUP_REPLICATION_STREAM ON *.* TO 'rec_ssl_user'@'%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET SESSION sql_log_bin=1;
 SET GLOBAL group_replication_ssl_mode= REQUIRED;
 include/spawn_monitoring_process.inc

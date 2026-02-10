@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,8 +28,8 @@
 
 #include <ndb_global.h>
 #include <ndb_limits.h>
-#include <stdint.h>
 #include <NdbOut.hpp>
+#include <cstdint>
 #include "NdbImport.hpp"
 #include "NdbImportUtil.hpp"
 // STL
@@ -247,7 +247,7 @@ class NdbImportCsv {
           RowMap &rowmap_in, Stats &stats);
     ~Input();
     void do_init();
-    void do_resume(Range range_in);
+    void do_resume(const Range &range_in);
     void do_parse();
     void do_eval();
     void do_send(uint &curr, uint &left);
@@ -320,11 +320,10 @@ class NdbImportCsv {
     ~Eval();
     void do_init();
     void do_eval();
-    void eval_line(Row *row, Line *line, const uint expect_attrcnt);
-    void eval_auto_inc_field(Row *row, Line *line, Field *field,
-                             const uint attr_id);
-    void eval_field(Row *row, Line *line, Field *field, const uint attr_id);
-    void eval_null(Row *row, Line *line, Field *field, const uint attr_id);
+    void eval_line(Row *row, Line *line, uint expect_attrcnt);
+    void eval_auto_inc_field(Row *row, Line *line, Field *field, uint attr_id);
+    void eval_field(Row *row, Line *line, Field *field, uint attr_id);
+    void eval_null(Row *row, Line *line, Field *field, uint attr_id);
     Input &m_input;
     NdbImportCsv &m_csv;
     NdbImportUtil &m_util;

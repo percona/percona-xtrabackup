@@ -26,6 +26,8 @@ grant ALL   on *.* to user_all@localhost;
 grant USAGE on *.* to user_none@localhost;
 
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 
 SHOW GRANTS FOR user_all@localhost;
 Grants for user_all@localhost
@@ -78,6 +80,7 @@ SHOW FULL PROCESSLIST;
 Id	User	Host	db	Command	Time	State	Info
 <Id>	event_scheduler	<Host>	NULL	<Command>	<Time>	<State>	NULL
 <Id>	root	<Host>	test	<Command>	<Time>	<State>	NULL
+<Id>	system user	<Host>	NULL	<Command>	<Time>	<State>	NULL
 <Id>	user_00	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_01	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_all	<Host>	test	Query	<Time>	<State>	SHOW FULL PROCESSLIST
@@ -93,6 +96,7 @@ select * from performance_schema.processlist order by user, id;
 ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO	EXECUTION_ENGINE
 <Id>	event_scheduler	<Host>	NULL	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	root	<Host>	test	<Command>	<Time>	<State>	NULL	PRIMARY
+<Id>	system user	<Host>	NULL	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	user_00	<Host>	test	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	user_01	<Host>	test	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	user_all	<Host>	test	Query	<Time>	<State>	select * from performance_schema.processlist order by user, id	PRIMARY
@@ -145,6 +149,7 @@ select * from performance_schema.processlist order by user, id;
 ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO	EXECUTION_ENGINE
 <Id>	event_scheduler	<Host>	NULL	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	root	<Host>	test	<Command>	<Time>	<State>	NULL	PRIMARY
+<Id>	system user	<Host>	NULL	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	user_00	<Host>	test	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	user_01	<Host>	test	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	user_all	<Host>	test	Query	<Time>	<State>	select * from performance_schema.processlist order by user, id	PRIMARY

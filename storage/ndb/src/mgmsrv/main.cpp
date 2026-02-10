@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,7 @@
 #include <kernel_types.h>
 #include <mgmapi_config_parameters.h>
 #include <ndb_version.h>
+#include <portlib/NdbTimestamp.h>
 #include <portlib/ndb_daemon.h>
 #include <version.h>
 #include <NdbAutoPtr.hpp>
@@ -112,6 +113,7 @@ static struct my_option my_long_options[] = {
     NdbStdOpt::connectstring,
     NdbStdOpt::tls_search_path,
     NdbStdOpt::mgm_tls,
+    NdbStdOpt::log_timestamps,
     NDB_STD_OPT_DEBUG{"config-file", 'f', "Specify cluster configuration file",
                       &opts.config_filename, nullptr, nullptr, GET_STR,
                       REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -322,6 +324,22 @@ static int mgmd_main(int argc, char **argv) {
 #endif
 
   if ((ho_error = ndb_opts.handle_options())) mgmd_exit(ho_error);
+
+  switch (opt_ndb_log_timestamps) {
+    case 0: /* legacy */
+      NdbTimestamp_SetDefaultStringFormat(
+          NdbTimestampStringFormat::LegacyFormat);
+      break;
+    case 1: /* utc */
+      NdbTimestamp_SetDefaultStringFormat(NdbTimestampStringFormat::Iso8601Utc);
+      break;
+    case 2: /* system */
+      NdbTimestamp_SetDefaultStringFormat(
+          NdbTimestampStringFormat::Iso8601SystemTime);
+      break;
+    default:
+      abort();  // unreachable
+  }
 
   if (argc > 0) {
     std::string invalid_args;

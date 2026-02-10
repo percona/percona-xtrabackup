@@ -1,10 +1,10 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: @DEB_COPYRIGHT_UPSTREAMNAME@
 Upstream-Contact: MySQL Release Engineering <mysql-build@oss.oracle.com>
-Source: http://dev.mysql.com/
+Source: https://dev.mysql.com/
 
 Files: *
-Copyright: 2000, 2024, Oracle and/or its affiliates.
+Copyright: 2000, 2026, Oracle and/or its affiliates.
 License: Commercial
  This is a release of MySQL, an SQL database server.
  .
@@ -16,7 +16,7 @@ License: Commercial
  .
  For more information on MySQL, visit 
  https://docs.oracle.com/cd/E17952_01/mysql-8.0-en/index.html
- or http://dev.mysql.com/doc/
+ or https://dev.mysql.com/doc/
  .
  For additional downloads of MySQL, visit
  https://support.oracle.com/

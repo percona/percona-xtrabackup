@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -232,20 +232,18 @@ static bool determine_packed_key_size(const NdbDictionary::Table *table,
                                       const uchar *record,
                                       Uint32 &required_buff_size) {
   /* Use pack_key_to_buffer to calculate length required */
-  if (pack_key_to_buffer(table, key_rec, record, nullptr, required_buff_size) ==
-      -1)
-    return false;
-  return true;
+  return pack_key_to_buffer(table, key_rec, record, nullptr,
+                            required_buff_size) != -1;
 }
 
 /* st_mem_root_allocator implementation */
 void *st_mem_root_allocator::alloc(void *ctx, size_t bytes) {
-  st_mem_root_allocator *a = (st_mem_root_allocator *)ctx;
+  auto *a = (st_mem_root_allocator *)ctx;
   return a->mem_root->Alloc(bytes);
 }
 
 void *st_mem_root_allocator::mem_calloc(void *ctx, size_t nelem, size_t bytes) {
-  st_mem_root_allocator *a = (st_mem_root_allocator *)ctx;
+  auto *a = (st_mem_root_allocator *)ctx;
   return a->mem_root->Alloc(nelem * bytes);
 }
 
@@ -300,7 +298,7 @@ int DependencyTracker::track_operation(const NdbDictionary::Table *table,
   DBUG_PRINT("info", ("Required length for key : %u", required_buff_size));
 
   /* Alloc space for packed key and struct in MEM_ROOT */
-  uchar *packed_key_buff = (uchar *)mra.mem_root->Alloc(required_buff_size);
+  auto *packed_key_buff = (uchar *)mra.mem_root->Alloc(required_buff_size);
   void *element_mem = mra.mem_root->Alloc(sizeof(st_row_event_key_info));
 
   if (pack_key_to_buffer(table, key_rec, row, packed_key_buff,
@@ -317,7 +315,7 @@ int DependencyTracker::track_operation(const NdbDictionary::Table *table,
     }
   }
 
-  st_row_event_key_info *key_info = new (element_mem) st_row_event_key_info(
+  auto *key_info = new (element_mem) st_row_event_key_info(
       table, packed_key_buff, required_buff_size, transaction_id);
 
   /* Now try to add element to hash */
@@ -345,25 +343,23 @@ int DependencyTracker::track_operation(const NdbDictionary::Table *table,
       assert(res == 0 || error_text != nullptr);
 
       return res;
-    } else {
-      /*
-         How can we have two updates to the same row with the
-         same transaction id?  Only if the transaction id
-         is invalid (e.g. not set)
-         In normal cases with only one upstream master, each
-         distinct master user transaction will have a unique
-         id, and all operations on a row in that transaction
-         will be merged in TUP prior to emitting a SUMA
-         event.
-         This could be relaxed for more complex upstream
-         topologies, but acts as a sanity guard currently.
-      */
-      if (existingTransIdOnRow != InvalidTransactionId) {
-        assert(false);
-        error_text =
-            "Two row operations to same key sharing user transaction id";
-        return -1;
-      }
+    }
+    /*
+      How can we have two updates to the same row with the
+      same transaction id?  Only if the transaction id
+      is invalid (e.g. not set)
+      In normal cases with only one upstream master, each
+      distinct master user transaction will have a unique
+      id, and all operations on a row in that transaction
+      will be merged in TUP prior to emitting a SUMA
+      event.
+      This could be relaxed for more complex upstream
+      topologies, but acts as a sanity guard currently.
+    */
+    if (existingTransIdOnRow != InvalidTransactionId) {
+      assert(false);
+      error_text = "Two row operations to same key sharing user transaction id";
+      return -1;
     }
   }
 
@@ -424,9 +420,9 @@ bool DependencyTracker::in_conflict(Uint64 trans_id) {
   if ((entry = trans_hash.get(&key))) {
     DBUG_PRINT("info", ("in_conflict : %u", entry->getInConflict()));
     return entry->getInConflict();
-  } else {
-    assert(!TRACK_ALL_TRANSACTIONS);
   }
+  assert(!TRACK_ALL_TRANSACTIONS);
+
   return false;
 }
 

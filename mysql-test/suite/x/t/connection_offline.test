@@ -20,7 +20,7 @@ INSTALL COMPONENT "file://component_test_sys_var_service";
 
 --echo
 --echo ## I.  Validate that connection is rejected when server is in offline mode
---echo #      with timestamp and user name.
+--echo #      with generic error.
 --echo ## II. Validate that connection is rejected when server is in offline mode
 --echo #      with timestamp and reason.
 --echo ## III.Validate that connection is rejected when server is in offline mode.
@@ -28,12 +28,11 @@ INSTALL COMPONENT "file://component_test_sys_var_service";
 
 --echo
 --echo #
---echo # I. Offline mode - rejects with username and timestamp.
+--echo # I. Offline mode - rejects with generic error.
 --echo #
 SET GLOBAL offline_mode=ON;
 
-replace_regex /mode since .*, set by use/mode since DATE, set by use/;
-exec $MYSQLXTEST --ssl-mode=REQUIRED --expect-error ER_SERVER_OFFLINE_MODE_USER -u nonblank --password='nonblank'  --sql "SELECT THIS_MUST_NOT_BE_EXECUTED()" 2>&1;
+exec $MYSQLXTEST --ssl-mode=REQUIRED --expect-error ER_SERVER_OFFLINE_MODE -u nonblank --password='nonblank'  --sql "SELECT THIS_MUST_NOT_BE_EXECUTED()" 2>&1;
 let $wait_for_status_variable =
   'Mysqlx_sessions_rejected',
   'Mysqlx_connections_closed';

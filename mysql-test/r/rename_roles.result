@@ -142,7 +142,7 @@ RENAME USER r2 to r22;
 DROP ROLE r1,r22, r3;
 DROP USER u2;
 DROP USER u1;
-ERROR HY000: Operation DROP USER failed for 'u1'@'%'
+ERROR HY000: Operation DROP USER failed for 'u1'@'%' (User account does not exist)
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + Rename authId which was granted inherited roles but the
 + authId is not in role graph
@@ -156,9 +156,9 @@ DROP USER u1;
 RENAME USER r3 to r33;
 ++ Cleanup
 DROP ROLE r3;
-ERROR HY000: Operation DROP ROLE failed for 'r3'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'r3'@'%' (User account does not exist)
 DROP USER u1;
-ERROR HY000: Operation DROP USER failed for 'u1'@'%'
+ERROR HY000: Operation DROP USER failed for 'u1'@'%' (User account does not exist)
 DROP ROLE r1, r2, r33;
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + Rename authId which was granted inherited roles but the
@@ -173,6 +173,6 @@ REVOKE r3 FROM u1;
 RENAME USER r3 to r33;
 ++ Cleanup
 DROP ROLE r3;
-ERROR HY000: Operation DROP ROLE failed for 'r3'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'r3'@'%' (User account does not exist)
 DROP ROLE r1, r2, r33;
 DROP USER u1;

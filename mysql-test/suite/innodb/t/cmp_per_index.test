@@ -2,10 +2,6 @@
 --source include/have_innodb_max_16k.inc
 --source include/have_debug.inc
 
---disable_query_log
-call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot add field.*");
---enable_query_log
-
 --echo #
 --echo # Bug #21950756 INNODB: FAILING ASSERTION: !(&DICT_SYS->MUTEX)
 --echo # ->IS_OWNED() IN DICT0STATS.CC 3049

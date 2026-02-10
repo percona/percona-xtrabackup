@@ -71,6 +71,7 @@ inserts	updates	deletes	schemaops	orig_server_id
 1	0	0	0	1
 [connection source]
 include/rpl/start_replica.inc
+include/rpl/wait_for_replica_to_start.inc
 # Source now has own serverid entry as well
 select server_id, log_name from mysql.ndb_apply_status order by server_id;
 server_id	log_name

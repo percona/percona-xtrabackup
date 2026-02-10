@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -272,6 +272,8 @@ static void test_bootstrap() {
   ok(psi != nullptr, "mdl version 1");
   psi = mdl_boot->get_interface(PSI_MDL_VERSION_2);
   ok(psi != nullptr, "mdl version 2");
+  psi = mdl_boot->get_interface(PSI_MDL_VERSION_3);
+  ok(psi != nullptr, "mdl version 3");
 
   psi = idle_boot->get_interface(0);
   ok(psi == nullptr, "no idle version 0");
@@ -2418,7 +2420,7 @@ static void test_file_operations() {
 
   PFS_file_class *file_class;
   PSI_thread *thread_A, *thread_B;
-  PSI_file_locker *locker_A, *locker_B;
+  PSI_file_locker *locker_A = nullptr, *locker_B = nullptr;
   PSI_file_locker_state state_A, state_B;
   File fd1, fd2;
   const char *filename1, *filename2;
@@ -2725,7 +2727,7 @@ static void do_all_tests() {
 }
 
 int main(int, char **) {
-  plan(429);
+  plan(428);
 
   MY_INIT("pfs-t");
 

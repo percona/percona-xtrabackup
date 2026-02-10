@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -337,7 +337,7 @@ class TestTlsKeyManager : public TlsKeyManager {
       : m_ndb(ndb), m_addr(opt_port + server_node_id) {
     init(server_node_id, m_ndb->nc[server_node_id]);
     if (start && ctx()) {
-      Test::Service *service = new Test::Service(*this);
+      auto *service = new Test::Service(*this);
       require(m_server.setup(service, &m_addr));
       m_server_thd = m_server.startServer();
       printf("TestTlsKeyManager listening on port %d\n", m_addr.get_port());
@@ -382,7 +382,7 @@ class TestTlsKeyManager : public TlsKeyManager {
 };
 
 const NodeCertificate *get_self_signed(int id) {
-  NodeCertificate *nc = new NodeCertificate(Node::Type::Client, id);
+  auto *nc = new NodeCertificate(Node::Type::Client, id);
   nc->create_keys("P-256");
   int r1 = nc->self_sign();
   require(r1 == 0);
@@ -403,7 +403,7 @@ void test_connecting_unrelated(TestTlsKeyManager &t) {
   Test::CertAuthority other_ca("Other");
   other_ca.sign(other_ca);
 
-  NodeCertificate *nc = new NodeCertificate(Node::Type::Client, 14);
+  auto *nc = new NodeCertificate(Node::Type::Client, 14);
   nc->create_keys("P-256");
   nc->finalise(other_ca.cert(), other_ca.key());
   t.add_finalised_cert(14, nc);
@@ -686,13 +686,13 @@ void test_key_replace(Test::CertAuthority &ca) {
     TlsKeyManager km1;
     km1.init(154, ndb.nc[154]);
     bool r = km1.check_replace_date(.85F);
-    ok((r == true), "    Cert 154 should not be replaced");
+    ok(r, "    Cert 154 should not be replaced");
   }
   {
     TlsKeyManager km2;
     km2.init(155, ndb.nc[155]);
     bool r = km2.check_replace_date(.85F);
-    ok((r == false), "    Cert 155 should be replaced");
+    ok(!r, "    Cert 155 should be replaced");
   }
 }
 

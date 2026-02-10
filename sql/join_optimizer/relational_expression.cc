@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,9 +22,14 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/join_optimizer/relational_expression.h"
+
+#include <algorithm>
+#include <cassert>
+#include <sstream>
+
+#include "my_alloc.h"
 #include "sql/item_cmpfunc.h"
-#include "sql/join_optimizer/estimate_selectivity.h"
-#include "sql/sql_array.h"
+#include "template_utils.h"
 
 namespace {
 
@@ -63,7 +68,7 @@ class StringJoiner final {
 
 }  // Anonymous namespace.
 
-void CompanionSet::AddEquijoinCondition(THD *thd, const Item_func_eq &eq) {
+void CompanionSet::AddEquijoinCondition(THD *thd, const Item_eq_base &eq) {
   const auto contains_field = [](const EqualTerm *term, const Field *field) {
     return std::find(term->fields->cbegin(), term->fields->cend(), field) !=
            term->fields->cend();

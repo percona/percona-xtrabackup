@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -24,14 +24,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <string>
 #include <vector>
 
-#include <scope_guard.h> /* create_scope_guard */
+#include "scope_guard.h" /* create_scope_guard */
 
 #include "mysql/components/component_implementation.h"
 #include "mysql/components/service_implementation.h"
 #include "mysql/components/services/mysql_current_thread_reader.h"
 #include "mysql/components/services/mysql_thd_store_service.h"
 #include "mysql/components/services/udf_registration.h"
-#include "scope_guard.h"
 
 REQUIRES_SERVICE_PLACEHOLDER_AS(mysql_current_thread_reader, thread_service);
 REQUIRES_SERVICE_PLACEHOLDER_AS(mysql_thd_store, mysql_thd_store_service);
@@ -42,20 +41,20 @@ namespace test_mysql_thd_store_service {
 class Test_mysql_thd_data final {
  public:
   Test_mysql_thd_data() {
-    vector_.push_back("Quick ");
-    vector_.push_back("Brown ");
-    vector_.push_back("Fox ");
-    vector_.push_back("Jumped ");
-    vector_.push_back("Over ");
-    vector_.push_back("The ");
-    vector_.push_back("Lazy ");
-    vector_.push_back("Dog.");
+    vector_.emplace_back("Quick ");
+    vector_.emplace_back("Brown ");
+    vector_.emplace_back("Fox ");
+    vector_.emplace_back("Jumped ");
+    vector_.emplace_back("Over ");
+    vector_.emplace_back("The ");
+    vector_.emplace_back("Lazy ");
+    vector_.emplace_back("Dog.");
   }
 
   bool sanity(const std::string &expected) {
     std::string actual{};
 
-    for (auto one : vector_) {
+    for (const auto &one : vector_) {
       actual.append(one);
     }
 
@@ -96,11 +95,10 @@ long long test_thd_store_service_function(UDF_INIT *, UDF_ARGS *,
   MYSQL_THD o_thd{nullptr};
   if (thread_service->get(&o_thd)) return 0;
 
-  Test_mysql_thd_data *test_mysql_thd_data =
-      reinterpret_cast<Test_mysql_thd_data *>(
-          mysql_thd_store_service->get(o_thd, g_slot));
+  auto *test_mysql_thd_data = reinterpret_cast<Test_mysql_thd_data *>(
+      mysql_thd_store_service->get(o_thd, g_slot));
 
-  if (test_mysql_thd_data) delete test_mysql_thd_data;
+  delete test_mysql_thd_data;
 
   test_mysql_thd_data = new Test_mysql_thd_data();
 
@@ -122,7 +120,7 @@ long long test_thd_store_service_function(UDF_INIT *, UDF_ARGS *,
 */
 
 static mysql_service_status_t init() {
-  std::string expected{"Quick Brown Fox Jumped Over The Lazy Dog."};
+  std::string const expected{"Quick Brown Fox Jumped Over The Lazy Dog."};
   MYSQL_THD o_thd{nullptr};
   if (thread_service->get(&o_thd)) return true;
 
@@ -138,12 +136,11 @@ static mysql_service_status_t init() {
           &g_slot))
     return true;
 
-  Test_mysql_thd_data *test_mysql_thd_data =
-      new (std::nothrow) Test_mysql_thd_data();
+  auto *test_mysql_thd_data = new (std::nothrow) Test_mysql_thd_data();
 
   auto cleanup_guard = create_scope_guard([&] {
     if (g_slot) (void)mysql_thd_store_service->unregister_slot(g_slot);
-    if (test_mysql_thd_data) delete test_mysql_thd_data;
+    delete test_mysql_thd_data;
   });
 
   if (!test_mysql_thd_data ||
@@ -151,15 +148,14 @@ static mysql_service_status_t init() {
           o_thd, g_slot, reinterpret_cast<void *>(test_mysql_thd_data)))
     return true;
 
-  Test_mysql_thd_data *retrieved_test_mysql_thd_data =
-      reinterpret_cast<Test_mysql_thd_data *>(
-          mysql_thd_store_service->get(nullptr, g_slot));
+  auto *retrieved_test_mysql_thd_data = reinterpret_cast<Test_mysql_thd_data *>(
+      mysql_thd_store_service->get(nullptr, g_slot));
 
   if (!retrieved_test_mysql_thd_data ||
       !retrieved_test_mysql_thd_data->sanity(expected))
     return true;
 
-  unsigned int first_slot = *(reinterpret_cast<unsigned int *>(g_slot));
+  unsigned int const first_slot = *(reinterpret_cast<unsigned int *>(g_slot));
 
   (void)mysql_thd_store_service->set(o_thd, g_slot, nullptr);
 
@@ -172,7 +168,7 @@ static mysql_service_status_t init() {
           &g_slot))
     return true;
 
-  unsigned int second_slot = *(reinterpret_cast<unsigned int *>(g_slot));
+  unsigned int const second_slot = *(reinterpret_cast<unsigned int *>(g_slot));
 
   if (first_slot == second_slot) return true;
 
@@ -189,13 +185,12 @@ static mysql_service_status_t deinit() {
   (void)mysql_udf_registration->udf_unregister(
       "test_thd_store_service_function", &was_present);
 
-  std::string expected{"Quick Brown Fox Jumped Over The Lazy Dog."};
+  std::string const expected{"Quick Brown Fox Jumped Over The Lazy Dog."};
   MYSQL_THD o_thd{nullptr};
   if (thread_service->get(&o_thd)) return true;
 
-  Test_mysql_thd_data *test_mysql_thd_data =
-      reinterpret_cast<Test_mysql_thd_data *>(
-          mysql_thd_store_service->get(o_thd, g_slot));
+  auto *test_mysql_thd_data = reinterpret_cast<Test_mysql_thd_data *>(
+      mysql_thd_store_service->get(o_thd, g_slot));
 
   if (!test_mysql_thd_data || !test_mysql_thd_data->sanity(expected))
     return true;

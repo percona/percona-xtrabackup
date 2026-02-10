@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -319,4 +319,78 @@ int StaticBuffOutputStream::write(const void *buf, size_t len) {
 
   assert(m_buff[m_offset] == '\0');
   return 0;
+}
+
+CircularStringBuffer::CircularStringBuffer(char *buff, size_t len)
+    : m_buff(buff), m_len(len), m_writtenBytes(0) {}
+
+CircularStringBuffer::~CircularStringBuffer() {}
+
+int CircularStringBuffer::print(const char *fmt, ...) {
+  va_list ap;
+
+  do {
+    const size_t writePos = m_writtenBytes % m_len;
+    const size_t remainBytes = m_len - writePos;
+    assert(remainBytes > 0);
+
+    // Print to available space in buffer
+    size_t printLen = 0;
+    {
+      va_start(ap, fmt);
+      printLen = BaseString::vsnprintf(&m_buff[writePos], remainBytes, fmt, ap);
+      va_end(ap);
+    }
+
+    const size_t addedBytes = MIN(printLen + 1, remainBytes);
+
+    if (likely(printLen < remainBytes ||  // Fits
+               printLen >=
+                   m_len))  // Cannot fit all in buffer, accept truncation
+    {
+      m_writtenBytes += addedBytes;
+      return printLen;
+    }
+
+    /* String would span buffer end, put it at buffer
+     * start instead
+     */
+    /* Fill end of buff with \0, then try to print again
+     * from the start of the buffer
+     */
+    memset(&m_buff[writePos], 0, remainBytes);
+    m_writtenBytes += remainBytes;
+  } while (true);
+}
+
+CircularStringBuffer::Iterator::Iterator(const CircularStringBuffer *csb)
+    : m_csb(csb), m_pos(0) {
+  m_pos = 0;
+  if (m_csb->m_writtenBytes > m_csb->m_len) {
+    m_pos = m_csb->m_writtenBytes - m_csb->m_len;
+  }
+}
+
+CircularStringBuffer::Iterator::~Iterator() {}
+
+const char *CircularStringBuffer::Iterator::getNextString(size_t *nextLen) {
+  size_t len = 0;
+  const char *nextStr = nullptr;
+
+  while (m_pos < m_csb->m_writtenBytes && len == 0) {
+    const size_t offset = m_pos % m_csb->m_len;
+    nextStr = &m_csb->m_buff[offset];
+    len = strlen(nextStr);
+    m_pos += len + 1;
+  }
+
+  if (nextLen) {
+    *nextLen = len;
+  }
+
+  if (len > 0) {
+    return nextStr;
+  } else {
+    return nullptr;
+  }
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -63,6 +63,8 @@ extern SERVICE_TYPE(psi_mdl_v1)
     SERVICE_IMPLEMENTATION(performance_schema, psi_mdl_v1);
 extern SERVICE_TYPE(psi_mdl_v2)
     SERVICE_IMPLEMENTATION(performance_schema, psi_mdl_v2);
+extern SERVICE_TYPE(psi_mdl_v3)
+    SERVICE_IMPLEMENTATION(performance_schema, psi_mdl_v3);
 extern SERVICE_TYPE(psi_memory_v2)
     SERVICE_IMPLEMENTATION(performance_schema, psi_memory_v2);
 extern SERVICE_TYPE(psi_metric_v1)
@@ -87,6 +89,8 @@ extern SERVICE_TYPE(psi_thread_v5)
     SERVICE_IMPLEMENTATION(performance_schema, psi_thread_v5);
 extern SERVICE_TYPE(psi_thread_v6)
     SERVICE_IMPLEMENTATION(performance_schema, psi_thread_v6);
+extern SERVICE_TYPE(psi_thread_v7)
+    SERVICE_IMPLEMENTATION(performance_schema, psi_thread_v7);
 extern SERVICE_TYPE(psi_transaction_v1)
     SERVICE_IMPLEMENTATION(performance_schema, psi_transaction_v1);
 extern SERVICE_TYPE(psi_tls_channel_v1)

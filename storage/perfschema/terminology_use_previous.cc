@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -76,8 +76,6 @@ static str_map_t mutex_map_8_0_26 = {
      "wait/synch/mutex/sql/key_mts_temp_table_LOCK"},
     {"wait/synch/mutex/sql/key_mta_gaq_LOCK",
      "wait/synch/mutex/sql/key_mts_gaq_LOCK"},
-    {"wait/synch/mutex/sql/Relay_log_info::replica_worker_hash_lock",
-     "wait/synch/mutex/sql/Relay_log_info::slave_worker_hash_lock"},
     {"wait/synch/mutex/sql/LOCK_replica_list",
      "wait/synch/mutex/sql/LOCK_slave_list"},
     {"wait/synch/mutex/sql/LOCK_replica_net_timeout",
@@ -92,9 +90,6 @@ static str_map_t rwlock_map_8_0_26 = {
 };
 
 static str_map_t cond_map_8_0_26 = {
-    // Yes, it actually was called _lock! That was a typo.
-    {"wait/synch/cond/sql/Relay_log_info::replica_worker_hash_cond",
-     "wait/synch/cond/sql/Relay_log_info::slave_worker_hash_lock"},
     {"wait/synch/cond/sql/Source_info::data_cond",
      "wait/synch/cond/sql/Master_info::data_cond"},
     {"wait/synch/cond/sql/Source_info::start_cond",

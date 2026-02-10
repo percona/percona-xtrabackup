@@ -1,0 +1,90 @@
+# Validate unix-sockets as destination work over a "auth_socket" user.
+#
+#
+--source include/not_windows.inc
+# auth_socket that the test uses is not supported on MacOS and Solaris
+--source include/not_mac_os.inc
+--source include/not_solaris.inc
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+
+--let $mrs_user_meta=account_with_auth_socket@localhost
+--let $mrs_user_data=$mrs_user_meta
+
+--replace_regex / AS .*/ AS '$USER'/
+--eval CREATE USER $mrs_user_data IDENTIFIED WITH auth_socket AS '$USER'
+
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+# create the schema for the service.
+CREATE SCHEMA `mrs`;
+
+# grant EXECUTE to the unix-socket-auth user be able to call the PROCEDUREs later.
+--eval GRANT EXECUTE ON mrs.* TO $mrs_user_data
+
+DELIMITER //;
+
+CREATE PROCEDURE `mrs`.`hello_proc` (IN name CHAR(20))
+BEGIN
+    SELECT CONCAT('Hello ',name,'!') as result;
+END;//
+
+CREATE PROCEDURE `mrs`.`proc_do_nothing` ()
+BEGIN
+END;//
+
+DELIMITER ;//
+
+--let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+--let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port --display REQUEST,BODY,RESULT
+
+## Test starts here
+--echo
+--echo ## creating object-definition
+--echo #
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--echo # ... add service /svc
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--echo # ... add schema 'mrs' as /proc to service /svc
+--let $mrs_add_schema=mrs
+--let $mrs_add_schema_path=/proc
+--let $mrs_add_schema_items_on_page=NULL
+--source ../include/mrs/db_schema/add.inc
+
+--echo # ... add procedure 'proc_do_nothing' as /nothing to /svc/proc
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc_do_nothing
+--let $mrs_add_db_object_path=/nothing
+--source ../include/mrs/db_object/add.inc
+
+--echo # ... add procedure 'hello_proc' as /hello_proc to /svc/proc
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=hello_proc
+--let $mrs_add_db_object_path=/hello_proc
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+# Wait until MySQLRouter fetches db-object.
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing
+  --wait-until-status 60;
+
+--echo
+--echo #
+--echo # Smoke test that everything works over unix-sockets.
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/hello_proc?name=Andresz;
+
+# Cleanup
+
+DROP SCHEMA mrs;
+--source ../include/mrs/cleanup.inc
+--eval DROP USER $mrs_user_data

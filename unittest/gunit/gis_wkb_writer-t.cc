@@ -1,4 +1,4 @@
-// Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -132,7 +132,7 @@ TEST_F(WkbWriterTest, Point) {
   gis::Geographic_point gpt(1, 2);
 
   // Little-endian POINT(1 2)
-  std::string point(
+  std::string const point(
       "\x00\x00\x00\x00"                   // SRID
       "\x01"                               // Byte order
       "\x01\x00\x00\x00"                   // WKB type
@@ -181,7 +181,7 @@ TEST_F(WkbWriterTest, Linestring) {
   gls.push_back(gis::Geographic_point(0, 0));
 
   // Linestring with two points
-  std::string linestring(
+  std::string const linestring(
       "\x00\x00\x00\x00"                   // SRID
       "\x01"                               // Byte order
       "\x02\x00\x00\x00"                   // WKB type
@@ -245,7 +245,7 @@ TEST_F(WkbWriterTest, Polygon) {
   gpy.push_back(ginterior);
 
   // Polygon with two rings, each with four points
-  std::string polygon(
+  std::string const polygon(
       "\x00\x00\x00\x00"                   // SRID
       "\x01"                               // Byte order
       "\x03\x00\x00\x00"                   // WKB type
@@ -299,7 +299,7 @@ TEST_F(WkbWriterTest, Geometrycollection) {
   ggc.push_back(gis::Geographic_point(1, 2));
 
   // Little-endian GEOMETRYCOLLECTION(POINT(1 2));
-  std::string geometrycollection(
+  std::string const geometrycollection(
       "\x00\x00\x00\x00"                   // SRID
       "\x01"                               // Byte order
       "\x07\x00\x00\x00"                   // WKB type

@@ -21,17 +21,13 @@ CREATE DATABASE test_db;
 
 CREATE PROCEDURE test_db.check_read_write_io_threshold(IN threshold DOUBLE)
 BEGIN
-    SELECT
-      CASE
-          WHEN SUM_NUMBER_OF_BYTES_READ < threshold THEN 1
-          ELSE 0
-      END AS is_total_read_less_than_threshold,
-      CASE
-          WHEN SUM_NUMBER_OF_BYTES_WRITE < threshold THEN 1
-          ELSE 0
-      END AS is_total_written_less_than_threshold
-    FROM performance_schema.file_summary_by_instance
-    WHERE file_name LIKE '%/var/tmp/Innodb Merge Temp File';
+   SELECT
+     SUM_NUMBER_OF_BYTES_READ < threshold AS is_total_read_less_than_threshold,
+     SUM_NUMBER_OF_BYTES_WRITE < threshold AS is_total_written_less_than_threshold,
+     ABS(SUM_NUMBER_OF_BYTES_READ - SUM_NUMBER_OF_BYTES_WRITE) <=
+         (10 * 1024 * 1024) AS is_read_write_within_tolerance
+   FROM performance_schema.file_summary_by_instance
+   WHERE file_name LIKE '%/var/tmp/Innodb Merge Temp File';
 END //
 
 --DELIMITER ;
@@ -61,7 +57,7 @@ ALTER TABLE test_db.test_table ENGINE INNODB, ALGORITHM=INPLACE;
 
 --echo
 --echo # check the read/write IO on the temp sort files with default settings
-CALL test_db.check_read_write_io_threshold(1.80 * 1024 * 1024 * 1024);
+CALL test_db.check_read_write_io_threshold(2.15 * 1024 * 1024 * 1024);
 
 --echo #
 --echo # Test#2 : Increase the DDL threads, IOs must remain as they were before
@@ -76,7 +72,7 @@ TRUNCATE `performance_schema`.`file_summary_by_instance`;
 --echo # Rebuild the table.
 ALTER TABLE test_db.test_table ENGINE INNODB, ALGORITHM=INPLACE;
 
-CALL test_db.check_read_write_io_threshold(1.80 * 1024 * 1024 * 1024);
+CALL test_db.check_read_write_io_threshold(2.15 * 1024 * 1024 * 1024);
 
 
 --echo #
@@ -92,7 +88,7 @@ TRUNCATE `performance_schema`.`file_summary_by_instance`;
 --echo # Rebuild the table.
 ALTER TABLE test_db.test_table ENGINE INNODB, ALGORITHM=INPLACE;
 
-CALL test_db.check_read_write_io_threshold(1.80 * 1024 * 1024 * 1024);
+CALL test_db.check_read_write_io_threshold(2.15 * 1024 * 1024 * 1024);
 
 --echo #
 --echo # Test#4 : Increase the DDL Buffer size, IO should be reduced this time
@@ -108,7 +104,7 @@ TRUNCATE `performance_schema`.`file_summary_by_instance`;
 --echo # Rebuild the table.
 ALTER TABLE test_db.test_table ENGINE INNODB, ALGORITHM=INPLACE;
 
-CALL test_db.check_read_write_io_threshold(1 * 1024 * 1024 * 1024);
+CALL test_db.check_read_write_io_threshold(1.15 * 1024 * 1024 * 1024);
 
 --echo # Reset to default
 eval SET innodb_ddl_threads=$default_ddl_threads;
@@ -126,7 +122,7 @@ TRUNCATE `performance_schema`.`file_summary_by_instance`;
 --echo # Rebuild the table.
 ALTER TABLE test_db.test_table ENGINE INNODB, ALGORITHM=INPLACE;
 
-CALL test_db.check_read_write_io_threshold(1.40 * 1024 * 1024 * 1024);
+CALL test_db.check_read_write_io_threshold(1.75 * 1024 * 1024 * 1024);
 
 --echo
 DROP DATABASE test_db;

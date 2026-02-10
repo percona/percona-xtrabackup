@@ -12,6 +12,8 @@ CREATE USER 'rec_ssl_user'@'%' REQUIRE SSL;
 GRANT replication slave ON *.* TO 'rec_ssl_user'@'%';
 GRANT GROUP_REPLICATION_STREAM ON *.* TO 'rec_ssl_user'@'%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET SESSION sql_log_bin=1;
 SET @tls_version_saved= @@GLOBAL.tls_version;
 SET GLOBAL tls_version='TLSv1.3';
@@ -37,6 +39,8 @@ CREATE USER 'rec_ssl_user'@'%' REQUIRE SSL;
 GRANT replication slave ON *.* TO 'rec_ssl_user'@'%';
 GRANT GROUP_REPLICATION_STREAM ON *.* TO 'rec_ssl_user'@'%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET SESSION sql_log_bin=1;
 SET @tls_version_saved= @@GLOBAL.tls_version;
 SET GLOBAL tls_version='TLSv1.3';

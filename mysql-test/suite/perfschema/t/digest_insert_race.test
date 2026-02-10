@@ -10,6 +10,9 @@
 # - the way to control the race in the server
 #
 
+# Test requires: sp-protocol/ps-protocol/view-protocol/cursor-protocol disabled
+--source include/no_protocol.inc
+
 truncate table performance_schema.events_statements_summary_by_digest;
 
 connect(con1, localhost, root,,);

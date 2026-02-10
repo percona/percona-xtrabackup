@@ -119,45 +119,81 @@ INSERT INTO `£Τ£Ή` VALUES ('°΅°΅°΅νάνένήνίνΰ°΅°΅°΅');
 INSERT INTO `£Τ£Ή` VALUES ('   νάνένήνίνΰ   ');
 
 #InnoDB
+--sorted_result
 SELECT `£Γ£±`,TRIM(TRAILING '¶' FROM `£Γ£±`) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(LEADING '¶' FROM `£Γ£±`) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(BOTH '¶' FROM `£Γ£±`) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(`£Γ£±`) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(TRAILING '¤«' FROM `£Γ£±`) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(LEADING '¤«' FROM `£Γ£±`) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(BOTH '¤«' FROM `£Γ£±`) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(`£Γ£±`) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(TRAILING '°΅'FROM `£Γ£±`) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(LEADING '°΅' FROM `£Γ£±`) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(BOTH '°΅' FROM `£Γ£±`) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(`£Γ£±`) FROM `£Τ£³`;
 
 #MyISAM
+--sorted_result
 SELECT `£Γ£±`,TRIM(TRAILING '¶' FROM `£Γ£±`) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(LEADING '¶' FROM `£Γ£±`) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(BOTH '¶' FROM `£Γ£±`) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(`£Γ£±`) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(TRAILING '¤«' FROM `£Γ£±`) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(LEADING '¤«' FROM `£Γ£±`) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(BOTH '¤«' FROM `£Γ£±`) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(`£Γ£±`) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(TRAILING '°΅' FROM `£Γ£±`) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(LEADING '°΅' FROM `£Γ£±`) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(BOTH '°΅' FROM `£Γ£±`) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(`£Γ£±`) FROM `£Τ£¶`;
 
 #MEMORY
+--sorted_result
 SELECT `£Γ£±`,TRIM(TRAILING '¶' FROM `£Γ£±`) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(LEADING '¶' FROM `£Γ£±`) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(BOTH '¶' FROM `£Γ£±`) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(`£Γ£±`) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(TRAILING '¤«' FROM `£Γ£±`) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(LEADING '¤«' FROM `£Γ£±`) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(BOTH '¤«' FROM `£Γ£±`) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(`£Γ£±`) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(TRAILING '°΅' FROM `£Γ£±`) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(LEADING '°΅' FROM `£Γ£±`) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(BOTH '°΅' FROM `£Γ£±`) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`,TRIM(`£Γ£±`) FROM `£Τ£Ή`;
 
 DROP TABLE `£Τ£±`;

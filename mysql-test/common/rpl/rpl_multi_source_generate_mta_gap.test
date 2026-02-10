@@ -29,6 +29,7 @@ connect(slave_con_channel$ch_id,127.0.0.1,root,,test,$SLAVE_MYPORT);
 --source include/connection.inc
 BEGIN;
 --eval INSERT INTO d2_$ch_id.t VALUES (2, 'Slave local'); # Hold T3
+--eval INSERT INTO d2_$ch_id.t VALUES (3, 'Slave local'); # Hold T4
 --eval INSERT INTO d1_$ch_id.t VALUES (3, 'Slave local'); # Hold T6
 
 --let $rpl_connection_name= server_$ch_id

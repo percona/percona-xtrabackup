@@ -675,7 +675,7 @@ ORDER BY UUID_TO_BIN(
       ST_ASWKT(
        NOT EXISTS(
          SELECT 1 FROM t1
-         WHERE IS_UUID(CAST(SHA(a>>0xA7FE1B22)AS JSON)) WINDOW w1 AS()
+         WHERE IS_UUID(CAST(SHA2(a>>0xA7FE1B22,256)AS JSON)) WINDOW w1 AS()
        ),'AXIS-ORDER=SRID-DEFINED'
       ),1,'AXIS-ORDER=LONG-LAT'
     )
@@ -2075,3 +2075,62 @@ FROM (SELECT 1) AS y(y) JOIN (SELECT 1) AS z(z)
          HAVING 1 IN (SELECT min(x.x) FROM (SELECT 1) AS w(w))
         )
 WHERE 1 = 2;
+
+--echo #
+--echo # Bug#37243446: Assertion: item->contextualized in Item::Item
+--echo #
+
+CREATE TABLE t (c integer);
+
+# This crashes:
+SELECT (SELECT t.c FROM t) AS f FROM t
+UNION ALL
+SELECT 1 FROM t;
+
+# This works:
+SELECT c IN (SELECT t.c FROM t) AS f FROM t
+UNION ALL
+SELECT 1 FROM t;
+
+# This works, but does not set contextualized flag
+SELECT c >ANY (SELECT t.c FROM t) AS f FROM t
+UNION ALL
+SELECT 1 FROM t;
+
+# This crashes:
+SELECT EXISTS (SELECT t.c FROM t) AS f FROM t
+UNION ALL
+SELECT 1 FROM t;
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#37587388:Assertion failure at 'strategy == Subquery_strategy::
+--echo #              CANDIDATE_FOR_IN2EXISTS_OR_MAT' in item_subselect.cc
+--echo #
+
+CREATE TABLE t1 (f1 INTEGER);
+SELECT f1 FROM t1
+WHERE (f1 = ANY(SELECT f1 FROM t1)) OR (f1 IN (SELECT RANK() OVER () FROM t1));
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#38110792 The missing semi join condition causes incorrect result
+--echo #
+
+CREATE TABLE t1 (id INT);
+CREATE TABLE t2 (id INT);
+CREATE VIEW v1 AS SELECT abs(t1.id) AS id FROM t1 LEFT JOIN t2 ON t1.id = t2.id;
+INSERT INTO t1 VALUES (1), (2);
+INSERT INTO t2 VALUES (1), (2);
+SET optimizer_switch='loosescan=off,firstmatch=off,duplicateweedout=off';
+--replace_regex $elide_costs
+--skip_if_hypergraph  # Depends on the query plan.
+EXPLAIN FORMAT=tree SELECT /*+ JOIN_SUFFIX(t1, t2) */ * FROM v1 WHERE v1.id IN (SELECT id FROM v1);
+# Hypergraph gives warnings for the hint used.
+--disable_warnings
+SELECT /*+ JOIN_SUFFIX(t1, t2) */ * FROM v1 WHERE v1.id IN (SELECT id FROM v1);
+--enable_warnings
+DROP TABLE t1,t2;
+DROP VIEW v1;
+SET optimizer_switch = default;

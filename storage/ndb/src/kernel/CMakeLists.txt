@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -32,6 +32,7 @@ IF(CMAKE_COMPILER_IS_GNUCXX)
 ENDIF()
 
 FOREACH(warning
+    "array-bounds" # GlobalData.hpp:217 with gcc 14
     "cast-qual"
     # Warnings in Dbtup.hpp
     "class-memaccess"

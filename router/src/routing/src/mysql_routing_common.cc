@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include <string.h>
+#include <cstring>
 
 #include "mysql_routing_common.h"
 
@@ -37,8 +37,9 @@ std::string get_routing_thread_name(const std::string &config_name,
   //   "routing" (without key).
   // Verify this assumption
   constexpr char kRouting[] = "routing";
-  size_t kRoutingLen = sizeof(kRouting) - 1;  // -1 to ignore string terminator
-  if (memcmp(p, kRouting, kRoutingLen)) return prefix + ":parse err";
+  size_t const kRoutingLen =
+      sizeof(kRouting) - 1;  // -1 to ignore string terminator
+  if (memcmp(p, kRouting, kRoutingLen) != 0) return prefix + ":parse err";
 
   // skip over "routing[:]"
   p += kRoutingLen;
@@ -53,8 +54,8 @@ std::string get_routing_thread_name(const std::string &config_name,
   // "<cluster_name>_default_" so that suffixes ("x_ro", etc) can fit
   std::string key = p;
   const char kPrefix[] = "_default_";
-  size_t pos = key.find(kPrefix);
-  if (pos != key.npos) {
+  const size_t pos = key.find(kPrefix);
+  if (pos != std::string::npos) {
     key = key.substr(pos + sizeof(kPrefix) - 1);  // -1 for string terminator
   }
 

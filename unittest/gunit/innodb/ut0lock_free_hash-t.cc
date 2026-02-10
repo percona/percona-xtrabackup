@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -69,7 +69,7 @@ unittest/gunit/innodb/CMakeLists.txt */
 #endif /* TEST_TBB */
 
 #include <gtest/gtest.h>
-#include <stddef.h>
+#include <cstddef>
 #include <thread>
 
 #include "my_thread_local.h" /* Needed to access thread local variables */
@@ -306,7 +306,7 @@ void hash_check_deleted(const ut_hash_interface_t *hash, size_t n_elements,
 
 class ut0lock_free_hash : public ::testing::Test {
  public:
-  static void SetUpTestCase() {
+  static void SetUpTestSuite() {
     srv_max_n_threads = 1024;
 
     os_event_global_init();
@@ -314,7 +314,7 @@ class ut0lock_free_hash : public ::testing::Test {
     os_thread_open();
   }
 
-  static void TearDownTestCase() {
+  static void TearDownTestSuite() {
     os_thread_close();
     sync_check_close();
     os_event_global_destroy();
@@ -323,7 +323,7 @@ class ut0lock_free_hash : public ::testing::Test {
 
 TEST_F(ut0lock_free_hash, single_threaded) {
 #ifdef HAVE_UT_CHRONO_T
-  ut_chrono_t chrono("single threaded");
+  ut_chrono_t const chrono("single threaded");
 #endif /* HAVE_UT_CHRONO_T */
 
 #if defined(TEST_STD_MAP) || defined(TEST_STD_UNORDERED_MAP)
@@ -419,7 +419,7 @@ static void run_multi_threaded(const char *label, size_t initial_hash_size,
                                size_t n_common, size_t n_priv_per_thread,
                                size_t n_threads, F thread_func) {
 #ifdef HAVE_UT_CHRONO_T
-  ut_chrono_t chrono(label);
+  ut_chrono_t const chrono(label);
 #endif /* HAVE_UT_CHRONO_T */
 
   ut_hash_interface_t *hash;
@@ -434,8 +434,8 @@ static void run_multi_threaded(const char *label, size_t initial_hash_size,
   hash = new ut_lock_free_hash_t(initial_hash_size, true);
 #endif
 
-  std::thread **threads = new std::thread *[n_threads];
-  thread_params_t *params = new thread_params_t[n_threads];
+  auto **threads = new std::thread *[n_threads];
+  auto *params = new thread_params_t[n_threads];
 
   hash_insert(hash, n_common, 0);
 

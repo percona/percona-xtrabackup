@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2024, Oracle and/or its affiliates.
+   Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -396,6 +396,11 @@ void Ndb_binlog_purger::create_thd(void *stackptr) {
   // Ensure that file paths are escaped in a way that does not
   // interfere with path separator on Windows
   m_thd->variables.sql_mode |= MODE_NO_BACKSLASH_ESCAPES;
+
+  // Force autocommit mode for the purger's session to ensure all statements are
+  // committed, regardless of server autocommit setting.
+  m_thd->variables.option_bits |= OPTION_AUTOCOMMIT;
+  m_thd->variables.option_bits &= ~OPTION_NOT_AUTOCOMMIT;
 }
 
 /*

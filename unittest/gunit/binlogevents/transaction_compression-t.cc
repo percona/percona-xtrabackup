@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,7 @@
 */
 
 #include <array>
+#include <string>
 
 #include <gtest/gtest.h>
 #include "mysql/binlog/event/binary_log.h"
@@ -32,7 +33,7 @@
 #include "mysql/binlog/event/compression/zstd_dec.h"
 #include "mysql/utils/concat.h"
 
-using mysql::utils::concat;
+using mysql::utils::throwing::concat;
 
 namespace mysql::binlog::event::compression::unittests {
 
@@ -49,13 +50,12 @@ class TransactionPayloadCompressionTest : public ::testing::Test {
   using Managed_buffer_t = Decompressor_t::Managed_buffer_t;
   using Size_t = Decompressor_t::Size_t;
   using Char_t = Decompressor_t::Char_t;
-  using String_t = std::basic_string<Char_t>;
   using Decompress_status_t =
       mysql::binlog::event::compression::Decompress_status;
   using Compress_status_t = mysql::binlog::event::compression::Compress_status;
 
-  static String_t constant_data(Size_t size) {
-    return String_t(size, (Char_t)'a');
+  static std::string constant_data(Size_t size) {
+    return std::string(size, (Char_t)'a');
   }
 
  protected:
@@ -66,7 +66,7 @@ class TransactionPayloadCompressionTest : public ::testing::Test {
   void TearDown() override {}
 
   static void compression_idempotency_test(Compressor_t &c, Decompressor_t &d,
-                                           String_t data) {
+                                           const std::string &data) {
     auto debug_string = concat(
         mysql::binlog::event::compression::type_to_string(c.get_type_code()),
         " ", data.size());
@@ -101,8 +101,8 @@ class TransactionPayloadCompressionTest : public ::testing::Test {
 
     // Check decompressed data
     ASSERT_EQ(managed_buffer.read_part().size(), data.size()) << debug_string;
-    ASSERT_EQ(data, String_t(managed_buffer.read_part().begin(),
-                             managed_buffer.read_part().end()))
+    ASSERT_EQ(data, std::string(managed_buffer.read_part().begin(),
+                                managed_buffer.read_part().end()))
         << debug_string;
 
     // Check that we reached EOF
@@ -115,7 +115,7 @@ TEST_F(TransactionPayloadCompressionTest, CompressDecompressZstdTest) {
   for (auto size : buffer_sizes) {
     mysql::binlog::event::compression::Zstd_dec d;
     mysql::binlog::event::compression::Zstd_comp c;
-    String_t data{TransactionPayloadCompressionTest::constant_data(size)};
+    std::string data{TransactionPayloadCompressionTest::constant_data(size)};
     TransactionPayloadCompressionTest::compression_idempotency_test(c, d, data);
     c.set_compression_level(22);
     TransactionPayloadCompressionTest::compression_idempotency_test(c, d, data);
@@ -126,7 +126,7 @@ TEST_F(TransactionPayloadCompressionTest, CompressDecompressNoneTest) {
   for (auto size : buffer_sizes) {
     mysql::binlog::event::compression::None_dec d;
     mysql::binlog::event::compression::None_comp c;
-    String_t data{TransactionPayloadCompressionTest::constant_data(size)};
+    std::string data{TransactionPayloadCompressionTest::constant_data(size)};
     TransactionPayloadCompressionTest::compression_idempotency_test(c, d, data);
   }
 }

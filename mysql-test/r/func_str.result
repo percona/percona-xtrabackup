@@ -270,12 +270,6 @@ NULL
 select crc32("123");
 crc32("123")
 2286445522
-select sha('abc');
-sha('abc')
-a9993e364706816aba3e25717850c26c9cd0d89d
-select sha1('abc');
-sha1('abc')
-a9993e364706816aba3e25717850c26c9cd0d89d
 select aes_decrypt(aes_encrypt('abc','1'),'1');
 aes_decrypt(aes_encrypt('abc','1'),'1')
 abc
@@ -443,6 +437,107 @@ QUOTE('A')
 'A'
 'A'
 DROP TABLE t1;
+SELECT '1' COLLATE latin1_swedish_ci = '1' COLLATE latin1_swedish_ci;
+'1' COLLATE latin1_swedish_ci = '1' COLLATE latin1_swedish_ci
+1
+SELECT CONCAT('1' COLLATE latin1_swedish_ci, '2' COLLATE latin1_swedish_ci);
+CONCAT('1' COLLATE latin1_swedish_ci, '2' COLLATE latin1_swedish_ci)
+12
+SELECT '1' COLLATE latin1_swedish_ci = '1' COLLATE latin1_general_ci;
+ERROR HY000: Illegal mix of collations (latin1_swedish_ci,EXPLICIT) and (latin1_general_ci,EXPLICIT) for operation '='
+SELECT CONCAT('1' COLLATE latin1_swedish_ci, '2' COLLATE latin1_general_ci);
+ERROR HY000: Illegal mix of collations (latin1_swedish_ci,EXPLICIT) and (latin1_general_ci,EXPLICIT) for operation 'concat'
+SELECT '1' COLLATE latin1_swedish_ci = '1';
+'1' COLLATE latin1_swedish_ci = '1'
+1
+SELECT CONCAT('1' COLLATE latin1_swedish_ci, '2');
+CONCAT('1' COLLATE latin1_swedish_ci, '2')
+12
+CREATE TABLE t1(
+b0 VARBINARY(10),
+c0 VARCHAR(10) COLLATE utf8mb4_bin,
+c1 VARCHAR(10) COLLATE utf8mb4_0900_ai_ci,
+c2 VARCHAR(10) COLLATE utf8mb4_0900_as_cs,
+c3 VARCHAR(10) COLLATE utf8mb3_general_ci,
+c4 VARCHAR(10) COLLATE utf16_general_ci,
+c5 VARCHAR(10) COLLATE utf32_unicode_ci,
+c6 VARCHAR(10) COLLATE ascii_general_ci,
+c7 VARCHAR(10) COLLATE latin1_swedish_ci,
+c8 VARCHAR(10) COLLATE latin2_general_ci
+);
+Warnings:
+Warning	3778	'utf8mb3_general_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
+INSERT INTO t1 VALUES
+(x'e6f8e5', 'abc', 'abc', 'ABC', 'æøå', 'abc', 'abc', 'abc', 'æøå', 'abc');
+SELECT c1 = b0 FROM t1;
+c1 = b0
+0
+SELECT CONCAT(c1, b0) FROM t1;
+CONCAT(c1, b0)
+abc���
+SELECT c1 = c0 FROM t1;
+c1 = c0
+1
+SELECT CONCAT(c1, c0) FROM t1;
+CONCAT(c1, c0)
+abcabc
+SELECT c1 = c2 FROM t1;
+ERROR HY000: Illegal mix of collations (utf8mb4_0900_ai_ci,IMPLICIT) and (utf8mb4_0900_as_cs,IMPLICIT) for operation '='
+SELECT CONCAT(c1, c2) FROM t1;
+CONCAT(c1, c2)
+abcABC
+SELECT c1 = c3 FROM t1;
+c1 = c3
+0
+SELECT CONCAT(c1, c3) FROM t1;
+CONCAT(c1, c3)
+abcæøå
+SELECT c1 = c4 FROM t1;
+c1 = c4
+1
+SELECT CONCAT(c1, c4) FROM t1;
+CONCAT(c1, c4)
+abcabc
+SELECT c1 = c5 FROM t1;
+c1 = c5
+1
+SELECT CONCAT(c1, c5) FROM t1;
+CONCAT(c1, c5)
+abcabc
+SELECT c1 = c6 FROM t1;
+c1 = c6
+1
+SELECT CONCAT(c1, c6) FROM t1;
+CONCAT(c1, c6)
+abcabc
+SELECT c1 = c7 FROM t1;
+c1 = c7
+0
+SELECT CONCAT(c1, c7) FROM t1;
+CONCAT(c1, c7)
+abcæøå
+SELECT c1 = c8 FROM t1;
+c1 = c8
+1
+SELECT CONCAT(c1, c8) FROM t1;
+CONCAT(c1, c8)
+abcabc
+SELECT c7 = c8 FROM t1;
+ERROR HY000: Illegal mix of collations (latin1_swedish_ci,IMPLICIT) and (latin2_general_ci,IMPLICIT) for operation '='
+SELECT CONCAT(c7, c8) FROM t1;
+ERROR HY000: Illegal mix of collations (latin1_swedish_ci,IMPLICIT) and (latin2_general_ci,IMPLICIT) for operation 'concat'
+SELECT DATABASE() = _utf8mb4'æøå';
+DATABASE() = _utf8mb4'æøå'
+0
+SELECT CONCAT(DATABASE(), _utf8mb4'æøå');
+CONCAT(DATABASE(), _utf8mb4'æøå')
+test���
+SELECT DATABASE() = _utf8mb4'āđē';
+DATABASE() = _utf8mb4'āđē'
+0
+SELECT CONCAT(DATABASE(), _utf8mb4'āđē');
+CONCAT(DATABASE(), _utf8mb4'āđē')
+test???
 select 1=_latin1'1';
 1=_latin1'1'
 1
@@ -479,6 +574,33 @@ select concat(_latin1'a',_latin2'a',_latin5'a',_latin7'a');
 ERROR HY000: Illegal mix of collations for operation 'concat'
 select concat_ws(_latin1'a',_latin2'a');
 ERROR HY000: Illegal mix of collations (latin1_swedish_ci,COERCIBLE) and (latin2_general_ci,COERCIBLE) for operation 'concat_ws'
+SELECT CONCAT(_utf8mb4'æøå', 1);
+CONCAT(_utf8mb4'æøå', 1)
+���1
+SELECT CONCAT(_utf8mb4'āđē', 1);
+CONCAT(_utf8mb4'āđē', 1)
+???1
+SELECT _utf8mb4'æøå' = NULL;
+_utf8mb4'æøå' = NULL
+NULL
+SELECT CONCAT(_utf8mb4'æøå', NULL);
+CONCAT(_utf8mb4'æøå', NULL)
+NULL
+SELECT c3 = CONCAT(c1, c2) FROM t1;
+c3 = CONCAT(c1, c2)
+0
+SELECT GREATEST(c3, CONCAT(c1, c2)) FROM t1;
+GREATEST(c3, CONCAT(c1, c2))
+æøå
+SELECT COERCIBILITY(CONCAT(c1, c2)) FROM t1;
+COERCIBILITY(CONCAT(c1, c2))
+7
+SELECT CONCAT(c1, c2) = CONCAT(c1, c2) FROM t1;
+ERROR HY000: Illegal mix of collations (utf8mb4_bin,NONE) and (utf8mb4_bin,NONE) for operation '='
+SELECT CONCAT(CONCAT(c1, c2), CONCAT(c1, c2)) FROM t1;
+CONCAT(CONCAT(c1, c2), CONCAT(c1, c2))
+abcABCabcABC
+DROP TABLE t1;
 select FIELD('b','A','B');
 FIELD('b','A','B')
 2
@@ -803,16 +925,6 @@ drop table t7;
 select substring_index("1abcd;2abcd;3abcd;4abcd", ';', 2),substring_index("1abcd;2abcd;3abcd;4abcd", ';', -2);
 substring_index("1abcd;2abcd;3abcd;4abcd", ';', 2)	substring_index("1abcd;2abcd;3abcd;4abcd", ';', -2)
 1abcd;2abcd	3abcd;4abcd
-explain select sha('abc');
-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
-Warnings:
-Note	1003	/* select#1 */ select sha('abc') AS `sha('abc')`
-explain select sha1('abc');
-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
-Warnings:
-Note	1003	/* select#1 */ select sha('abc') AS `sha1('abc')`
 explain select soundex('');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
@@ -2787,7 +2899,7 @@ ST_linefromwkb('2147483648',
 bit_count('')
 ) ),
 ( lpad( ( elt('01','}:K5')),
-sha1('P'),
+sha2('P',256),
 ( ( select '-9223372036854775808.1' > all (select '')))
 )
 )
@@ -5676,7 +5788,7 @@ Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Pl
 #              Item_str_func::push_packet_overflow_warning:
 #              Assertion `is_nullable()' failed.
 SET @@sql_mode='';
-DO SPACE(SHA(UUID_SHORT()));
+DO SPACE(SHA2(UUID_SHORT(),256));
 SET @@sql_mode = default;
 #
 # Bug#34961236 [rl]pad() + row_count():
@@ -5988,3 +6100,76 @@ DROP TABLE t1;
 #
 DO '' SOUNDS LIKE LEAD(DATABASE(), 1, x'cafe') OVER();
 ERROR HY000: Cannot convert string '\xCA\xFE' from binary to utf8mb3
+#
+# Bug#37086818 mysqld assertion failure `(slen % 4) == 0'
+#              in my_strnncollsp_utf32 at ../strings/ctype-ucs2.cc
+#
+CREATE TABLE t1 (f1 VARCHAR(10) COLLATE UTF32_GENERAL_CI);
+SELECT * FROM t1 WHERE LOCATE('Q',f1,1) BETWEEN 'a' AND 'b';
+f1
+DROP TABLE t1;
+#
+# Bug#37554688 Collation name aliases should not be case significant
+#
+SET NAMES UTF8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+SELECT "hello" COLLATE UTF8_bin;
+"hello" COLLATE UTF8_bin
+hello
+SET NAMES default;
+#
+# Bug#37601389 Assertion `!thd->is_error()' failed|sql_resolver.cc
+#
+CREATE TABLE customer_demographics (
+cd_demo_sk int NOT NULL,
+cd_purchase_estimate int DEFAULT NULL,
+PRIMARY KEY (cd_demo_sk)
+);
+INSERT INTO customer_demographics VALUES (1,500) ;
+SELECT * FROM  customer_demographics
+WHERE CEILING( customer_demographics.cd_purchase_estimate )
+BETWEEN '2037' AND ( -71 * ( -1552207807 * 440370369 ) )
+COLLATE utf8mb4_et_0900_as_cs;
+ERROR 22003: BIGINT value is out of range in '(-(71) * (-(1552207807) * 440370369))'
+DROP TABLE customer_demographics;
+#
+# Bug#37285902: Illegal mix of collations NONE vs. COERCIBLE
+#
+CREATE TABLE t1(
+id DECIMAL(38,0)
+);
+CREATE TABLE t2(
+name VARCHAR(150) COLLATE utf8mb4_0900_as_cs
+);
+WITH cte0 AS
+(SELECT CAST(t1.id AS CHAR(38)) AS c2
+FROM t1
+),
+cte1 AS
+(SELECT t2.name AS c1
+FROM t2
+),
+cte2 AS
+(SELECT d3.c1 AS c1, d1.c2 AS c2
+FROM cte0 AS d1 LEFT JOIN cte1 AS d3 ON TRUE
+WHERE IFNULL(d3.c1, d1.c2) LIKE 'Vision Operations'
+ )
+SELECT * FROM cte2;
+c1	c2
+SELECT IFNULL(name, CAST(t1.id AS CHAR(38))) LIKE 'Vision Operations'
+FROM t1 LEFT JOIN t2 ON TRUE;
+IFNULL(name, CAST(t1.id AS CHAR(38))) LIKE 'Vision Operations'
+DROP TABLE t1, t2;
+#
+# Bug37815490 - vector_to_string returns data in non-standard collation
+#
+select CHARSET(vector_to_string(string_to_vector('[1,2]')));
+CHARSET(vector_to_string(string_to_vector('[1,2]')))
+utf8mb4
+select COLLATION(vector_to_string(string_to_vector('[1,2]')));
+COLLATION(vector_to_string(string_to_vector('[1,2]')))
+utf8mb4_0900_ai_ci
+select JSON_OBJECT('a', vector_to_string(string_to_vector('[1,2]')));
+JSON_OBJECT('a', vector_to_string(string_to_vector('[1,2]')))
+{"a": "[1.00000e+00,2.00000e+00]"}

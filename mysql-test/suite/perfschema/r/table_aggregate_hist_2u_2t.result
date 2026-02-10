@@ -1,3 +1,5 @@
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 delete from performance_schema.setup_actors
 where user in ('user2', 'user4');
 delete from performance_schema.setup_objects
@@ -1799,3 +1801,5 @@ Variable_name	Value
 Performance_schema_table_handles_lost	0
 Performance_schema_table_instances_lost	0
 Performance_schema_table_lock_stat_lost	0
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

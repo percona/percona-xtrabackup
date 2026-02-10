@@ -78,7 +78,7 @@ i	LENGTH(j)	j
 25	17	"23:24:25.000000"
 26	12	"2015-01-15"
 27	28	"2015-01-15 23:24:25.000000"
-28	44	{"type": "Point", "coordinates": [1.0, 1.0]}
+28	121	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}
 29	2	[]
 30	20	"base64:type15:yv4="
 31	24	"base64:type15:yv66vg=="

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,18 +26,27 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <memory>
+#include <assert.h>
+#include <openssl/crypto.h>  // for CRYPTO_cleanup_all_ex_data
+#include <openssl/err.h>     // for ERR_print_errors_fp, ERR_erro...
+#include <openssl/evp.h>
+#include <openssl/opensslv.h>  // for OPENSSL_VERSION_NUMBER
+#include <openssl/ssl.h>       // for SSL_CTX_free, SSL_CTX_set_verify
+#include <openssl/x509.h>      // for X509_STORE_load_locations
+#include <stdio.h>
+#include <string.h>
+
 #include <string>
 
 #include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_sys.h"
+#include "my_thread.h"  // IWYU pragma: keep my_thread_self
 #include "mysql/my_loglevel.h"
-#include "mysql/strings/m_ctype.h"
-#if !defined(HAVE_PSI_INTERFACE)
-#include "mysql/psi/mysql_rwlock.h"
-#endif
+#include "mysql/psi/mysql_rwlock.h"  // IWYU pragma: keep PSI_rwlock_key
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysys_err.h"
 #include "template_utils.h"
 #include "vio/vio_priv.h"
@@ -298,7 +307,10 @@ void vio_ssl_end() {
     ERR_remove_thread_state(nullptr);
 #endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
     ERR_free_strings();
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
+    /* Deprecated since openssl 1.1 */
     EVP_cleanup();
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 
     CRYPTO_cleanup_all_ex_data();
 
@@ -320,7 +332,10 @@ void ssl_start() {
 
     fips_init();
     SSL_library_init();
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
+    /* Deprecated since openssl 1.1 */
     OpenSSL_add_all_algorithms();
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
     SSL_load_error_strings();
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -409,6 +424,10 @@ static struct st_VioSSLFd *new_VioSSLFd(
                      | SSL_OP_NO_TLSv1_3
 #endif /* HAVE_TLSv13 */
                      | SSL_OP_NO_TICKET);
+  if (!is_client) {
+    ssl_ctx_options |= SSL_OP_CIPHER_SERVER_PREFERENCE;
+  }
+
   if (!(ssl_fd = ((struct st_VioSSLFd *)my_malloc(
             key_memory_vio_ssl_fd, sizeof(struct st_VioSSLFd), MYF(0)))))
     return nullptr;
@@ -448,6 +467,22 @@ static struct st_VioSSLFd *new_VioSSLFd(
                                     tls13_cipher_list.c_str())) {
     *error = SSL_INITERR_CIPHERS;
     goto error;
+  }
+#endif /* HAVE_TLSv13 */
+
+#ifdef HAVE_TLSv13
+  {
+    /*
+      Set suported signature algorithms for OpenSSL TLS v1.3
+      with preference towards more performant ones (ECDSA).
+    */
+    char sig_algs[] =
+        "ECDSA+SHA256:ECDSA+SHA384:ECDSA+SHA512:ed25519:rsa_pss_pss_sha256:rsa_"
+        "pss_pss_sha384:rsa_pss_pss_sha512:rsa_pss_rsae_sha256:rsa_pss_rsae_"
+        "sha384:rsa_pss_rsae_sha512:RSA+SHA256:RSA+SHA384:RSA+SHA512:ECDSA+"
+        "SHA224:RSA+SHA224";
+
+    SSL_CTX_set1_sigalgs_list(ssl_fd->ssl_context, sig_algs);
   }
 #endif /* HAVE_TLSv13 */
 
@@ -521,14 +556,14 @@ static struct st_VioSSLFd *new_VioSSLFd(
   }
 
   /* DH stuff */
-  if (set_dh(ssl_fd->ssl_context)) {
+  if (!is_client && set_dh(ssl_fd->ssl_context)) {
     printf("%s\n", ERR_error_string(ERR_get_error(), nullptr));
     *error = SSL_INITERR_DHFAIL;
     goto error;
   }
 
   /* ECDH stuff */
-  if (set_ecdh(ssl_fd->ssl_context)) {
+  if (!is_client && set_ecdh(ssl_fd->ssl_context)) {
     *error = SSL_INITERR_ECDHFAIL;
     goto error;
   }
@@ -606,7 +641,7 @@ struct st_VioSSLFd *new_VioSSLAcceptorFd(
     enum enum_ssl_init_error *error, const char *crl_file, const char *crl_path,
     const long ssl_ctx_flags) {
   struct st_VioSSLFd *ssl_fd;
-  int verify = SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE;
+  int const verify = SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE;
   if (!(ssl_fd = new_VioSSLFd(key_file, cert_file, ca_file, ca_path, cipher,
                               ciphersuites, false, error, crl_file, crl_path,
                               ssl_ctx_flags, nullptr))) {

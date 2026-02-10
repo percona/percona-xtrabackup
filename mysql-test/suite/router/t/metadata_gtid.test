@@ -1,0 +1,232 @@
+--source include/have_router.inc
+--source include/have_group_replication_plugin.inc
+
+# Set the router-id, to generate statistics
+# this way we can wait until router detects
+# changes to DB_OBJECTS.
+--let $extra_mrs_router_id=1
+
+--source ../include/predefined_setup/configure_innodb_cluster_gr.inc
+--source ../include/innodb_cluster/wait_for_update_of_metadata.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/procedures_schema.sql
+--source ../include/schema/functions_schema.sql
+--source ../include/schema/basic_schema.sql
+
+## Test starts here
+--echo
+--echo
+--echo ## I.  Verify the _metadata.gtid is in the response when expected for requests for TABLE object
+--echo #
+--echo # 1. Verify the _metadata.gtid is not present for table GET
+--echo # 2. Verify the _metadata.gtid is present for table PUT
+--echo # 3. Verify the _metadata.gtid is present for table POST
+--echo # 4. Verify the _metadata.gtid is present for table DELETE of existing row
+--echo # 5. Verify the _metadata.gtid is not present for table DELETE of not existing row
+--echo #
+--echo ## II.  Verify the _metadata.gtid is in the response when expected for requests for PROCEDURE object
+--echo #
+--echo # 1. Verify the _metadata.gtid is present for procedure PUT when the procedure with params
+--echo #    inserts data into table
+--echo # 2. Verify the _metadata.gtid is present for procedure PUT when the procedure with params
+--echo #    inserts data into table and then returns resultset
+--echo # 3. Verify the _metadata.gtid is present for procedure GET when the procedure with no params
+--echo #    inserts data into table and returns resultset
+--echo # 4. Verify the _metadata.gtid is not present for procedure GET when the procedure does not do
+--echo #    update/insert only returns resultset
+--echo # 5. Verify the _metadata.gtid is not present for procedure GET when the procedure does not do
+--echo #    update/insert only returns via output parameter
+--echo #
+--echo ## III.  Verify the _metadata.gtid is in the response when expected for requests for FUNCTION object
+--echo #
+--echo # 1. Verify the _metadata.gtid is present for function PUT when the function
+--echo #    inserts data into table
+--echo # 2. Verify the _metadata.gtid is present for function GET when the function
+--echo #    inserts data into table
+--echo # 3. Verify the _metadata.gtid is not present for function GET when the function
+--echo #    does not do any insert/update
+--echo #
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t1
+--let $mrs_add_db_object_options='{"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_schema=proc_schema
+--let $mrs_add_schema_path=/proc
+--let $mrs_add_schema_items_on_page=NULL
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=insert_data
+--let $mrs_add_db_object_path=/insert_data
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=insert_and_return
+--let $mrs_add_db_object_path=/insert_and_return
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=insert_no_param
+--let $mrs_add_db_object_path=/insert_no_param
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc_sum
+--let $mrs_add_db_object_path=/sum
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc_sum_out
+--let $mrs_add_db_object_path=/sum_out
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_schema=func_schema
+--let $mrs_add_schema_path=/func
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object=insert_and_return
+--let $mrs_add_db_object_path=/insert_and_return
+--let $mrs_add_db_object_format=ITEM
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object=insert_and_return_no_param
+--let $mrs_add_db_object_path=/insert_and_return_no_param
+--let $mrs_add_db_object_format=ITEM
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=func_sum
+--let $mrs_add_db_object_path=/sum
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+--source include/rpl/sync.inc
+
+# --let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+# --let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port
+
+--echo
+--echo #
+--echo # I.1
+exec $MRS_CLIENT_ARGS
+  --exclude-json-pointer '/items/*/links,/items/*/_metadata,/links,/limit,/offset,/hasMore,/count'
+  --path /svc/basic/t1 -t GET;
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_replace_regexp= /(.*)"gtid": ".*"/\1"gtid": "%GTID%"/
+--let $mrs_client_arg_path='/svc/basic/t1/101'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{}'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.3
+--let $mrs_client_replace_regexp= /(.*)"gtid": ".*"/\1"gtid": "%GTID%"/
+--let $mrs_client_arg_path='/svc/basic/t1'
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id":33}'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.4
+--replace_regex /(.*)"gtid": ".*"/\1"gtid": "%GTID%"/
+exec $MRS_CLIENT_ARGS
+  --path /svc/basic/t1/101 -t DELETE;
+
+--echo
+--echo #
+--echo # I.5
+exec $MRS_CLIENT_ARGS
+  --path /svc/basic/t1/102 -t DELETE;
+
+--echo
+--echo #
+--echo # II.1
+--let $mrs_client_replace_regexp= /(.*)"gtid": ".*"/\1"gtid": "%GTID%"/
+--let $mrs_client_arg_path='/svc/proc/insert_data'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"name":"Andresz","comments":"","date":"2013-12-11"}'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.2
+--let $mrs_client_replace_regexp= /(.*)"gtid": ".*"/\1"gtid": "%GTID%"/
+--let $mrs_client_arg_path='/svc/proc/insert_and_return'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"name":"Lukash","comments":"","date":"2014-11-11"}'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # II.3
+--let $mrs_client_replace_regexp= /(.*)"gtid": ".*"/\1"gtid": "%GTID%"/
+--let $mrs_client_arg_path='/svc/proc/insert_no_param'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # II.4
+--let $mrs_client_arg_path='/svc/proc/sum?a=10&b=20'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.5
+--let $mrs_client_arg_path='/svc/proc/sum_out?a=10&b=20'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.1
+--let $mrs_client_replace_regexp= /(.*)"gtid": ".*"/\1"gtid": "%GTID%"/
+--let $mrs_client_arg_path='/svc/func/insert_and_return'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"value":"Test"}'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.2
+--let $mrs_client_replace_regexp= /(.*)"gtid": ".*"/\1"gtid": "%GTID%"/
+--let $mrs_client_arg_path='/svc/func/insert_and_return_no_param'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.3
+--let $mrs_client_arg_path='/svc/func/sum?a=10&b=20'
+--let $mrs_client_arg_request_type=GET
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+--let $cleanup_arg_mrs_existing_service=/svc/basic/t1
+--source ../include/mrs/cleanup.inc
+--source ../include/innodb_cluster/cleanup.inc
+--source include/rpl/sync.inc
+--source include/group_replication_end.inc

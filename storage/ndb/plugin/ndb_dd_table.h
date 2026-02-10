@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -177,5 +177,10 @@ class Ndb_dd_table {
 
   dd::Table *get_table_def() { return m_table_def; }
 };
+
+/*
+   Return number of indexes in the table definition
+*/
+size_t ndb_dd_table_get_num_indexes(const dd::Table *table_def);
 
 #endif

@@ -941,6 +941,7 @@ ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT
+SQL_SMALL_RESULT # Fix one plan between streaming and temp-table-aggregate
 t1.col_varchar_key AS field1
 FROM
 (t1, t1 as alias1)
@@ -970,6 +971,7 @@ EXPLAIN
 Warnings:
 Note	1276	Field or reference 'test.t1.col_varchar' of SELECT #2 was resolved in SELECT #1
 SELECT
+SQL_SMALL_RESULT # Fix one plan between streaming and temp-table-aggregate
 t1.col_varchar_key AS field1
 FROM
 (t1, t1 as alias1)
@@ -2527,7 +2529,7 @@ ANALYZE TABLE build, probe;
 Table	Op	Msg_type	Msg_text
 test.build	analyze	status	OK
 test.probe	analyze	status	OK
-SET optimizer_switch = "materialization=off";
+SET optimizer_switch = "materialization=off,loosescan=off";
 SET join_buffer_size = 1024;
 EXPLAIN FORMAT=tree SELECT * FROM probe WHERE col1 IN (SELECT * FROM build);
 EXPLAIN
@@ -4668,3 +4670,105 @@ id	j	i
 8	9223372036854775806	9223372036854775806
 9	9223372036854775807	9223372036854775807
 DROP TABLE t1, t2, t3;
+#
+# Bug#37057380: Wrong results with sorting or hash join reading from
+#               single-record index lookups
+#
+CREATE TABLE t1(a INT);
+INSERT INTO t1 VALUES (1), (2), (3), (4);
+CREATE TABLE t2(a INT);
+INSERT INTO t2 VALUES (1), (2), (3), (4);
+CREATE TABLE t3 (a INT, b INT);
+INSERT INTO t3 VALUES (1, 1), (2, 2), (3, 3), (4, 1);
+CREATE TABLE t4 (id INT PRIMARY KEY, a INT);
+INSERT INTO t4 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
+ANALYZE TABLE t1, t2, t3, t4;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
+test.t4	analyze	status	OK
+SELECT t1.a AS t1a, dt.* FROM t1,
+LATERAL (
+SELECT dt1.*, t2.a AS t2a FROM
+(SELECT * FROM t3 JOIN t4 ON t3.b = t4.id AND t3.a = t4.a)
+AS dt1(t3a, t3b, id, t4a)
+JOIN t2 ON t2.a = t3a AND t1.a <> 100 LIMIT 100
+) AS dt;
+t1a	t3a	t3b	id	t4a	t2a
+1	1	1	1	1	1
+1	2	2	2	2	2
+1	3	3	3	3	3
+2	1	1	1	1	1
+2	2	2	2	2	2
+2	3	3	3	3	3
+3	1	1	1	1	1
+3	2	2	2	2	2
+3	3	3	3	3	3
+4	1	1	1	1	1
+4	2	2	2	2	2
+4	3	3	3	3	3
+DROP TABLE t1, t2, t3, t4;
+#
+# Bug#37161583: Incorrect result with LEFT JOIN and small
+#               join_buffer_size
+CREATE TABLE t1(a INT);
+INSERT INTO t1 VALUES (NULL);
+CREATE TABLE t2(b INT);
+INSERT INTO t2
+WITH RECURSIVE
+s(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM s WHERE n < 1000)
+SELECT n FROM s;
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE NOT EXISTS (SELECT * FROM t2 WHERE a = b);
+EXPLAIN
+-> Hash antijoin (t2.b = t1.a)  (rows=1000)
+    -> Table scan on t1  (rows=1)
+    -> Hash
+        -> Table scan on t2  (rows=1000)
+
+Warnings:
+Note	1276	Field or reference 'test.t1.a' of SELECT #2 was resolved in SELECT #1
+TRUNCATE performance_schema.file_summary_by_event_name;
+SET join_buffer_size = DEFAULT;
+SELECT * FROM t1 WHERE NOT EXISTS (SELECT * FROM t2 WHERE a = b);
+a
+NULL
+SELECT COUNT_STAR > 0 FROM performance_schema.file_summary_by_event_name
+WHERE event_name LIKE '%hash_join%';
+COUNT_STAR > 0
+0
+TRUNCATE performance_schema.file_summary_by_event_name;
+SET join_buffer_size = 128;
+SELECT * FROM t1 WHERE NOT EXISTS (SELECT * FROM t2 WHERE a = b);
+a
+NULL
+SET join_buffer_size = DEFAULT;
+SELECT COUNT_STAR > 0 FROM performance_schema.file_summary_by_event_name
+WHERE event_name LIKE '%hash_join%';
+COUNT_STAR > 0
+1
+DROP TABLE t1, t2;
+#
+# Bug#37273221: Hypergraph: Inefficient join order when using LIMIT
+#
+CREATE TABLE t1(x INT);
+CREATE TABLE t2(x INT, y VARCHAR(10000));
+INSERT INTO t1 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
+INSERT INTO t2 SELECT x, REPEAT('x', x * 1000) FROM t1 WHERE t1.x < 10;
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT * FROM t1, t2 WHERE t1.x = t2.x LIMIT 1;
+EXPLAIN
+-> Limit: 1 row(s)  (rows=1)
+    -> Inner hash join (t2.x = t1.x)  (rows=10)
+        -> Table scan on t2  (rows=9)
+        -> Hash
+            -> Table scan on t1  (rows=10)
+
+DROP TABLE t1, t2;

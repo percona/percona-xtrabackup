@@ -137,7 +137,7 @@ def	test	v1	v1	c1	c1	254	4	1	Y	0	0	255
 def	test	v2	v2	c2	c2	254	4	1	Y	0	0	255
 SELECT v1.c1, v2.c2 FROM v1 JOIN v2 ON c1=c2 GROUP BY v1.c1;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def	test	t1	v1	c1	c1	254	4	1	Y	32768	0	255
+def	test	t1	v1	c1	c1	254	4	1	Y	0	0	255
 def	test	t2	v2	c2	c2	254	4	1	Y	0	0	255
 c1	c2
 1	1
@@ -145,7 +145,7 @@ c1	c2
 3	3
 SELECT v1.c1, v2.c2 FROM v1 JOIN v2 ON c1=c2 GROUP BY v1.c1 ORDER BY v2.c2;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def	test	t1	v1	c1	c1	254	4	1	Y	32768	0	255
+def	test	t1	v1	c1	c1	254	4	1	Y	0	0	255
 def	test	t2	v2	c2	c2	254	4	1	Y	0	0	255
 c1	c2
 1	1
@@ -452,3 +452,19 @@ e	f
 set optimizer_switch=default;
 drop view v;
 drop table t;
+#
+# Bug#34683569 Mysql_field returns NUM_FLAG (32768) for grouped by columns
+#
+CREATE TABLE test (
+id INT NOT NULL,
+col VARCHAR(255) DEFAULT NULL
+);
+INSERT INTO test (id, col) VALUES (1, 'test1'), (2, 'test2');
+# This used to show NUM for flags field
+SELECT col FROM test GROUP BY col;
+Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
+def	test	test	test	col	col	253	1020	5	Y	0	0	255
+col
+test1
+test2
+DROP TABLE test;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,9 +35,9 @@ class MgmtThread {
   struct NdbThread *m_thread;
 
   static void *run_C(void *t) {
-    MgmtThread *thread = (MgmtThread *)t;
+    auto *thread = (MgmtThread *)t;
     thread->run();
-    return 0;
+    return nullptr;
   }
 
  public:
@@ -50,7 +50,7 @@ class MgmtThread {
         m_name(name),
         m_stack_size(stack_size),
         m_thread_prio(thread_prio),
-        m_thread(NULL) {}
+        m_thread(nullptr) {}
   virtual ~MgmtThread() {
     if (m_thread) stop();
   }
@@ -60,10 +60,10 @@ class MgmtThread {
     assert(m_running);
     m_thread = NdbThread_Create(run_C, (void **)this, m_stack_size, m_name,
                                 m_thread_prio);
-    return (m_thread != NULL);
+    return (m_thread != nullptr);
   }
   bool stop() {
-    void *res = 0;
+    void *res = nullptr;
     if (!m_thread) return false;
 
     m_running = false;

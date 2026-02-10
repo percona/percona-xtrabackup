@@ -160,6 +160,7 @@ let $pattern=$elide_trace_costs_and_rows;
 # elide some sorting statistics:
 let $pattern=$pattern /num_initial_chunks_spilled_to_disk\": [0-9.]+/num_initial_chunks_spilled_to_disk\": "elided"/;
 let $pattern=$pattern /peak_memory_used\": [0-9.]+/peak_memory_used\": "elided"/;
+let $pattern=$pattern /num_rows_estimate\": [0-9.]+/num_rows_estimate\": "elided"/;
 
 --echo # b) With secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='0 10 20';

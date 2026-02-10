@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@
 
 namespace mysql_harness {
 class PluginFuncEnv;
-}
+}  // namespace mysql_harness
 
 #if defined(_MSC_VER) && defined(routertestplugin_lifecycle3_EXPORTS)
 /* We are building this library */

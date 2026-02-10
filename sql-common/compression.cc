@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,17 +37,17 @@
   @retval  an enum to represents what algorithm is specified in case it is
            a valid algorithm else return INVALID.
 */
-enum_compression_algorithm get_compression_algorithm(std::string name) {
+enum_compression_algorithm get_compression_algorithm(const std::string &name) {
   if (name.empty() || name.c_str() == nullptr)
     return enum_compression_algorithm::MYSQL_INVALID;
   if (!my_strcasecmp(&my_charset_latin1, name.c_str(),
                      COMPRESSION_ALGORITHM_ZLIB))
     return enum_compression_algorithm::MYSQL_ZLIB;
-  else if (!my_strcasecmp(&my_charset_latin1, name.c_str(),
-                          COMPRESSION_ALGORITHM_ZSTD))
+  if (!my_strcasecmp(&my_charset_latin1, name.c_str(),
+                     COMPRESSION_ALGORITHM_ZSTD))
     return enum_compression_algorithm::MYSQL_ZSTD;
-  else if (!my_strcasecmp(&my_charset_latin1, name.c_str(),
-                          COMPRESSION_ALGORITHM_UNCOMPRESSED))
+  if (!my_strcasecmp(&my_charset_latin1, name.c_str(),
+                     COMPRESSION_ALGORITHM_UNCOMPRESSED))
     return enum_compression_algorithm::MYSQL_UNCOMPRESSED;
   return enum_compression_algorithm::MYSQL_INVALID;
 }
@@ -59,7 +59,7 @@ enum_compression_algorithm get_compression_algorithm(std::string name) {
   @param       name    comma separated list of compression algorithm names
   @param[out]  list    list containing algorithm names
 */
-void parse_compression_algorithms_list(std::string name,
+void parse_compression_algorithms_list(const std::string &name,
                                        std::vector<std::string> &list) {
   std::string token;
   std::stringstream str(name);
@@ -90,8 +90,9 @@ bool is_zstd_compression_level_valid(uint level) {
   @retval 0  success
   @retval 1  error or warnings
 */
-bool validate_compression_attributes(std::string algorithm_names,
-                                     std::string channel_name [[maybe_unused]],
+bool validate_compression_attributes(const std::string &algorithm_names,
+                                     const std::string &channel_name
+                                     [[maybe_unused]],
                                      bool ignore_errors [[maybe_unused]]) {
   DBUG_TRACE;
   /*
@@ -110,7 +111,7 @@ bool validate_compression_attributes(std::string algorithm_names,
   std::vector<std::string> algorithm_name_list;
 
   parse_compression_algorithms_list(algorithm_names, algorithm_name_list);
-  unsigned int total_names = algorithm_name_list.size();
+  unsigned int const total_names = algorithm_name_list.size();
 
   if (!total_names) {
 #ifdef MYSQL_SERVER
@@ -134,7 +135,7 @@ bool validate_compression_attributes(std::string algorithm_names,
   auto name_it = algorithm_name_list.begin();
   enum_compression_algorithm method = enum_compression_algorithm::MYSQL_INVALID;
   while (name_it != algorithm_name_list.end()) {
-    std::string algorithm_name = *name_it;
+    std::string const algorithm_name = *name_it;
     /* validate algorithm name */
     method = get_compression_algorithm(algorithm_name);
     if (method == enum_compression_algorithm::MYSQL_INVALID) {

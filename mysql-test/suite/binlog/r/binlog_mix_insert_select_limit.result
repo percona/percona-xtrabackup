@@ -20,7 +20,7 @@ binlog.000001	#	Query	#	#	use `test`; INSERT INTO t1 VALUES (9)
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.employees)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 DROP TABLE employees;
 DROP TABLE t1;

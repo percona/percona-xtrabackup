@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,11 @@
 
 #include "sql/sql_initialize.h"
 
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <cassert>
+#include <cstdio>
+#include <cstring>
 
 #include "my_dir.h"
 #include "my_inttypes.h"
@@ -136,7 +136,7 @@ bool generate_password(char *password, int size) {
   return failed;
 }
 
-bool Compiled_in_command_iterator::begin(void) {
+bool Compiled_in_command_iterator::begin() {
   m_cmds_ofs = m_cmd_ofs = 0;
 
   LogErr(INFORMATION_LEVEL, ER_SERVER_INIT_COMPILED_IN_COMMANDS,
@@ -202,10 +202,9 @@ void Compiled_in_command_iterator::report_error_details(
     Hence, there should never be an error to print.
   */
   assert(false);
-  return;
 }
 
-void Compiled_in_command_iterator::end(void) {
+void Compiled_in_command_iterator::end() {
   LogErr(INFORMATION_LEVEL, ER_INIT_BOOTSTRAP_COMPLETE);
 }
 
@@ -241,7 +240,7 @@ bool initialize_create_data_directory(const char *data_home) {
     /* Ignore files that start with . or == 'lost+found'. */
     for (uint i = 0; i < dir->number_off_files; i++) {
       FILEINFO *file = dir->dir_entry + i;
-      if (file->name[0] != '.' && strcmp(file->name, "lost+found")) {
+      if (file->name[0] != '.' && strcmp(file->name, "lost+found") != 0) {
         no_files = false;
         break;
       }

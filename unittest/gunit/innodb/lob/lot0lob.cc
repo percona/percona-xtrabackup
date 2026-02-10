@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -24,8 +24,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
-#include <string.h>
 #include <cassert>
+#include <cstring>
 #include <map>
 #include <stack>
 
@@ -64,7 +64,7 @@ static buf_block_t *create_data_page();
 dberr_t insert(trx_id_t trxid, ref_t ref, byte *blob, ulint len) {
   Fname("lob::insert");
 
-  dberr_t ret = DB_SUCCESS;
+  dberr_t const ret = DB_SUCCESS;
   byte *ptr = blob;
 
   LOG("LOB length = " << len);
@@ -134,7 +134,7 @@ ulint read(trx_id_t trxid, ref_t ref, ulint offset, ulint len, byte *buf) {
   }
 
   buf_block_t *first = it->second;
-  base_node_page_t first_page(first);
+  base_node_page_t const first_page(first);
 
   flst_base_node_t *base_node = first_page.index_list();
   fil_addr_t node_loc = flst_get_first(base_node);
@@ -150,9 +150,9 @@ ulint read(trx_id_t trxid, ref_t ref, ulint offset, ulint len, byte *buf) {
     /** @todo Check if the reading trx can see the entry. */
 
     /* Get the amount of data */
-    ulint data_len = entry.get_data_len();
+    ulint const data_len = entry.get_data_len();
 
-    ulint will_skip = skipped + data_len;
+    ulint const will_skip = skipped + data_len;
 
     if (will_skip >= offset) {
       /* Reached the page containing the offset. */
@@ -178,7 +178,7 @@ ulint read(trx_id_t trxid, ref_t ref, ulint offset, ulint len, byte *buf) {
 
       while (!fil_addr_is_null(node_versions)) {
         flst_node_t *node_old_version = fut_get_ptr(node_versions);
-        index_entry_t old_version_entry(node_old_version);
+        index_entry_t const old_version_entry(node_old_version);
 
         if (old_version_entry.get_trx_id() <= trxid) {
           /* The current trx can see this entry. */
@@ -195,12 +195,12 @@ ulint read(trx_id_t trxid, ref_t ref, ulint offset, ulint len, byte *buf) {
     }
 
     /* Get the page number */
-    page_no_t page_no = entry.get_page_no();
+    page_no_t const page_no = entry.get_page_no();
 
     LOG("page_no=" << page_no);
     /* need data in this page. */
     buf_block_t *block = buf_page_get(page_no);
-    page_type_t type = fil_page_get_type(block->m_frame);
+    page_type_t const type = fil_page_get_type(block->m_frame);
 
     if (type == FIL_PAGE_TYPE_LOB_FIRST) {
       base_node_page_t page(block);
@@ -256,9 +256,9 @@ dberr_t replace(trx_id_t trxid, ref_t ref, ulint offset, ulint len, byte *buf) {
     index_entry_t entry(node);
 
     /* Get the amount of data */
-    ulint data_len = entry.get_data_len();
+    ulint const data_len = entry.get_data_len();
 
-    ulint will_skip = skipped + data_len;
+    ulint const will_skip = skipped + data_len;
     if (will_skip >= offset) {
       /* Reached the page containing the offset. */
       break;
@@ -282,11 +282,11 @@ dberr_t replace(trx_id_t trxid, ref_t ref, ulint offset, ulint len, byte *buf) {
     }
 
     /* Get the page number */
-    page_no_t page_no = entry.get_page_no();
+    page_no_t const page_no = entry.get_page_no();
 
     /* need data in this page. */
     buf_block_t *block = buf_page_get(page_no);
-    page_type_t type = fil_page_get_type(block->m_frame);
+    page_type_t const type = fil_page_get_type(block->m_frame);
 
     buf_block_t *new_block = nullptr;
     if (type == FIL_PAGE_TYPE_LOB_FIRST) {
@@ -343,8 +343,8 @@ buf_block_t *replace_page(PageType *page, trx_id_t trxid, ulint offset,
   memcpy(new_ptr, old_ptr, offset);
 
   /** Copy the new data to new page. */
-  ulint data_avail = page->get_data_len() - offset;
-  ulint data_to_copy = want > data_avail ? data_avail : want;
+  ulint const data_avail = page->get_data_len() - offset;
+  ulint const data_to_copy = want > data_avail ? data_avail : want;
   memcpy(new_ptr + offset, ptr, data_to_copy);
 
   /** Copy contents from old page to new page. */
@@ -385,9 +385,9 @@ ulint insert_middle(trx_id_t trxid, ref_t ref, ulint offset, byte *&data,
     index_entry_t entry(node);
 
     /* Get the amount of data */
-    ulint data_len = entry.get_data_len();
+    ulint const data_len = entry.get_data_len();
 
-    ulint will_skip = skipped + data_len;
+    ulint const will_skip = skipped + data_len;
     if (will_skip >= offset) {
       /* Reached the page containing the offset. */
       break;
@@ -409,12 +409,12 @@ ulint insert_middle(trx_id_t trxid, ref_t ref, ulint offset, byte *&data,
   }
 
   /* Get the page number */
-  page_no_t page_no = entry.get_page_no();
+  page_no_t const page_no = entry.get_page_no();
 
   /* Need to insert into this page. */
   LOG("inserting into page_no=" << page_no);
   buf_block_t *block = buf_page_get(page_no);
-  page_type_t type = fil_page_get_type(block->m_frame);
+  page_type_t const type = fil_page_get_type(block->m_frame);
 
   std::pair<ulint, byte *> saved_data;
 
@@ -557,9 +557,9 @@ dberr_t remove_middle(trx_id_t trxid, ref_t ref, ulint offset, ulint len) {
     index_entry_t entry(node);
 
     /* Get the amount of data */
-    ulint data_len = entry.get_data_len();
+    ulint const data_len = entry.get_data_len();
 
-    ulint will_skip = skipped + data_len;
+    ulint const will_skip = skipped + data_len;
     if (will_skip >= offset) {
       /* Reached the page containing the offset. */
       break;
@@ -580,22 +580,22 @@ dberr_t remove_middle(trx_id_t trxid, ref_t ref, ulint offset, ulint len) {
     }
 
     /* Get the page number. */
-    page_no_t page_no = entry.get_page_no();
+    page_no_t const page_no = entry.get_page_no();
 
     flst_node_t *new_node = nullptr;
 
     /* Need to remove data starting from this page. */
     buf_block_t *block = buf_page_get(page_no);
-    page_type_t type = fil_page_get_type(block->m_frame);
+    page_type_t const type = fil_page_get_type(block->m_frame);
 
     buf_block_t *new_block = nullptr;
     if (type == FIL_PAGE_TYPE_LOB_FIRST) {
       base_node_page_t page(block);
-      new_block = page.remove_middle(trxid, page_offset, want);
+      new_block = page.remove_middle(page_offset, want);
 
     } else if (type == FIL_PAGE_TYPE_LOB_DATA) {
       data_page_t page(block);
-      new_block = page.remove_middle(trxid, page_offset, want);
+      new_block = page.remove_middle(page_offset, want);
     } else {
       ut_error;
     }
@@ -664,7 +664,7 @@ void trx_purge(trx_id_t trxid, ref_t ref) {
       flst_node_t *ver_node = fut_get_ptr(ver_loc);
       index_entry_t vers_entry(ver_node);
       if (vers_entry.can_be_purged(trxid)) {
-        ver_loc = vers_entry.purge_version(trxid, vers, free_list);
+        ver_loc = vers_entry.purge_version(vers, free_list);
       } else {
         ver_loc = flst_get_next_addr(ver_node);
       }
@@ -675,7 +675,7 @@ void trx_purge(trx_id_t trxid, ref_t ref) {
 
     /* Now process the current entry. */
     if (entry.can_be_purged(trxid)) {
-      entry.make_old_version_current(trxid, page);
+      entry.make_old_version_current(page);
     }
   }
 
@@ -692,9 +692,8 @@ void trx_purge(trx_id_t trxid, ref_t ref) {
 }
 
 /** Remove/Delete/Destory the given LOB.
-@param[in]  trxid  The transaction identifier.
 @param[in]  ref  The LOB reference.*/
-void remove(trx_id_t trxid, ref_t ref) {
+void remove(trx_id_t /*trxid*/, ref_t ref) {
   auto it = g_lob.find(ref);
 
   if (it == g_lob.end()) {
@@ -718,12 +717,12 @@ void remove(trx_id_t trxid, ref_t ref) {
     while (!fil_addr_is_null(ver_loc)) {
       flst_node_t *ver_node = fut_get_ptr(ver_loc);
       index_entry_t vers_entry(ver_node);
-      vers_entry.purge_version(trxid, vers, free_list);
+      vers_entry.purge_version(vers, free_list);
       ver_loc = flst_get_first(ver_node);
     }
 
     /* Now process the current entry. */
-    entry.purge_version(trxid, base, free_list);
+    entry.purge_version(base, free_list);
 
     node_loc = flst_get_first(base);
   }
@@ -748,14 +747,15 @@ void print(std::ostream &out, ref_t ref) {
   }
 
   buf_block_t *first = it->second;
-  base_node_page_t page(first);
+  base_node_page_t const page(first);
 
-  out << "Number of index entries in first page: " << page.node_count()
-      << std::endl;
-  out << "Amount of data in first page: " << page.max_space_available()
-      << std::endl;
+  out << "Number of index entries in first page: "
+      << lob::base_node_page_t::node_count() << std::endl;
+  out << "Amount of data in first page: "
+      << lob::base_node_page_t::max_space_available() << std::endl;
   out << "Total size of LOB: "
-      << page.max_space_available() + UNIV_PAGE_SIZE * (page.node_count() - 1)
+      << lob::base_node_page_t::max_space_available() +
+             UNIV_PAGE_SIZE * (lob::base_node_page_t::node_count() - 1)
       << std::endl;
   out << "Number of index entries in index page: " << node_page_t::node_count()
       << std::endl;

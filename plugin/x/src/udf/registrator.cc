@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -23,16 +23,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "plugin/x/src/udf/registrator.h"
 
+#include <memory>
 #include <stdexcept>
 
 #include "plugin/x/src/services/service_udf_registration.h"
 #include "plugin/x/src/xpl_log.h"
 
-namespace xpl {
-namespace udf {
+namespace xpl::udf {
 
 Registrator::Registrator() {
-  m_udf_registrator.reset(new Service_udf_registration(&m_registry));
+  m_udf_registrator = std::make_unique<Service_udf_registration>(&m_registry);
 }
 
 void Registrator::registration(const Record &r, Name_registry *udf_names) {
@@ -60,5 +60,4 @@ void Registrator::unregistration(Name_registry *udf_names) {
       ++i;
 }
 
-}  // namespace udf
-}  // namespace xpl
+}  // namespace xpl::udf

@@ -1,7 +1,7 @@
 #ifndef SQL_CREATE_FIELD_INCLUDED
 #define SQL_CREATE_FIELD_INCLUDED
 
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -96,7 +96,7 @@ class Create_field {
     Name of column modified by ALTER TABLE's CHANGE/MODIFY COLUMN clauses,
     NULL for columns added.
   */
-  const char *change;
+  const char *change{nullptr};
   const char *after{nullptr};  // Put column after this one
   LEX_CSTRING comment;         // Comment for field
 
@@ -123,8 +123,8 @@ class Create_field {
                       // Used only for UCS2 intervals
   List<String> interval_list;
   const CHARSET_INFO *charset;
-  bool is_explicit_collation;  // User exeplicitly provided charset ?
-  Field::geometry_type geom_type;
+  bool is_explicit_collation{false};  // User explicitly provided charset?
+  Field::geometry_type geom_type{Field::GEOM_GEOMETRY};
   Field *field;  // For alter table
 
   uint offset;
@@ -135,9 +135,9 @@ class Create_field {
     Initialized based on flags and other members at prepare_create_field()/
     init_for_tmp_table() stage.
   */
-  bool is_nullable;
-  bool is_zerofill;
-  bool is_unsigned;
+  bool is_nullable{false};
+  bool is_zerofill{false};
+  bool is_unsigned{false};
 
   /**
     Indicates that storage engine doesn't support optimized BIT field
@@ -149,7 +149,7 @@ class Create_field {
     Initialized at mysql_prepare_create_table()/sp_prepare_create_field()/
     init_for_tmp_table() stage.
   */
-  bool treat_bit_as_char;
+  bool treat_bit_as_char{false};
 
   /**
     Row based replication code sometimes needs to create ENUM and SET
@@ -164,14 +164,14 @@ class Create_field {
   */
   uint pack_length_override{0};
 
-  /* Generated column expression information */
+  /// Generated column expression information.
   Value_generator *gcol_info{nullptr};
-  /*
+  /**
     Indication that the field is phycically stored in tables
     rather than just generated on SQL queries.
     As of now, false can only be set for virtual generated columns.
   */
-  bool stored_in_db;
+  bool stored_in_db{false};
 
   /// Holds the expression to be used to generate default values.
   Value_generator *m_default_val_expr{nullptr};
@@ -182,23 +182,10 @@ class Create_field {
 
   LEX_CSTRING m_engine_attribute = EMPTY_CSTR;
   LEX_CSTRING m_secondary_engine_attribute = EMPTY_CSTR;
+  /// Will be converted to m_engine_attribute for persistence
+  LEX_CSTRING m_external_format = EMPTY_CSTR;
 
-  Create_field()
-      : after(nullptr),
-        is_explicit_collation(false),
-        geom_type(Field::GEOM_GEOMETRY),
-        is_nullable(false),
-        is_zerofill(false),
-        is_unsigned(false),
-        /*
-          Initialize treat_bit_as_char for all field types even if
-          it is only used for MYSQL_TYPE_BIT. This avoids bogus
-          valgrind warnings in optimized builds.
-        */
-        treat_bit_as_char(false),
-        pack_length_override(0),
-        stored_in_db(false),
-        m_default_val_expr(nullptr) {}
+  Create_field() = default;
   Create_field(Field *field, Field *orig_field);
 
   /* Used to make a clone of this object for ALTER/CREATE TABLE */

@@ -1,0 +1,67 @@
+include/rpl/init_source_replica.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection master]
+#
+# Initialize
+#
+[connection slave]
+include/suppress_messages.inc
+# Connection 2 suppresses message <Replica SQL for channel .*: Worker 1 failed executing transaction.*>.
+#
+# R6.1 INSERT fails because row exists: ROW (MyISAM)
+#
+[connection master]
+CREATE TABLE t (a INT PRIMARY KEY) ENGINE = MyISAM;
+include/rpl/sync_to_replica.inc
+INSERT INTO t VALUES (1);
+include/rpl/save_binlog_file_position.inc
+[connection master]
+INSERT INTO t VALUES (1);
+include/rpl/sync_to_replica.inc
+include/rpl/assert_binlog_events.inc [Gtid # Query/BEGIN # Query/COMMIT]
+include/rpl/save_binlog_file_position.inc
+#
+# R7.1 INSERT fails because table does not exist: ROW (MyISAM)
+#
+[connection slave]
+DROP TABLE t;
+include/rpl/save_binlog_file_position.inc
+[connection master]
+INSERT INTO t VALUES (2);
+include/rpl/sync_to_replica.inc
+include/rpl/assert_binlog_events.inc [Gtid # Query/BEGIN # Query/COMMIT]
+[connection master]
+DROP TABLE IF EXISTS t;
+include/rpl/sync_to_replica.inc
+#
+# R6.2 INSERT fails because row exists: STATEMENT (MyISAM)
+#
+[connection master]
+CREATE TABLE t (a INT PRIMARY KEY) ENGINE = MyISAM;
+include/rpl/sync_to_replica.inc
+INSERT INTO t VALUES (1);
+include/rpl/save_binlog_file_position.inc
+[connection master]
+INSERT INTO t VALUES (1);
+include/rpl/sync_to_replica.inc
+include/rpl/assert_binlog_events.inc [Gtid # Query/BEGIN # Query/COMMIT]
+include/rpl/save_binlog_file_position.inc
+#
+# R7.2 INSERT fails because table does not exist: STATEMENT (MyISAM)
+#
+[connection slave]
+DROP TABLE t;
+include/rpl/save_binlog_file_position.inc
+[connection master]
+INSERT INTO t VALUES (2);
+include/rpl/sync_to_replica.inc
+include/rpl/assert_binlog_events.inc [Gtid # Query/BEGIN # Query/COMMIT]
+[connection master]
+DROP TABLE IF EXISTS t;
+include/rpl/sync_to_replica.inc
+#
+# Clean up
+#
+include/rpl/deinit.inc

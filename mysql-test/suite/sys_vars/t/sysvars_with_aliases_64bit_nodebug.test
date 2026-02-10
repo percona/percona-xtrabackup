@@ -1,3 +1,10 @@
 --source include/have_nodebug.inc
 --source include/have_64bit_ulong.inc
+
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 --source ../inc/control_for_sysvars_with_aliases.inc
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

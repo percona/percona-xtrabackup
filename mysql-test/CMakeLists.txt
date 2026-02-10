@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -132,12 +132,24 @@ SET(MTR_TESTS_FOR_PROFILING
   sysschema
   thread_pool
   x
+  component_connection_control
   )
 STRING(REPLACE ";" "," MTR_SUITE_STRING "${MTR_TESTS_FOR_PROFILING}")
 
 PROCESSORCOUNT(NPROC)
 IF(NPROC EQUAL 0)
   SET(NPROC 8)
+ENDIF()
+
+# Use env var MTR_MAX_PARALLEL if found.
+# Note that this must be set permanently in the environment.
+# MTR_MAX_PARALLEL=42 make run-profile-suite will not catch the new value.
+IF(DEFINED ENV{MTR_MAX_PARALLEL})
+  SET(NPROC $ENV{MTR_MAX_PARALLEL})
+ENDIF()
+
+IF(DEFINED MTR_MAX_PARALLEL)
+  SET(NPROC ${MTR_MAX_PARALLEL})
 ENDIF()
 
 ADD_CUSTOM_TARGET(run-profile-suite
@@ -154,6 +166,7 @@ ADD_CUSTOM_TARGET(run-profile-suite
   --suite=${MTR_SUITE_STRING}
 
   USES_TERMINAL # So that Ninja will show progress, rather than buffer output.
+  COMMENT "Running mtr with --parallel=${NPROC}"
   VERBATIM
   )
 

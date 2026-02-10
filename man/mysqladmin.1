@@ -2,12 +2,12 @@
 .\"     Title: mysqladmin
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 09/13/2024
+.\"      Date: 12/12/2025
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 9.0
+.\"    Source: MySQL 9.6
 .\"  Language: English
 .\"
-.TH "MYSQLADMIN" "1" "09/13/2024" "MySQL 9\&.0" "MySQL Database System"
+.TH "MYSQLADMIN" "1" "12/12/2025" "MySQL 9\&.6" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -167,6 +167,8 @@ flush\-privileges
 .sp
 Reload the grant tables (same as
 reload)\&.
+.sp
+Deprecated, and raises a warning; you should expect this command to be removed in a future version of MySQL\&.
 .RE
 .sp
 .RS 4
@@ -295,7 +297,7 @@ command with
 flush\-privileges
 on the same command line to re\-enable the grant tables because the flush operation occurs after you connect\&. However, you can use
 \fBmysqladmin flush\-privileges\fR
-to re\-enable the grant table and then use a separate
+to re\-enable the grant tables and then use a separate
 \fBmysqladmin password\fR
 command to change the password\&.
 .sp .5v
@@ -334,7 +336,7 @@ statement\&. If the
 \fB\-\-verbose\fR
 option is given, the output is like that of
 SHOW FULL PROCESSLIST\&. (See
-Section\ \&15.7.7.30, \(lqSHOW PROCESSLIST Statement\(rq\&.)
+Section\ \&15.7.7.32, \(lqSHOW PROCESSLIST Statement\(rq\&.)
 .RE
 .sp
 .RS 4
@@ -348,6 +350,8 @@ Section\ \&15.7.7.30, \(lqSHOW PROCESSLIST Statement\(rq\&.)
 reload
 .sp
 Reload the grant tables\&.
+.sp
+Deprecated, and raises a warning; you should expect this command to be removed in a future version of MySQL\&.
 .RE
 .sp
 .RS 4
@@ -361,6 +365,8 @@ Reload the grant tables\&.
 refresh
 .sp
 Flush all tables and close and open log files\&.
+.sp
+Flushing of privileges by this command is deprecated; you should expect this behavior to be removed in a future version of MySQL\&.
 .RE
 .sp
 .RS 4
@@ -2345,7 +2351,7 @@ Section\ \&6.2.8, \(lqConnection Compression Control\(rq\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2024, Oracle and/or its affiliates.
+Copyright \(co 1997, 2025, Oracle and/or its affiliates.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

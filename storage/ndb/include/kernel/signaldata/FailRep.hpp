@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -88,6 +88,34 @@ class FailRep {
     }
 
     return (sigLen == SignalLength) ? failSourceNodeId : 0;
+  }
+
+  static const char *getFailCauseText(FailCause fc) {
+    switch (fc) {
+      case ZOWN_FAILURE:
+        return "Own failure";
+      case ZOTHER_NODE_WHEN_WE_START:
+      case ZOTHERNODE_FAILED_DURING_START:
+        return "Other node died during start";
+      case ZIN_PREP_FAIL_REQ:
+        return "President notified failure";
+      case ZSTART_IN_REGREQ:
+        return "Start timeout";
+      case ZHEARTBEAT_FAILURE:
+        return "Heartbeat failure";
+      case ZLINK_FAILURE:
+        return "Connection failure";
+      case ZPARTITIONED_CLUSTER:
+        return "Partitioned cluster";
+      case ZMULTI_NODE_SHUTDOWN:
+        return "Multi node shutdown";
+      case ZCONNECT_CHECK_FAILURE:
+        return "Connectivity check failure";
+      case ZFORCED_ISOLATION:
+        return "Forced isolation";
+      default:
+        return "Unknown";
+    }
   }
 
  private:

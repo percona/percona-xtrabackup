@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -244,6 +244,10 @@ class ProcessWrapper {
   wait_for_sync_point_result() const {
     return wait_for_sync_point_result_;
   }
+
+#ifdef _WIN32
+  HANDLE process_handle() const { return launcher_.get_process_handle(); }
+#endif
 
  private:
   ProcessWrapper(

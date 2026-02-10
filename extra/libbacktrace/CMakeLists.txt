@@ -1,4 +1,4 @@
-# Copyright (c) 2023, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@ INCLUDE(libutils)
 
 DISABLE_MISSING_PROFILE_WARNING()
 
-SET(BACKTRACE_VERSION sha9ae4f4a)
+SET(BACKTRACE_VERSION sha793921876c981)
 SET(BACKTRACE_SOURCES
   ${BACKTRACE_VERSION}/backtrace.c
   ${BACKTRACE_VERSION}/dwarf.c

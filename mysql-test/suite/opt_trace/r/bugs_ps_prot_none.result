@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 set optimizer_trace_max_mem_size=1048576;
 SET end_markers_in_json=on;
 SET optimizer_trace="enabled=on,one_line=off";
@@ -2102,3 +2103,4 @@ FROM information_schema.optimizer_trace;
 json_extract(trace,'$**.decorrelated_predicates')
 NULL
 DROP TABLE t1, t2;
+include/rpl/set_gtid_mode_on.inc

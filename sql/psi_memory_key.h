@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -144,7 +144,6 @@ extern PSI_memory_key key_memory_histograms;
 extern PSI_memory_key key_memory_host_cache_hostname;
 extern PSI_memory_key key_memory_locked_table_list;
 extern PSI_memory_key key_memory_locked_thread_list;
-extern PSI_memory_key key_memory_my_bitmap_map;
 extern PSI_memory_key key_memory_my_str_malloc;
 extern PSI_memory_key key_memory_opt_bin_logname;
 extern PSI_memory_key key_memory_partition_syntax_buffer;

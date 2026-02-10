@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,7 @@
 #include <optional>
 #include <string>
 
-#include "classic_query_sender.h"
+#include "classic_connection_base.h"
 #include "mysql/harness/stdx/expected.h"
 #include "mysqlrouter/channel.h"
 #include "mysqlrouter/classic_protocol_message.h"

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -390,18 +390,26 @@ constexpr uint32_t fsp_is_shared_tablespace(uint32_t flags) {
 }
 /** @} */
 
-/** Max number of rollback segments: the number of segment specification slots
-in the transaction system array; rollback segment id must fit in one (signed)
-byte, therefore 128; each slot is currently 8 bytes in size. If you want
-to raise the level to 256 then you will need to fix some assertions that
-impose the 7 bit restriction. e.g., mach_write_to_3() */
-constexpr size_t TRX_SYS_N_RSEGS = 128;
+/** Max number of rollback segments for each UNDO tablespace */
+constexpr size_t FSP_MAX_ROLLBACK_SEGMENTS = 128;
 
-/** Minimum and Maximum number of implicit undo tablespaces.  This kind
-of undo tablespace is always created and found in --innodb-undo-directory. */
-constexpr size_t FSP_MIN_UNDO_TABLESPACES = 2;
-constexpr size_t FSP_MAX_UNDO_TABLESPACES = TRX_SYS_N_RSEGS - 1;
+/** The maximum number of non-temporary Undo Tablespaces (implicit + explicit)
+that can exist at the same time. The limitation comes from the way we encode
+rollback pointer. A rollback pointer has 7 bytes and has the following
+information in it
+  1 bit   : to indicate INSERT UNDO
+  7 bits  : for UNDO num
+  4 bytes : for page number
+  2 bytes : for offset
+Because of 7 bits restriction, we can have maximum 128 UNDO Tablespaces, but the
+value 0 is used to indicate the system temporary tablespace which we use for
+Undo Logs for changes to temporary tables. This is also the maximum permitted
+value for this 7-bit "num" identifier. */
+constexpr size_t FSP_MAX_UNDO_TABLESPACES = 127;
+
+/** There are exactly two implicit Undo Tablespaces present at any moment
+(undo_001 and undo_002), which count against the limit of
+FSP_MAX_UNDO_TABLESPACES. */
 constexpr size_t FSP_IMPLICIT_UNDO_TABLESPACES = 2;
-constexpr size_t FSP_MAX_ROLLBACK_SEGMENTS = TRX_SYS_N_RSEGS;
 
 #endif /* fsp0types_h */

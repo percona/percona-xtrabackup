@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,8 +29,8 @@
 #include "my_config.h"
 
 #include <gtest/gtest.h>
-#include <math.h>
-#include <string.h>
+#include <cmath>
+#include <cstring>
 
 #include "decimal.h"
 #include "m_string.h"
@@ -529,7 +529,7 @@ void do_test_widen_fraction(const char *s1, int increase, const char *orig) {
 
   char s[100];
   int slen = sizeof(s);
-  int result = decimal2string(&a, s, &slen);
+  int const result = decimal2string(&a, s, &slen);
   EXPECT_EQ(result, 0);
   EXPECT_STREQ(orig, s) << " arguments were: " << s1;
 }
@@ -994,7 +994,7 @@ static void BM_Decimal2Bin_10_2(size_t iters) {
     const char *end = strend(decimal_testdata[i]);
     decimals[i].buf = decimal_buf[i];
     decimals[i].len = array_elements(decimal_buf[i]);
-    int res = string2decimal(decimal_testdata[i], &decimals[i], &end);
+    int const res = string2decimal(decimal_testdata[i], &decimals[i], &end);
     ASSERT_EQ(E_DEC_OK, res) << decimal_testdata[i] << " wasn't converted";
   }
   StartBenchmarkTiming();
@@ -1053,7 +1053,7 @@ static void BM_Decimal2String(size_t iterations) {
     const char *end = strend(decimal_testdata[i]);
     decimals[i].buf = decimal_buf[i];
     decimals[i].len = array_elements(decimal_buf[i]);
-    int res = string2decimal(decimal_testdata[i], &decimals[i], &end);
+    int const res = string2decimal(decimal_testdata[i], &decimals[i], &end);
     ASSERT_EQ(E_DEC_OK, res) << decimal_testdata[i] << " wasn't converted";
   }
   StartBenchmarkTiming();

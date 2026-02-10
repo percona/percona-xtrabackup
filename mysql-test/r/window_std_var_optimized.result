@@ -93,6 +93,7 @@ i	j	std
 1	4	1.5
 1	2	1.247219128924647
 1	4	1.299038105676658
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON SELECT i, j, std(i+j) OVER (ROWS UNBOUNDED PRECEDING) STD FROM t ORDER BY NULL DESC;
 EXPLAIN
 {
@@ -135,6 +136,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`i` AS `i`,`test`.`t`.`j` AS `j`,std((`test`.`t`.`i` + `test`.`t`.`j`)) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)  AS `STD` from `test`.`t` order by NULL desc
+SET explain_json_format_version = DEFAULT;
 With LIMIT
 SELECT i, j, STD(i+j) OVER (ROWS UNBOUNDED PRECEDING) STD FROM t ORDER BY std DESC LIMIT 3;
 i	j	STD
@@ -1249,7 +1251,7 @@ NULL	NULL	NULL
 5	INTEGER	0.638675
 [1, 2, 3]	ARRAY	3.503675
 SELECT j, JSON_TYPE(j), JSON_TYPE(STD(j) OVER (ORDER BY j RANGE 3 PRECEDING)) FROM tj;
-ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 INSERT INTO tj(j) VALUES ('3.14');
 INSERT INTO tj(j) VALUES ('[1,2,3]');
 SELECT j,

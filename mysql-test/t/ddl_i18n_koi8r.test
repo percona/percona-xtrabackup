@@ -24,6 +24,9 @@
 #   - restore object;
 # 
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 ###########################################################################
 #
 # NOTE: this file contains text in utf8mb3 and KOI8-R encodings.
@@ -1141,3 +1144,5 @@ USE test;
 DROP DATABASE mysqltest1;
 DROP DATABASE mysqltest2;
 
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

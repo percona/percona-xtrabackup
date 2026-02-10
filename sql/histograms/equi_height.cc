@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,9 +28,9 @@
 
 #include "sql/histograms/equi_height.h"
 
-#include <stdlib.h>
 #include <algorithm>  // std::is_sorted
 #include <cmath>      // std::lround
+#include <cstdlib>
 #include <iterator>
 #include <new>
 
@@ -69,7 +69,7 @@ Equi_height<T> *Equi_height<T>::create(MEM_ROOT *mem_root,
                                        const std::string &col_name,
                                        Value_map_type data_type) {
   bool error = false;
-  Equi_height<T> *equi_height = new (mem_root)
+  auto *equi_height = new (mem_root)
       Equi_height<T>(mem_root, db_name, tbl_name, col_name, data_type, &error);
   if (error) return nullptr;
   return equi_height;
@@ -84,7 +84,7 @@ Equi_height<T>::Equi_height(MEM_ROOT *mem_root, const Equi_height<T> &other,
     return;
   }
   for (const equi_height::Bucket<T> &other_bucket : other.m_buckets) {
-    equi_height::Bucket<T> bucket(
+    equi_height::Bucket<T> const bucket(
         DeepCopy(other_bucket.get_lower_inclusive(), mem_root, error),
         DeepCopy(other_bucket.get_upper_inclusive(), mem_root, error),
         other_bucket.get_cumulative_frequency(),
@@ -186,7 +186,8 @@ static ha_rows FindBucketMaxValues(const Value_map<T> &value_map,
   int search_step = 0;
   while (upper_bucket_values > lower_bucket_values + 1 &&
          search_step < max_search_steps) {
-    ha_rows bucket_values = (upper_bucket_values + lower_bucket_values) / 2;
+    ha_rows const bucket_values =
+        (upper_bucket_values + lower_bucket_values) / 2;
     if (FitsIntoBuckets(value_map, bucket_values, max_buckets)) {
       upper_bucket_values = bucket_values;
     } else {
@@ -423,7 +424,7 @@ bool Equi_height<T>::build_histogram(const Value_map<T> &value_map,
       (3) Adding the value does not cause the bucket to exceed its max size.
     */
     auto next = std::next(freq_it);
-    size_t empty_buckets_remaining = num_buckets - m_buckets.size() - 1;
+    size_t const empty_buckets_remaining = num_buckets - m_buckets.size() - 1;
     if (next != value_map.end() &&
         distinct_values_remaining > empty_buckets_remaining &&
         bucket_values + next->second <= bucket_max_values) {
@@ -431,16 +432,16 @@ bool Equi_height<T>::build_histogram(const Value_map<T> &value_map,
     }
 
     // Finalize the current bucket and add it to our collection of buckets.
-    double cumulative_frequency =
+    double const cumulative_frequency =
         cumulative_values / static_cast<double>(total_values);
-    ha_rows bucket_distinct_values_estimate =
+    ha_rows const bucket_distinct_values_estimate =
         EstimateDistinctValues(value_map.get_sampling_rate(),
                                bucket_distinct_values, bucket_unary_values);
 
     // Create deep copies of the bucket endpoints to ensure that the values are
     // allocated on the histogram's mem_root.
     bool value_copy_error = false;
-    equi_height::Bucket<T> bucket(
+    equi_height::Bucket<T> const bucket(
         DeepCopy(*bucket_lower_value, get_mem_root(), &value_copy_error),
         DeepCopy(freq_it->first, get_mem_root(), &value_copy_error),
         cumulative_frequency, bucket_distinct_values_estimate);
@@ -515,7 +516,7 @@ bool Equi_height<T>::json_to_histogram(const Json_object &json_object,
   // and should never have errors, so assert whenever an error is encountered.
   // If it is not already validated, it is a user-defined histogram and it may
   // have errors, which should be detected and reported.
-  bool already_validated [[maybe_unused]] = context->binary();
+  bool const already_validated [[maybe_unused]] = context->binary();
 
   const Json_dom *buckets_dom = json_object.get(buckets_str());
   assert(!already_validated ||
@@ -529,7 +530,7 @@ bool Equi_height<T>::json_to_histogram(const Json_object &json_object,
     return true;
   }
 
-  const Json_array *buckets = down_cast<const Json_array *>(buckets_dom);
+  const auto *buckets = down_cast<const Json_array *>(buckets_dom);
   if (m_buckets.reserve(buckets->size())) return true;
   for (size_t i = 0; i < buckets->size(); ++i) {
     const Json_dom *bucket_dom = (*buckets)[i];
@@ -540,7 +541,7 @@ bool Equi_height<T>::json_to_histogram(const Json_object &json_object,
       return true;
     }
 
-    const Json_array *bucket = down_cast<const Json_array *>(bucket_dom);
+    const auto *bucket = down_cast<const Json_array *>(bucket_dom);
     // Only the first four items are defined, others are simply ignored.
     assert(!already_validated || (bucket->size() == 4));
     if (bucket->size() < 4) {
@@ -557,14 +558,13 @@ bool Equi_height<T>::json_to_histogram(const Json_object &json_object,
     if (m_buckets.empty()) {
       context->report_global(Message::JSON_IMPOSSIBLE_EMPTY_EQUI_HEIGHT);
       return true;
-    } else {
-      equi_height::Bucket<T> *last_bucket = &m_buckets[m_buckets.size() - 1];
-      float sum =
-          last_bucket->get_cumulative_frequency() + get_null_values_fraction();
-      if (std::abs(sum - 1.0) > 0) {
-        context->report_global(Message::JSON_INVALID_TOTAL_FREQUENCY);
-        return true;
-      }
+    }
+    equi_height::Bucket<T> *last_bucket = &m_buckets[m_buckets.size() - 1];
+    float const sum =
+        last_bucket->get_cumulative_frequency() + get_null_values_fraction();
+    if (std::abs(sum - 1.0) > 0) {
+      context->report_global(Message::JSON_INVALID_TOTAL_FREQUENCY);
+      return true;
     }
   }
   return false;
@@ -580,7 +580,7 @@ bool Equi_height<T>::add_bucket_from_json(const Json_array *json_bucket,
     return true;
   }
 
-  const Json_double *cumulative_frequency =
+  const auto *cumulative_frequency =
       down_cast<const Json_double *>(cumulative_frequency_dom);
 
   const Json_dom *num_distinct_dom = (*json_bucket)[3];
@@ -589,8 +589,7 @@ bool Equi_height<T>::add_bucket_from_json(const Json_array *json_bucket,
     num_distinct_v = down_cast<const Json_uint *>(num_distinct_dom)->value();
   } else if (!context->binary() &&
              num_distinct_dom->json_type() == enum_json_type::J_INT) {
-    const Json_int *num_distinct =
-        down_cast<const Json_int *>(num_distinct_dom);
+    const auto *num_distinct = down_cast<const Json_int *>(num_distinct_dom);
     if (num_distinct->value() < 1) {
       context->report_node(num_distinct_dom,
                            Message::JSON_INVALID_NUM_DISTINCT);
@@ -654,12 +653,10 @@ bool Equi_height<T>::add_bucket_from_json(const Json_array *json_bucket,
       }
     }
   }
-  equi_height::Bucket<T> bucket(lower_value, upper_value,
-                                cumulative_frequency->value(), num_distinct_v);
+  equi_height::Bucket<T> const bucket(
+      lower_value, upper_value, cumulative_frequency->value(), num_distinct_v);
 
-  if (m_buckets.push_back(bucket)) return true;
-
-  return false;
+  return static_cast<bool>(m_buckets.push_back(bucket));
 }
 
 template <class T>
@@ -770,9 +767,8 @@ double Equi_height<T>::get_less_than_selectivity(const T &value) const {
     assert(distance <= 1.0);
     return previous_bucket_cumulative_frequency +
            (found_bucket_frequency * distance);
-  } else {
-    return previous_bucket_cumulative_frequency;
   }
+  return previous_bucket_cumulative_frequency;
 }
 
 template <class T>
@@ -797,7 +793,7 @@ double Equi_height<T>::get_greater_than_selectivity(const T &value) const {
     found_bucket_frequency = found->get_cumulative_frequency() -
                              previous->get_cumulative_frequency();
   }
-  double next_buckets_frequency =
+  double const next_buckets_frequency =
       get_non_null_values_fraction() - found->get_cumulative_frequency();
 
   /*
@@ -815,12 +811,11 @@ double Equi_height<T>::get_greater_than_selectivity(const T &value) const {
   */
   if (Histogram_comparator()(value, found->get_lower_inclusive())) {
     return found_bucket_frequency + next_buckets_frequency;
-  } else {
-    const double distance = found->get_distance_from_upper(value);
-    assert(distance >= 0.0);
-    assert(distance <= 1.0);
-    return distance * found_bucket_frequency + next_buckets_frequency;
   }
+  const double distance = found->get_distance_from_upper(value);
+  assert(distance >= 0.0);
+  assert(distance <= 1.0);
+  return distance * found_bucket_frequency + next_buckets_frequency;
 }
 
 // Explicit template instantiations.
@@ -828,7 +823,8 @@ template class Equi_height<double>;
 template class Equi_height<String>;
 template class Equi_height<ulonglong>;
 template class Equi_height<longlong>;
-template class Equi_height<MYSQL_TIME>;
+template class Equi_height<Time_val>;
+template class Equi_height<Datetime_val>;
 template class Equi_height<my_decimal>;
 
 }  // namespace histograms

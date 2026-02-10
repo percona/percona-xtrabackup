@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@
 
 #include "SysLogHandler.hpp"
 
-#include <time.h>
+#include <ctime>
 
 #include <syslog.h>
 
@@ -66,7 +66,8 @@ bool SysLogHandler::close() {
 bool SysLogHandler::is_open() { return m_open; }
 
 void SysLogHandler::writeHeader(const char *pCategory,
-                                Logger::LoggerLevel level, time_t /*now*/) {
+                                Logger::LoggerLevel level,
+                                const std::timespec * /*now*/) {
   // Save category to be used by writeMessage...
   m_pCategory = pCategory;
   // Map LogLevel to syslog severity

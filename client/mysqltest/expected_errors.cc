@@ -1,4 +1,4 @@
-// Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 #include "client/mysqltest/expected_errors.h"
 
 std::string Expected_errors::error_list() {
-  std::string error_list("");
+  std::string error_list;
 
   for (std::size_t i = 0; i < m_errors.size(); i++) {
     if (i > 0) error_list.append(",");
@@ -39,8 +39,8 @@ std::string Expected_errors::error_list() {
 
 std::vector<unsigned int> Expected_errors::errors() {
   std::vector<unsigned int> errors;
-  for (std::size_t i = 0; i < m_errors.size(); i++) {
-    errors.push_back(m_errors.at(i)->error_code());
+  for (auto &m_error : m_errors) {
+    errors.push_back(m_error->error_code());
   }
   return errors;
 }

@@ -40,4 +40,6 @@ SET GLOBAL group_replication_message_cache_size= default;
 REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'group_rpl_user'@localhost;
 DROP USER 'group_rpl_user'@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/group_replication_end.inc

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -95,7 +95,7 @@ ulint trx_purge(ulint n_purge_threads, /*!< in: number of purge tasks to
 /** Stop purge and wait for it to stop, move to PURGE_STATE_STOP. */
 void trx_purge_stop(void);
 /** Resume purge, move to PURGE_STATE_RUN. */
-void trx_purge_run(void);
+void trx_purge_run();
 
 /** Purge states */
 enum purge_state_t {
@@ -206,9 +206,6 @@ inline space_id_t num2id(space_id_t space_num) {
 
 /* clang-format off */
 /** Convert an undo space ID into an undo space number.
-NOTE: This may be an undo space_id from a pre-exisiting 5.7
-database which used space_ids from 1 to 127.  If so, the
-space_id is the space_num.
 The space_ids are assigned to number ranges in reverse from high to low.
 In addition, the first space IDs for each undo number occur sequentially
 and descending before the second space_id.
@@ -220,14 +217,15 @@ and s_undo_space_id_range = 400,000:
   0xFFFFFF70      1       0xFFFFFF6F       2     ...  0xFFFFFEF2    127
   0xFFFFFEF1      1       0xFFFFFEF0       2     ...  0xFFFFFE73    127
 ...
+*/
 
-This is done to maintain backward compatibility to when there was only one
-space_id per undo space number.
+/** Get the corresponding UNDO space number for a given UNDO space id
 @param[in]      space_id        undo tablespace ID
 @return space number of the undo tablespace */
 /* clang-format on */
 inline space_id_t id2num(space_id_t space_id) {
   if (!is_reserved(space_id)) {
+    ut_ad_eq(space_id, 0);
     return (space_id);
   }
 
@@ -316,8 +314,6 @@ struct Tablespace {
   @param[in]  id    tablespace id */
   explicit Tablespace(space_id_t id)
       : m_id(id),
-        m_num(undo::id2num(id)),
-        m_implicit(true),
         m_new(false),
         m_space_name(),
         m_file_name(),
@@ -329,8 +325,6 @@ struct Tablespace {
   @param[in]  other    undo tablespace to copy */
   Tablespace(Tablespace &other)
       : m_id(other.id()),
-        m_num(undo::id2num(other.id())),
-        m_implicit(other.is_implicit()),
         m_new(other.is_new()),
         m_space_name(),
         m_file_name(),
@@ -461,14 +455,13 @@ struct Tablespace {
   @return tablespace ID */
   space_id_t id() { return (m_id); }
 
-  /** Get the undo tablespace number.  This is the same as m_id
-  if m_id is 0 or this is a v5.6-5.7 undo tablespace. v8+ undo
-  tablespaces use a space_id from the reserved range.
+  /** Get the undo tablespace number.
+  This is the same as m_id if m_id is 0.
   @return undo tablespace number */
   space_id_t num() {
-    ut_ad(m_num < FSP_MAX_ROLLBACK_SEGMENTS);
-
-    return (m_num);
+    const auto n = undo::id2num(m_id);
+    ut_ad(n <= FSP_MAX_UNDO_TABLESPACES);
+    return n;
   }
 
   /** Get a reference to the List of rollback segments within
@@ -479,11 +472,7 @@ struct Tablespace {
   /** Report whether this undo tablespace was explicitly created
   by an SQL statement.
   @return true if the tablespace was created explicitly. */
-  bool is_explicit() { return (!m_implicit); }
-
-  /** Report whether this undo tablespace was implicitly created.
-  @return true if the tablespace was created implicitly. */
-  bool is_implicit() { return (m_implicit); }
+  bool is_explicit() { return num() > FSP_IMPLICIT_UNDO_TABLESPACES; }
 
   /** Report whether this undo tablespace was created at startup.
   @retval true if created at startup.
@@ -627,14 +616,6 @@ struct Tablespace {
  private:
   /** Undo Tablespace ID. */
   space_id_t m_id;
-
-  /** Undo Tablespace number, from 1 to 127. This is the
-  7-bit number that is used in a rollback pointer.
-  Use id2num() to get this number from a space_id. */
-  space_id_t m_num;
-
-  /** True if this is an implicit undo tablespace */
-  bool m_implicit;
 
   /** True if this undo tablespace was implicitly created when
   this instance started up. False if it pre-existed. */
@@ -912,8 +893,8 @@ class Truncate {
   @param[in]  undo_space  undo tablespace to truncate. */
   void mark(Tablespace *undo_space);
 
-  /** Get the ID of the tablespace marked for truncate.
-  @return tablespace ID marked for truncate. */
+  /** Get the number of the tablespace marked for truncate.
+  @return tablespace number marked for truncate. */
   space_id_t get_marked_space_num() const {
     return (id2num(m_space_id_marked));
   }
@@ -1016,6 +997,13 @@ struct trx_purge_t {
 
   /** The purge will not remove undo logs which are >= this view (purge view) */
   ReadView view;
+
+  /** This is computed as a lower-bound of minimum of:
+  - the smallest trx->no still needed by the oldest open read view
+  - the smallest trx->no still needed by GTID persistor
+  The purge can remove only the Undo Logs which have TRX_UNDO_TRX_NO strictly
+  smaller than this value. */
+  trx_id_t m_lowest_needed_trx_no;
 
   /** Count of total tasks submitted to the task queue */
   ulint n_submitted;

@@ -55,28 +55,8 @@ source include/assert.inc;
 --source include/rpl/sync_to_replica.inc
 --connection slave
 
-# PB2 runs the tests with slave-parallel-worker=4 in a combination.
-# Reset it to 0 beacause the following test for empty set is valid only
-# in non-MTS slave.
-
 source include/rpl/stop_replica.inc;
 SET @save_replica_parallel_workers=@@global.replica_parallel_workers;
-SET @@global.replica_parallel_workers=0;
-# to avoid warnings
-set @save_replica_transaction_retries= @@global.replica_transaction_retries;
-source include/rpl/start_replica.inc;
-
-# Post Bug#20001173 fix in case of Single Threaded Slave(STS) mode SQL
-# thread's staus will be reported as part of
-# performance_schema.replication_applier_status_by_worker table.
-let $assert_text= In non-MTS mode(SQL thread), the table should return one row as Single SQL applier thread will be part of replication_applier_status_by_worker table.;
-let $assert_cond= [select count(*) from performance_schema.replication_applier_status_by_worker] = 1;
-source include/assert.inc;
-
-let $assert_text= In non-MTS mode(SQL thread), the table should return empty result set;
-let $assert_cond= [select count(*) from performance_schema.replication_applier_status_by_coordinator] = 0;
-source include/assert.inc;
-source include/rpl/stop_replica.inc;
 
 SET @@global.replica_parallel_workers=1;
 # to avoid warnings

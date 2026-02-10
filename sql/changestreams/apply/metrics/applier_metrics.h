@@ -1,28 +1,28 @@
-/*
-   Copyright (c) 2024, Oracle and/or its affiliates.
+// Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License, version 2.0,
+// as published by the Free Software Foundation.
+//
+// This program is designed to work with certain software (including
+// but not limited to OpenSSL) that is licensed under separate terms,
+// as designated in a particular file or component or in included license
+// documentation.  The authors of MySQL hereby grant you an additional
+// permission to link the program and your derivative works with the
+// separately licensed software that they have either included with
+// the program or referenced in the documentation.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License, version 2.0, for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License, version 2.0,
-   as published by the Free Software Foundation.
-
-   This program is also distributed with certain software (including
-   but not limited to OpenSSL) that is licensed under separate terms,
-   as designated in a particular file or component or in included license
-   documentation.  The authors of MySQL hereby grant you an additional
-   permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License, version 2.0, for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
-
-#ifndef CS_MTA_METRICS_AGGREGATOR_H
-#define CS_MTA_METRICS_AGGREGATOR_H
+#ifndef CHANGESTREAMS_APPLY_METRICS_APPLIER_METRICS_H
+#define CHANGESTREAMS_APPLY_METRICS_APPLIER_METRICS_H
 
 #include <atomic>
 #include "sql/changestreams/apply/metrics/applier_metrics_interface.h"
@@ -34,16 +34,13 @@ namespace cs::apply::instruments {
 /// scheduling activities in the replica MTA
 class Applier_metrics : public Applier_metrics_interface {
  public:
-  /// @brief Starts the timer when the applier metrics collection began.
-  /// Sets the state to running.
-  /// This can be queried later to know for how long time the stats have been
-  /// collected, i.e., the duration.
-  void start_applier_timer() override;
+  /// @brief Remember "now" as the last applier start time.
+  void store_last_applier_start() override;
 
-  /// @brief Calculates the total time the applier ran.
-  /// Sets the state to not running
-  /// Sums to time since start to the total running time
-  void stop_applier_timer() override;
+  /// @brief Return time metric for total applier execution time.
+  /// @return a Time_based_metric_interface object that contains metric
+  /// information on a wait
+  Time_based_metric_interface &get_sum_applier_execution_time() override;
 
   /// @brief Gets the time point when the metric timer started.
   /// @return The time point since the collection of statistics started.
@@ -235,4 +232,4 @@ class Applier_metrics : public Applier_metrics_interface {
 };
 }  // namespace cs::apply::instruments
 
-#endif /* CS_MTA_METRICS_AGGREGATOR_H */
+#endif /* CHANGESTREAMS_APPLY_METRICS_APPLIER_METRICS_H */

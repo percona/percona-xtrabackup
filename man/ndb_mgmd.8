@@ -2,12 +2,12 @@
 .\"     Title: ndb_mgmd
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 09/13/2024
+.\"      Date: 12/12/2025
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 9.0
+.\"    Source: MySQL 9.6
 .\"  Language: English
 .\"
-.TH "NDB_MGMD" "8" "09/13/2024" "MySQL 9\&.0" "MySQL Database System"
+.TH "NDB_MGMD" "8" "12/12/2025" "MySQL 9\&.6" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -984,6 +984,89 @@ is specified; a warning is issued if both options are used concurrently\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+\fB\-\-ndb\-log\-timestamps\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--ndb-log-timestamps
+T}
+T{
+Type
+T}:T{
+Enumeration
+T}
+T{
+Default Value
+T}:T{
+UTC
+T}
+T{
+Valid Values
+T}:T{
+.PP
+LEGACY
+.PP
+UTC
+.PP
+SYSTEM
+T}
+.TE
+.sp 1
+Sets the format used for timestamps in node logs\&. This is one of the following values:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LEGACY: The system timezone, with resolution in seconds\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+UTC:
+\m[blue]\fBRFC 3339\fR\m[]\&\s-2\u[1]\d\s+2
+format, with microsecond resolution\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+SYSTEM: RFC 3339 format\&.
+.RE
+.sp
+UTC
+is the default in MySQL 9\&.6\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 \fB\-\-ndb\-mgm\-tls\fR
 .TS
 allbox tab(:);
@@ -1695,7 +1778,7 @@ is the process ID file used when running the management server as a daemon\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2024, Oracle and/or its affiliates.
+Copyright \(co 1997, 2025, Oracle and/or its affiliates.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
@@ -1703,6 +1786,12 @@ This documentation is distributed in the hope that it will be useful, but WITHOU
 .PP
 You should have received a copy of the GNU General Public License along with the program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA or see http://www.gnu.org/licenses/.
 .sp
+.SH "NOTES"
+.IP " 1." 4
+RFC 3339
+.RS 4
+\%https://datatracker.ietf.org/doc/html/rfc3339
+.RE
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,
 which may already be installed locally and which is also available

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,12 +37,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#include <pthread.h>
 #endif /* HAVE_PTHREAD_SETNAME_NP_LINUX */
-
-#ifdef HAVE_PTHREAD_SETNAME_NP_MACOS
-#include <pthread.h>
-#endif /* HAVE_PTHREAD_SETNAME_NP_MACOS */
 
 #ifdef _WIN32
 #include <windows.h>
@@ -52,7 +47,6 @@
 #include <stringapiset.h>
 #endif /* _WIN32 */
 #include "my_thread.h"
-#include "mysql/components/services/bits/my_thread_bits.h"
 
 #ifdef _WIN32
 #include <errno.h>
@@ -115,6 +109,13 @@ error_return:
   thread->thread = 0;
   thread->handle = nullptr;
   return 1;
+#endif
+}
+
+void my_thread_handle_self(my_thread_handle *thread) {
+  thread->thread = my_thread_self();
+#ifdef _WIN32
+  thread->handle = GetCurrentThread();
 #endif
 }
 

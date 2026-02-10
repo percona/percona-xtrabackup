@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -219,8 +219,8 @@ using TableShareInfoCollection =
    @param share The share to search for.
    @returns TableShareInfo for 'share' or nullptr if 'share' not found.
 */
-TableShareInfo *FindTableShareInfo(TableShareInfoCollection *collection,
-                                   const TABLE_SHARE *share) {
+static TableShareInfo *FindTableShareInfo(TableShareInfoCollection *collection,
+                                          const TABLE_SHARE *share) {
   const auto iter{std::find_if(
       collection->begin(), collection->end(),
       [&](const TableShareInfo &entry) { return entry.share == share; })};
@@ -283,38 +283,36 @@ static void FindUniqueAndHashKeys(
       Derived_refs_iterator it(table_ref);
 
       while (TABLE *derived_tab = it.get_next()) {
-        if (derived_tab->pos_in_table_list->query_block == &query_block) {
-          assert(derived_tab->pos_in_table_list->uses_materialization());
-          if (!derived_tab->is_created()) {
-            KeyMap &used_keys{[&]() -> KeyMap & {
-              TableShareInfo *const share_info{
-                  FindTableShareInfo(share_info_collection, derived_tab->s)};
+        // uses_materialization() may be false for recursive CTEs.
+        if (derived_tab->pos_in_table_list->uses_materialization() &&
+            !derived_tab->is_created()) {
+          KeyMap &used_keys{[&]() -> KeyMap & {
+            TableShareInfo *const share_info{
+                FindTableShareInfo(share_info_collection, derived_tab->s)};
 
-              if (share_info == nullptr) {
-                share_info_collection->emplace_back(TableShareInfo{
-                    derived_tab->s,
-                    KeyMap{thd->mem_root, derived_tab->s->keys}});
+            if (share_info == nullptr) {
+              share_info_collection->emplace_back(TableShareInfo{
+                  derived_tab->s, KeyMap{thd->mem_root, derived_tab->s->keys}});
 
-                return share_info_collection->back().used_keys;
-              } else {
-                return share_info->used_keys;
-              }
-            }()};
-
-            // Mark all unique indexes as in use, since they have an effect
-            // (deduplication) whether any expression refers to them or not.
-            // In particular, they are used if we want to materialize a UNION
-            // DISTINCT directly into the derived table.
-            for (uint key_idx = 0; key_idx < derived_tab->s->keys; ++key_idx) {
-              if (Overlaps(derived_tab->key_info[key_idx].flags, HA_NOSAME)) {
-                used_keys.SetBit(key_idx);
-              }
+              return share_info_collection->back().used_keys;
+            } else {
+              return share_info->used_keys;
             }
-            // Same for the hash key used for manual deduplication, if any.
-            // (It always has index 0 if it exists.)
-            if (derived_tab->hash_field != nullptr) {
-              used_keys.SetBit(0);
+          }()};
+
+          // Mark all unique indexes as in use, since they have an effect
+          // (deduplication) whether any expression refers to them or not.
+          // In particular, they are used if we want to materialize a UNION
+          // DISTINCT directly into the derived table.
+          for (uint key_idx = 0; key_idx < derived_tab->s->keys; ++key_idx) {
+            if (Overlaps(derived_tab->key_info[key_idx].flags, HA_NOSAME)) {
+              used_keys.SetBit(key_idx);
             }
+          }
+          // Same for the hash key used for manual deduplication, if any.
+          // (It always has index 0 if it exists.)
+          if (derived_tab->hash_field != nullptr) {
+            used_keys.SetBit(0);
           }
         }
       }
@@ -349,14 +347,11 @@ static void RemoveUnusedKeys(const Query_block &query_block,
         bool modify_share{true};
 
         while (TABLE *derived_tab = it.get_next()) {
-          if (derived_tab->pos_in_table_list->query_block == &query_block) {
-            assert(derived_tab->pos_in_table_list->uses_materialization());
-
-            if (!derived_tab->is_created()) {
-              assert(share->owner_of_possible_tmp_keys == &query_block);
-              derived_tab->move_tmp_key(old_idx, modify_share);
-              modify_share = false;
-            }
+          if (derived_tab->pos_in_table_list->uses_materialization() &&
+              !derived_tab->is_created()) {
+            assert(share->owner_of_possible_tmp_keys == &query_block);
+            derived_tab->move_tmp_key(old_idx, modify_share);
+            modify_share = false;
           }
         }
       } else {
@@ -434,6 +429,7 @@ void FinalizeDerivedKeys(THD *thd, const Query_block &query_block,
   for (const Table_ref *table_ref{query_block.leaf_tables};
        table_ref != nullptr; table_ref = table_ref->next_leaf) {
     if (table_ref->uses_materialization() && table_ref->is_view_or_derived() &&
+        table_ref->table->s->keys > 0 &&
         std::find(processed_shares.cbegin(), processed_shares.cend(),
                   table_ref->table->s) == processed_shares.cend()) {
       if (TraceStarted(thd)) {

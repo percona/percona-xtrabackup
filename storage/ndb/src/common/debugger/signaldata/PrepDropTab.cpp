@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ bool printPREP_DROP_TAB_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const PrepDropTabReq *const sig = (const PrepDropTabReq *)theData;
+  const auto *const sig = (const PrepDropTabReq *)theData;
 
   fprintf(output, " senderRef: %x senderData: %d TableId: %d\n", sig->senderRef,
           sig->senderData, sig->tableId);
@@ -46,7 +46,7 @@ bool printPREP_DROP_TAB_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const PrepDropTabConf *const sig = (const PrepDropTabConf *)theData;
+  const auto *const sig = (const PrepDropTabConf *)theData;
 
   fprintf(output, " senderRef: %x senderData: %d TableId: %d\n", sig->senderRef,
           sig->senderData, sig->tableId);
@@ -61,7 +61,7 @@ bool printPREP_DROP_TAB_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const PrepDropTabRef *const sig = (const PrepDropTabRef *)theData;
+  const auto *const sig = (const PrepDropTabRef *)theData;
 
   fprintf(output, " senderRef: %x senderData: %d TableId: %d errorCode: %d\n",
           sig->senderRef, sig->senderData, sig->tableId, sig->errorCode);

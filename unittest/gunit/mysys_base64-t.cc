@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,7 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
-#include <string.h>
+#include <cstring>
 
 #include "base64.h"
 #include "my_sys.h"
@@ -46,7 +46,7 @@ TEST(Mysys, Base64) {
     char *dst;
 
     for (j = 0; j < src_len; j++) {
-      char c = rand();
+      char const c = rand();
       *s++ = c;
     }
 
@@ -74,14 +74,14 @@ TEST(Mysys, Base64) {
       for (k = 0; k < src_len; k += 8) {
         sprintf(buf, "%.4x   ", (uint)k);
         for (l = 0; l < 8 && k + l < src_len; l++) {
-          unsigned char c = src[k + l];
+          unsigned char const c = src[k + l];
           sprintf(buf, "%.2x ", (unsigned)c);
         }
 
         sprintf(buf, "  ");
 
         for (l = 0; l < 8 && k + l < dst_len; l++) {
-          unsigned char c = dst[k + l];
+          unsigned char const c = dst[k + l];
           sprintf(buf, "%.2x ", (unsigned)c);
         }
         ADD_FAILURE() << buf;

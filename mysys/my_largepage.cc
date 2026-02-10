@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,8 +31,8 @@
 */
 
 #include <fcntl.h>
-#include <stdio.h>
 #include <sys/types.h>
+#include <cstdio>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -42,11 +42,11 @@
 #include "mysys/mysys_priv.h"
 #include "mysys_err.h"
 
-static uint my_get_large_page_size_int(void);
+static uint my_get_large_page_size_int();
 
 /* Gets the size of large pages from the OS */
 
-uint my_get_large_page_size(void) {
+uint my_get_large_page_size() {
   uint size;
   DBUG_TRACE;
 
@@ -60,7 +60,7 @@ uint my_get_large_page_size(void) {
 
 /* Linux-specific function to determine the size of large pages */
 
-uint my_get_large_page_size_int(void) {
+uint my_get_large_page_size_int() {
   MYSQL_FILE *f;
   uint size = 0;
   char buf[256];

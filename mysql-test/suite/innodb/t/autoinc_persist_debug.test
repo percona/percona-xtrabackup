@@ -92,7 +92,9 @@ SELECT b FROM t4 FORCE INDEX (b) WHERE b > 3;
 
 --echo # This should insert 18, 19
 INSERT INTO t4 VALUES(0, 6), (0, 7);
-SELECT MAX(a) AS `Expect 19` FROM t4;
+# Use a NO_INDEX hint to avoid using the corrupted index when
+# verifying the insertion.
+SELECT /*+ NO_INDEX(t4) */ MAX(a) AS `Expect 19` FROM t4;
 
 INSERT INTO t1 VALUES(0), (0);
 INSERT INTO t2 VALUES(0), (0);

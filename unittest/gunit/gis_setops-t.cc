@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -51,13 +51,13 @@ TYPED_TEST_SUITE(SetopsTest, gis_typeset::Test_both);
 TYPED_TEST(SetopsTest, CodeCoverage) {
   typename TypeParam::Geometrycollection gc;
 
-  typename TypeParam::Point pt{0.0, 0.0};
-  typename TypeParam::Linestring ls = simple_ls<TypeParam>();
-  typename TypeParam::Polygon py = base_py<TypeParam>();
-  typename TypeParam::Multipoint mpt = simple_mpt<TypeParam>();
-  typename TypeParam::Multilinestring mls = simple_mls<TypeParam>();
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
-  typename TypeParam::Geometrycollection gc_empty;
+  typename TypeParam::Point const pt{0.0, 0.0};
+  typename TypeParam::Linestring const ls = simple_ls<TypeParam>();
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
+  typename TypeParam::Multipoint const mpt = simple_mpt<TypeParam>();
+  typename TypeParam::Multilinestring const mls = simple_mls<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Geometrycollection const gc_empty;
   typename TypeParam::Geometrycollection gc_inner;
   gc_inner.push_back(pt);
 

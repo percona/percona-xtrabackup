@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 #ifndef NDBD_HPP
 #define NDBD_HPP
 
-#include <stddef.h>  // size_t
+#include <cstddef>  // size_t
 
 #define JAM_FILE_ID 218
 

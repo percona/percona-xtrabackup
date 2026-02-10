@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -59,7 +59,7 @@ void Recovery_message::encode_payload(
     std::vector<unsigned char> *buffer) const {
   DBUG_TRACE;
 
-  uint16 recovery_message_type_aux = (uint16)recovery_message_type;
+  auto recovery_message_type_aux = (uint16)recovery_message_type;
   encode_payload_item_int2(buffer, PIT_RECOVERY_MESSAGE_TYPE,
                            recovery_message_type_aux);
 

@@ -4,6 +4,8 @@
 
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 # Save the initial number of concurrent sessions
 --source include/count_sessions.inc
@@ -4687,3 +4689,6 @@ drop tables t1, t2, t3, t4;
 
 # Wait till all disconnects are completed
 --source include/wait_until_count_sessions.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc
+

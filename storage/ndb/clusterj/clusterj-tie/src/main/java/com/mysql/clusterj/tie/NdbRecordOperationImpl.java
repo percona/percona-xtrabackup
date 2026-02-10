@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -139,12 +139,10 @@ public class NdbRecordOperationImpl implements Operation {
      * NdbRecord and one buffer, so all operations result in using
      * the same buffer.
      * 
-     * @param clusterConnection the cluster connection
      * @param db the Db
      * @param storeTable the store table
      */
-    public NdbRecordOperationImpl(ClusterConnectionImpl clusterConnection, Db db, Table storeTable) {
-        byteBufferPool = clusterConnection.getByteBufferPool();
+    public NdbRecordOperationImpl(Db db, Table storeTable) {
         this.db = (DbImpl)db;
         this.storeTable = storeTable;
         Column autoIncrementColumn = storeTable.getAutoIncrementColumn();
@@ -155,7 +153,7 @@ public class NdbRecordOperationImpl implements Operation {
         if (logger.isDetailEnabled())
             logger.detail("autoIncrement for " + storeTable.getName() + " is: " + autoIncrement);
         this.tableName = storeTable.getName();
-        this.ndbRecordValues = clusterConnection.getCachedNdbRecordImpl(storeTable);
+        this.ndbRecordValues = this.db.getCachedNdbRecordImpl(storeTable);
         this.ndbRecordKeys = ndbRecordValues;
         this.valueBufferSize = ndbRecordValues.getBufferSize();
         this.keyBufferSize = ndbRecordKeys.getBufferSize();
@@ -165,6 +163,7 @@ public class NdbRecordOperationImpl implements Operation {
         this.numberOfColumns = storeColumns.length;
         this.blobs = new NdbRecordBlobImpl[this.numberOfColumns];
         this.bufferManager = ((DbImpl)db).getBufferManager();
+        this.byteBufferPool = bufferManager.getPool();
         resetMask();
     }
 
@@ -173,10 +172,10 @@ public class NdbRecordOperationImpl implements Operation {
      * @param clusterTransaction the cluster transaction
      */
     public NdbRecordOperationImpl(ClusterTransactionImpl clusterTransaction, Table storeTable) {
-        this.byteBufferPool = clusterTransaction.getClusterConnection().getByteBufferPool();
         this.clusterTransaction = clusterTransaction;
         this.db = clusterTransaction.db;
         this.bufferManager = clusterTransaction.getBufferManager();
+        this.byteBufferPool = bufferManager.getPool();
         this.storeTable = storeTable;
         Column autoIncrementColumn = storeTable.getAutoIncrementColumn();
         if (autoIncrementColumn != null) {
@@ -567,8 +566,10 @@ public class NdbRecordOperationImpl implements Operation {
     }
 
     public void setNull(Column storeColumn) {
-        int columnId = ndbRecordValues.setNull(valueBuffer, storeColumn);
-        columnSet(columnId);
+        if (ndbRecordValues.isNullable(valueBuffer, storeColumn)) {
+            int columnId = ndbRecordValues.setNull(valueBuffer, storeColumn);
+            columnSet(columnId);
+        }
     }
 
     public void setNull(int columnId) {

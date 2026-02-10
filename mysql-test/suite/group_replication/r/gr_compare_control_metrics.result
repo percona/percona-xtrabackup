@@ -5,6 +5,7 @@ Note	####	Storing MySQL user name or password information in the connection meta
 [connection server1]
 #Bootstrap and start GR on M1
 [connection server1]
+include/assert.inc ['Gr_empty_consensus_proposals_count value must be 0']
 include/start_and_bootstrap_group_replication.inc
 #Start GR on M2
 [connection server2]
@@ -22,7 +23,7 @@ include/start_group_replication.inc
 [connection server3]
 include/start_group_replication.inc
 [connection server1]
-include/assert.inc ['Gr_empty_consensus_proposals_count Value should be 0']
+include/assert.inc ['Gr_empty_consensus_proposals_count value must be greater than 0']
 [connection server2]
 [connection server1]
 SET @prev_count_Gr_data_messages_sent_count=(SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME="Gr_data_messages_sent_count");
@@ -96,7 +97,7 @@ include/assert.inc ['Value should be 0']
 include/assert.inc ['Gr_data_messages_sent_count value did not change']
 include/assert.inc ['Gr_data_messages_sent_bytes_sum value did not change']
 include/assert.inc ['Gr_data_messages_sent_roundtrip_time_sum value did not change']
-include/assert.inc ['Gr_empty_consensus_proposals_count Value should be 0']
+include/assert.inc ['Gr_empty_consensus_proposals_count value must be greater than 0']
 #Gr_data_messages_* Metrics value should not increase on M2
 [connection server2]
 include/assert.inc ['Value should be 0']

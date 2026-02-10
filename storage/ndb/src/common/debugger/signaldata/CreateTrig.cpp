@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@ bool printCREATE_TRIG_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const CreateTrigReq *sig = (const CreateTrigReq *)theData;
+  const auto *sig = (const CreateTrigReq *)theData;
   const Uint32 triggerType = TriggerInfo::getTriggerType(sig->triggerInfo);
   const Uint32 triggerActionTime =
       TriggerInfo::getTriggerActionTime(sig->triggerInfo);
@@ -97,7 +97,7 @@ bool printCREATE_TRIG_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const CreateTrigConf *sig = (const CreateTrigConf *)theData;
+  const auto *sig = (const CreateTrigConf *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " clientData: %x", sig->clientData);
   fprintf(output, " transId: 0x%x", sig->transId);
@@ -117,7 +117,7 @@ bool printCREATE_TRIG_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const CreateTrigRef *sig = (const CreateTrigRef *)theData;
+  const auto *sig = (const CreateTrigRef *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " clientData: %u", sig->clientData);
   fprintf(output, " transId: 0x%x", sig->transId);

@@ -1,4 +1,4 @@
-// Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License, version 2.0,
@@ -221,7 +221,7 @@ std::unique_ptr<Geometry> Buffer::eval(
   }
 
   // Using gis::Union to merge the returned MultiPolygons into one.
-  Union un(0.0, 0.0);
+  Union const un(0.0, 0.0);
   std::unique_ptr<Geometry> tmp = un(tmp_pt.get(), tmp_ls.get());
   tmp = un(tmp.get(), tmp_py.get());
   std::unique_ptr<Geometry> result(tmp.release());
@@ -304,12 +304,11 @@ std::unique_ptr<Geometry> Buffer::typed_buffer(T &g) const {
     if (strats.distance < 0 && (g.type() == Geometry_type::kPolygon ||
                                 g.type() == Geometry_type::kMultipolygon)) {
       return std::make_unique<Cartesian_geometrycollection>();
-    } else {
-      // bg::buffer is only supposed to return an empty answer for Polygon,
-      // Multipolygon, or GC - if the distance is negative. This suggests an
-      // unknown error.
-      throw invalid_buffer_result_exception();
     }
+    // bg::buffer is only supposed to return an empty answer for Polygon,
+    // Multipolygon, or GC - if the distance is negative. This suggests an
+    // unknown error.
+    throw invalid_buffer_result_exception();
   }
 
   if (res->size() == 1) return std::make_unique<Cartesian_polygon>((*res)[0]);
@@ -324,10 +323,10 @@ bool buffer(const dd::Spatial_reference_system *srs, const Geometry &g,
             std::unique_ptr<Geometry> *result) noexcept {
   try {
     if (srs && srs->is_geographic()) {
-      Buffer buffer_func(srs, strategies);
+      Buffer const buffer_func(srs, strategies);
       *result = buffer_func(g);
     } else {
-      Buffer buffer_func(strategies);
+      Buffer const buffer_func(strategies);
       *result = buffer_func(g);
     }
   } catch (...) {

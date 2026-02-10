@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -455,6 +455,15 @@ class Gcs_xcom_interface : public Gcs_interface {
    Interface for XCom statistic storage
    */
   Gcs_xcom_statistics_storage_impl *m_xcom_stats_storage;
+
+ protected:
+  /**
+    The clock timestamp provider used. This can point to the default
+    timestamp provider or to one injected by the application. If no
+    external provider is injected, this is initialized to the default
+    provider.
+   */
+  std::shared_ptr<Clock_timestamp_interface> m_clock_timestamp_provider;
 
  private:
   /*

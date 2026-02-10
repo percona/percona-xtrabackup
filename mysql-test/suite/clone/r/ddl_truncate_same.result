@@ -132,7 +132,7 @@ SET DEBUG_SYNC = 'RESET';
 select STATE, ERROR_NO, length(BINLOG_FILE) > 0, length(GTID_EXECUTED) > 0,
 (BINLOG_POSITION > 0) from performance_schema.clone_status;
 STATE	ERROR_NO	length(BINLOG_FILE) > 0	length(GTID_EXECUTED) > 0	(BINLOG_POSITION > 0)
-Completed	0	1	0	1
+Completed	0	1	1	1
 CALL execute_dml(3, 0, 1, 1, 1, 0);
 CALL execute_dml(0, 0, 10, 10, 10, 0);
 SHOW CREATE TABLE t1;

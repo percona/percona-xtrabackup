@@ -9,6 +9,8 @@ insert into t1 values(1),(2);
 --echo # are not shown) 2) shown as <derivedN> where N is ID of 1st
 --echo # reference. So users understand we have single materialization.
 
+SET explain_json_format_version = 1;
+
 let $query=
 with qn(a) as (select 1 from t1 limit 2)
 select * from qn where qn.a=(select * from qn qn1 limit 1) ;
@@ -40,4 +42,5 @@ select * from qn;
 eval explain format=json $query;
 eval explain format=traditional $query;
 
+SET explain_json_format_version = DEFAULT;
 drop table t1;

@@ -1,4 +1,4 @@
-// Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -61,7 +61,7 @@ auto transform_helper(
     case Coordinate_system::kCartesian: {
       // Workaround for limitation in Developer Studio 12.5 on Solaris that
       // doesn't allow returning std::unique_ptr<subtype of Geometry>.
-      CartesianGeometry *pt_result = new CartesianGeometry();
+      auto *pt_result = new CartesianGeometry();
       std::unique_ptr<Geometry> result(pt_result);
       m_transformation.forward(g, *pt_result);
       return result;
@@ -69,7 +69,7 @@ auto transform_helper(
     case Coordinate_system::kGeographic: {
       // Workaround for limitation in Developer Studio 12.5 on Solaris that
       // doesn't allow returning std::unique_ptr<subtype of Geometry>.
-      GeographicGeometry *pt_result = new GeographicGeometry();
+      auto *pt_result = new GeographicGeometry();
       std::unique_ptr<Geometry> result(pt_result);
       m_transformation.forward(g, *pt_result);
       return result;
@@ -89,11 +89,10 @@ auto transform_gc_helper(const InputGeometryCollection &g,
     case Coordinate_system::kCartesian: {
       // Workaround for limitation in Developer Studio 12.5 on Solaris that
       // doesn't allow returning std::unique_ptr<subtype of Geometry>.
-      Cartesian_geometrycollection *gc_result =
-          new Cartesian_geometrycollection();
+      auto *gc_result = new Cartesian_geometrycollection();
       std::unique_ptr<Geometry> result(gc_result);
       for (std::size_t i = 0; i < g.size(); i++) {
-        std::unique_ptr<Geometry> geom_res(transform(g[i]));
+        std::unique_ptr<Geometry> const geom_res(transform(g[i]));
         gc_result->push_back(*geom_res);
       }
       return result;
@@ -101,11 +100,10 @@ auto transform_gc_helper(const InputGeometryCollection &g,
     case Coordinate_system::kGeographic: {
       // Workaround for limitation in Developer Studio 12.5 on Solaris that
       // doesn't allow returning std::unique_ptr<subtype of Geometry>.
-      Geographic_geometrycollection *gc_result =
-          new Geographic_geometrycollection();
+      auto *gc_result = new Geographic_geometrycollection();
       std::unique_ptr<Geometry> result(gc_result);
       for (std::size_t i = 0; i < g.size(); i++) {
-        std::unique_ptr<Geometry> geom_res(transform(g[i]));
+        std::unique_ptr<Geometry> const geom_res(transform(g[i]));
         gc_result->push_back(*geom_res);
       }
       return result;
@@ -229,22 +227,22 @@ bool transform(const dd::Spatial_reference_system *source_srs,
       return true;
     }
 
-    dd::String_type source_proj = source_srs->proj4_parameters();
-    dd::String_type target_proj = target_srs->proj4_parameters();
+    dd::String_type const source_proj = source_srs->proj4_parameters();
+    dd::String_type const target_proj = target_srs->proj4_parameters();
 
-    if (source_proj.size() == 0) {
+    if (source_proj.empty()) {
       assert(source_srs->is_projected());
       my_error(ER_TRANSFORM_SOURCE_SRS_NOT_SUPPORTED, MYF(0), source_srs->id());
       return true;
     }
-    if (target_proj.size() == 0) {
+    if (target_proj.empty()) {
       assert(target_srs->is_projected());
       my_error(ER_TRANSFORM_TARGET_SRS_NOT_SUPPORTED, MYF(0), target_srs->id());
       return true;
     }
 
-    Transform transform(source_proj.c_str(), target_proj.c_str(),
-                        target_srs->cs_type());
+    Transform const transform(source_proj.c_str(), target_proj.c_str(),
+                              target_srs->cs_type());
     *out = transform(in);
 
     return false;

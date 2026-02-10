@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -57,6 +57,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "pars0pars.h"
 #include "rem0cmp.h"
 #include "row0ins.h"
+#include "row0mysql.h"
 #include "row0sel.h"
 #include "row0upd.h"
 #include "row0vers.h"
@@ -213,6 +214,12 @@ struct ib_tuple_t {
                  instance */
 };
 
+dtuple_t *ib_tuple_to_dtuple(ib_tpl_t tuple) { return tuple->ptr; }
+
+row_prebuilt_t *ib_cursor_get_row_prebuilt(ib_crsr_t cursor) {
+  return cursor->prebuilt;
+}
+
 /** The following counter is used to convey information to InnoDB
 about server activity: in case of normal DML ops it is not
 sensible to call srv_active_wake_master_thread after each
@@ -225,22 +232,6 @@ static inline bool ib_btr_cursor_is_positioned(
     btr_pcur_t *pcur) /*!< in: InnoDB persistent cursor */
 {
   return (pcur->is_positioned());
-}
-
-/** Find table using table name.
- @return table instance if found */
-static dict_table_t *ib_lookup_table_by_name(
-    const char *name) /*!< in: table name to lookup */
-{
-  dict_table_t *table;
-
-  table = dict_table_get_low(name);
-
-  if (table != nullptr && table->ibd_file_missing) {
-    table = nullptr;
-  }
-
-  return (table);
 }
 
 /** Increments innobase_active_counter and every INNOBASE_WAKE_INTERVALth
@@ -433,6 +424,11 @@ static ib_tpl_t ib_key_tuple_new_low(
   }
 
   n_cmp_cols = dict_index_get_n_ordering_defined_by_user(index);
+
+  /* Is it a generated clustered index ? */
+  if (n_cmp_cols == 0) {
+    ++n_cmp_cols;
+  }
 
   dtuple_set_n_fields_cmp(tuple->ptr, n_cmp_cols);
 
@@ -678,28 +674,6 @@ static void ib_normalize_table_name(
   }
 }
 
-/** Get a table id. The caller must have acquired the dictionary mutex.
- @return DB_SUCCESS if found */
-static ib_err_t ib_table_get_id_low(
-    const char *table_name, /*!< in: table to find */
-    ib_id_u64_t *table_id)  /*!< out: table id if found */
-{
-  dict_table_t *table;
-  ib_err_t err = DB_TABLE_NOT_FOUND;
-
-  *table_id = 0;
-
-  table = ib_lookup_table_by_name(table_name);
-
-  if (table != nullptr) {
-    *table_id = (table->id);
-
-    err = DB_SUCCESS;
-  }
-
-  return (err);
-}
-
 /** Create an internal cursor instance.
  @return DB_SUCCESS or err code */
 static ib_err_t ib_create_cursor(ib_crsr_t *ib_crsr,  /*!< out: InnoDB cursor */
@@ -845,10 +819,11 @@ ib_err_t ib_cursor_open_index_using_name(
 
 /** Open an InnoDB table and return a cursor handle to it.
  @return DB_SUCCESS or err code */
-ib_err_t ib_cursor_open_table(const char *name,   /*!< in: table name */
-                              ib_trx_t ib_trx,    /*!< in: Current transaction
-                                                  handle    can be NULL */
-                              ib_crsr_t *ib_crsr) /*!< out,own: InnoDB cursor */
+ib_err_t ib_cursor_open_table(
+    const char *name,      /*!< in: table name */
+    const ib_trx_t ib_trx, /*!< in: Current transaction
+                    handle    can be NULL */
+    ib_crsr_t *ib_crsr)    /*!< out,own: InnoDB cursor */
 {
   ib_err_t err;
   dict_table_t *table;
@@ -866,8 +841,9 @@ ib_err_t ib_cursor_open_table(const char *name,   /*!< in: table name */
     table = dd_table_open_on_name(trx->mysql_thd, &mdl, normalized_name, false,
                                   DICT_ERR_IGNORE_NONE);
   } else {
-    /* NOTE: We do not acquire MySQL metadata lock */
-    table = ib_lookup_table_by_name(normalized_name);
+    /* This branch is unreachable as in the past it called function which
+    asserted dict_sys_mutex_own() which we don't own.*/
+    ut_error;
   }
 
   ut::free(normalized_name);
@@ -882,7 +858,7 @@ ib_err_t ib_cursor_open_table(const char *name,   /*!< in: table name */
 
   if (table != nullptr) {
     err = ib_create_cursor_with_clust_index(ib_crsr, table, (trx_t *)ib_trx);
-    if (mdl != nullptr) {
+    if (mdl != nullptr && err == DB_SUCCESS) {
       (*ib_crsr)->mdl = mdl;
     }
   } else {
@@ -1001,6 +977,7 @@ ib_err_t ib_cursor_close(ib_crsr_t ib_crsr) /*!< in,own: InnoDB cursor */
   cursor->prebuilt = nullptr;
 
   if (cursor->mdl != nullptr) {
+    ut_ad(trx != nullptr);
     dd_mdl_release(trx->mysql_thd, &cursor->mdl);
   }
 
@@ -1743,6 +1720,11 @@ ib_err_t ib_cursor_moveto(ib_crsr_t ib_crsr, /*!< in: InnoDB cursor instance */
 
   n_fields = dict_index_get_n_ordering_defined_by_user(prebuilt->index);
 
+  if (n_fields == 0 && prebuilt->index->is_clustered() &&
+      prebuilt->clust_index_was_generated) {
+    n_fields = 1;
+  }
+
   if (n_fields > dtuple_get_n_fields(tuple->ptr)) {
     n_fields = dtuple_get_n_fields(tuple->ptr);
   }
@@ -1986,18 +1968,6 @@ ib_err_t ib_col_set_value(ib_tpl_t ib_tpl, ib_ulint_t col_no, const void *src,
   }
 
   return (DB_SUCCESS);
-}
-
-uint64_t ib_col_get_len(ib_tpl_t ib_tpl, ib_ulint_t i) {
-  const dfield_t *dfield;
-  ulint data_len;
-  ib_tuple_t *tuple = (ib_tuple_t *)ib_tpl;
-
-  dfield = ib_col_get_dfield(tuple, i);
-
-  data_len = dfield_get_len(dfield);
-
-  return data_len == UNIV_SQL_NULL ? IB_SQL_NULL : data_len;
 }
 
 uint64_t ib_col_copy_value(ib_tpl_t ib_tpl, ib_ulint_t i, void *dst,
@@ -2281,97 +2251,6 @@ const void *ib_col_get_value(ib_tpl_t ib_tpl, ib_ulint_t i) {
   return (data_len != UNIV_SQL_NULL ? data : nullptr);
 }
 
-/** "Clear" or reset an InnoDB tuple. We free the heap and recreate the tuple.
- @return new tuple, or NULL */
-ib_tpl_t ib_tuple_clear(ib_tpl_t ib_tpl) /*!< in,own: tuple (will be freed) */
-{
-  const dict_index_t *index;
-  ulint n_cols;
-  ib_tuple_t *tuple = (ib_tuple_t *)ib_tpl;
-  ib_tuple_type_t type = tuple->type;
-  mem_heap_t *heap = tuple->heap;
-
-  index = tuple->index;
-  n_cols = dtuple_get_n_fields(tuple->ptr);
-
-  mem_heap_empty(heap);
-
-  if (type == TPL_TYPE_ROW) {
-    return (ib_row_tuple_new_low(index, n_cols, heap));
-  } else {
-    return (ib_key_tuple_new_low(index, n_cols, heap));
-  }
-}
-
-/** Create a new cluster key search tuple and copy the contents of  the
- secondary index key tuple columns that refer to the cluster index record
- to the cluster key. It does a deep copy of the column data.
- @return DB_SUCCESS or error code */
-ib_err_t ib_tuple_get_cluster_key(
-    ib_crsr_t ib_crsr,         /*!< in: secondary index cursor */
-    ib_tpl_t *ib_dst_tpl,      /*!< out,own: destination tuple */
-    const ib_tpl_t ib_src_tpl) /*!< in: source tuple */
-{
-  ulint i;
-  ulint n_fields;
-  ib_err_t err = DB_SUCCESS;
-  ib_tuple_t *dst_tuple = nullptr;
-  ib_cursor_t *cursor = (ib_cursor_t *)ib_crsr;
-  ib_tuple_t *src_tuple = (ib_tuple_t *)ib_src_tpl;
-  dict_index_t *clust_index;
-
-  clust_index = cursor->prebuilt->table->first_index();
-
-  /* We need to ensure that the src tuple belongs to the same table
-  as the open cursor and that it's not a tuple for a cluster index. */
-  if (src_tuple->type != TPL_TYPE_KEY) {
-    return (DB_ERROR);
-  } else if (src_tuple->index->table != cursor->prebuilt->table) {
-    return (DB_DATA_MISMATCH);
-  } else if (src_tuple->index == clust_index) {
-    return (DB_ERROR);
-  }
-
-  /* Create the cluster index key search tuple. */
-  *ib_dst_tpl = ib_clust_search_tuple_create(ib_crsr);
-
-  if (!*ib_dst_tpl) {
-    return (DB_OUT_OF_MEMORY);
-  }
-
-  dst_tuple = (ib_tuple_t *)*ib_dst_tpl;
-  ut_a(dst_tuple->index == clust_index);
-
-  n_fields = dict_index_get_n_unique(dst_tuple->index);
-
-  /* Do a deep copy of the data fields. */
-  for (i = 0; i < n_fields; i++) {
-    ulint pos;
-    dfield_t *src_field;
-    dfield_t *dst_field;
-
-    pos = dict_index_get_nth_field_pos(src_tuple->index, dst_tuple->index, i);
-
-    ut_a(pos != ULINT_UNDEFINED);
-
-    src_field = dtuple_get_nth_field(src_tuple->ptr, pos);
-    dst_field = dtuple_get_nth_field(dst_tuple->ptr, i);
-
-    if (!dfield_is_null(src_field)) {
-      UNIV_MEM_ASSERT_RW(src_field->data, src_field->len);
-
-      dst_field->data =
-          mem_heap_dup(dst_tuple->heap, src_field->data, src_field->len);
-
-      dst_field->len = src_field->len;
-    } else {
-      dfield_set_null(dst_field);
-    }
-  }
-
-  return (err);
-}
-
 /** Create an InnoDB tuple used for index/table search.
  @return own: Tuple for current index */
 ib_tpl_t ib_sec_search_tuple_create(
@@ -2383,18 +2262,6 @@ ib_tpl_t ib_sec_search_tuple_create(
 
   n_cols = dict_index_get_n_unique_in_tree(index);
   return (ib_key_tuple_new(index, n_cols));
-}
-
-/** Create an InnoDB tuple used for index/table search.
- @return own: Tuple for current index */
-ib_tpl_t ib_sec_read_tuple_create(ib_crsr_t ib_crsr) /*!< in: Cursor instance */
-{
-  ulint n_cols;
-  ib_cursor_t *cursor = (ib_cursor_t *)ib_crsr;
-  dict_index_t *index = cursor->prebuilt->index;
-
-  n_cols = dict_index_get_n_fields(index);
-  return (ib_row_tuple_new(index, n_cols));
 }
 
 /** Create an InnoDB tuple used for table key operations.
@@ -2409,6 +2276,9 @@ ib_tpl_t ib_clust_search_tuple_create(
   index = cursor->prebuilt->table->first_index();
 
   n_cols = dict_index_get_n_ordering_defined_by_user(index);
+  if (n_cols == 0) {
+    n_cols = 1;
+  }
   return (ib_key_tuple_new(index, n_cols));
 }
 
@@ -2461,22 +2331,6 @@ void ib_tuple_delete(ib_tpl_t ib_tpl) /*!< in,own: Tuple instance to delete */
   }
 
   mem_heap_free(tuple->heap);
-}
-
-/** Get a table id. This function will acquire the dictionary mutex.
- @return DB_SUCCESS if found */
-ib_err_t ib_table_get_id(const char *table_name, /*!< in: table to find */
-                         ib_id_u64_t *table_id)  /*!< out: table id if found */
-{
-  ib_err_t err;
-
-  dict_mutex_enter_for_mysql();
-
-  err = ib_table_get_id_low(table_name, table_id);
-
-  dict_mutex_exit_for_mysql();
-
-  return (err);
 }
 
 /** Check if cursor is positioned.
@@ -2556,82 +2410,6 @@ void ib_cursor_stmt_begin(ib_crsr_t ib_crsr) /*!< in: cursor */
   cursor->prebuilt->sql_stat_start = true;
 }
 
-/** Write a double value to a column.
- @return DB_SUCCESS or error */
-ib_err_t ib_tuple_write_double(
-    ib_tpl_t ib_tpl, /*!< in/out: tuple to write to */
-    int col_no,      /*!< in: column number */
-    double val)      /*!< in: value to write */
-{
-  const dfield_t *dfield;
-  ib_tuple_t *tuple = (ib_tuple_t *)ib_tpl;
-
-  dfield = ib_col_get_dfield(tuple, col_no);
-
-  if (dtype_get_mtype(dfield_get_type(dfield)) == DATA_DOUBLE) {
-    return (ib_col_set_value(ib_tpl, col_no, &val, sizeof(val), true));
-  } else {
-    return (DB_DATA_MISMATCH);
-  }
-}
-
-/** Read a double column value from an InnoDB tuple.
- @return DB_SUCCESS or error */
-ib_err_t ib_tuple_read_double(ib_tpl_t ib_tpl, /*!< in: InnoDB tuple */
-                              uint64_t col_no, /*!< in: column number */
-                              double *dval)    /*!< out: double value */
-{
-  ib_err_t err;
-  const dfield_t *dfield;
-  ib_tuple_t *tuple = (ib_tuple_t *)ib_tpl;
-
-  dfield = ib_col_get_dfield(tuple, col_no);
-
-  if (dtype_get_mtype(dfield_get_type(dfield)) == DATA_DOUBLE) {
-    ib_col_copy_value(ib_tpl, col_no, dval, sizeof(*dval));
-    err = DB_SUCCESS;
-  } else {
-    err = DB_DATA_MISMATCH;
-  }
-
-  return (err);
-}
-
-ib_err_t ib_tuple_write_float(ib_tpl_t ib_tpl, uint64_t col_no, float val) {
-  const dfield_t *dfield;
-  ib_tuple_t *tuple = (ib_tuple_t *)ib_tpl;
-
-  dfield = ib_col_get_dfield(tuple, col_no);
-
-  if (dtype_get_mtype(dfield_get_type(dfield)) == DATA_FLOAT) {
-    return (ib_col_set_value(ib_tpl, col_no, &val, sizeof(val), true));
-  } else {
-    return (DB_DATA_MISMATCH);
-  }
-}
-
-/** Read a float value from an InnoDB tuple.
- @return DB_SUCCESS or error */
-ib_err_t ib_tuple_read_float(ib_tpl_t ib_tpl, /*!< in: InnoDB tuple */
-                             ulint col_no,    /*!< in: column number */
-                             float *fval)     /*!< out: float value */
-{
-  ib_err_t err;
-  const dfield_t *dfield;
-  ib_tuple_t *tuple = (ib_tuple_t *)ib_tpl;
-
-  dfield = ib_col_get_dfield(tuple, col_no);
-
-  if (dtype_get_mtype(dfield_get_type(dfield)) == DATA_FLOAT) {
-    ib_col_copy_value(ib_tpl, col_no, fval, sizeof(*fval));
-    err = DB_SUCCESS;
-  } else {
-    err = DB_DATA_MISMATCH;
-  }
-
-  return (err);
-}
-
 /** Return isolation configuration set by "innodb_api_trx_level"
  @return trx isolation level*/
 ib_trx_level_t ib_cfg_trx_level() {
@@ -2687,7 +2465,9 @@ static ib_err_t ib_cursor_open_table_using_id(
   }
 
   err = ib_create_cursor_with_clust_index(ib_crsr, table, (trx_t *)ib_trx);
-  (*ib_crsr)->mdl = mdl;
+  if (err == DB_SUCCESS) {
+    (*ib_crsr)->mdl = mdl;
+  }
 
   return (err);
 }
@@ -3165,13 +2945,5 @@ ib_err_t ib_sdi_drop(space_id_t tablespace_id) {
 
   dict_sdi_remove_from_cache(space->id, nullptr, false);
 
-  return (DB_SUCCESS);
-}
-
-/** Flush SDI in a tablespace. The pages of a SDI Index modified by the
-transaction will be flushed to disk.
-@param[in]      space_id        tablespace id
-@return DB_SUCCESS always */
-ib_err_t ib_sdi_flush(space_id_t space_id [[maybe_unused]]) {
   return (DB_SUCCESS);
 }

@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,45 +21,99 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
+# See list of rules here:
+# https://clang.llvm.org/extra/clang-tidy/
+# https://clang.llvm.org/extra/clang-tidy/checks/list.html
+
 Checks:
   -*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
+  -bugprone-empty-catch,
   -bugprone-narrowing-conversions,
+  -bugprone-suspicious-include,
+  -bugprone-unhandled-exception-at-new,
+  -bugprone-unsafe-functions,
+  cert-*,
+  -cert-dcl50-cpp,
+  -cert-err34-c,
+  -cert-msc24-c,
+  -cert-msc33-c,
   clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -clang-analyzer-security.insecureAPI.strcpy,
+  clang-diagnostic-*,
+  -clang-diagnostic-deprecated-non-prototype,
+  -clang-diagnostic-unknown-warning-option,
+  -clang-diagnostic-unused-command-line-argument,
   -clang-diagnostic-unused-function,
+  concurrency-*,
+  -concurrency-mt-unsafe,
   cppcoreguidelines-*,
   -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-avoid-do-while,
   -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-init-variables,
+  -cppcoreguidelines-narrowing-conversions,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-no-malloc,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-  -cppcoreguidelines-pro-type-vararg,
-  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-pro-type-const-cast,
+  -cppcoreguidelines-pro-type-member-init,
   -cppcoreguidelines-pro-type-reinterpret-cast,
-  -cppcoreguidelines-narrowing-conversions,
+  -cppcoreguidelines-pro-type-union-access,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-use-default-member-init,
   google-*,
-  -google-readability-todo,
+  -google-readability-avoid-underscore-in-googletest-name,
   -google-readability-braces-around-statements,
   -google-runtime-int,
+  -google-readability-todo,
   -google-build-using-namespace,
+  hicpp-*,
+  -hicpp-avoid-c-arrays,
+  -hicpp-avoid-goto,
+  -hicpp-exception-baseclass,
+  -hicpp-member-init,
+  -hicpp-multiway-paths-covered,
+  -hicpp-named-parameter,
+  -hicpp-no-array-decay,
+  -hicpp-no-malloc,
+  -hicpp-signed-bitwise,
+  -hicpp-vararg,
+  -hicpp-braces-around-statements,
   misc-*,
   -misc-const-correctness,
+  -misc-include-cleaner,
+  -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
-  modernize-use-nullptr,
+  -misc-use-anonymous-namespace,
+  modernize-*,
+  -modernize-avoid-c-arrays,
+  -modernize-macro-to-enum,
+  -modernize-raw-string-literal,
+  -modernize-use-trailing-return-type,
+  -modernize-use-using,
   llvm-*,
   -llvm-header-guard,
   -llvm-include-order,
   performance-*,
+  portability-*,
   readability-*,
+  -readability-avoid-unconditional-preprocessor-if,
   -readability-braces-around-statements,
-  -readability-named-parameter,
-  -readability-redundant-member-init,
+  -readability-convert-member-functions-to-static,
+  -readability-identifier-length,
+  -readability-isolate-declaration,
   -readability-magic-numbers,
-  -clang-diagnostic-error,
-
-
+  -readability-named-parameter,
+  -readability-non-const-parameter,
+  -readability-redundant-member-init,
 
 CheckOptions:
   - key:        readability-magic-numbers.IgnoredIntegerValues
@@ -70,6 +124,8 @@ CheckOptions:
   - key:             readability-identifier-length.MinimumVariableNameLength
     value:           2
   - key: readability-function-cognitive-complexity.Threshold
-    value: 50
+    value: 150
+  - key: readability-function-cognitive-complexity.DescribeBasicIncrements
+    value: false
 
 FormatStyle: "file"

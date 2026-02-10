@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,7 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "plugin/group_replication/include/mysql_version_gcs_protocol_map.h"
-#include <assert.h>
+#include <cassert>
 #include <cerrno>
 #include <cinttypes>
 #include <limits>
@@ -66,7 +66,7 @@ Member_version convert_to_mysql_version(
       assert(false && "GCS protocol should have been V1 or V2, or V3");
       break;
   }
-  return Member_version(0x000000);
+  return {0x000000};
 }
 
 /*
@@ -81,14 +81,14 @@ Gcs_protocol_version convert_to_gcs_protocol(
     Member_version const &mysql_version, Member_version const &my_version) {
   if (version_5_7_14 <= mysql_version && mysql_version < version_8_0_16) {
     return Gcs_protocol_version::V1;
-  } else if (version_8_0_16 <= mysql_version &&
-             mysql_version < version_8_0_27) {
-    return Gcs_protocol_version::V2;
-  } else if (version_8_0_27 <= mysql_version && mysql_version <= my_version) {
-    return Gcs_protocol_version::V3;
-  } else {
-    return Gcs_protocol_version::UNKNOWN;
   }
+  if (version_8_0_16 <= mysql_version && mysql_version < version_8_0_27) {
+    return Gcs_protocol_version::V2;
+  }
+  if (version_8_0_27 <= mysql_version && mysql_version <= my_version) {
+    return Gcs_protocol_version::V3;
+  }
+  return Gcs_protocol_version::UNKNOWN;
 }
 
 static std::string const one_or_two_digit_number_regex = "([0-9]{1,2})";
@@ -101,9 +101,10 @@ static bool is_one_or_two_digit_number(const std::string &s) {
 
 bool valid_mysql_version_string(char const *version_str) {
   std::string const dot_regex = "\\.";
-  std::regex mysql_version_regex(one_or_two_digit_number_regex + dot_regex +
-                                 one_or_two_digit_number_regex + dot_regex +
-                                 one_or_two_digit_number_regex);
+  std::regex const mysql_version_regex(
+      one_or_two_digit_number_regex + dot_regex +
+      one_or_two_digit_number_regex + dot_regex +
+      one_or_two_digit_number_regex);
   return std::regex_match(version_str, mysql_version_regex);
 }
 
@@ -135,8 +136,8 @@ static unsigned int convert_to_base_16_number(char const *const str) {
 Member_version convert_to_member_version(char const *str) {
   assert(valid_mysql_version_string(str));
 
-  std::string version_str(str);
-  Member_version version(0);
+  std::string const version_str(str);
+  Member_version const version(0);
   auto const major_dot_index = version_str.find('.');
   auto const minor_dot_index = version_str.find('.', major_dot_index + 1);
 
@@ -153,5 +154,5 @@ Member_version convert_to_member_version(char const *str) {
   auto patch_str = version_str.substr(minor_dot_index + 1);
   auto patch = convert_to_base_16_number(patch_str.c_str());
 
-  return Member_version((major << 16) | (minor << 8) | patch);
+  return {(major << 16) | (minor << 8) | patch};
 }

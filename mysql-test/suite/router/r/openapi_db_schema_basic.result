@@ -1,0 +1,3039 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+# DB `pk_types_schema` - created
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/crud_operations
+SET @schema_id_crud=@schema_id;
+# Registred DB_OBJECT at path: /svc/crud_operations/v1
+# Registred DB_OBJECT at path: /svc/crud_operations/t1
+# Registred DB_OBJECT at path: /svc/crud_operations/t2
+# Registred DB_OBJECT at path: /svc/crud_operations/t3
+# Registred DB_OBJECT at path: /svc/crud_operations/t4
+# Registred DB_SCHEMA at path: /svc/different_types
+SET @schema_id_different_types=@schema_id;
+# Registred DB_OBJECT at path: /svc/different_types/all_types
+SET @db_object_id_all_types=@db_object_id;
+# Registred DB_SCHEMA at path: /svc/different_types_as_pk
+SET @schema_id_different_types_as_pk=@schema_id;
+# Registred DB_OBJECT at path: /svc/different_types_as_pk/t_int
+# Registred DB_OBJECT at path: /svc/different_types_as_pk/t_float
+# Registred DB_OBJECT at path: /svc/different_types_as_pk/t_bin
+# Registred DB_OBJECT at path: /svc/different_types_as_pk/t_bit
+# Registred DB_OBJECT at path: /svc/different_types_as_pk/t_enum
+# Registred DB_OBJECT at path: /svc/different_types_as_pk/t_set
+# Registred DB_OBJECT at path: /svc/different_types_as_pk/t_timestamp
+# Registred DB_OBJECT at path: /svc/different_types_as_pk/t_date
+# Registred DB_OBJECT at path: /svc/different_types_as_pk/t_decimal
+
+
+## I. Show that GET /<service>/<schema>/open-api-catalog works and lists OpenAPI
+##    description for all REST Objects from the given REST Schema.
+#
+# 1. Check schema with REST Objects using different CRUD methods
+#
+#
+# 2. Check schema with REST Objects using all supported types.
+#
+#
+# #. Check schema with REST Objects using different types as PKs
+#
+#
+
+#
+# I.1
+GET /svc/crud_operations/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/crud_operations/t1": {
+            "get": {
+                "summary": "Get table1 contents",
+                "tags": [
+                    "basic_schema/table1"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "table1 contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/basic_schema_table1"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        },
+        "/svc/crud_operations/t1/{id}": {
+            "get": {
+                "summary": "Get table1 contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "basic_schema/table1"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "table1 contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/basic_schema_table1"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            }
+        },
+        "/svc/crud_operations/t2": {
+            "delete": {
+                "summary": "Delete table2 entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "basic_schema/table2"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/crud_operations/t2/{id}": {
+            "delete": {
+                "summary": "Delete table2 entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "basic_schema/table2"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/crud_operations/t3": {
+            "get": {
+                "summary": "Get table3 contents",
+                "tags": [
+                    "basic_schema/table3"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "table3 contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/basic_schema_table3"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "summary": "Create table3 entry",
+                "requestBody": {
+                    "description": "Item to create",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/basic_schema_table3"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "basic_schema/table3"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/basic_schema_table3"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete table3 entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "basic_schema/table3"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/crud_operations/t3/{id}": {
+            "get": {
+                "summary": "Get table3 contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "basic_schema/table3"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "table3 contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/basic_schema_table3"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete table3 entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "basic_schema/table3"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create table3 entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/basic_schema_table3"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "basic_schema/table3"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/basic_schema_table3"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/crud_operations/t4": {
+            "delete": {
+                "summary": "Delete table4 entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "basic_schema/table4"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/crud_operations/t4/{id}": {
+            "delete": {
+                "summary": "Delete table4 entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "basic_schema/table4"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create table4 entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/basic_schema_table4"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "basic_schema/table4"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/basic_schema_table4"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/crud_operations/v1": {
+            "get": {
+                "summary": "Get view1 contents",
+                "tags": [
+                    "basic_schema/view1"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "view1 contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/basic_schema_view1"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "basic_schema_table1": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int32",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648,
+                        "example": 0,
+                        "description": "int, Primary Key"
+                    }
+                }
+            },
+            "basic_schema_table2": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int32",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648,
+                        "example": 0,
+                        "description": "int, Primary Key"
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "varchar(255)"
+                    },
+                    "comments": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "description": "varchar(512)"
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "datetime"
+                    }
+                }
+            },
+            "basic_schema_table3": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int32",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648,
+                        "example": 0,
+                        "description": "int, Primary Key"
+                    },
+                    "cvarchar": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "varchar(255)"
+                    },
+                    "ctext": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "text"
+                    },
+                    "cdatetime": {
+                        "type": "string",
+                        "description": "datetime"
+                    },
+                    "ctimestamp": {
+                        "type": "string",
+                        "description": "timestamp"
+                    },
+                    "cdate": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "date"
+                    },
+                    "ctime": {
+                        "type": "string",
+                        "format": "time",
+                        "example": "00:00:00",
+                        "description": "time"
+                    },
+                    "cyear": {
+                        "type": "integer",
+                        "minimum": 1901,
+                        "maximum": 2155,
+                        "example": 2024,
+                        "description": "year"
+                    },
+                    "csmallint": {
+                        "type": "integer",
+                        "format": "int32",
+                        "maximum": 32767,
+                        "minimum": -32768,
+                        "example": 0,
+                        "description": "smallint"
+                    },
+                    "cbigint": {
+                        "type": "integer",
+                        "format": "int64",
+                        "example": 0,
+                        "description": "bigint"
+                    },
+                    "cbin": {
+                        "type": "integer",
+                        "description": "binary(3)"
+                    },
+                    "cfloat": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 0.0,
+                        "description": "float"
+                    },
+                    "cdouble": {
+                        "type": "number",
+                        "format": "double",
+                        "example": 0.0,
+                        "description": "double"
+                    },
+                    "cdecimal": {
+                        "type": "number",
+                        "format": "decimal",
+                        "description": "decimal(5,2)"
+                    },
+                    "cenum": {
+                        "type": "string",
+                        "enum": [
+                            "value1",
+                            "value2",
+                            "value3"
+                        ],
+                        "description": "enum('value1','value2','value3')"
+                    },
+                    "cset": {
+                        "type": "string",
+                        "enum": [
+                            "value1",
+                            "value2",
+                            "value3"
+                        ],
+                        "description": "set('value1','value2','value3')"
+                    },
+                    "cbit": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "bit(1)"
+                    },
+                    "cbit1": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "bit(1)"
+                    },
+                    "cbit10": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "bit(10)"
+                    },
+                    "ctinyint": {
+                        "type": "integer",
+                        "format": "int32",
+                        "maximum": 127,
+                        "minimum": -128,
+                        "example": 0,
+                        "description": "tinyint"
+                    },
+                    "cmediumint": {
+                        "type": "integer",
+                        "format": "int32",
+                        "maximum": 8388607,
+                        "minimum": -8388608,
+                        "example": 0,
+                        "description": "mediumint"
+                    },
+                    "cblob": {
+                        "type": "string",
+                        "format": "binary",
+                        "maxLength": 65535,
+                        "description": "blob"
+                    },
+                    "geo0": {
+                        "type": "object",
+                        "description": "geometry"
+                    },
+                    "geo4326": {
+                        "type": "object",
+                        "description": "geometry"
+                    },
+                    "vec": {
+                        "type": "array",
+                        "items": {
+                            "type": "number",
+                            "format": "float"
+                        },
+                        "minItems": 2048,
+                        "maxItems": 2048,
+                        "description": "vector(2048)"
+                    }
+                }
+            },
+            "basic_schema_table4": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int32",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648,
+                        "example": 0,
+                        "description": "int, Primary Key"
+                    },
+                    "first_name": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "text"
+                    },
+                    "last_name": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "text"
+                    },
+                    "table2_id": {
+                        "type": "integer",
+                        "format": "int32",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648,
+                        "example": 0,
+                        "description": "int"
+                    }
+                }
+            },
+            "basic_schema_view1": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int32",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648,
+                        "example": 0,
+                        "description": "int"
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "varchar(255)"
+                    },
+                    "comments": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "description": "varchar(512)"
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "datetime"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# I.2
+GET /svc/different_types/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/different_types/all_types": {
+            "get": {
+                "summary": "Get all_types contents",
+                "tags": [
+                    "basic_schema/all_types"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "all_types contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/basic_schema_all_types"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "post": {
+                "summary": "Create all_types entry",
+                "requestBody": {
+                    "description": "Item to create",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/basic_schema_all_types"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "basic_schema/all_types"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/basic_schema_all_types"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete all_types entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "basic_schema/all_types"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "basic_schema_all_types": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# I.3
+GET /svc/different_types_as_pk/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/different_types_as_pk/t_bin": {
+            "get": {
+                "summary": "Get t_bin contents",
+                "tags": [
+                    "pk_types_schema/t_bin"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_bin contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/pk_types_schema_t_bin"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "delete": {
+                "summary": "Delete t_bin entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_bin"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_bin/{id}": {
+            "get": {
+                "summary": "Get t_bin contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_bin"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_bin contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_bin"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete t_bin entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_bin"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create t_bin entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/pk_types_schema_t_bin"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "pk_types_schema/t_bin"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_bin"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_bit": {
+            "get": {
+                "summary": "Get t_bit contents",
+                "tags": [
+                    "pk_types_schema/t_bit"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_bit contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/pk_types_schema_t_bit"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "delete": {
+                "summary": "Delete t_bit entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_bit"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_bit/{id}": {
+            "get": {
+                "summary": "Get t_bit contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_bit"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_bit contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_bit"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete t_bit entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_bit"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create t_bit entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/pk_types_schema_t_bit"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "pk_types_schema/t_bit"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_bit"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_date": {
+            "get": {
+                "summary": "Get t_date contents",
+                "tags": [
+                    "pk_types_schema/t_date"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_date contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/pk_types_schema_t_date"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "delete": {
+                "summary": "Delete t_date entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_date"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_date/{id}": {
+            "get": {
+                "summary": "Get t_date contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_date"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_date contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_date"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete t_date entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_date"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create t_date entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/pk_types_schema_t_date"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "pk_types_schema/t_date"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_date"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_decimal": {
+            "get": {
+                "summary": "Get t_decimal contents",
+                "tags": [
+                    "pk_types_schema/t_decimal"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_decimal contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/pk_types_schema_t_decimal"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "delete": {
+                "summary": "Delete t_decimal entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_decimal"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_decimal/{id}": {
+            "get": {
+                "summary": "Get t_decimal contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "number"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_decimal"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_decimal contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_decimal"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete t_decimal entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "number"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_decimal"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create t_decimal entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "number"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/pk_types_schema_t_decimal"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "pk_types_schema/t_decimal"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_decimal"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_enum": {
+            "get": {
+                "summary": "Get t_enum contents",
+                "tags": [
+                    "pk_types_schema/t_enum"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_enum contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/pk_types_schema_t_enum"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "delete": {
+                "summary": "Delete t_enum entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_enum"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_enum/{id}": {
+            "get": {
+                "summary": "Get t_enum contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_enum"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_enum contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_enum"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete t_enum entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_enum"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create t_enum entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/pk_types_schema_t_enum"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "pk_types_schema/t_enum"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_enum"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_float": {
+            "get": {
+                "summary": "Get t_float contents",
+                "tags": [
+                    "pk_types_schema/t_float"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_float contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/pk_types_schema_t_float"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "delete": {
+                "summary": "Delete t_float entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_float"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_float/{id}": {
+            "get": {
+                "summary": "Get t_float contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "number"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_float"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_float contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_float"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete t_float entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "number"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_float"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create t_float entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "number"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/pk_types_schema_t_float"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "pk_types_schema/t_float"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_float"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_int": {
+            "get": {
+                "summary": "Get t_int contents",
+                "tags": [
+                    "pk_types_schema/t_int"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_int contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/pk_types_schema_t_int"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "delete": {
+                "summary": "Delete t_int entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_int"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_int/{id}": {
+            "get": {
+                "summary": "Get t_int contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_int"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_int contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_int"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete t_int entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_int"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create t_int entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/pk_types_schema_t_int"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "pk_types_schema/t_int"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_int"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_set": {
+            "get": {
+                "summary": "Get t_set contents",
+                "tags": [
+                    "pk_types_schema/t_set"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_set contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/pk_types_schema_t_set"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "delete": {
+                "summary": "Delete t_set entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_set"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_set/{id}": {
+            "get": {
+                "summary": "Get t_set contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_set"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_set contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_set"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete t_set entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_set"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create t_set entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/pk_types_schema_t_set"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "pk_types_schema/t_set"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_set"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_timestamp": {
+            "get": {
+                "summary": "Get t_timestamp contents",
+                "tags": [
+                    "pk_types_schema/t_timestamp"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_timestamp contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/pk_types_schema_t_timestamp"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "delete": {
+                "summary": "Delete t_timestamp entry",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_timestamp"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/different_types_as_pk/t_timestamp/{id}": {
+            "get": {
+                "summary": "Get t_timestamp contents",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "filter object",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_timestamp"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "t_timestamp contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_timestamp"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete t_timestamp entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "pk_types_schema/t_timestamp"
+                ],
+                "responses": {
+                    "404": {
+                        "description": "Not found"
+                    },
+                    "200": {
+                        "description": "Deleted item(s) count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "itemsDeleted": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update or create t_timestamp entry",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "description": "Item to create or update",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/pk_types_schema_t_timestamp"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "pk_types_schema/t_timestamp"
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "200": {
+                        "description": "Item successfully created or updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/pk_types_schema_t_timestamp"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "pk_types_schema_t_bin": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "binary(3), Primary Key"
+                    }
+                }
+            },
+            "pk_types_schema_t_bit": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "bit(1), Primary Key"
+                    }
+                }
+            },
+            "pk_types_schema_t_date": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "date, Primary Key"
+                    }
+                }
+            },
+            "pk_types_schema_t_decimal": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "number",
+                        "format": "decimal",
+                        "description": "decimal(5,2), Primary Key"
+                    }
+                }
+            },
+            "pk_types_schema_t_enum": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "enum": [
+                            "value1",
+                            "value2",
+                            "value3"
+                        ],
+                        "description": "enum('value1','value2','value3'), Primary Key"
+                    }
+                }
+            },
+            "pk_types_schema_t_float": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 0.0,
+                        "description": "float, Primary Key"
+                    }
+                }
+            },
+            "pk_types_schema_t_int": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int32",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648,
+                        "example": 0,
+                        "description": "int, Primary Key"
+                    }
+                }
+            },
+            "pk_types_schema_t_set": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "enum": [
+                            "value1",
+                            "value2",
+                            "value3"
+                        ],
+                        "description": "set('value1','value2','value3'), Primary Key"
+                    }
+                }
+            },
+            "pk_types_schema_t_timestamp": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "timestamp, Primary Key"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+DROP SCHEMA pk_types_schema;
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,11 @@
 #include <string>
 
 #include "mysql/gtid/gtid.h"
+
+// Suppress the deprecation warning for gtidset.h, because this tests the
+// deprecated functionality. When we remove the feature, remove this entire
+// file.
+#define NO_DEPRECATION_WARNING_FOR_HEADER_GTIDSET_H
 #include "mysql/gtid/gtidset.h"
 
 namespace mysql::gtid::unittests {

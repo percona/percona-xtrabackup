@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -28,18 +28,15 @@
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <chrono>
+#include <memory>
 #include <system_error>
 #include <tuple>
 #include <utility>
 
 #include "harness_assert.h"
-#include "hexify.h"
 #include "mysql/harness/net_ts/buffer.h"
-#include "mysql/harness/net_ts/impl/poll.h"
-#include "mysql/harness/net_ts/impl/socket.h"
 #include "mysql/harness/net_ts/socket.h"
 
-#include "mysql/harness/tls_error.h"
 #include "mysqlrouter/classic_protocol_codec.h"
 #include "mysqlrouter/classic_protocol_frame.h"
 #include "mysqlrouter/classic_protocol_message.h"
@@ -112,13 +109,6 @@ void ConnectionPool::ConnectionCloser::await_quit_response(std::error_code ec,
   });
 }
 
-void PooledConnectionBase::remove_me() {
-  // call the remove_ callback once.
-  if (remover_) std::exchange(remover_, nullptr)();
-}
-
-void PooledConnectionBase::reset() { remover_ = nullptr; }
-
 void ConnectionPool::add(ConnectionPool::ServerSideConnection conn) {
   auto is_full_res = add_if_not_full(std::move(conn));
   if (is_full_res) {
@@ -151,6 +141,47 @@ void ConnectionPool::async_close_connection(
   });
 }
 
+void ConnectionPool::remove_pooled_connection(
+    std::string ep,
+    std::shared_ptr<PooledConnection<ServerSideConnection>> pooled_conn) {
+  pool_([ep, pooled_conn = std::move(pooled_conn), this](auto &pool) {
+    auto conn = pooled_conn->release();
+    if (conn.is_open()) {
+      // move it to the async-closer.
+      async_close_connection(std::move(conn));
+    }
+
+    auto range = pool.equal_range(ep);
+    for (auto cur = range.first; cur != range.second; ++cur) {
+      if (cur->second == pooled_conn) {
+        pool.erase(cur);
+        break;
+      }
+    }
+  });
+}
+
+void ConnectionPool::remove_stashed_connection(
+    std::string ep,
+    std::shared_ptr<PooledConnection<ServerSideConnection>> pooled_conn) {
+  stash_([ep, pooled_conn = std::move(pooled_conn), this](auto &stash) {
+    auto conn = pooled_conn->release();
+
+    if (conn.is_open()) {
+      // move it to the async-closer.
+      async_close_connection(std::move(conn));
+    }
+
+    auto range = stash.equal_range(ep);
+    for (auto cur = range.first; cur != range.second; ++cur) {
+      if (cur->second.pooled_conn == pooled_conn) {
+        stash.erase(cur);
+        break;
+      }
+    }
+  });
+}
+
 std::optional<ConnectionPool::ServerSideConnection>
 ConnectionPool::add_if_not_full(ConnectionPool::ServerSideConnection conn) {
   return pool_(
@@ -161,17 +192,17 @@ ConnectionPool::add_if_not_full(ConnectionPool::ServerSideConnection conn) {
 
         conn.prepare_for_pool();
 
-        auto it = pool.emplace(conn.endpoint(), std::move(conn));
+        auto endpoint = conn.endpoint();
+        auto it = pool.emplace(
+            std::move(endpoint),
+            std::make_shared<PooledConnection<ServerSideConnection>>(
+                std::move(conn)));
 
-        it->second.remover([this, it]() {
-          if (it->second.connection().is_open()) {
-            // move it to the async-closer.
-            async_close_connection(std::move(it->second.connection()));
-          }
-
-          erase(it);
-        });
-        it->second.async_idle(idle_timeout_);
+        it->second->pool_remover_ =
+            [this, ep = it->first](
+                const std::shared_ptr<PooledConnection<ServerSideConnection>> &
+                    pooled_conn) { remove_pooled_connection(ep, pooled_conn); };
+        it->second->async_idle(it->second, idle_timeout_);
 
         return std::nullopt;
       });
@@ -185,20 +216,21 @@ void ConnectionPool::stash(ServerSideConnection conn, ConnectionIdentifier from,
                  after =
                      std::chrono::steady_clock::now() + delay](auto &stash) {
     auto it = stash.emplace(
-        std::piecewise_construct,                            //
-        std::forward_as_tuple(ep),                           // key
-        std::forward_as_tuple(std::move(conn), from, after)  // val
+        std::piecewise_construct,   //
+        std::forward_as_tuple(ep),  // key
+        std::forward_as_tuple(
+            std::make_unique<PooledConnection<ServerSideConnection>>(
+                std::move(conn)),
+            from, after)  // val
     );
 
-    it->second.pooled_conn.remover([this, it]() {
-      if (it->second.pooled_conn.connection().is_open()) {
-        // move it to the async-closer.
-        async_close_connection(std::move(it->second.pooled_conn.connection()));
-      }
+    auto pooled_conn = it->second.pooled_conn;
 
-      erase_from_stash(it);
-    });
-    it->second.pooled_conn.async_idle(idle_timeout_);
+    pooled_conn->pool_remover_ =
+        [this, ep = it->first](
+            const std::shared_ptr<PooledConnection<ServerSideConnection>>
+                &pooled_conn) { remove_stashed_connection(ep, pooled_conn); };
+    pooled_conn->async_idle(pooled_conn, idle_timeout_);
   });
 }
 
@@ -213,11 +245,10 @@ void ConnectionPool::discard_all_stashed(ConnectionIdentifier from) {
         continue;
       }
 
-      // stop all callbacks.
-      val.pooled_conn.reset();
+      auto server_conn = val.pooled_conn->release();
 
       // move the connection to the pool.
-      add(std::move(val.pooled_conn.connection()));
+      add(std::move(server_conn));
 
       cur = pool.erase(cur);
     }
@@ -236,20 +267,17 @@ std::optional<ConnectionPool::ServerSideConnection> ConnectionPool::unstash_if(
         ignore_sharing_delay
             ? std::find_if(key_range.first, key_range.second,
                            [pred](const auto &kv) {
-                             return pred(kv.second.pooled_conn.connection());
+                             return pred(kv.second.pooled_conn->connection());
                            })
             : std::find_if(key_range.first, key_range.second,
                            [pred, now = std::chrono::steady_clock::now()](
                                const auto &kv) {
                              return now >= kv.second.after &&
-                                    pred(kv.second.pooled_conn.connection());
+                                    pred(kv.second.pooled_conn->connection());
                            });
     if (kv_it == key_range.second) return std::nullopt;
 
-    kv_it->second.pooled_conn.reset();
-
-    ServerSideConnection server_conn =
-        std::move(kv_it->second.pooled_conn.connection());
+    ServerSideConnection server_conn = kv_it->second.pooled_conn->release();
 
     stash.erase(kv_it);
 
@@ -269,10 +297,7 @@ ConnectionPool::unstash_mine(const std::string &ep,
         [conn_id](const auto &kv) { return kv.second.conn_id == conn_id; });
     if (kv_it == key_range.second) return std::nullopt;
 
-    kv_it->second.pooled_conn.reset();
-
-    ServerSideConnection server_conn =
-        std::move(kv_it->second.pooled_conn.connection());
+    ServerSideConnection server_conn = kv_it->second.pooled_conn->release();
 
     stash.erase(kv_it);
 

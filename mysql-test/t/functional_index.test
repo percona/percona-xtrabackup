@@ -227,8 +227,13 @@ EXPLAIN SELECT * FROM t1 WHERE f1->>"$.name" = "james";
 --echo # Should return one row, and should use the index
 SELECT * FROM t1 WHERE CAST(f1->>"$.name" AS CHAR(30)) COLLATE utf8mb4_bin = "james";
 EXPLAIN SELECT * FROM t1 WHERE CAST(f1->>"$.name" AS CHAR(30)) COLLATE utf8mb4_bin = "james";
+SET charset utf8mb3;
+EXPLAIN SELECT * FROM t1 WHERE CAST(f1->>"$.name" AS CHAR(30)) COLLATE utf8mb4_bin = "james";
+SET charset default;
 
-DROP TABLE t1;
+CREATE TABLE t2(f1 JSON, INDEX idx1 ((CAST(f1->>"$.name" AS CHAR(30) CHARSET utf8mb3)  COLLATE utf8mb3_bin)));
+EXPLAIN SELECT * FROM t2 WHERE CAST(f1->>"$.name" AS CHAR(30) CHARSET utf8mb3) COLLATE utf8mb3_bin = "james";
+DROP TABLE t1, t2;
 
 --echo # Test that doing an UPDATE on a hidden generated column returns "column
 --echo # not found".
@@ -269,8 +274,10 @@ CREATE TABLE t1(x VARCHAR(100), KEY ((ST_GeomFromText(x))));
 CREATE TABLE t1(x VARCHAR(30), INDEX idx ((CAST(x->>'$.name' AS CHAR(30)))));
 INSERT INTO t1 VALUES ('{"name":"knut"}');
 ANALYZE TABLE t1;
+SET explain_json_format_version = 1;
 --skip_if_hypergraph  # Depends on the query plan.
 EXPLAIN FORMAT=JSON SELECT * FROM t1 WHERE CAST(x->>'$.name' AS CHAR(30)) = 'knut';
+SET explain_json_format_version = DEFAULT;
 DROP TABLE t1;
 
 --echo # Check that we cannot drop the last visible column when we have hidden
@@ -529,12 +536,10 @@ EXPLAIN FORMAT=JSON SELECT * FROM t1;
 # virtual column backing the functional index. Verify that only the
 # visible column (x) is used now.
 CREATE TABLE t2(j JSON);
---skip_if_hypergraph  # FORMAT=JSON is not supported, file was never created.
 --replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
 eval
   LOAD DATA INFILE '$MYSQLTEST_VARDIR/tmp/bug30838749' INTO TABLE t2
   LINES STARTING BY 'EXPLAIN' TERMINATED BY 'EOL';
---skip_if_hypergraph  # FORMAT=JSON is not supported, file was never created.
 SELECT j->'$**.used_columns' FROM t2;
 
 DROP TABLE t1, t2;
@@ -652,15 +657,13 @@ ALTER TABLE t1 ADD INDEX i1 ((FIND_IN_SET('Admin', roles)));
 --echo # (Prove index exists, we're using it, and it gives correct results.)
 SHOW INDEXES FROM t1 WHERE key_name="i1";
 
-SET explain_json_format_version = 2;
 EXPLAIN FORMAT=JSON INTO @explain
 SELECT id FROM t1 FORCE INDEX (i1) WHERE FIND_IN_SET('Admin', roles)>0;
-SET explain_json_format_version = DEFAULT;
 # Expect an index range scan. The old optimizer puts a redundant
 # filter on top of the range scan, whereas the hypergraph optimizer
 # doesn't. Accept both plans.
-SELECT COALESCE(JSON_EXTRACT(@explain, '$.inputs[0].operation'),
-                JSON_EXTRACT(@explain, '$.operation')) AS scan;
+SELECT COALESCE(JSON_EXTRACT(@explain, '$.query_plan.inputs[0].operation'),
+                JSON_EXTRACT(@explain, '$.query_plan.operation')) AS scan;
 
 SELECT id FROM t1 WHERE FIND_IN_SET('Admin', roles)>0;
 

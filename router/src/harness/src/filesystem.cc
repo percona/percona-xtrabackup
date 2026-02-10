@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 #include "mysql/harness/filesystem.h"
 
 #include <algorithm>
+#include <fstream>
 #include <functional>
 #include <iterator>
 #include <ostream>
@@ -37,6 +38,8 @@ namespace mysql_harness {
 
 ////////////////////////////////////////////////////////////////
 // class Path members and free functions
+
+const char *const Path::extension_separator = ".";
 
 Path::Path() noexcept : type_(FileType::EMPTY_PATH) {}
 
@@ -83,6 +86,16 @@ Path Path::basename() const {
     return std::string(path_, pos + 1);
   else
     return Path(root_directory);
+}
+
+std::string Path::extension() const {
+  auto pos_dir = path_.find_last_of(directory_separator);
+  auto pos_ext = path_.find_last_of(extension_separator);
+
+  if (pos_ext == std::string::npos || pos_dir == std::string::npos) return {};
+  if (pos_ext < pos_dir) return {};
+
+  return std::string(path_, pos_ext);
 }
 
 Path Path::dirname() const {
@@ -261,7 +274,16 @@ stdx::expected<void, std::error_code> delete_dir_recursive(
     return stdx::unexpected(std::error_code(errno, std::system_category()));
   }
 
-  return delete_dir(dir);
+  auto del_res = delete_dir(dir);
+
+  if (!del_res &&
+      del_res.error() == make_error_code(std::errc::not_a_directory)) {
+    // if the 'dir' is a symlink-to-a-directory it needs to be removed with
+    // 'delete_file()' instead of 'delete_dir()'
+    return delete_file(dir);
+  }
+
+  return del_res;
 }
 
 std::string get_plugin_dir(const std::string &runtime_dir) {
@@ -353,6 +375,28 @@ void check_file_access_rights(const std::string &file_name) {
 
     throw std::system_error(ec, "'" + file_name + "' has insecure permissions");
   }
+}
+
+void copy_file(const std::string &from, const std::string &to) {
+  std::ofstream ofile;
+  std::ifstream ifile;
+
+  ofile.open(to,
+             std::ofstream::out | std::ofstream::binary | std::ofstream::trunc);
+  if (ofile.fail()) {
+    throw std::system_error(errno, std::generic_category(),
+                            "Could not create file '" + to + "'");
+  }
+  ifile.open(from, std::ofstream::in | std::ofstream::binary);
+  if (ifile.fail()) {
+    throw std::system_error(errno, std::generic_category(),
+                            "Could not open file '" + from + "'");
+  }
+
+  ofile << ifile.rdbuf();
+
+  ofile.close();
+  ifile.close();
 }
 
 }  // namespace mysql_harness

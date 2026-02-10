@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -50,7 +50,7 @@ DEFINE_BOOL_METHOD(Keyring_metadata_query_service_impl::is_initialized, ()) {
 DEFINE_BOOL_METHOD(Keyring_metadata_query_service_impl::init,
                    (my_h_keyring_component_metadata_iterator *
                     metadata_iterator)) {
-  keyring_file_component_option_usage_set();
+  ++opt_option_tracker_usage_file_keyring;
   *metadata_iterator = nullptr;
   std::unique_ptr<config_vector> it;
   const bool retval =

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -54,7 +54,7 @@ TEST_F(CompatibilityModuleTest, CheckCompatibleBySameVersion) {
   all_versions.insert(member1);
 
   // Both members have the same version
-  Compatibility_type ret = module->check_incompatibility(
+  Compatibility_type const ret = module->check_incompatibility(
       *local_version, member1, true, all_versions);
 
   ASSERT_EQ(COMPATIBLE, ret);
@@ -158,7 +158,7 @@ TEST_F(CompatibilityModuleTest, ReadCompatibility) {
   all_versions.insert(member2);
 
   // Member 2 has a higher major version so it is read compatible
-  Compatibility_type ret =
+  Compatibility_type const ret =
       module->check_incompatibility(member2, member1, true, all_versions);
 
   ASSERT_EQ(READ_COMPATIBLE, ret);
@@ -193,12 +193,12 @@ TEST_F(CompatibilityModuleTest, Incompatibility) {
 }
 
 TEST_F(CompatibilityModuleTest, isLTS) {
-  Member_version server_080037(0x080037);  // version: 8.0.37
-  Member_version server_080300(0x080300);  // version: 8.3.0
-  Member_version server_080400(0x080400);  // version: 8.4.0
-  Member_version server_080401(0x080401);  // version: 8.4.1
-  Member_version server_080499(0x080499);  // version: 8.4.99
-  Member_version server_090000(0x090000);  // version: 9.0.0
+  Member_version const server_080037(0x080037);  // version: 8.0.37
+  Member_version const server_080300(0x080300);  // version: 8.3.0
+  Member_version const server_080400(0x080400);  // version: 8.4.0
+  Member_version const server_080401(0x080401);  // version: 8.4.1
+  Member_version const server_080499(0x080499);  // version: 8.4.99
+  Member_version const server_090000(0x090000);  // version: 9.0.0
 
   std::set<Member_version> all_versions;
   all_versions.insert(server_080401);

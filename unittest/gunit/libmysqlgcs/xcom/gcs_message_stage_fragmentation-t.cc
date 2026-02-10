@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -120,8 +120,8 @@ class Mock_gcs_xcom_proxy : public Gcs_xcom_proxy_base {
   /* Mocking fails compilation on Windows. It attempts to copy the std::future
    * which is non-copyable. */
   Gcs_xcom_input_queue::future_reply xcom_input_try_push_and_get_reply(
-      app_data_ptr) {
-    return std::future<std::unique_ptr<Gcs_xcom_input_queue::Reply>>();
+      app_data_ptr) override {
+    return {};
   }
   MOCK_METHOD0(xcom_input_try_pop, xcom_input_request_ptr());
 };
@@ -262,11 +262,11 @@ class GcsMessageStageFragmentationTest : public GcsBaseTest {
 /* Verify that the reassembly of fragments whose delivery crosses views works.
  */
 TEST_F(GcsMessageStageFragmentationTest, ReassemblyOfFragmentsThatCrossViews) {
-  Mock_gcs_communication_event_listener ev_listener;
-  int listener_ref = m_xcom_comm_if.add_event_listener(ev_listener);
+  Mock_gcs_communication_event_listener const ev_listener;
+  int const listener_ref = m_xcom_comm_if.add_event_listener(ev_listener);
   EXPECT_CALL(ev_listener, on_message_received(_)).Times(1);
 
-  std::string payload("payload!");
+  std::string const payload("payload!");
 
   bool constexpr FRAGMENT = true;
   unsigned long long constexpr FRAGMENT_THRESHOLD = 10;
@@ -284,7 +284,7 @@ TEST_F(GcsMessageStageFragmentationTest, ReassemblyOfFragmentsThatCrossViews) {
       Gcs_member_identifier(m_mock_xcom_address.get_member_address()),
       *xcom_nodes_first_view);
 
-  Gcs_message_data *message_data = new Gcs_message_data(0, payload.size());
+  auto *message_data = new Gcs_message_data(0, payload.size());
   message_data->append_to_payload(
       reinterpret_cast<uchar const *>(payload.c_str()), payload.size());
   ASSERT_GT(message_data->get_encode_size(), FRAGMENT_THRESHOLD);
@@ -299,10 +299,10 @@ TEST_F(GcsMessageStageFragmentationTest, ReassemblyOfFragmentsThatCrossViews) {
   ASSERT_EQ(packets_out.size(), 2);
 
   /* Mock sending the packets to affect the protocol changer. */
-  Gcs_message message(
+  Gcs_message const message(
       Gcs_member_identifier(m_mock_xcom_address.get_member_address()),
       m_mock_gid, message_data);
-  enum_gcs_error message_result = m_xcom_comm_if.send_message(message);
+  enum_gcs_error const message_result = m_xcom_comm_if.send_message(message);
   ASSERT_EQ(GCS_OK, message_result);
 
   /* Receive first fragment in one view. */

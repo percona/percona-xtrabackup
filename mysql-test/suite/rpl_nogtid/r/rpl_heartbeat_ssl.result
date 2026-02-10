@@ -13,7 +13,6 @@ SOURCE_PORT=SOURCE_PORT,
 SOURCE_USER='root',
 SOURCE_HEARTBEAT_PERIOD=0.1,
 SOURCE_LOG_FILE='MASTER_BINLOG',
-SOURCE_SSL=1,
 SOURCE_SSL_CA='MYSQL_TEST_DIR/std_data/cacert.pem',
 SOURCE_SSL_CERT='MYSQL_TEST_DIR/std_data/client-cert.pem',
 SOURCE_SSL_KEY='MYSQL_TEST_DIR/std_data/client-key.pem';
@@ -28,7 +27,6 @@ Heartbeat event has received
 *** Clean up ***
 include/rpl/stop_replica.inc
 CHANGE REPLICATION SOURCE TO 
-SOURCE_SSL=0,
 SOURCE_SSL_CA='',
 SOURCE_SSL_CERT='',
 SOURCE_SSL_KEY='';

@@ -114,6 +114,7 @@ CREATE USER tu1@localhost IDENTIFIED WITH 'test_plugin_server';
 query_vertical SELECT User,plugin,password_expired,
 password_expired FROM mysql.user WHERE USER='tu1';
 
+--error ER_PASSWORD_EXPIRATION_NOT_SUPPORTED_BY_AUTH_METHOD
 CREATE USER tu2@localhost IDENTIFIED WITH 'test_plugin_server'
             BY 'auth_@13*' PASSWORD EXPIRE;
 query_vertical SELECT User,plugin,password_expired
@@ -244,7 +245,7 @@ query_vertical SELECT User,plugin,ssl_type,ssl_cipher,
 x509_issuer,x509_subject,max_questions,max_user_connections,password_expired,
 password_lifetime FROM mysql.user WHERE USER='u23';
 
-DROP USER tu1@localhost,tu2@localhost,tu3@localhost,tu4@localhost,tu5@localhost,
+DROP USER tu1@localhost,tu3@localhost,tu4@localhost,tu5@localhost,
           tu6@localhost,user1@'%',user2@'%',user4@localhost,user6@localhost,
           user7@localhost,user8@localhost,user10@localhost,u1@localhost,u2@localhost,
           u3@localhost,u4@localhost,u5@localhost,u6@localhost,u7@localhost,u8@localhost,

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +21,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
+#include <cassert>
 #include <ios>
 #include <sstream>
 
@@ -33,7 +33,7 @@ Member_version::Member_version(unsigned int version) {
 
 uint32 Member_version::get_version() const { return this->version; }
 
-const std::string Member_version::get_version_string() const {
+std::string Member_version::get_version_string() const {
   std::stringstream member_version;
   member_version << std::hex << get_major_version() << "."
                  << get_minor_version() << "." << get_patch_version();
@@ -63,20 +63,20 @@ bool Member_version::operator<(const Member_version &other) const {
 
   if (get_major_version() < other.get_major_version()) {
     return true;
-  } else if (get_major_version() > other.get_major_version()) {
+  }
+  if (get_major_version() > other.get_major_version()) {
     return false;
-  } else  // major version are the same
-  {
-    if (get_minor_version() < other.get_minor_version()) {
-      return true;
-    } else if (get_minor_version() > other.get_minor_version()) {
-      return false;
-    } else  // minor version are the same
-    {
-      if (get_patch_version() < other.get_patch_version()) {
-        return true;
-      }
-    }
+  }
+  // major version are the same
+  if (get_minor_version() < other.get_minor_version()) {
+    return true;
+  }
+  if (get_minor_version() > other.get_minor_version()) {
+    return false;
+  }
+  // minor version are the same
+  if (get_patch_version() < other.get_patch_version()) {
+    return true;
   }
 
   return false;
@@ -100,7 +100,7 @@ bool Member_version::operator<=(const Member_version &other) const {
 uint8_t Member_version::get_major_version_decimal() const {
   std::stringstream major_hex;
   major_hex << std::hex << get_major_version();
-  uint8_t major_dec = std::stoul(major_hex.str());
+  uint8_t const major_dec = std::stoul(major_hex.str());
   assert(major_dec <= 99);
   return major_dec;
 }
@@ -108,7 +108,7 @@ uint8_t Member_version::get_major_version_decimal() const {
 uint8_t Member_version::get_minor_version_decimal() const {
   std::stringstream minor_hex;
   minor_hex << std::hex << get_minor_version();
-  uint8_t minor_dec = std::stoul(minor_hex.str());
+  uint8_t const minor_dec = std::stoul(minor_hex.str());
   assert(minor_dec <= 99);
   return minor_dec;
 }
@@ -116,7 +116,7 @@ uint8_t Member_version::get_minor_version_decimal() const {
 uint8_t Member_version::get_patch_version_decimal() const {
   std::stringstream patch_hex;
   patch_hex << std::hex << get_patch_version();
-  uint8_t patch_dec = std::stoul(patch_hex.str());
+  uint8_t const patch_dec = std::stoul(patch_hex.str());
   assert(patch_dec <= 99);
   return patch_dec;
 }
@@ -133,12 +133,12 @@ void Member_version::update_version_decimal(const uint8_t major,
     5.9.30 -> 0x050930
     version= 0 x 16^5 + 5 x 16^4 + 0 x 16^3 + 9 x 16^2 + 3 x 16^1 + 0 x 16^0
   */
-  uint8_t v1 = patch / 10;
-  uint8_t v0 = patch - v1 * 10;
-  uint8_t v3 = minor / 10;
-  uint8_t v2 = minor - v3 * 10;
-  uint8_t v5 = major / 10;
-  uint8_t v4 = major - v5 * 10;
+  uint8_t const v1 = patch / 10;
+  uint8_t const v0 = patch - v1 * 10;
+  uint8_t const v3 = minor / 10;
+  uint8_t const v2 = minor - v3 * 10;
+  uint8_t const v5 = major / 10;
+  uint8_t const v4 = major - v5 * 10;
 
   this->version =
       v0 + v1 * 16 + v2 * 256 + v3 * 4096 + v4 * 65536 + v5 * 1048576;

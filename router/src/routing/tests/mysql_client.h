@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -32,6 +32,7 @@
 #include <string_view>
 
 #include <mysql.h>
+#include "my_sys.h"
 
 #include "mysql/harness/stdx/expected.h"
 
@@ -61,7 +62,7 @@ inline bool operator==(const MysqlError &a, const MysqlError &b) {
 }
 
 static inline MysqlError make_mysql_error_code(unsigned int e) {
-  return {e, ER_CLIENT(e), "HY000"};
+  return {e, e ? my_get_err_msg(e) : my_get_err_msg(CR_UNKNOWN_ERROR), "HY000"};
 }
 
 static inline MysqlError make_mysql_error_code(MYSQL *m) {

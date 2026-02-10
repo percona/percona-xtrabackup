@@ -829,5 +829,5 @@ ROLLBACK;
 SET @@SESSION.innodb_lock_wait_timeout = @@SESSION.innodb_lock_wait_timeout;
 SET GTID_NEXT = 'AUTOMATIC';
 DROP TABLE t1;
-include/rpl/set_gtid_mode.inc [OFF on servers 1]
+include/rpl/set_gtid_mode.inc [ON on servers 1]
 include/rpl/deinit.inc

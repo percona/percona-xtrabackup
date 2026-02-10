@@ -166,12 +166,11 @@ INSERT INTO mysqldump_test_db.t1 VALUES (2);
 --echo # Old terminology is no longer accepted
 
 --source include/rpl/connection_replica.inc
-
 --error 1
 --exec $MYSQL --host=127.0.0.1 -P $SLAVE_MYPORT < $dump_file_master
 
 # New terminology
-
+RESET BINARY LOGS AND GTIDS;
 --exec $MYSQL --host=127.0.0.1 -P $SLAVE_MYPORT < $dump_file_rep_source
 
 --let $assert_text= "CHANGE REPLICATION SOURCE set the valid position"
@@ -406,6 +405,7 @@ INSERT INTO mysqldump_test_db.t1 VALUES (3);
 
 # New terminology
 
+RESET BINARY LOGS AND GTIDS;
 --exec $MYSQL --host=127.0.0.1 -P $SLAVE_MYPORT < $dump_file_rep_source
 
 # The dump deletes and then applies the data and starts replication, so there should be 3 rows on the table

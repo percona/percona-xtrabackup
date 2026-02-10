@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,15 @@ bool Server_services_references::initialize() {
     error = true;
     goto end;
   }
+
+  if (registry_service->acquire("registry_registration",
+                                &m_registry_registration_handle)) {
+    error = true;
+    goto end;
+  }
+  registry_registration_service =
+      reinterpret_cast<SERVICE_TYPE(registry_registration) *>(
+          m_registry_registration_handle);
 
   if (registry_service->acquire("mysql_charset", &m_mysql_charset_handle)) {
     error = true;
@@ -151,6 +160,12 @@ bool Server_services_references::finalize() {
   if (nullptr != m_mysql_charset_handle) {
     error |= registry_service->release(m_mysql_charset_handle);
     m_mysql_charset_handle = nullptr;
+  }
+
+  registry_registration_service = nullptr;
+  if (nullptr != m_registry_registration_handle) {
+    error |= registry_service->release(m_registry_registration_handle);
+    m_registry_registration_handle = nullptr;
   }
 
   if (nullptr != registry_service) {

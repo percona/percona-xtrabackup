@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -39,9 +39,9 @@ inline std::string msg_to_string(const ngs::Message &msg) {
   printer.SetSingleLineMode(true);
   std::string output;
   printer.PrintToString(msg, &output);
-  return msg.GetTypeName() + "{ " + output + "}";
+  return std::string(msg.GetTypeName()) + "{ " + output + "}";
 #else
-  return msg.GetTypeName();
+  return std::string(msg.GetTypeName());
 #endif
 }
 

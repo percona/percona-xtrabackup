@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -114,7 +114,7 @@ class NDB_SCHEMA_OBJECT {
   } state;
 
   uint increment_use_count() const;
-  uint decremement_use_count() const;
+  uint decrement_use_count() const;
 
   NDB_SCHEMA_OBJECT() = delete;
   NDB_SCHEMA_OBJECT(const NDB_SCHEMA_OBJECT &) = delete;

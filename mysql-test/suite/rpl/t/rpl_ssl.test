@@ -2,19 +2,18 @@
 let $rpl_privilege_checks_user_grant_option = 1;
 source include/rpl/init_source_replica.inc;
 
-# Default replication setup at rpl/init_source_replica.inc does not set SOURCE_SSL
 --connection slave
 --let $current_source_ssl= query_get_value(SHOW REPLICA STATUS, Source_SSL_Allowed, 1)
---let $assert_text= Source_SSL_Allowed should be NO by default
---let $assert_cond= "$current_source_ssl" = "NO"
+--let $assert_text= Source_SSL_Allowed should be YES by default
+--let $assert_cond= "$current_source_ssl" = "YES"
 --source include/assert.inc
 
 
-# The slave should be initially connected to the master without SSL/TLS
+# The replica should be initially connected to the source with SSL/TLS
 --connection master
 --let $connection_type= `SELECT CONNECTION_TYPE FROM performance_schema.threads WHERE PROCESSLIST_COMMAND LIKE "Binlog Dump%"`
---let $assert_text= Without SOURCE_SSL, the slave should be connected to the master without SSL/TLS
---let $assert_cond= "$connection_type" <> "SSL/TLS" AND "$connection_type" <> ""
+--let $assert_text= Replica must be connected to the source with SSL/TLS
+--let $assert_cond= "$connection_type" = "SSL/TLS"
 --source include/assert.inc
 
 # create a user for replication that requires ssl encryption
@@ -32,7 +31,6 @@ STOP REPLICA;
 eval CHANGE REPLICATION SOURCE to
   SOURCE_USER='replssl',
   SOURCE_PASSWORD='',
-  SOURCE_SSL=1,
   SOURCE_SSL_CA ='$MYSQL_TEST_DIR/std_data/cacert.pem',
   SOURCE_SSL_CERT='$MYSQL_TEST_DIR/std_data/client-cert.pem',
   SOURCE_SSL_KEY='$MYSQL_TEST_DIR/std_data/client-key.pem';
@@ -137,7 +135,6 @@ eval CHANGE REPLICATION SOURCE TO SOURCE_SSL= 1, SOURCE_SSL_CRL='$MYSQL_TEST_DIR
 --replace_column 2 ####
 CHANGE REPLICATION SOURCE TO
  SOURCE_USER = 'root',
- SOURCE_SSL = 0,
  SOURCE_SSL_CA = '',
  SOURCE_SSL_CERT = '',
  SOURCE_SSL_KEY = '',

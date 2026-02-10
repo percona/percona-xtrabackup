@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,11 +28,11 @@
 
 #include "xdr_gen/xcom_vp.h"
 
-#define copy_app_data(target, source)                            \
-  {                                                              \
-    IFDBG(D_NONE, FN; STRLIT(" copy_app_data "); PTREXP(target); \
-          PTREXP(*target); PTREXP(source));                      \
-    _replace_app_data_list(target, source);                      \
+#define copy_app_data(target, source)                                 \
+  {                                                                   \
+    XCOM_IFDBG(D_NONE, FN; STRLIT(" copy_app_data "); PTREXP(target); \
+               PTREXP(*target); PTREXP(source));                      \
+    _replace_app_data_list(target, source);                           \
   }
 
 #define steal_app_data(target, source) \

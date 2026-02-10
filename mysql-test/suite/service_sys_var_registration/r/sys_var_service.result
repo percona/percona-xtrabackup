@@ -151,6 +151,7 @@ VARIABLE_NAME	VARIABLE_VALUE
 UNINSTALL COMPONENT "file://component_test_sys_var_service";
 ########## test_component_sys_var_service.log:
 test_component_sys_var init:
+hidden_int_variable_value=8
 int register_variable failed.
 variable value : 8
 variable value : 1024

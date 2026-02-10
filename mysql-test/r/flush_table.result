@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 drop table if exists t1,t2;
 create table t1 (a int not null auto_increment primary key);
 insert into t1 values(0);
@@ -449,3 +450,4 @@ DROP TABLE t1;
 # Reset innodb_file_per_table
 SET GLOBAL innodb_file_per_table= @old_innodb_file_per_table;
 # End of 5.6 tests
+include/rpl/set_gtid_mode_on.inc

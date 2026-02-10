@@ -3,6 +3,11 @@ Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
 [connection master]
+[connection slave]
+include/rpl/stop_replica.inc
+SET GLOBAL replica_preserve_commit_order = FALSE;
+include/rpl/start_replica.inc
+[connection master]
 ########################################################################
 #                               SET UP
 ########################################################################
@@ -494,9 +499,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -505,7 +510,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -531,9 +536,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -550,9 +555,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -561,7 +566,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -587,9 +592,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -606,9 +611,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -625,9 +630,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -636,7 +641,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -662,9 +667,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -673,7 +678,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -699,9 +704,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -718,9 +723,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -729,7 +734,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -755,9 +760,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -774,9 +779,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -793,9 +798,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -804,7 +809,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -830,9 +835,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -849,9 +854,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -860,7 +865,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -886,9 +891,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -905,9 +910,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -924,9 +929,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -943,9 +948,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -954,7 +959,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -980,9 +985,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -999,9 +1004,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1018,9 +1023,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1037,9 +1042,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1056,9 +1061,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1075,9 +1080,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1086,7 +1091,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -1112,9 +1117,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1131,9 +1136,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1142,7 +1147,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -1168,9 +1173,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1187,9 +1192,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1206,9 +1211,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1225,9 +1230,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1236,7 +1241,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -1262,9 +1267,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1281,9 +1286,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1300,9 +1305,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1319,9 +1324,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1338,9 +1343,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1357,9 +1362,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1368,7 +1373,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -1394,9 +1399,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1413,9 +1418,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1432,9 +1437,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1443,7 +1448,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -1469,9 +1474,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1488,9 +1493,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1507,9 +1512,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1526,9 +1531,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1545,9 +1550,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1564,9 +1569,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1575,7 +1580,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -1601,9 +1606,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1620,9 +1625,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1639,9 +1644,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1658,9 +1663,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1677,9 +1682,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1696,9 +1701,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1715,9 +1720,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1734,9 +1739,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1753,9 +1758,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1764,7 +1769,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -1790,9 +1795,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1809,9 +1814,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1828,9 +1833,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1839,7 +1844,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -1865,9 +1870,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1884,9 +1889,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1903,9 +1908,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1922,9 +1927,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1941,9 +1946,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1960,9 +1965,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -1971,7 +1976,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -1997,9 +2002,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2016,9 +2021,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2035,9 +2040,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2054,9 +2059,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2073,9 +2078,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2092,9 +2097,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2111,9 +2116,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2130,9 +2135,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2149,9 +2154,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2160,7 +2165,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -2186,9 +2191,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2205,9 +2210,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2216,7 +2221,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -2242,9 +2247,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2261,9 +2266,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2280,9 +2285,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2291,7 +2296,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -2317,9 +2322,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2336,9 +2341,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2347,7 +2352,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -2373,9 +2378,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2392,9 +2397,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2411,9 +2416,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2422,7 +2427,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -2448,9 +2453,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2467,9 +2472,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2478,7 +2483,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -2504,9 +2509,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2523,9 +2528,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2542,9 +2547,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2553,7 +2558,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -2579,9 +2584,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2598,9 +2603,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2617,9 +2622,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2636,9 +2641,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2647,7 +2652,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -2673,9 +2678,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2692,9 +2697,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2711,9 +2716,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2730,9 +2735,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2749,9 +2754,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2768,9 +2773,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2779,7 +2784,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -2805,9 +2810,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2824,9 +2829,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2843,9 +2848,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2862,9 +2867,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2873,7 +2878,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -2899,9 +2904,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2918,9 +2923,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2937,9 +2942,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2956,9 +2961,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2975,9 +2980,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -2994,9 +2999,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3005,7 +3010,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -3031,9 +3036,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3050,9 +3055,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3069,9 +3074,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3088,9 +3093,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3099,7 +3104,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -3125,9 +3130,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3144,9 +3149,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3163,9 +3168,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3182,9 +3187,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3201,9 +3206,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3220,9 +3225,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3231,7 +3236,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -3257,9 +3262,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3276,9 +3281,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3295,9 +3300,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3314,9 +3319,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3333,9 +3338,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3352,9 +3357,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3363,7 +3368,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -3389,9 +3394,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3408,9 +3413,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3427,9 +3432,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3446,9 +3451,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3465,9 +3470,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3484,9 +3489,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3503,9 +3508,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3522,9 +3527,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3541,9 +3546,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3552,7 +3557,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -3578,9 +3583,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3597,9 +3602,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3616,9 +3621,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3635,9 +3640,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3654,9 +3659,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3673,9 +3678,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3684,7 +3689,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -3710,9 +3715,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3729,9 +3734,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3748,9 +3753,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3767,9 +3772,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3786,9 +3791,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3805,9 +3810,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3824,9 +3829,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3843,9 +3848,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3862,9 +3867,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3873,7 +3878,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -3899,9 +3904,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3918,9 +3923,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3937,9 +3942,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3956,9 +3961,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3975,9 +3980,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -3994,9 +3999,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4005,7 +4010,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -4031,9 +4036,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4050,9 +4055,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4069,9 +4074,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4088,9 +4093,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4107,9 +4112,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4126,9 +4131,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4145,9 +4150,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4164,9 +4169,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4183,9 +4188,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4194,7 +4199,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -4220,9 +4225,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4239,9 +4244,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4258,9 +4263,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4269,7 +4274,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -4295,9 +4300,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4314,9 +4319,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4333,9 +4338,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4344,7 +4349,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -4370,9 +4375,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4389,9 +4394,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4408,9 +4413,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4419,7 +4424,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -4445,9 +4450,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4464,9 +4469,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4483,9 +4488,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4494,7 +4499,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -4520,9 +4525,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4539,9 +4544,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4558,9 +4563,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4577,9 +4582,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4596,9 +4601,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4615,9 +4620,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4626,7 +4631,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -4652,9 +4657,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4671,9 +4676,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4690,9 +4695,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4709,9 +4714,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4728,9 +4733,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4747,9 +4752,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4758,7 +4763,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -4784,9 +4789,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4803,9 +4808,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4822,9 +4827,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4841,9 +4846,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4860,9 +4865,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4879,9 +4884,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4890,7 +4895,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -4916,9 +4921,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4935,9 +4940,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4954,9 +4959,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4973,9 +4978,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -4992,9 +4997,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5011,9 +5016,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5022,7 +5027,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -5048,9 +5053,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5067,9 +5072,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5086,9 +5091,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5105,9 +5110,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5124,9 +5129,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5143,9 +5148,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5162,9 +5167,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5181,9 +5186,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5200,9 +5205,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5211,7 +5216,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -5237,9 +5242,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5256,9 +5261,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5275,9 +5280,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5294,9 +5299,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5313,9 +5318,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5332,9 +5337,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5351,9 +5356,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5370,9 +5375,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5389,9 +5394,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5400,7 +5405,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -5426,9 +5431,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5445,9 +5450,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5464,9 +5469,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5483,9 +5488,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5502,9 +5507,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5521,9 +5526,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5540,9 +5545,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5559,9 +5564,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5578,9 +5583,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5589,7 +5594,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -5615,9 +5620,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5634,9 +5639,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5653,9 +5658,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5672,9 +5677,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5691,9 +5696,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5710,9 +5715,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5729,9 +5734,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_1.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5748,9 +5753,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_2.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5767,9 +5772,9 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Table_map	#	#	table_id: # (test_3.tt_1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> B T T C << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -5778,7 +5783,7 @@ master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 ==== begin rpl_mta_crash_safe.inc:recovery ====
 include/rpl/start_receiver.inc
 ** fixing gaps **
-include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0]
+include/rpl/start_server.inc [server_number=2 parameters: --skip-replica-start --relay-log-recovery=0]
 START REPLICA UNTIL SQL_AFTER_MTS_GAPS;
 include/rpl/wait_for_replica_status.inc [Until_Condition]
 include/rpl/wait_for_applier_to_stop.inc
@@ -5800,8 +5805,6 @@ include/rpl/sync_to_replica.inc
 ########################################################################
 ==== begin rpl_mta_crash_safe.inc:clean ====
 include/rpl/stop_replica.inc
-Warnings:
-Warning	1287	'0' is deprecated and will be removed in a future release. Please use 1 instead
 include/rpl/start_replica.inc
 ---- begin clean database test_1 ----
 common/rpl/mixing_engines.inc [commands=clean]
@@ -5864,4 +5867,9 @@ DROP FUNCTION fc_i_nt_5_suc;
 DROP FUNCTION fc_i_nt_3_tt_3_suc;
 ---- end clean database test_3 ----
 ==== end rpl_mta_crash_safe.inc:clean ====
+[connection slave]
+include/rpl/stop_replica.inc
+SET GLOBAL replica_preserve_commit_order = SAVE_REPLICA_PRESERVE_COMMIT_ORDER;
+include/rpl/start_replica.inc
+[connection master]
 include/rpl/deinit.inc

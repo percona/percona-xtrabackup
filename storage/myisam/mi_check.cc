@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -51,13 +51,13 @@
 
 #include "my_config.h"
 
-#include <assert.h>
-#include <errno.h>
 #include <fcntl.h>
-#include <limits.h>
-#include <stdarg.h>
 #include <sys/types.h>
-#include <time.h>
+#include <cassert>
+#include <cerrno>
+#include <climits>
+#include <cstdarg>
+#include <ctime>
 
 #include <algorithm>
 
@@ -140,7 +140,7 @@ int chk_status(MI_CHECK *param, MI_INFO *info) {
     mi_check_print_warning(param, "Table is marked as crashed");
   if (share->state.open_count != (uint)(info->s->global_changed ? 1 : 0)) {
     /* Don't count this as a real warning, as check can correct this ! */
-    uint save = param->warning_printed;
+    uint const save = param->warning_printed;
     mi_check_print_warning(
         param,
         share->state.open_count == 1
@@ -195,7 +195,8 @@ int chk_del(MI_CHECK *param, MI_INFO *info, uint test_flag) {
         goto wrong;
       }
       if (info->s->options & HA_OPTION_PACK_RECORD) {
-        my_off_t prev_link = mi_sizekorr(pointer_cast<uchar *>(buff) + 12);
+        my_off_t const prev_link =
+            mi_sizekorr(pointer_cast<uchar *>(buff) + 12);
         if (empty && prev_link != old_link) {
           if (test_flag & T_VERBOSE) puts("");
           mi_check_print_error(
@@ -246,7 +247,7 @@ wrong:
 
 static int check_k_link(MI_CHECK *param, MI_INFO *info, uint nr) {
   my_off_t next_link;
-  uint block_size = (nr + 1) * MI_MIN_KEY_BLOCK_LENGTH;
+  uint const block_size = (nr + 1) * MI_MIN_KEY_BLOCK_LENGTH;
   ha_rows records;
   char llbuff[21], llbuff2[21];
   uchar *buff;
@@ -509,7 +510,7 @@ int chk_key(MI_CHECK *param, MI_INFO *info) {
       if (!mi_rkey(info, info->rec_buff, key, (const uchar *)info->lastkey,
                    (key_part_map)1, HA_READ_KEY_EXACT)) {
         /* Don't count this as a real warning, as myisamchk can't correct it */
-        uint save = param->warning_printed;
+        uint const save = param->warning_printed;
         mi_check_print_warning(param,
                                "Found row where the auto_increment "
                                "column has the value 0");
@@ -573,7 +574,7 @@ static int chk_index_down(MI_CHECK *param, MI_INFO *info, MI_KEYDEF *keyinfo,
   if (page + keyinfo->block_length > info->state->key_file_length) {
     /* purecov: begin tested */
     /* Give it a chance to fit in the real file size. */
-    my_off_t max_length =
+    my_off_t const max_length =
         mysql_file_seek(info->s->kfile, 0L, MY_SEEK_END, MYF(0));
     mi_check_print_error(param,
                          "Invalid key block position: %s  "
@@ -1146,13 +1147,13 @@ int chk_data_link(MI_CHECK *param, MI_INFO *info, int extend) {
            key++, keyinfo++) {
         if (mi_is_key_active(info->s->state.key_map, key)) {
           if (!(keyinfo->flag & HA_FULLTEXT)) {
-            uint key_length =
+            uint const key_length =
                 _mi_make_key(info, key, info->lastkey, record, start_recpos);
             if (extend) {
               /* We don't need to lock the key tree here as we don't allow
                  concurrent threads when running myisamchk
               */
-              int search_result =
+              int const search_result =
                   (keyinfo->flag & HA_SPATIAL)
                       ? rtree_find_first(info, key, info->lastkey, key_length,
                                          MBR_EQUAL | MBR_DATA)
@@ -1417,7 +1418,7 @@ int mi_repair(MI_CHECK *param, MI_INFO *info, char *name, int rep_quick,
   DBUG_TRACE;
 
   memset(&sort_info, 0, sizeof(sort_info));
-  memset(&sort_param, 0, sizeof(sort_param));
+  memset((void *)&sort_param, 0, sizeof(sort_param));
   start_records = info->state->records;
   new_header_length =
       (param->testflag & T_UNPACK) ? 0L : share->pack.header_length;
@@ -1657,7 +1658,7 @@ static int writekeys(MI_SORT_PARAM *sort_param) {
   uchar *key;
   MI_INFO *info = sort_param->sort_info->info;
   uchar *buff = sort_param->record;
-  my_off_t filepos = sort_param->filepos;
+  my_off_t const filepos = sort_param->filepos;
   DBUG_TRACE;
 
   key = info->lastkey + info->s->base.max_key_length;
@@ -1666,10 +1667,10 @@ static int writekeys(MI_SORT_PARAM *sort_param) {
       if (info->s->keyinfo[i].flag & HA_FULLTEXT) {
         if (_mi_ft_add(info, i, key, buff, filepos)) goto err;
       } else if (info->s->keyinfo[i].flag & HA_SPATIAL) {
-        uint key_length = _mi_make_key(info, i, key, buff, filepos);
+        uint const key_length = _mi_make_key(info, i, key, buff, filepos);
         if (rtree_insert(info, i, key, key_length)) goto err;
       } else {
-        uint key_length = _mi_make_key(info, i, key, buff, filepos);
+        uint const key_length = _mi_make_key(info, i, key, buff, filepos);
         if (_mi_ck_write(info, i, key, key_length)) goto err;
       }
     }
@@ -1684,7 +1685,7 @@ err:
         if (info->s->keyinfo[i].flag & HA_FULLTEXT) {
           if (_mi_ft_del(info, i, key, buff, filepos)) break;
         } else {
-          uint key_length = _mi_make_key(info, i, key, buff, filepos);
+          uint const key_length = _mi_make_key(info, i, key, buff, filepos);
           if (_mi_ck_delete(info, i, key, key_length)) break;
         }
       }
@@ -2045,7 +2046,7 @@ int mi_repair_by_sort(MI_CHECK *param, MI_INFO *info, const char *name,
     param->testflag |= T_CALC_CHECKSUM;
 
   memset(&sort_info, 0, sizeof(sort_info));
-  memset(&sort_param, 0, sizeof(sort_param));
+  memset((void *)&sort_param, 0, sizeof(sort_param));
   if (!(sort_info.key_block =
             alloc_key_blocks(param, (uint)param->sort_key_blocks,
                              share->base.max_key_block_length)) ||
@@ -2172,7 +2173,7 @@ int mi_repair_by_sort(MI_CHECK *param, MI_INFO *info, const char *name,
     info->state->empty = 0;
 
     if (sort_param.keyinfo->flag & HA_FULLTEXT) {
-      uint ft_max_word_len_for_sort =
+      uint const ft_max_word_len_for_sort =
           FT_MAX_WORD_LEN_FOR_SORT * sort_param.keyinfo->seg->charset->mbmaxlen;
       sort_param.key_length += ft_max_word_len_for_sort - HA_FT_MAXBYTELEN;
       /*
@@ -2273,7 +2274,7 @@ int mi_repair_by_sort(MI_CHECK *param, MI_INFO *info, const char *name,
   }
 
   if (rep_quick & T_FORCE_UNIQUENESS) {
-    my_off_t skr =
+    my_off_t const skr =
         info->state->data_file_length +
         (share->options & HA_OPTION_COMPRESS_RECORD ? MEMMAP_EXTRA_MARGIN : 0);
     if (skr != sort_info.filelength)
@@ -2633,14 +2634,13 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param) {
                       llstr(sort_param->start_recpos, llbuff),
                       (ulong)block_info.rec_len);
                   return 1;
-                } else {
-                  mi_check_print_info(param,
-                                      "Not enough memory for blob at %s (need "
-                                      "%lu); Row skipped",
-                                      llstr(sort_param->start_recpos, llbuff),
-                                      (ulong)block_info.rec_len);
-                  goto try_next;
                 }
+                mi_check_print_info(param,
+                                    "Not enough memory for blob at %s (need "
+                                    "%lu); Row skipped",
+                                    llstr(sort_param->start_recpos, llbuff),
+                                    (ulong)block_info.rec_len);
+                goto try_next;
               }
             } else
               to = sort_param->rec_buff;
@@ -2664,7 +2664,7 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param) {
             stretched over the end of the previous buffer contents.
           */
           {
-            uint header_len = (uint)(block_info.filepos - pos);
+            uint const header_len = (uint)(block_info.filepos - pos);
             uint prefetch_len = (MI_BLOCK_INFO_HEADER_LENGTH - header_len);
 
             if (prefetch_len > block_info.data_len)
@@ -2915,7 +2915,7 @@ int sort_write_record(MI_SORT_PARAM *sort_param) {
 /* Compare two keys from _create_index_by_sort */
 
 static int sort_key_cmp(void *cmp_arg, uchar *u_a, uchar *u_b) {
-  MI_SORT_PARAM *sort_param = (MI_SORT_PARAM *)cmp_arg;
+  auto *sort_param = (MI_SORT_PARAM *)cmp_arg;
   void *a = u_a;
   void *b = u_b;
   uint not_used[2];
@@ -3222,7 +3222,7 @@ static int sort_delete_record(MI_SORT_PARAM *sort_param) {
     }
 
     for (i = 0; i < sort_info->current_key; i++) {
-      uint key_length =
+      uint const key_length =
           _mi_make_key(info, i, key, sort_param->record, info->lastpos);
       if (_mi_ck_delete(info, i, key, key_length)) {
         mi_check_print_error(
@@ -3247,7 +3247,7 @@ int flush_pending_blocks(MI_SORT_PARAM *sort_param) {
   my_off_t filepos, key_file_length;
   SORT_KEY_BLOCKS *key_block;
   SORT_INFO *sort_info = sort_param->sort_info;
-  myf myf_rw = sort_info->param->myf_rw;
+  myf const myf_rw = sort_info->param->myf_rw;
   MI_INFO *info = sort_info->info;
   MI_KEYDEF *keyinfo = sort_param->keyinfo;
   DBUG_TRACE;
@@ -3583,7 +3583,7 @@ void update_auto_increment_key(MI_CHECK *param, MI_INFO *info,
     if (!repair_only)
       info->s->state.auto_increment = param->auto_increment_value;
   } else {
-    ulonglong auto_increment = retrieve_auto_increment(info, record);
+    ulonglong const auto_increment = retrieve_auto_increment(info, record);
     info->s->state.auto_increment =
         std::max(info->s->state.auto_increment, auto_increment);
     if (!repair_only)
@@ -3704,7 +3704,7 @@ static ha_checksum mi_byte_checksum(const uchar *buf, uint length) {
 static bool mi_too_big_key_for_sort(MI_KEYDEF *key, ha_rows rows) {
   uint key_maxlength = key->maxlength;
   if (key->flag & HA_FULLTEXT) {
-    uint ft_max_word_len_for_sort =
+    uint const ft_max_word_len_for_sort =
         FT_MAX_WORD_LEN_FOR_SORT * key->seg->charset->mbmaxlen;
     key_maxlength += ft_max_word_len_for_sort - HA_FT_MAXBYTELEN;
   }
@@ -3817,7 +3817,7 @@ static HA_KEYSEG *ha_find_null(HA_KEYSEG *keyseg, const uchar *a) {
       case HA_KEYTYPE_BINARY:
       case HA_KEYTYPE_BIT:
         if (keyseg->flag & HA_SPACE_PACK) {
-          int a_length = get_key_length(&a);
+          int const a_length = get_key_length(&a);
           a += a_length;
           break;
         } else
@@ -3827,13 +3827,13 @@ static HA_KEYSEG *ha_find_null(HA_KEYSEG *keyseg, const uchar *a) {
       case HA_KEYTYPE_VARTEXT2:
       case HA_KEYTYPE_VARBINARY1:
       case HA_KEYTYPE_VARBINARY2: {
-        int a_length = get_key_length(&a);
+        int const a_length = get_key_length(&a);
         a += a_length;
         break;
       }
       case HA_KEYTYPE_NUM:
         if (keyseg->flag & HA_SPACE_PACK) {
-          int alength = *a++;
+          int const alength = *a++;
           end = a + alength;
         }
         a = end;

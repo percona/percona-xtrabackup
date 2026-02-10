@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -128,9 +128,9 @@ TEST_F(XcomStatisticsTest, SuspiciousCountTest) {
   ASSERT_EQ(suspicious_list_ret.size(), 3);
 
   uint32_t node_to_find = 0;
-  auto find_node_lambda = [&](Gcs_node_suspicious elem) {
-    return elem.m_node_address.compare(
-               suspicious_list.at(node_to_find).m_node_address) == 0;
+  auto find_node_lambda = [&](const Gcs_node_suspicious &elem) {
+    return elem.m_node_address ==
+           suspicious_list.at(node_to_find).m_node_address;
   };
 
   for (; node_to_find < suspicious_list_ret.size(); node_to_find++) {
@@ -141,8 +141,8 @@ TEST_F(XcomStatisticsTest, SuspiciousCountTest) {
               suspicious_list.at(node_to_find).m_node_suspicious_count);
   }
 
-  auto do_not_find_node_lambda = [](Gcs_node_suspicious elem) {
-    return elem.m_node_address.compare("node6") == 0;
+  auto do_not_find_node_lambda = [](const Gcs_node_suspicious &elem) {
+    return elem.m_node_address == "node6";
   };
 
   auto result_from_find =

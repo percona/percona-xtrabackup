@@ -6,6 +6,8 @@
 call mtr.add_suppression(" In RENAME TABLE table `test`.`parent` is referenced in foreign key constraints which are not compatible with the new table definition.");
 --enable_query_log
 SET @saved_binlog_format= @@SESSION.binlog_format;
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 #
 # Bug#34455 (Ambiguous foreign keys syntax is accepted)
@@ -497,6 +499,9 @@ SELECT * FROM t2;
 --echo # covered by original fix for the bug.
 
 --source include/restart_mysqld.inc
+# gtid_mode default is ON, so after restart we should again set it to OFF
+--source include/rpl/set_gtid_mode_off.inc
+
 UPDATE t1 SET fld1= 3;
 
 SELECT * FROM t1;
@@ -531,10 +536,34 @@ SHOW CREATE TABLE t2;
 
 INSERT INTO t1(name) VALUES ('test1');
 INSERT INTO t2(name, fname) VALUES ('test1', 'test1');
+--error ER_ROW_IS_REFERENCED_2
 UPDATE t1 SET name=CONCAT('St', UNHEX('C3A5') ,'le') WHERE name = 'test1';
+
+SELECT id, HEX(name), LENGTH(name), CHAR_LENGTH(name) FROM t1;
+SELECT id, HEX(fname), LENGTH(fname), CHAR_LENGTH(fname) FROM t2;
 
 --echo # Should not get any rows here
 SELECT t1.name, t2.fname FROM t1, t2 WHERE t1.name <> t2.fname;
+
+--error ER_ROW_IS_REFERENCED_2
+UPDATE t1 SET name=CONCAT('Wroc', UNHEX('C582') ,'aw') WHERE id = 1;
+
+INSERT INTO t1(name) VALUES ('test2');
+INSERT INTO t2(name, fname) VALUES ('test2', 'test2');
+
+--error ER_ROW_IS_REFERENCED_2
+DELETE FROM t1 WHERE id=2;
+SELECT * FROM t1;
+SELECT * FROM t2;
+
+INSERT INTO t1(name) VALUES ('unrelated');
+--echo # Note that updating a t1.name value to a string that cannot be
+--echo # converted from utf8mb4 to latin1 also fails here even if the row
+--echo # being updated is not related to any t2 rows.
+--error ER_ROW_IS_REFERENCED_2
+UPDATE t1 SET name=CONCAT('Wroc', UNHEX('C582') ,'aw') WHERE name='unrelated';
+SELECT * FROM t1;
+SELECT * FROM t2;
 
 DROP TABLE t2;
 DROP TABLE t1;
@@ -2417,7 +2446,6 @@ DELETE FROM parent1;
 UNLOCK TABLES;
 DROP TABLES child, parent1;
 
-
 --echo #
 --echo # Bug #25722221 "RENAME COLUMN DID NOT UPDATE FOREIGN_KEY_COLUMN_USAGE
 --echo #                FOR FK CONSTRAINT".
@@ -2625,7 +2653,6 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 DROP TABLE t3;
 DROP VIEW t2;
-
 
 --echo #
 --echo # Test for bug #27041477 "ASSERTION `HAS_PRELOCKING_LIST ||
@@ -4087,11 +4114,11 @@ connection default;
 ALTER TABLE t2 ADD CONSTRAINT fk3 FOREIGN KEY (fld2) REFERENCES t3(fld1);
 
 connection con1;
---echo # Without patch, reveals parent table's information.
+--echo # Reveals parent information because fk2 is checked before fk3
 --error ER_NO_REFERENCED_ROW_2
 INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
 
---echo # Warning displayed does not reveal parent table information.
+--echo # Warning also reveals parent table information.
 INSERT IGNORE INTO t2 (fld1, fld2) VALUES (1, 2);
 SHOW WARNINGS;
 
@@ -4282,6 +4309,7 @@ SHOW CREATE TABLE t2;
 SHOW CREATE TABLE t3;
 SHOW CREATE TABLE t4;
 
+--sorted_result
 SELECT *  FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE
 TABLE_NAME IN ('t1', 't2', 't3', 't4');
 
@@ -4298,6 +4326,7 @@ SHOW CREATE TABLE t2;
 SHOW CREATE TABLE t3;
 SHOW CREATE TABLE t4;
 
+--sorted_result
 SELECT *  FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE
 TABLE_NAME IN ('t1', 't2', 't3', 't4');
 
@@ -5135,7 +5164,7 @@ ALTER TABLE referencing ADD COLUMN f3 INT
       REFERENCES referencing(f1) MATCH PARTIAL ON UPDATE RESTRICT
       ON DELETE SET NULL;
 SHOW CREATE TABLE referencing;
-SELECT * FROM information_schema.referential_constraints;
+SELECT * FROM information_schema.referential_constraints ORDER BY constraint_name;
 SELECT * FROM information_schema.table_constraints where CONSTRAINT_SCHEMA='test';
 DROP TABLE referencing;
 
@@ -5484,4 +5513,45 @@ DROP TABLE referencing, referenced;
 SET sql_generate_invisible_primary_key=DEFAULT;
 
 --echo # End:WL#16131 Check implicit references for foreign key
+
+# Verify that foreign key checking behaves correctly when the referencing table
+# has a secondary index that is a partial match for the primary key of the
+# referenced table.
+CREATE TABLE parent (
+  p1 int NOT NULL,
+  p2 tinyint NOT NULL,
+  p3 smallint NOT NULL,
+  p4 char (10),
+  p5 char(10),
+  PRIMARY KEY (p3,p2,p1),
+  KEY idx_parent (p3,p2,p5,p4)
+) ;
+
+CREATE TABLE child (
+  c1 int NOT NULL,
+  c2 tinyint NOT NULL,
+  c3 smallint NOT NULL,
+  c4 int DEFAULT NULL,
+  PRIMARY KEY (c3,c2,c1),
+  KEY idx_child (c3,c2,c4,c1),
+  CONSTRAINT fkey_c_p FOREIGN KEY (c3, c2, c4) REFERENCES parent (p3, p2, p1)
+);
+
+--error ER_NO_REFERENCED_ROW_2
+INSERT INTO child (c1,c2,c3,c4) VALUES (1,2,3,4);
+
+INSERT INTO parent (p1,p2,p3,p4,p5) VALUES (4,2,3,'four','five');
+INSERT INTO child (c1,c2,c3,c4) VALUES (1,2,3,4);
+
+--error ER_ROW_IS_REFERENCED_2
+DELETE FROM parent WHERE p1=4 AND p2=2 AND p3=3;
+
+DELETE FROM child WHERE c1=1 AND c2=2 and c3=3;
+DELETE FROM parent WHERE p1=4 AND p2=2 AND p3=3;
+
+DROP TABLE child;
+DROP TABLE parent;
+
 SET FOREIGN_KEY_CHECKS = DEFAULT;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -114,7 +114,7 @@ static inline int trylock(struct thr_spin_lock *sl) {
 #endif
 
 struct thr_mutex {
-  thr_mutex(const char *name = 0) {
+  thr_mutex(const char *name = nullptr) {
     NdbMutex_Init(&m_mutex);
     register_lock(this, name);
   }

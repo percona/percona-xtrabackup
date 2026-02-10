@@ -1,0 +1,17 @@
+Enabling MRS Script Support
+===========================
+
+The MySQL Rest Service has the capacity to expose MRS Scripts written in
+TypeScript through REST end points. The support for MRS Scripts is enabled by
+adding the native Polyglot API library (From GraalVM) dependency.
+
+To enable the functionality provide the following argument to the CMake call
+when configuring the project:
+
+    -DMRS_JIT_EXECUTOR_LIB=<Path>
+
+Path is expected to contain the native Polyglot Native API Library and header
+files. To build The native Polyglot API library follow the instructions at
+ext/polyglot/README.txt
+
+Note that version 23.0.1 is needed and newer versions may not work.

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -100,8 +100,6 @@ int Certification_handler::handle_action(Pipeline_action *action) {
     Handler_THD_setup_action *thd_conf_action =
         (Handler_THD_setup_action *)action;
     applier_module_thd = thd_conf_action->get_THD_object();
-  } else if (action_type == HANDLER_STOP_ACTION) {
-    error = cert_module->terminate();
   }
 
   if (error) return error;

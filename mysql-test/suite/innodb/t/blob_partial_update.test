@@ -23,6 +23,7 @@ INSERT INTO tab VALUES
 ANALYZE TABLE tab;
 --echo # Sven
 select json_extract(j1, '$[0]') from tab;
+SET explain_json_format_version = 1;
 --skip_if_hypergraph  # Depends on the query plan.
 EXPLAIN FORMAT=JSON UPDATE tab SET j1 = JSON_SET(j1, '$[0]', 'VISWA');
 UPDATE tab SET j1 = JSON_SET(j1, '$[0]', 'Viswa');

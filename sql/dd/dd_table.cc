@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1627,6 +1627,76 @@ static bool fill_dd_partition_from_create_info(
       String part_desc_res(buff, sizeof(buff), cs);
       String part_desc_str;
 
+      auto have_attr_changed = [thd](bool ci_list_of_fields,
+                                     bool pi_list_of_fields,
+                                     List<char> &ci_field_list,
+                                     List<char> &pi_field_list,
+                                     const char *ci_func_string,
+                                     const char *pi_func_string,
+                                     size_t pi_func_len) {
+        bool retval = false;
+        if (pi_list_of_fields) {
+          retval =
+              !ci_list_of_fields ||
+              ci_field_list.size() != pi_field_list.size() ||
+              !std::ranges::all_of(
+                  ci_field_list, [&pi_field_list](char &create_info_attr_cstr) {
+                    return std::ranges::any_of(
+                        pi_field_list,
+                        [&create_info_attr_cstr](char &attr_cstr) {
+                          return strcmp(&create_info_attr_cstr, &attr_cstr) ==
+                                 0;
+                        });
+                  });
+        } else {
+          retval =
+              (ci_func_string == nullptr)
+                  ? true
+                  : [&ci_func_string, &pi_func_string, pi_func_len, thd]() {
+                      auto normalize_name = [thd](std::string_view attr_name) {
+                        const std::string_view delim =
+                            (thd->variables.sql_mode & MODE_ANSI_QUOTES) ? "\""
+                                                                         : "`";
+                        size_t first_delim_pos = attr_name.find(delim);
+                        const unsigned end_pos_of_first_delim =
+                            first_delim_pos + delim.length();
+                        size_t last_delim_pos =
+                            attr_name.find(delim, end_pos_of_first_delim);
+                        return attr_name.substr(
+                            end_pos_of_first_delim,
+                            last_delim_pos - end_pos_of_first_delim);
+                      };
+                      std::string_view cinfo_attr_sv{ci_func_string,
+                                                     strlen(ci_func_string)};
+                      std::string_view attr_sv{pi_func_string, pi_func_len};
+                      return normalize_name(cinfo_attr_sv) !=
+                             normalize_name(attr_sv);
+                    }();
+        }
+        return retval;
+      };
+
+      bool partition_attr_changed = false;
+      bool subpartition_attr_changed = false;
+      bool loaded_part_exists = false;
+      if (create_info->part_info != nullptr) {
+        auto *ci_pinfo = create_info->part_info;
+        partition_attr_changed = have_attr_changed(
+            ci_pinfo->list_of_part_fields, part_info->list_of_part_fields,
+            ci_pinfo->part_field_list, part_info->part_field_list,
+            ci_pinfo->part_func_string, part_info->part_func_string,
+            part_info->part_func_len);
+        subpartition_attr_changed = have_attr_changed(
+            ci_pinfo->list_of_subpart_fields, part_info->list_of_subpart_fields,
+            ci_pinfo->subpart_field_list, part_info->subpart_field_list,
+            ci_pinfo->subpart_func_string, part_info->subpart_func_string,
+            part_info->subpart_func_len);
+        loaded_part_exists = std::ranges::any_of(
+            create_info->part_info->partitions,
+            [](bool is_loaded) { return is_loaded; },
+            &partition_element::secondary_load);
+      }
+
       while ((part_elem = part_it++)) {
         if (part_elem->part_state == PART_TO_BE_DROPPED ||
             part_elem->part_state == PART_REORGED_DROPPED) {
@@ -1646,38 +1716,82 @@ static bool fill_dd_partition_from_create_info(
          * secondary_load flag in DD based on the info that exists in
          * create_info. */
         set_partition_options(part_elem, part_options);
+        /* subpart_name --> loading state in create_info  */
         std::unordered_map<std::string_view, bool> subpart_index;
-        part_options->set("secondary_load", false);
+        /* part_name --> whether at least 1 subpart was previously loaded */
+        std::unordered_map<std::string_view, bool> partially_loaded_parts;
+
+        /* Check if there is an existing partitioning scheme on the table (i.e.,
+         * prior to this DDL)*/
+
         if (create_info->part_info != nullptr) {
-          bool part_found_in_create_info = false;
-          for (auto &create_info_part : create_info->part_info->partitions) {
-            if (strcmp(create_info_part.partition_name,
-                       part_elem->partition_name) != 0) {
-              continue;
-            }
-            part_found_in_create_info = true;
-            part_options->set("secondary_load",
-                              create_info_part.secondary_load);
-            /* When removing subpartitioning, we need to mark a partition as
-             * loaded if all of its subpartitions were previously loaded*/
-            if (create_info->part_info->is_sub_partitioned()) {
-              bool all_subpart_loaded = true;
-              for (auto &subpart : create_info_part.subpartitions) {
-                subpart_index.emplace(subpart.partition_name,
-                                      subpart.secondary_load);
-                if (!subpart.secondary_load) {
-                  all_subpart_loaded = false;
+          assert(create_info->part_info->part_type != partition_type::NONE);
+
+          if (part_info->part_type != create_info->part_info->part_type ||
+              part_info->part_type == partition_type::HASH ||
+              partition_attr_changed) {
+            /* No association can be made between old and new partitions: Mark
+             * all partitions as loaded if at least one partition was loaded.
+             * Otherwise, mark all as not loaded*/
+            part_options->set("secondary_load", loaded_part_exists);
+          } else {
+            /* At this point, both the old and the new partitioning must be
+             * RANGE-RANGE or LIST-LIST.
+             */
+            auto create_info_part = std::ranges::find_if(
+                create_info->part_info->partitions,
+                [&part_elem](const char *pname) {
+                  return strcmp(part_elem->partition_name, pname) == 0;
+                },
+                &partition_element::partition_name);
+
+            if (create_info_part != create_info->part_info->partitions.end()) {
+              part_options->set("secondary_load",
+                                create_info_part->secondary_load);
+              /* When removing subpartitioning, we need to mark a partition as
+               * loaded if all of its subpartitions were previously loaded*/
+              if (create_info->part_info->is_sub_partitioned()) {
+                if (std::ranges::all_of(
+                        create_info_part->subpartitions,
+                        [&subpart_index](partition_element &subpart) {
+                          subpart_index.emplace(subpart.partition_name,
+                                                subpart.secondary_load);
+                          return subpart.secondary_load;
+                        })) {
+                  part_options->set("secondary_load", true);
+                  partially_loaded_parts.emplace(part_elem->partition_name,
+                                                 true);
+                } else if (std::ranges::all_of(
+                               create_info_part->subpartitions,
+                               [&subpart_index](partition_element &subpart) {
+                                 subpart_index.emplace(subpart.partition_name,
+                                                       subpart.secondary_load);
+                                 return !subpart.secondary_load;
+                               })) {
+                  part_options->set("secondary_load", false);
+                  partially_loaded_parts.emplace(part_elem->partition_name,
+                                                 false);
+                } else {
+                  partially_loaded_parts.emplace(
+                      part_elem->partition_name,
+                      std::ranges::any_of(create_info_part->subpartitions,
+                                          [](partition_element &subpart) {
+                                            return subpart.secondary_load;
+                                          }));
                 }
               }
-              if (all_subpart_loaded) {
-                part_options->set("secondary_load", true);
-              }
+            } else {
+              part_options->set("secondary_load", false);
             }
-            break;
           }
-          if (!part_found_in_create_info) {
-            part_options->set("secondary_load", false);
-          }
+        } else {
+          /* i) No partitioning prior to this DDL or ii) this is a ALTER TABLE
+           * SECONDARY_ENGINE=NULL DDL that has removed partitioning info from
+           * create_info:
+           * If the table was loaded, all partitions that will be
+           * created should be loaded. Otherwise, all partitions should appear
+           * as not loaded*/
+          part_options->set("secondary_load", create_info->secondary_load);
         }
 
         // Set partition tablespace
@@ -1800,17 +1914,33 @@ static bool fill_dd_partition_from_create_info(
             sub_obj->set_number(sub_part_num);
             dd::Properties *sub_options = &sub_obj->options();
             set_partition_options(sub_elem, sub_options);
+            /* If subpartition expression is the same, use the existing flag.
+             * Otherwise, reload the subpartition if at least one subpartition
+             * was previously loaded*/
             if (part_options->exists("secondary_load")) {
               bool part_secondary_load = false;
               part_options->get("secondary_load", &part_secondary_load);
               if (part_secondary_load) {
                 sub_options->set("secondary_load", true);
-              } else if (subpart_index.contains(sub_elem->partition_name)) {
-                sub_options->set("secondary_load",
-                                 subpart_index[sub_elem->partition_name]);
+              } else if (create_info->part_info != nullptr &&
+                         part_info->num_subparts ==
+                             create_info->part_info->num_subparts &&
+                         !partition_attr_changed &&
+                         !subpartition_attr_changed) {
+                sub_options->set(
+                    "secondary_load",
+                    subpart_index.contains(sub_elem->partition_name) &&
+                        subpart_index[sub_elem->partition_name]);
               } else {
-                sub_options->set("secondary_load", false);
+                sub_options->set(
+                    "secondary_load",
+                    partition_attr_changed ||
+                        (partially_loaded_parts.contains(
+                             part_elem->partition_name) &&
+                         partially_loaded_parts[part_elem->partition_name]));
               }
+            } else {
+              sub_options->set("secondary_load", false);
             }
 
             // Set partition tablespace
@@ -2073,12 +2203,12 @@ static bool fill_dd_table_from_create_info(
   //
 
   /* We should not get any unexpected flags which are not handled below. */
-  assert(
-      !(create_info->table_options &
-        ~(HA_OPTION_PACK_RECORD | HA_OPTION_PACK_KEYS | HA_OPTION_NO_PACK_KEYS |
-          HA_OPTION_CHECKSUM | HA_OPTION_NO_CHECKSUM |
-          HA_OPTION_DELAY_KEY_WRITE | HA_OPTION_NO_DELAY_KEY_WRITE |
-          HA_OPTION_STATS_PERSISTENT | HA_OPTION_NO_STATS_PERSISTENT)));
+  assert(!(create_info->table_options &
+           ~(HA_OPTION_PACK_RECORD | HA_OPTION_PACK_KEYS |
+             HA_OPTION_NO_PACK_KEYS | HA_OPTION_CHECKSUM |
+             HA_OPTION_NO_CHECKSUM | HA_OPTION_DELAY_KEY_WRITE |
+             HA_OPTION_NO_DELAY_KEY_WRITE | HA_OPTION_STATS_PERSISTENT |
+             HA_OPTION_NO_STATS_PERSISTENT | HA_OPTION_CREATE_EXTERNAL_TABLE)));
 
   /*
     Even though we calculate HA_OPTION_PACK_RECORD flag from the value of
@@ -2136,6 +2266,14 @@ static bool fill_dd_table_from_create_info(
 
     table_options->set("stats_persistent", (create_info->table_options &
                                             HA_OPTION_STATS_PERSISTENT));
+  }
+
+  /*
+    Store whether table was created with CREATE EXTERNAL TABLE syntax.
+    This is used to preserve the EXTERNAL keyword for SHOW CREATE TABLE.
+  */
+  if (create_info->table_options & HA_OPTION_CREATE_EXTERNAL_TABLE) {
+    table_options->set("create_external_table", true);
   }
 
   //
@@ -3259,4 +3397,114 @@ bool check_non_standard_key_exists_in_fk(THD *thd, const Table *table) {
   }
   return false;
 }
+
+bool uses_functions(const Table *table_def, const char *schema_name,
+                    String_type *debug) {
+  if (table_def == nullptr) return false;
+
+  Object_id schema_id = table_def->schema_id();
+  if (schema_id == 1) return false;
+
+  const Table::Check_constraint_collection *cons =
+      &table_def->check_constraints();
+  const Table::Partition_collection *parts = &table_def->partitions();
+  const Table::Column_collection *cols = &table_def->columns();
+  const Table::Index_collection *inxs = &table_def->indexes();
+
+  size_t num_cons = cons->size();
+  size_t num_parts = parts->size();
+  size_t num_cols = cols->size();
+  size_t num_gcols = 0;
+  size_t num_defaults = 0;
+  size_t num_inxs = inxs->size();
+
+  // We have the number of columns, but we're only interested in virtual ones.
+  if (num_cols > 0) {
+    for (const Column *col : *cols) {
+      if (col->is_virtual()) {
+        num_gcols++;
+      }
+      if (col->default_value_utf8().length() > 0) {
+        num_defaults++;
+      }
+    }
+  }
+
+  // We're only interested in partitions if functions are used.
+  if ((num_parts > 0) && (table_def->partition_expression_utf8().length() < 1))
+    num_parts = 0;
+
+  if (debug != nullptr) {
+    dd::Stringstream_type ss;
+
+    ss << "TABLE ";
+    if (schema_name != nullptr)
+      ss << "`" << schema_name << "`";
+    else
+      ss << "[#" << schema_id << "]";
+    ss << ".`" << table_def->name() << "` = { ";
+
+    if (num_parts > 0) {
+      ss << "PARTITION = { expr: \"" << table_def->partition_expression_utf8()
+         << "\"; };";
+    }
+
+    if (num_gcols > 0) {
+      ss << "GCOL = {";
+      for (const Column *col : *cols) {
+        if (col->is_virtual() != 0) {
+          ss << "{ ";
+
+          // Find out whether it's part of an index.
+          if (num_inxs > 0) {
+            for (const Index *inx : *inxs) {
+              for (const Index_element *elt : inx->elements()) {
+                if (elt->column().name() == col->name()) {
+                  ss << "index: \"" << inx->name() << "\", ";
+                }
+              }
+            }
+          }
+
+          ss << "name: \"" << col->name() << "\", "
+             << "virtual: " << col->is_virtual() << ", "
+             << "clause: \"" << col->generation_expression_utf8() << "\" }";
+        }
+      }
+      ss << "}; ";
+    }
+
+    if (num_defaults > 0) {
+      ss << "DEFAULTS = {";
+      for (const Column *col : *cols) {
+        String_type dflt = col->default_value_utf8();
+        if (dflt.length() > 0) {
+          ss << "{ name: \"" << col->name() << "\", "
+             << "default: \"" << dflt << "\" }";
+        }
+      }
+      ss << "}; ";
+    }
+
+    if (num_cons > 0) {
+      ss << "CONSTRAINTS = {";
+      for (const Check_constraint *cc : *cons) {
+        ss << "{ name: \"" << cc->name() << "\", ";
+        ss << "clause: \"" << cc->check_clause_utf8() << "\", ";
+        ss << "state: " << cc->constraint_state();
+        ss << " }";
+      }
+      ss << "}; ";
+    }
+
+    ss << "ENGINE = \"" << table_def->engine() << "\"; ";
+
+    ss << "};";
+
+    *debug = ss.str();
+  }
+
+  return ((num_parts + num_cons + num_gcols + num_defaults) > 0);
+}
+
 }  // namespace dd

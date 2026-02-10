@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -69,6 +69,7 @@ This file contains the implementation of error and warnings related
 #include "mysql/strings/m_ctype.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
+#include "mysys_err.h"
 #include "sql-common/my_decimal.h"
 #include "sql/derror.h"  // ER_THD
 #include "sql/item.h"
@@ -375,11 +376,60 @@ void Diagnostics_area::reset_diagnostics_area() {
   m_status = DA_EMPTY;
 }
 
+#ifndef NDEBUG
+namespace {
+const char *status_text(Diagnostics_area::enum_diagnostics_status status) {
+  switch (status) {
+    case Diagnostics_area::DA_EMPTY:
+      return "empty";
+    case Diagnostics_area::DA_OK:
+      return "ok";
+    case Diagnostics_area::DA_EOF:
+      return "eof";
+    case Diagnostics_area::DA_ERROR:
+      return "error";
+    case Diagnostics_area::DA_DISABLED:
+      return "disabled";
+    default:
+      return "<invalid>";
+  }
+}
+}  // namespace
+#endif
+
+void Diagnostics_area::assert_not_set(
+    Diagnostics_area::enum_diagnostics_status new_status [[maybe_unused]],
+    int new_errno [[maybe_unused]]) {
+#ifndef NDEBUG
+  // We have earlier reported a status, and are now reporting a status again.
+  // This is allowed only if we are reporting an error and
+  // m_can_overwrite_status is set; otherwise it is a bug. The reason for the
+  // bug is likely that we reported an error but missed to propagate the error
+  // status up the call stack, so that either it tries to report ok, or a second
+  // error is detected and reported.
+  //
+  // We handle it by raising an assertion. Before crashing, we write the
+  // previous status, the requested status, the previous message, and the new
+  // message to the error log.
+  if (is_set()) {
+    if (new_status == Diagnostics_area::DA_ERROR && m_can_overwrite_status)
+      return;
+    LogErr(ERROR_LEVEL, ER_INVALID_PREVIOUS_DIAGNOSTICS_AREA_STATUS,
+           status_text(status()), status_text(new_status),
+           m_mysql_errno != 0 ? mysql_errno_to_symbol(m_mysql_errno) : "",
+           new_errno != 0 ? mysql_errno_to_symbol(new_errno) : "");
+    bool invalid_da_status__check_error_log = true;
+    assert(!invalid_da_status__check_error_log);
+  }
+#endif
+}
+
 void Diagnostics_area::set_ok_status(ulonglong affected_rows,
                                      ulonglong last_insert_id,
                                      const char *message_text) {
   DBUG_TRACE;
-  assert(!is_set());
+  assert_not_set(DA_OK);
+
   /*
     In production, refuse to overwrite an error or a custom response
     with an OK packet.
@@ -401,8 +451,8 @@ void Diagnostics_area::set_ok_status(ulonglong affected_rows,
 
 void Diagnostics_area::set_eof_status(THD *thd) {
   DBUG_TRACE;
-  /* Only allowed to report eof if has not yet reported an error */
-  assert(!is_set());
+  assert_not_set(DA_EOF);
+
   /*
     In production, refuse to overwrite an error or a custom response
     with an EOF packet.
@@ -429,12 +479,7 @@ void Diagnostics_area::set_error_status(uint mysql_errno,
                                         const char *message_text,
                                         const char *returned_sqlstate) {
   DBUG_TRACE;
-  /*
-    Only allowed to report error if has not yet reported a success
-    The only exception is when we flush the message to the client,
-    an error can happen during the flush.
-  */
-  assert(!is_set() || m_can_overwrite_status);
+  assert_not_set(DA_ERROR, mysql_errno);
 
   // message must be set properly by the caller.
   assert(message_text);
@@ -703,6 +748,34 @@ void push_warning_printf(THD *thd, Sql_condition::enum_severity_level severity,
   push_warning(thd, severity, code, warning);
 }
 
+/**
+  Push the warning to error list if there is still room in the list
+
+  @param thd      Thread handle
+  @param severity Severity of warning (note, warning)
+  @param code     Error number
+  @param format   Error message printf format, or nullptr to go by the error
+                  code.
+  @param args     Variadic argument list.
+*/
+void push_warning_vprintf(THD *thd, Sql_condition::enum_severity_level severity,
+                          uint code, const char *format, va_list args) {
+  char warning[MYSQL_ERRMSG_SIZE];
+  DBUG_TRACE;
+  DBUG_PRINT("enter", ("warning: %u", code));
+
+  assert(code != 0);
+  if (format == nullptr) {
+    if (code >= EE_ERROR_FIRST && code < EE_ERROR_LAST)
+      format = get_global_errmsg(code);
+    else
+      format = ER_THD_NONCONST(thd, code);
+  }
+
+  vsnprintf(warning, sizeof(warning), format, args);
+  push_warning(thd, severity, code, warning);
+}
+
 void push_deprecated_warn(THD *thd, const char *old_syntax,
                           const char *new_syntax) {
   if (thd != nullptr)
@@ -830,6 +903,11 @@ ErrConvString::ErrConvString(const my_decimal *nr) {
 ErrConvString::ErrConvString(const MYSQL_TIME *ltime, uint dec) {
   buf_length =
       my_TIME_to_str(*ltime, err_buffer, min(dec, uint{DATETIME_MAX_DECIMALS}));
+}
+
+ErrConvString::ErrConvString(const Time_val time, uint dec) {
+  buf_length = time.to_string(err_buffer, dec);
+  err_buffer[buf_length] = 0;
 }
 
 /**

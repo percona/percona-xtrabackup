@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -84,6 +84,7 @@
 #include "sql/mdl.h"  // MDL_SHARED_READ
 #include "sql/mem_root_array.h"
 #include "sql/nested_join.h"
+#include "sql/olap.h"
 #include "sql/opt_hints.h"
 #include "sql/opt_trace.h"  // Opt_trace_object
 #include "sql/opt_trace_context.h"
@@ -104,11 +105,13 @@
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 #include "sql/sql_optimizer.h"  // build_bitmap_for_nested_joins
+#include "sql/sql_parse.h"
 #include "sql/sql_select.h"
 #include "sql/sql_test.h"   // print_where
 #include "sql/sql_union.h"  // Query_result_union
 #include "sql/system_variables.h"
 #include "sql/table.h"
+#include "sql/table_function.h"
 #include "sql/thd_raii.h"
 #include "sql/thr_malloc.h"
 #include "sql/visible_fields.h"
@@ -314,9 +317,6 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
       mark_item_as_maybe_null_if_non_primitive_grouped(item);
       item->update_used_tables();
     }
-    if (populate_grouping_sets(thd)) {
-      return true;
-    }
   }
 
   // Setup the HAVING clause
@@ -502,6 +502,9 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
       transform_scalar_subqueries_to_join_with_derived(thd))
     return true; /* purecov: inspected */
 
+  /* Preserve the original table map for later reference. */
+  original_tables_map = all_tables_map();
+
   /*
     If GROUPING function is present in having condition -
     1. Set that the evaluation of this condition depends on rollup
@@ -558,23 +561,6 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
           if (new_item == nullptr) return true;
           *it = new_item;
         }
-      }
-    }
-  }
-
-  if (!thd->lex->using_hypergraph_optimizer() && group_list.elements) {
-    /*
-      Because HEAP tables can't index BIT fields we need to use an
-      additional hidden field for grouping because later it will be
-      converted to a LONG field. Original field will remain of the
-      BIT type and will be returned to a client. Hypergraph optimizer
-      uses hash deduplication for bit types so this is not necessary.
-    */
-    for (ORDER *ord = group_list.first; ord; ord = ord->next) {
-      if ((*ord->item)->type() == Item::FIELD_ITEM &&
-          (*ord->item)->data_type() == MYSQL_TYPE_BIT) {
-        Item_field *field = new Item_field(thd, *(Item_field **)ord->item);
-        ord->item = add_hidden_item(field);
       }
     }
   }
@@ -645,6 +631,24 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
   // Eliminate unused window definitions, redundant sorts etc.
   if (!m_windows.is_empty()) Window::eliminate_unused_objects(&m_windows);
 
+  // Check if all arguments to a GROUPING function are present
+  // in GROUP BY clause.
+  if (is_explicitly_grouped()) {
+    for (Item *item : fields) {
+      if (item->has_grouping_func() &&
+          WalkItem(item, enum_walk::PREFIX, [](Item *inner_item) {
+            if (is_function_of_type(inner_item, Item_func::GROUPING_FUNC) &&
+                down_cast<Item_func_grouping *>(inner_item)
+                    ->check_args_found_in_group_by()) {
+              return true;
+            }
+            return false;
+          })) {
+        return true;
+      }
+    }
+  }
+
   // Replace group by field references inside window functions with references
   // in the presence of ROLLUP.
   if (olap == ROLLUP_TYPE && resolve_rollup_wfs(thd))
@@ -653,21 +657,41 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
   // If CUBE is present in the query, all expressions that include
   // any GROUP BY expression need to be marked as dependent on
   // grouping set.
-  if (olap == CUBE_TYPE) {
+  if (olap == CUBE_TYPE || olap == GROUPING_SETS_TYPE) {
     for (Item *item : fields) {
       bool is_updated = false;
-      WalkItem(item, enum_walk::POSTFIX, [this, &is_updated](Item *inner_item) {
-        if (find_in_group_list(inner_item, /*rollup_level=*/nullptr) !=
+
+      /* The argument of GROUPING function should be part of the Group By list
+       */
+      auto update_gby_modifier = [this, &is_updated](Item *walk_item) {
+        if (walk_item->type() == Item::FUNC_ITEM) {
+          auto *item_func = down_cast<Item_func *>(walk_item);
+          if (item_func->functype() == Item_func::GROUPING_FUNC) {
+            for (uint idx = 0; idx < item_func->argument_count(); idx++) {
+              if (!find_in_group_list(item_func->arguments()[idx],
+                                      /*rollup_level=*/nullptr)) {
+                my_error(ER_FIELD_IN_GROUPING_NOT_GROUP_BY, MYF(0), (idx + 1));
+                return true;
+              }
+            }
+          }
+        }
+
+        if (find_in_group_list(walk_item, /*rollup_level=*/nullptr) !=
             nullptr) {
-          inner_item->set_group_by_modifier();
+          walk_item->set_group_by_modifier();
           is_updated = true;
         }
+
         return false;
-      });
+      };
+
+      if (WalkItem(item, enum_walk::POSTFIX, update_gby_modifier)) {
+        return true;
+      }
       if (is_updated) item->update_used_tables();
     }
   }
-
   assert(!thd->is_error());
   return false;
 }
@@ -819,17 +843,22 @@ bool Query_block::apply_local_transforms(THD *thd, bool prune) {
   DBUG_TRACE;
 
   assert(first_execution);
-
+  assert(thd->lex->current_query_block() == this);
   /*
     If query block contains one or more merged derived tables/views,
     walk through lists of columns in select lists and remove unused columns.
   */
-  if (derived_table_count) delete_unused_merged_columns(&m_table_nest);
-
+  if (derived_table_count != 0) {
+    delete_unused_merged_columns(&m_table_nest);
+  }
   for (Query_expression *unit = first_inner_query_expression(); unit;
-       unit = unit->next_query_expression())
-    for (auto qt : unit->query_terms<>())
+       unit = unit->next_query_expression()) {
+    for (auto qt : unit->query_terms<>()) {
+      thd->lex->set_current_query_block(qt->query_block());
       if (qt->query_block()->apply_local_transforms(thd, true)) return true;
+    }
+  }
+  thd->lex->set_current_query_block(this);
 
   // Convert all outer joins to inner joins if possible
   if (simplify_joins(thd, &m_table_nest, true, false, &m_where_cond))
@@ -939,6 +968,21 @@ void Query_block::update_used_tables() {
       (*wp->item)->update_used_tables();
     for (ORDER *wo = w->first_order_by(); wo != nullptr; wo = wo->next)
       (*wo->item)->update_used_tables();
+  }
+}
+
+/**
+  Replace substituted expressions from SELECT list in GROUP BY/ORDER BY list
+
+  @param order       List of GROUP BY / ORDER BY expressions
+  @param old_expr    Old expression
+  @param new_expr    New, substituted expression
+*/
+void replace_order_item(ORDER *order, Item *old_expr, Item *new_expr) {
+  for (; order != nullptr; order = order->next) {
+    if (order->item[0] == old_expr) {
+      order->item[0] = new_expr;
+    }
   }
 }
 
@@ -1139,11 +1183,11 @@ bool Item_in_subselect::subquery_allows_materialization(
         - when there is a single inner column (because for this we have a
         limited implementation of NULLs partial matching).
       */
-      trace_mat.add("treat_UNKNOWN_as_FALSE", abort_on_null);
+      trace_mat.add("treat_UNKNOWN_as_FALSE", !process_nulls());
 
-      if (!abort_on_null && has_nullables && (elements > 1))
+      if (process_nulls() && has_nullables && (elements > 1)) {
         cause = "cannot_handle_partial_matches";
-      else {
+      } else {
         trace_mat.add("possible", true);
         return true;
       }
@@ -1270,6 +1314,16 @@ bool Query_block::setup_tables(THD *thd, Table_ref *tables,
       first_query_block_table = nullptr;
       tableno = 0;
     }
+
+    /*
+      The parser already checks table counts based on syntactic structure,
+      but the resolver check is still necessary because:
+
+      1. View expansion: A view may expand into many leaf tables
+      2. Derived tables: Complex subqueries add tables not visible in parser
+      3. Recursive CTEs: Expansion happens at resolution time
+      4. The parser counts syntactic tables; we count actual leaf tables here
+    */
     if (tableno >= MAX_TABLES) {
       my_error(ER_TOO_MANY_TABLES, MYF(0), static_cast<int>(MAX_TABLES));
       return true;
@@ -1397,15 +1451,21 @@ bool Query_block::resolve_placeholder_tables(THD *thd, bool apply_semijoin) {
 }
 
 /**
+  Check if the LIMIT/OFFSET clause is specified in a way that makes it always
+  preserve the first row returned by the underlying query. The first row is
+  preserved if LIMIT is unspecified or greater than zero and OFFSET is
+  unspecified or equal to zero.
 
-  Check if the offset and limit are valid for a semijoin. A semijoin
-  can be used only if OFFSET is 0 and select LIMIT is not 0.
+  If the values of LIMIT and OFFSET are unknown at resolve time (because they
+  are parameters and not literals), we cannot say if the first row will always
+  be preserved, and we return false.
 
-  @retval false  if OFFSET and LIMIT does not permit a semijoin,
-  @retval true   otherwise.
+  @retval true If the first row of the underlying query will always be preserved
+  through LIMIT/OFFSET.
+  @retval false If the first row of the underlying query may be filtered out by
+  LIMIT/OFFSET.
 */
-
-bool Query_block::is_row_count_valid_for_semi_join() {
+bool Query_block::limit_offset_preserves_first_row() const {
   if (offset_limit != nullptr &&
       (!offset_limit->const_item() || offset_limit->val_int() != 0))
     return false;
@@ -2172,6 +2232,11 @@ static void fix_tables_after_pullout(Query_block *parent_query_block,
       "lateral CTE".
     */
   }
+
+  if (tr->is_table_function()) {
+    tr->table_function->fix_after_pullout(parent_query_block,
+                                          removed_query_block);
+  }
 }
 
 /**
@@ -2247,23 +2312,22 @@ void Query_block::clear_sj_expressions(NESTED_JOIN *nested_join) {
 }
 
 /**
-  Build equality conditions using outer expressions and inner
-  expressions. If the equality condition is not constant, add
-  it to the semi-join condition. Otherwise, evaluate it and
-  remove the constant expressions from the
-  outer/inner expressions list if the result is true. If the
-  result is false, remove all the expressions in outer/inner
-  expression list and attach an always false condition
-  to semijoin condition.
+  Build equality predicates using outer expressions and inner expressions.
+  If an equality predicate is not constant, add it to the semi-join condition.
+  Otherwise, evaluate the predicate. If the result of the predicate is true,
+  remove the expressions of the constant predicate from the outer/inner
+  expressions list. If the result is false, remove all the expressions in
+  outer/inner expression list and attach an always false condition to
+  semijoin condition.
 
-  @param thd            Thread context
-  @param nested_join    Join nest
-  @param subq_query_block    Query block for the subquery
-  @param outer_tables_map Map of tables from original outer query block
+  @param thd               Thread context
+  @param nested_join       Join nest
+  @param subq_query_block  Query block for the subquery
+  @param outer_tables_map  Map of tables from original outer query block
   @param[in,out] sj_cond   Semi-join condition to be constructed
                            Contains non-equalities on input.
-  @param[out]    simple_const true if the returned semi-join condition is
-                              a simple true or false predicate, false otherwise.
+  @param[out] simple_const true if the returned semi-join condition is
+                           a simple true or false predicate, false otherwise.
 
   @return false if success, true if error
 */
@@ -2274,12 +2338,13 @@ bool Query_block::build_sj_cond(THD *thd, NESTED_JOIN *nested_join,
   *simple_const = false;
 
   Item *new_cond = nullptr;
+  bool remove_condition = false;
 
   auto ii = nested_join->sj_inner_exprs.begin();
   auto oi = nested_join->sj_outer_exprs.begin();
   while (ii != nested_join->sj_inner_exprs.end() &&
          oi != nested_join->sj_outer_exprs.end()) {
-    bool should_remove = false;
+    bool remove_predicate = false;
     Item *inner = *ii;
     Item *outer = *oi;
     /*
@@ -2294,7 +2359,7 @@ bool Query_block::build_sj_cond(THD *thd, NESTED_JOIN *nested_join,
     Item *predicate = item_eq;
     if (!item_eq->fixed && item_eq->fix_fields(thd, &predicate)) return true;
 
-    // Evaluate if the condition is on const expressions
+    // Evaluate if the predicate is a const value:
     if (predicate->const_item() &&
         !(predicate)->walk(&Item::is_non_const_over_literals,
                            enum_walk::POSTFIX, nullptr)) {
@@ -2321,20 +2386,14 @@ bool Query_block::build_sj_cond(THD *thd, NESTED_JOIN *nested_join,
           const condition evaluates to true as Item_cond::fix_fields will
           remove the condition later.
         */
-        should_remove = true;
+        remove_predicate = true;
       } else {
         /*
-          Remove all the expressions in inner/outer expression list if
-          one of condition evaluates to always false. Add an always false
-          condition to semi-join condition.
+          Predicate is false, and thus condition is false. However, generate
+          the full condition so that it can be removed completely when all
+          predicates have been processed.
         */
-        nested_join->sj_inner_exprs.clear();
-        nested_join->sj_outer_exprs.clear();
-        Item *new_item = new Item_func_false();
-        if (new_item == nullptr) return true;
-        (*sj_cond) = new_item;
-        *simple_const = true;
-        return false;
+        remove_condition = true;
       }
     }
     /*
@@ -2352,7 +2411,7 @@ bool Query_block::build_sj_cond(THD *thd, NESTED_JOIN *nested_join,
     */
     nested_join->sj_corr_tables |= inner->used_tables() & outer_tables_map;
 
-    if (should_remove) {
+    if (remove_predicate) {
       ii = nested_join->sj_inner_exprs.erase(ii);
       oi = nested_join->sj_outer_exprs.erase(oi);
     } else {
@@ -2361,6 +2420,25 @@ bool Query_block::build_sj_cond(THD *thd, NESTED_JOIN *nested_join,
 
       ++ii, ++oi;
     }
+  }
+  if (remove_condition) {
+    /*
+      Condition is false.
+      Clean up the synthesized condition.
+      Remove all the expressions in inner/outer expression list.
+      Add an always false predicate to semi-join condition.
+    */
+    Item::Cleanup_after_removal_context ctx(this);
+    new_cond->walk(&Item::clean_up_after_removal, walk_options,
+                   pointer_cast<uchar *>(&ctx));
+
+    nested_join->sj_inner_exprs.clear();
+    nested_join->sj_outer_exprs.clear();
+    Item *new_item = new Item_func_false();
+    if (new_item == nullptr) return true;
+    (*sj_cond) = new_item;
+    *simple_const = true;
+    return false;
   }
   /*
     Semijoin processing expects at least one inner/outer expression
@@ -2609,75 +2687,6 @@ bool Query_block::decorrelate_condition(Semijoin_decorrelation &sj_decor,
   return false;
 }
 
-bool Query_block::allocate_grouping_sets(THD *thd) {
-  auto max_group_by_elements = GetMaximumNumGrpByColsSupported(olap);
-
-  if (group_list.elements > static_cast<uint>(max_group_by_elements)) {
-    /* The number of Grouping sets cannot be greater than INT_MAX as IsBitSet
-     * take integer as the input bit*/
-    my_error(ER_TOO_MANY_GROUP_BY_MODIFIER_BRANCHES, MYF(0),
-             GroupByModifierString(olap), max_group_by_elements);
-    return true;
-  }
-  m_num_grouping_sets = (olap == ROLLUP_TYPE)
-                            ? group_list.elements + 1
-                            : pow(static_cast<double>(2),
-                                  static_cast<double>(group_list.elements));
-
-  assert(m_num_grouping_sets != 0);
-
-  /*  Allocate bitmap for grouping sets. */
-  for (ORDER *grp = group_list.first; grp != nullptr; grp = grp->next) {
-    grp->grouping_set_info =
-        pointer_cast<MY_BITMAP *>(thd->alloc(sizeof(MY_BITMAP)));
-    if (grp->grouping_set_info == nullptr) {
-      return true;
-    }
-    my_bitmap_map *bitbuf = pointer_cast<my_bitmap_map *>(
-        thd->alloc(bitmap_buffer_size(m_num_grouping_sets)));
-    bitmap_init(grp->grouping_set_info, bitbuf, m_num_grouping_sets);
-  }
-  return false;
-}
-
-/**
-  Populate the grouping set bitvector if the query block has non-primitive
-  grouping. If the non-primitive grouping is ROLLUP or CUBE, the grouping sets
-  have to be computed. The representation of the grouping set is done using a
-  bitfield in the ORDER object.
-  case ROLLUP : Say the query has GROUP BY ROLLUP (a,b) then the grouping sets
-  will be (a,b) (a) () where () represents single group aggregate without any
-  grouping. Here there are 3 grouping sets ranging from 0 to 2 and 0 is the
-  single group aggregate. The bitfield associated with GROUP BY element 'a'
-  will be 3 (i,e. 2+1) The bitfield associated with Group by element 'b' will
-  be 2 as it is part of only set number 2.
-  case CUBE: Say the query has GROUP BY CUBE (a,b) then the grouping sets
-  will be (a,b) (a) (b) (). The number of grouping sets will be (2^n)
-  where n is the number of elements in the GROUP BY list. The bitfield
-  associated with Group by element 'a' will be 6 (i.e. 4+2).
-  The bitfield associated with Group by element 'b' will be 1.
-*/
-bool Query_block::populate_grouping_sets(THD *thd) {
-  assert(group_list.elements != 0 && olap != UNSPECIFIED_OLAP_TYPE);
-
-  if (allocate_grouping_sets(thd)) {
-    return true;
-  }
-
-  bool rollup = (olap == ROLLUP_TYPE);
-  int gby_idx = 0;
-  for (ORDER *grp = group_list.first; grp != nullptr;
-       grp = grp->next, gby_idx++) {
-    for (int gs = 1; gs < m_num_grouping_sets; gs++) {
-      if ((rollup && gby_idx < gs) || (!rollup && IsBitSet(gby_idx, gs))) {
-        bitmap_set_bit(grp->grouping_set_info, gs);
-      }
-    }
-  }
-
-  return false;
-}
-
 bool walk_join_list(mem_root_deque<Table_ref *> &list,
                     std::function<bool(Table_ref *)> action) {
   for (Table_ref *tl : list) {
@@ -2877,7 +2886,7 @@ bool Query_block::convert_subquery_to_semijoin(
 
   // Save the set of tables in the outer query block:
   table_map outer_tables_map = all_tables_map();
-  const bool do_aj = subq_pred->can_do_aj;
+  const bool do_aj = subq_pred->use_anti_join_transform();
 
   /*
     Find out where to insert the semi-join nest and the generated condition.
@@ -3360,7 +3369,16 @@ bool Query_block::merge_derived(THD *thd, Table_ref *derived_table) {
     const bool merge_heuristic =
         (derived_table->is_view() || allow_merge_derived) &&
         derived_query_expression->merge_heuristic(thd->lex);
-    if (!hint_table_state(thd, derived_table, DERIVED_MERGE_HINT_ENUM,
+
+    /*
+      Merging a JSON duality view is not allowed when query is modifying
+      the data.
+    */
+    const bool updating_jdv = (derived_table->is_json_duality_view() &&
+                               thd->lex->sql_command != SQLCOM_SELECT);
+
+    if (!updating_jdv &&
+        !hint_table_state(thd, derived_table, DERIVED_MERGE_HINT_ENUM,
                           merge_heuristic ? OPTIMIZER_SWITCH_DERIVED_MERGE : 0))
       return false;
   }
@@ -3403,9 +3421,10 @@ bool Query_block::merge_derived(THD *thd, Table_ref *derived_table) {
     A view is updatable if any underlying table is updatable.
     A view is insertable-into if all underlying tables are insertable.
     A view is not updatable nor insertable if it contains an outer join
+    A view is not updatable nor insertable if it is a materialized view
     @see mysql_register_view()
   */
-  if (derived_table->is_view()) {
+  if (derived_table->is_view() && !derived_table->is_mv_se_materialized()) {
     bool updatable = false;
     bool insertable = true;
     bool outer_joined = false;
@@ -3729,8 +3748,10 @@ bool Query_block::flatten_subqueries(THD *thd) {
 
       continue;
     }
-    // Transformation of IN and EXISTS subqueries is supported
-    assert(item->subquery_type() == Item_subselect::IN_SUBQUERY ||
+    // Transformation of ALL, ANY, IN and EXISTS subqueries is supported
+    assert(item->subquery_type() == Item_subselect::ALL_SUBQUERY ||
+           item->subquery_type() == Item_subselect::ANY_SUBQUERY ||
+           item->subquery_type() == Item_subselect::IN_SUBQUERY ||
            item->subquery_type() == Item_subselect::EXISTS_SUBQUERY);
 
     Query_block *child_query_block = item->query_expr()->first_query_block();
@@ -3835,7 +3856,7 @@ bool Query_block::flatten_subqueries(THD *thd) {
       false if a semijoin (IN) and truth value true if an antijoin (NOT IN).
     */
     Item *truth_item =
-        (cond_value || item->can_do_aj)
+        (cond_value || item->use_anti_join_transform())
             ? implicit_cast<Item *>(new (thd->mem_root) Item_func_true())
             : implicit_cast<Item *>(new (thd->mem_root) Item_func_false());
     if (truth_item == nullptr) return true;
@@ -3852,10 +3873,10 @@ bool Query_block::flatten_subqueries(THD *thd) {
     Item_exists_subselect *item = *subq;
     if (item->strategy != Subquery_strategy::SEMIJOIN) continue;
 
-    OPT_TRACE_TRANSFORM(trace, oto0, oto1,
-                        item->query_expr()->first_query_block()->select_number,
-                        "IN (SELECT)",
-                        item->can_do_aj ? "antijoin" : "semijoin");
+    OPT_TRACE_TRANSFORM(
+        trace, oto0, oto1,
+        item->query_expr()->first_query_block()->select_number, "IN (SELECT)",
+        item->use_anti_join_transform() ? "antijoin" : "semijoin");
     oto1.add("chosen", true);
     if (convert_subquery_to_semijoin(thd, *subq)) return true;
   }
@@ -4046,12 +4067,14 @@ bool Query_block::remove_redundant_subquery_clauses(THD *thd) {
 
   /*
     Remove GROUP BY if there are no aggregate functions, no HAVING clause,
-    no non-primitive grouping and no windowing functions.
+    no non-primitive grouping, no windowing functions and no GROUPING function.
   */
 
-  if ((possible_changes & REMOVE_GROUP) && group_list.elements &&
-      !agg_func_used() && !having_cond() && olap == UNSPECIFIED_OLAP_TYPE &&
-      m_windows.elements == 0) {
+  if ((possible_changes & REMOVE_GROUP) && is_grouped() && !agg_func_used() &&
+      having_cond() == nullptr && olap == UNSPECIFIED_OLAP_TYPE &&
+      m_windows.elements == 0 &&
+      !std::any_of(fields.begin(), fields.end(),
+                   [](Item *item) { return item->has_grouping_func(); })) {
     changelog |= REMOVE_GROUP;
     for (ORDER *g = group_list.first; g != nullptr; g = g->next) {
       if (g->is_item_original()) {
@@ -4182,7 +4205,8 @@ bool find_order_in_list(THD *thd, Ref_item_array ref_item_array,
   Item *order_item = *order->item; /* The item from the GROUP/ORDER clause. */
   Item::Type order_item_type;
   Item **select_item; /* The corresponding item from the SELECT clause. */
-  Field *from_field;  /* The corresponding field from the FROM clause. */
+  Field *from_field =
+      nullptr; /* The corresponding field from the FROM clause. */
   uint counter;
   enum_resolution_type resolution;
 
@@ -4359,13 +4383,23 @@ bool find_order_in_list(THD *thd, Ref_item_array ref_item_array,
 
     group_fix_field = true is so that we properly reject GROUP BY on
     subqueries with references to group fields.
+
+    is_window_order is used to signal that we do not accept outer references
   */
-  bool save_group_fix_field = thd->lex->current_query_block()->group_fix_field;
-  if (is_group_field) thd->lex->current_query_block()->group_fix_field = true;
+  const bool save_group_fix_field =
+      thd->lex->current_query_block()->group_fix_field;
+  const bool save_window_order =
+      thd->lex->current_query_block()->m_window_order_fix_field;
+  thd->lex->current_query_block()->group_fix_field = is_group_field;
+  thd->lex->current_query_block()->m_window_order_fix_field = is_window_order;
+
   bool ret =
       (!order_item->fixed && (order_item->fix_fields(thd, order->item) ||
                               (order_item = *order->item)->check_cols(1)));
+
   thd->lex->current_query_block()->group_fix_field = save_group_fix_field;
+  thd->lex->current_query_block()->m_window_order_fix_field = save_window_order;
+
   if (ret) return true; /* Wrong field. */
 
   uint el = fields->size();
@@ -4435,12 +4469,18 @@ bool setup_order(THD *thd, Ref_item_array ref_item_array, Table_ref *tables,
 
   for (uint number = 1; order; order = order->next, number++) {
     Item *order_item = *order->item;
-    if (order_item->fixed && !order_item->const_item()) {
-      // If a non constant expression in order by is already
-      // resolved, it must have been merged from a derived table.
+    if (order_item->fixed && (!order_item->const_item() ||
+                              (order_item->type() == Item::REF_ITEM &&
+                               down_cast<Item_ref *>(order_item)->ref_type() ==
+                                   Item_ref::VIEW_REF))) {
+      // If an expression in order by is already resolved, it
+      // must have been merged from a derived table.
       // So, we do not need to re-resolve in this query block. Add
       // a hidden item if not present in the visible fields list.
       // Update with the correct ref item.
+      // const expressions are exceptions. However, if a const
+      // expression is a view reference it must be from merged derived
+      // table as well. So we do not re-resolve.
       uint counter = fields->size();
       for (uint i = 0; i < fields->size(); i++) {
         if (order_item->real_item()->eq(ref_item_array[i]->real_item())) {
@@ -4464,29 +4504,25 @@ bool setup_order(THD *thd, Ref_item_array ref_item_array, Table_ref *tables,
       continue;
     }
 
+    select->m_current_order_by_number = number;
     if (find_order_in_list(thd, ref_item_array, tables, order, fields, false,
                            false))
       return true;
+
     if ((*order->item)->has_aggregation()) {
       /*
         Aggregated expressions in ORDER BY are not supported by SQL standard,
-        but MySQL has some limited support for them. The limitations are
-        checked below:
+        but MySQL has some limited support for them.
 
         1. A set operation query is not aggregated, so ordering by a set
-           function is always wrong.
-      */
-      if (for_set_operation) {
-        my_error(ER_AGGREGATE_ORDER_FOR_UNION, MYF(0), number);
-        return true;
-      }
+           function which aggregates in the set operation's query block is
+           always wrong. Checked in check_sum_func.
 
-      /*
-        2. A non-aggregated query combined with a set function in ORDER BY
-           that does not contain an outer reference is illegal, because it
-           would cause the query to become aggregated.
-           (Since is_aggregated is false, this expression would cause
-            agg_func_used() to become true).
+        2. A non-aggregated query combined with a grouped aggregate function in
+           ORDER BY that does not contain an outer reference is illegal,
+           because it would cause the query to become aggregated.  (Since
+           is_aggregated is false, this expression would cause agg_func_used()
+           to become true). This limitation is checked below.
       */
       if (!is_aggregated && select->agg_func_used()) {
         my_error(ER_AGGREGATE_ORDER_NON_AGG_QUERY, MYF(0), number);
@@ -4621,6 +4657,22 @@ bool Query_block::setup_group(THD *thd) {
       return true;
   }
 
+  if (olap == GROUPING_SETS_TYPE && get_number_of_grouping_sets() == 1) {
+    /*
+      A GROUPING SETS specification with a single grouping set can be
+      transformed to a simple GROUP BY operation with the same grouping set
+      expressions.
+    */
+    set_olap_type(UNSPECIFIED_OLAP_TYPE);
+    set_number_of_grouping_sets(0);
+    if (group_list_size() == 1) {
+      Item *group_item = group_list.first->item[0];
+      if (group_item->const_item() && group_item->is_null()) {
+        group_list.clear();
+      }
+    }
+  }
+
   return false;
 }
 
@@ -4672,13 +4724,21 @@ int Query_block::group_list_size() const {
   return size;
 }
 
+bool Query_block::has_wfs() {
+  List_iterator<Window> wi1(m_windows);
+  for (Window *w1 = wi1++; w1 != nullptr; w1 = wi1++) {
+    if (w1->functions().elements > 0) return true;
+  }
+  return false;
+}
+
 /**
   Checks whether an item matches a grouped expression, creates an
   Item_rollup_group_item around it and replaces the reference to it with that
   item.
  */
-static ReplaceResult wrap_grouped_expressions_for_rollup(
-    Query_block *select, Item *item, Item *parent, unsigned argument_idx) {
+static ReplaceResult wrap_grouped_expressions_for_rollup(Query_block *select,
+                                                         Item *item) {
   if (is_rollup_group_wrapper(item->real_item())) {
     // This item must already be a group item, or we wouldn't have
     // wrapped it earlier. No need to do anything more about it,
@@ -4699,11 +4759,6 @@ static ReplaceResult wrap_grouped_expressions_for_rollup(
       group->rollup_item = new_item;
     }
     return {ReplaceResult::REPLACE, new_item};
-  } else if (parent != nullptr && parent->type() == Item::FUNC_ITEM &&
-             down_cast<Item_func *>(parent)->functype() ==
-                 Item_func::GROUPING_FUNC) {
-    my_error(ER_FIELD_IN_GROUPING_NOT_GROUP_BY, MYF(0), (argument_idx + 1));
-    return {ReplaceResult::ERROR, nullptr};
   }
 
   return {ReplaceResult::KEEP_TRAVERSING, nullptr};
@@ -4715,11 +4770,9 @@ static ReplaceResult wrap_grouped_expressions_for_rollup(
    of "child_ref" otherwise.
  */
 static bool WalkAndReplaceInner(
-    THD *thd, Item *parent, unsigned argument_idx,
-    const function<ReplaceResult(Item *item, Item *parent,
-                                 unsigned argument_idx)> &get_new_item,
+    THD *thd, const function<ReplaceResult(Item *item)> &get_new_item,
     Item **child_ref) {
-  ReplaceResult result = get_new_item(*child_ref, parent, argument_idx);
+  ReplaceResult result = get_new_item(*child_ref);
   if (result.action == ReplaceResult::ERROR) {
     return true;
   } else if (result.action == ReplaceResult::DONE) {
@@ -4738,22 +4791,26 @@ static bool WalkAndReplaceInner(
   return WalkAndReplace(thd, *child_ref, get_new_item);
 }
 
-bool WalkAndReplace(
-    THD *thd, Item *item,
-    const function<ReplaceResult(Item *item, Item *parent,
-                                 unsigned argument_idx)> &get_new_item) {
+bool WalkAndReplace(THD *thd, Item *item,
+                    const function<ReplaceResult(Item *item)> &get_new_item) {
   if (item->type() == Item::FUNC_ITEM ||
       (item->type() == Item::SUM_FUNC_ITEM && item->m_is_window_function)) {
     Item **args = down_cast<Item_func *>(item)->arguments();
+    bool saved = false;
+
+    if (item->m_is_window_function) {
+      saved = thd->lex->splitting_window_expression();
+      thd->lex->set_splitting_window_expression(false);
+    }
     const unsigned arg_count = down_cast<Item_func *>(item)->argument_count();
     for (unsigned argument_idx = 0; argument_idx < arg_count; argument_idx++) {
-      if (WalkAndReplaceInner(thd, item, argument_idx, get_new_item,
-                              &args[argument_idx])) {
+      if (WalkAndReplaceInner(thd, get_new_item, &args[argument_idx])) {
         return true;
       }
     }
 
     if (item->m_is_window_function) {
+      thd->lex->set_splitting_window_expression(saved);
       down_cast<Item_sum *>(item)->update_after_wf_arguments_changed(thd);
     }
   } else if (item->type() == Item::ROW_ITEM) {
@@ -4761,7 +4818,7 @@ bool WalkAndReplace(
     Item_row *row_item = down_cast<Item_row *>(item);
     for (unsigned argument_idx = 0; argument_idx < row_item->cols();
          argument_idx++) {
-      if (WalkAndReplaceInner(thd, item, argument_idx, get_new_item,
+      if (WalkAndReplaceInner(thd, get_new_item,
                               row_item->addr(argument_idx))) {
         return true;
       }
@@ -4769,10 +4826,8 @@ bool WalkAndReplace(
   } else if (item->type() == Item::COND_ITEM) {
     Item_cond *cond_item = down_cast<Item_cond *>(item);
     List_iterator<Item> li(*cond_item->argument_list());
-    unsigned argument_idx = 0;
     for (Item *arg = li++; arg != nullptr; arg = li++) {
-      if (WalkAndReplaceInner(thd, item, argument_idx++, get_new_item,
-                              li.ref())) {
+      if (WalkAndReplaceInner(thd, get_new_item, li.ref())) {
         return true;
       }
     }
@@ -4784,7 +4839,7 @@ bool WalkAndReplace(
     if (subquery_type == Item_subselect::IN_SUBQUERY ||
         subquery_type == Item_subselect::ALL_SUBQUERY ||
         subquery_type == Item_subselect::ANY_SUBQUERY) {
-      if (WalkAndReplaceInner(thd, item, /*argument_idx=*/0, get_new_item,
+      if (WalkAndReplaceInner(thd, get_new_item,
                               &down_cast<Item_in_subselect *>(item)->left_expr))
         return true;
     }
@@ -4801,38 +4856,35 @@ bool WalkAndReplace(
            down_cast<Item_subselect *>(item)->query_expr()->query_terms<>()) {
         Query_block *const qb = qt->query_block();
         for (auto &it : qb->fields) {
-          if (WalkAndReplaceInner(thd, item, 0, get_new_item, &it)) return true;
+          if (WalkAndReplaceInner(thd, get_new_item, &it)) return true;
         }
         if (qb->where_cond() != nullptr &&
-            WalkAndReplaceInner(thd, item, 0, get_new_item,
-                                qb->where_cond_ref()))
+            WalkAndReplaceInner(thd, get_new_item, qb->where_cond_ref()))
           return true;
         if (qb->having_cond() != nullptr &&
-            WalkAndReplaceInner(thd, item, 0, get_new_item,
-                                qb->having_cond_ref()))
+            WalkAndReplaceInner(thd, get_new_item, qb->having_cond_ref()))
           return true;
         if (qb->qualify_cond() != nullptr &&
-            WalkAndReplaceInner(thd, item, 0, get_new_item,
-                                qb->qualify_cond_ref()))
+            WalkAndReplaceInner(thd, get_new_item, qb->qualify_cond_ref()))
           return true;
         for (ORDER *o = qb->group_list.first; o != nullptr; o = o->next) {
-          if (WalkAndReplaceInner(thd, item, 0, get_new_item, o->item))
-            return true;
+          if (WalkAndReplaceInner(thd, get_new_item, o->item)) return true;
         }
         for (ORDER *o = qb->order_list.first; o != nullptr; o = o->next) {
-          if (WalkAndReplaceInner(thd, item, 0, get_new_item, o->item))
-            return true;
+          if (WalkAndReplaceInner(thd, get_new_item, o->item)) return true;
         }
         for (auto &win : qb->m_windows) {
-          for (ORDER *o = win.effective_order_by()->value.first; o != nullptr;
-               o = o->next) {
-            if (WalkAndReplaceInner(thd, item, 0, get_new_item, o->item))
-              return true;
+          if (win.effective_order_by() != nullptr) {
+            for (ORDER *o = win.effective_order_by()->value.first; o != nullptr;
+                 o = o->next) {
+              if (WalkAndReplaceInner(thd, get_new_item, o->item)) return true;
+            }
           }
-          for (ORDER *o = win.effective_partition_by()->value.first;
-               o != nullptr; o = o->next) {
-            if (WalkAndReplaceInner(thd, item, 0, get_new_item, o->item))
-              return true;
+          if (win.effective_partition_by() != nullptr) {
+            for (ORDER *o = win.effective_partition_by()->value.first;
+                 o != nullptr; o = o->next) {
+              if (WalkAndReplaceInner(thd, get_new_item, o->item)) return true;
+            }
           }
         }
       }
@@ -4928,8 +4980,7 @@ static bool refresh_comparators_after_rollup(Item *item) {
   @returns the new item, or nullptr on error
 */
 Item *Query_block::resolve_rollup_item(THD *thd, Item *item) {
-  ReplaceResult result =
-      wrap_grouped_expressions_for_rollup(this, item, nullptr, 0);
+  ReplaceResult result = wrap_grouped_expressions_for_rollup(this, item);
   if (result.action == ReplaceResult::ERROR) {
     return nullptr;
   } else if (result.action == ReplaceResult::DONE) {
@@ -4939,15 +4990,14 @@ Item *Query_block::resolve_rollup_item(THD *thd, Item *item) {
     return result.replacement;
   }
   bool changed = false;
-  bool error = WalkAndReplace(
-      thd, item,
-      [this, &changed](Item *inner_item, Item *parent, unsigned argument_idx) {
-        ReplaceResult inner_result = wrap_grouped_expressions_for_rollup(
-            this, inner_item, parent, argument_idx);
+  if (WalkAndReplace(thd, item, [this, &changed](Item *inner_item) {
+        ReplaceResult inner_result =
+            wrap_grouped_expressions_for_rollup(this, inner_item);
         changed |= (inner_result.action == ReplaceResult::REPLACE);
         return inner_result;
-      });
-  if (error) return nullptr;
+      })) {
+    return nullptr;
+  }
   if (changed) {
     if (refresh_comparators_after_rollup(item)) {
       return nullptr;
@@ -5223,6 +5273,43 @@ bool validate_gc_assignment(const mem_root_deque<Item *> &fields,
   return false;
 }
 
+/// Minion of prune_sj_exprs, q.v.
+static void prune_sj_exprs_from_nest(Item_func_eq *item, Table_ref *nest) {
+  auto it1 = nest->nested_join->sj_outer_exprs.begin();
+  auto it2 = nest->nested_join->sj_inner_exprs.begin();
+  while (it1 != nest->nested_join->sj_outer_exprs.end() &&
+         it2 != nest->nested_join->sj_inner_exprs.end()) {
+    Item *outer = *it1;
+    Item *inner = *it2;
+    if ((outer == item->arguments()[0] && inner == item->arguments()[1]) ||
+        (outer == item->arguments()[1] && inner == item->arguments()[0])) {
+      nest->nested_join->sj_outer_exprs.erase(it1);
+      nest->nested_join->sj_inner_exprs.erase(it2);
+      break;
+    }
+    it1++;
+    it2++;
+  }
+}
+
+/**
+  Recursively look for removed item inside any nested joins'
+  sj_{inner,outer}_exprs. If target for removal is found, remove such entries
+  because the corresponding equality condition has been eliminated.
+
+  @param item   the equality which is being removed.
+  @param nest   the table nest (nullptr means top nest)
+*/
+void Query_block::prune_sj_exprs(Item_func_eq *item,
+                                 mem_root_deque<Table_ref *> *nest) {
+  if (nest == nullptr) nest = &m_table_nest;
+  for (Table_ref *table : *nest) {
+    if (table->nested_join == nullptr) continue;
+    prune_sj_exprs_from_nest(item, table);
+    prune_sj_exprs(item, &table->nested_join->m_tables);
+  }
+}
+
 /**
   Delete unused columns from merged tables.
 
@@ -5359,7 +5446,7 @@ bool Query_block::resolve_table_value_constructor_values(THD *thd) {
       } else {
         Item_values_column *column = down_cast<Item_values_column *>(
             GetNthVisibleField(fields, item_index));
-        if (column->unify_types(thd, item)) return true;
+        if (column->unify_types(item)) return true;
         column->add_used_tables(item);
         column->fixed = true;  // Does not have regular fix_fields()
       }
@@ -5397,7 +5484,8 @@ static bool baptize_item(THD *thd, Item *item, int *field_no);
 static bool update_context_to_derived(Item *expr, Query_block *new_derived);
 
 /**
-  Replace a table subquery ([NOT] {IN, EXISTS}) with a join to a derived table.
+  Replace a table subquery ([NOT] {IN, EXISTS}, $cmp$ ALL, $cmp$ ANY) with
+  a join to a derived table.
 
   The principle of this transformation is:
   FROM [tables] WHERE ... AND/OR oe IN (SELECT ie FROM it) ...
@@ -5425,6 +5513,8 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
   Query_block *const inner_qb = inner_qe->first_query_block();
 
   assert(inner_qe->query_term()->term_type() == QT_QUERY_BLOCK);
+
+  Change_current_query_block save_query_block(thd);
 
   subq_pred->strategy = Subquery_strategy::DERIVED_TABLE;
 
@@ -5460,13 +5550,109 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
   mem_root_deque<Item *> sj_inner_exprs(thd->mem_root);
   Mem_root_array<Item_func::Functype> op_types(thd->mem_root);
 
+  // If non-NULL, the subquery predicate is a quantified comparison predicate
+  Item_allany_subselect *allany_pred = nullptr;
+
+  // Whether a quantified comparison predicate is ALL or ANY, and special cases:
+  bool is_all_pred = false;
+  bool is_any_pred = false;
+  bool is_eq_all = false;
+  bool is_ne_any = false;
+  /*
+    When transforming quantified comparison predicates to derived tables, there
+    are three ways to generate the derived table from the subquery:
+    deduplicated, aggregated and grouped.
+
+    A deduplicated derived table means that a DISTINCT flag is added to the
+    subquery, thus we simply eliminate duplicates. This kind of derived table is
+    used to process IN/NOT IN/EXISTS/NOT EXISTS predicates placed in the
+    WHERE clause and SELECT list, and with conformant truth values.
+
+    An aggregated derived table is a derived table aggregated into one row.
+    Typically, it includes a MAX or MIN value, number of rows in the subquery,
+    and possibly number of NULL values, if applicable. An aggregated derived
+    table is used to implement <op>ALL and <op>ANY quantified comparison
+    predicates where <op> is >, >=, < or <=, as well as =ALL and <>ANY.
+
+    A grouped derived table is a derived table that is grouped on the
+    inner expressions from a correlated WHERE clause with equality predicates
+    in the subquery. It also contains a count of the number of rows in
+    the group. The count is required to check for existence of a particular
+    value. Grouped derived tables are used to handle quantified comparison
+    predicates with correlation in the WHERE clause that would be handled with
+    an aggregated derived table without the correlation.
+    An aggregated derived table always returns one row, however there is no
+    such guarantee for grouped derived tables. Because of this, in order to
+    properly evaluate the count of a particular group, a query that would
+    otherwise be processed as an inner join must be processed as a left outer
+    join, and a zero count must be checked by looking for a null-extended
+    row from the subquery.
+
+    A derived table is assumed to be deduplicated if it is neither specified
+    as aggregated nor grouped.
+  */
+  // If true, quantified comparison predicate uses aggregated subquery
+  bool aggregated_subquery = false;
+  // If true, quantified comparison predicate uses grouped subquery
+  bool grouped_subquery = false;
+
+  // Track optional aggregate fields for quantified comparison predicates;
+  int count_field_no = -1;
+  int nulls_field_no = -1;
+  int distinct_field_no = -1;
+
+  // If true, use anti-join algorithm, otherwise use semi-join algorithm
+  bool use_anti_join = subq_pred->use_anti_join_transform();
+
+  // Shorthand for the left expression:
+  Item *left_expr = subq_pred->left_expr;
+
+  // Locate place of this subquery (SELECT list or WHERE clause):
+  Item **root = nullptr;
+  size_t root_field_no = 0;
+
+  for (size_t i = 0; i < fields.size(); i++) {
+    root = &fields[i];
+    if (!(*root)->hidden && (*root)->has_subquery() &&
+        (*root)->walk(&Item::contains_item, enum_walk::PREFIX,
+                      pointer_cast<uchar *>(&subq_pred))) {
+      root_field_no = i;
+      break;
+    }
+    root = nullptr;
+  }
+  if (root == nullptr) {
+    root = &m_where_cond;
+    if (*root == nullptr || !(*root)->has_subquery() ||
+        !(*root)->walk(&Item::contains_item, enum_walk::PREFIX,
+                       pointer_cast<uchar *>(&subq_pred))) {
+      root = nullptr;
+    }
+  }
+  assert(root != nullptr);
+
+  if (root != &m_where_cond) {
+    for (size_t i = 0; i < fields.size(); i++) {
+      if (i > root_field_no && fields[i]->has_wf() &&
+          fields[i]->has_subquery()) {
+        /*
+          There is an anomaly in fields which make it impossible to transform
+          quantified comparison subqueries that are used in subsequent
+          window functions. Skip this marginal corner case.
+        */
+        my_error(ER_SUBQUERY_TRANSFORM_REJECTED, MYF(0));
+        return true;
+      }
+    }
+  }
+
   if (subq_pred->subquery_type() == Item_subselect::IN_SUBQUERY) {
     build_sj_exprs(thd, &sj_outer_exprs, &sj_inner_exprs, subq_pred, inner_qb);
     // All these expressions are compared with '=':
-    op_types.resize(sj_outer_exprs.size(), Item_func::EQ_FUNC);
-  } else {
-    assert(subq_pred->subquery_type() == Item_subselect::EXISTS_SUBQUERY);
-
+    if (op_types.resize(sj_outer_exprs.size(), Item_func::EQ_FUNC)) {
+      return true;
+    }
+  } else if (subq_pred->subquery_type() == Item_subselect::EXISTS_SUBQUERY) {
     if (inner_qb->is_table_value_constructor) {
       if ((inner_qb->select_limit != nullptr &&
            !inner_qb->select_limit->const_item()) ||
@@ -5535,6 +5721,89 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
                   pointer_cast<uchar *>(&ctx));
     }
     inner_qb->select_list_tables = 0;
+  } else if (subq_pred->subquery_type() == Item_subselect::ALL_SUBQUERY ||
+             subq_pred->subquery_type() == Item_subselect::ANY_SUBQUERY) {
+    allany_pred = down_cast<Item_allany_subselect *>(subq_pred);
+    is_all_pred = subq_pred->subquery_type() == Item_subselect::ALL_SUBQUERY;
+    is_any_pred = !is_all_pred;
+
+    assert(!inner_qb->is_grouped());
+
+    // Selected field is first in base_ref_items, ahead of any hidden fields.
+    size_t field_no = 0;
+
+    // ALL and ANY will always work on an aggregated or grouped inner query:
+    if (!decorrelate) {
+      aggregated_subquery = true;
+    } else {
+      grouped_subquery = true;
+    }
+    // An aggregated subquery in WHERE clause can be processed as a regular join
+    if (root == &m_where_cond && aggregated_subquery) {
+      use_anti_join = false;
+    }
+    Item *expr = inner_qb->base_ref_items[field_no];
+    if (allany_pred->eqne_op()) {  //  =ALL or <>ANY
+      is_eq_all = is_all_pred;
+      is_ne_any = is_any_pred;
+    }
+    // Convert subquery to aggregated query block:
+    thd->lex->set_current_query_block(inner_qb);
+    const auto save_allow_sum_func = thd->lex->allow_sum_func;
+    thd->lex->allow_sum_func |= (nesting_map)1 << inner_qb->nest_level;
+
+    // Select MIN/MAX of the selected expression
+    Item *aggregate =
+        is_any_pred ^ (allany_pred->compare_func()->l_op())
+            ? implicit_cast<Item *>(new (thd->mem_root) Item_sum_min(expr))
+            : implicit_cast<Item *>(new (thd->mem_root) Item_sum_max(expr));
+    if (aggregate == nullptr) return true;
+    if (aggregate->fix_fields(thd, &aggregate)) return true;
+    inner_qb->fields[field_no + hidden_fields] = aggregate;
+    inner_qb->base_ref_items[field_no] = aggregate;
+    /*
+      Other generated fields are placed behind existing fields.
+      "field_no" counts the field number in the generated derived table,
+      ignoring any hidden fields in the fields list. Thus, "hidden_fields"
+      must be accounted for when adding to fields and base_ref_items.
+    */
+    field_no++;
+
+    // Aggregate COUNT from subquery (actually, we only need empty indicator)
+    Item_int *number_0 = new (thd->mem_root) Item_int(int32{0}, 1);
+    if (number_0 == nullptr) return true;
+    Item *counter = new (thd->mem_root) Item_sum_count(number_0);
+    if (counter == nullptr) return true;
+    if (counter->fix_fields(thd, &counter)) return true;
+    if (inner_qb->fields.push_back(counter)) return true;
+    count_field_no = field_no++;
+    inner_qb->base_ref_items[count_field_no + hidden_fields] = counter;
+
+    // If selected expression is nullable, return whether there are NULL values
+    if (allany_pred->process_nulls() && expr->is_nullable()) {
+      Item *isnull = new (thd->mem_root) Item_func_isnull(expr);
+      if (isnull == nullptr) return true;
+      Item *has_nulls = new (thd->mem_root) Item_sum_max(isnull);
+      if (has_nulls == nullptr) return true;
+      if (has_nulls->fix_fields(thd, &has_nulls)) return true;
+      inner_qb->fields.push_back(has_nulls);
+      nulls_field_no = field_no++;
+      inner_qb->base_ref_items[nulls_field_no + hidden_fields] = has_nulls;
+    }
+    // =ALL and <>ANY also needs number of distinct values
+    if (is_eq_all || is_ne_any) {
+      Item *distinct_count = new (thd->mem_root) Item_sum_count(expr, true);
+      if (distinct_count == nullptr) return true;
+      if (distinct_count->fix_fields(thd, &distinct_count)) return true;
+      inner_qb->fields.push_back(distinct_count);
+      distinct_field_no = field_no++;
+      inner_qb->base_ref_items[distinct_field_no + hidden_fields] =
+          distinct_count;
+    }
+    thd->lex->allow_sum_func = save_allow_sum_func;
+    thd->lex->set_current_query_block(this);
+  } else {
+    assert(false);
   }
 
   Semijoin_decorrelation sj_decor(
@@ -5543,7 +5812,7 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
       // multiple inner rows may match '<>', but they will fail the IS NULL
       // condition, and if this condition is top-level in WHERE it will
       // eliminate the rows.
-      (subq_pred->can_do_aj &&
+      (use_anti_join && allany_pred == nullptr &&
        subq_pred->outer_condition_context == enum_condition_context::ANDS)
           ? &op_types
           : nullptr);
@@ -5572,9 +5841,14 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
       // break the usual layout of base_ref_items which is: "non-hidden then
       // hidden" (see Query_block::add_hidden_item()). While this layout is not
       // documented (?), it is safer to not break it.
-      inner_qb->base_ref_items[inner_qb->fields.size()] = inner;
+      size_t field_no = inner_qb->fields.size();
+      inner_qb->base_ref_items[field_no] = inner;
       inner_qb->fields.push_back(inner);
 
+      // Add as grouping expression, if required:
+      if (grouped_subquery && inner_qb->add_grouping_expr(thd, inner)) {
+        return true;
+      }
       // Needed for fix_after_pullout:
       update_context_to_derived(outer, this);
       // Decorrelated outer expression will move to ON, so fix it.
@@ -5614,7 +5888,15 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
     }
   }
 
-  if (!inner_qb->can_skip_distinct()) {
+  // If the subquery is (still) correlated, we would need to create a LATERAL
+  // derived table, but a certain secondary engine doesn't support it. Error:
+  if ((subq_pred->subquery_used_tables() & ~PSEUDO_TABLE_BITS) != 0) {
+    my_error(ER_SUBQUERY_TRANSFORM_REJECTED, MYF(0));
+    return true;
+  }
+
+  if (!aggregated_subquery && !grouped_subquery &&
+      !inner_qb->can_skip_distinct()) {
     inner_qb->add_base_options(SELECT_DISTINCT);
   }
   // As the synthesised ON and WHERE will reference columns of the derived
@@ -5628,37 +5910,43 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
       if (baptize_item(thd, inner, &i)) return true;
     }
   }
-
-  // If the subquery is (still) correlated, we would need to create a LATERAL
-  // derived table, but a certain secondary engine doesn't support it. Error:
-  if ((subq_pred->subquery_used_tables() & ~PSEUDO_TABLE_BITS) != 0) {
-    my_error(ER_SUBQUERY_TRANSFORM_REJECTED, MYF(0));
-    return true;
-  }
-
+  /*
+    If subquery is top-level in WHERE, and not negated, use INNER JOIN, else
+    use LEFT JOIN. A correlated subquery (which is transformed to a grouped
+    subquery) must also be processed as a LEFT JOIN.
+    We could use LEFT JOIN unconditionally and let simplify_joins() convert it
+    to INNER JOIN, but the conversion is not perfect, as not all effects of
+    propagate_nullability() are undone.
+  */
+  const bool use_inner_join =
+      root == &m_where_cond &&
+      subq_pred->outer_condition_context == enum_condition_context::ANDS &&
+      !use_anti_join && !grouped_subquery;
   Table_ref *tr;
-  if (transform_subquery_to_derived(
-          thd, &tr, inner_qe, subq_pred,
-          // If subquery is top-level in WHERE, and not negated, use INNER JOIN,
-          // else use LEFT JOIN.
-          // We could use LEFT JOIN unconditionally and let simplify_joins()
-          // convert it to INNER JOIN, but the conversion is not perfect, as
-          // not all effects of propagate_nullability() are undone.
-          /*use_inner_join=*/
-          subq_pred->outer_condition_context == enum_condition_context::ANDS &&
-              !subq_pred->can_do_aj,
-          /*reject_multiple_rows*/ false,
-          /*subquery=*/nullptr,
-          /*lifted_where_cond*/ nullptr))
+  if (transform_subquery_to_derived(thd, &tr, inner_qe, subq_pred,
+                                    use_inner_join, false, nullptr, nullptr))
     return true;
 
   assert(CountVisibleFields(sj_inner_exprs) == sj_inner_exprs.size());
   const int first_sj_inner_expr_of_subquery =
       CountVisibleFields(inner_qb->fields) - sj_inner_exprs.size();
 
-  Item_field *derived_field;
-  // Make the join condition for the derived table:
-  Item *join_cond = nullptr;
+  /**
+    This function will generate two conditions to be attached in the
+    synthesized query: a JOIN condition that is used in the join between
+    the outer tables and the generated table, and a general condition that is
+    applied after the join. The JOIN condition is required especially for
+    outer join and anti-join operations, but is less important for inner join
+    (It could be moved to the WHERE clause).
+    The general condition is applied as a filter condition (WHERE clause) when
+    the subquery predicate is placed in the WHERE clause, or is used to
+    substitute the original subquery predicate when placed in the SELECT list.
+    Note that we sometimes generate a full condition in "condition" but later
+    transfer it to become the JOIN condition.
+  */
+  Item_bool_func *condition = nullptr;
+  Item_bool_func *join_cond = nullptr;
+
   // Start at first SJ inner expression in SELECT list:
   int i = first_sj_inner_expr_of_subquery;
   int j = 0;  // counter of processed SJ inner expressions
@@ -5669,85 +5957,399 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
     // Using this constructor, instead of the alternative which only takes a
     // Field pointer, gives a persistent name to the item (sets orig_table_name
     // etc) which is necessary for prepared statements.
-    derived_field = new (thd->mem_root)
+    Item_field *const derived_field = new (thd->mem_root)
         Item_field(thd, &this->context, tr->table->field[i]);
     if (derived_field == nullptr) return true;
 
-    Item_bool_func *comp_item;
-    Item_func::Functype op_type = sj_decor.op_type_at(j);
+    Item_bool_func *predicate = nullptr;
+
+    const Item_func::Functype op_type = sj_decor.op_type_at(j);
     switch (op_type) {
       case Item_func::EQ_FUNC:
-        comp_item = new (thd->mem_root) Item_func_eq(outer, derived_field);
+        predicate = new (thd->mem_root) Item_func_eq(outer, derived_field);
         break;
       case Item_func::NE_FUNC:
-        comp_item = new (thd->mem_root) Item_func_ne(outer, derived_field);
+        predicate = new (thd->mem_root) Item_func_ne(outer, derived_field);
         break;
       case Item_func::LT_FUNC:
-        comp_item = new (thd->mem_root) Item_func_lt(outer, derived_field);
+        predicate = new (thd->mem_root) Item_func_lt(outer, derived_field);
         break;
       case Item_func::LE_FUNC:
-        comp_item = new (thd->mem_root) Item_func_le(outer, derived_field);
+        predicate = new (thd->mem_root) Item_func_le(outer, derived_field);
         break;
       case Item_func::GT_FUNC:
-        comp_item = new (thd->mem_root) Item_func_gt(outer, derived_field);
+        predicate = new (thd->mem_root) Item_func_gt(outer, derived_field);
         break;
       case Item_func::GE_FUNC:
-        comp_item = new (thd->mem_root) Item_func_ge(outer, derived_field);
+        predicate = new (thd->mem_root) Item_func_ge(outer, derived_field);
         break;
       default:
         assert(false);
-        comp_item = nullptr;
     }
-    if (comp_item == nullptr) return true;
-    join_cond = and_items(join_cond, comp_item);
+    if (predicate == nullptr) return true;
+
+    condition = and_items(condition, predicate);
+    if (condition == nullptr) return true;
   }
+  /*
+    If the predicate is transformed using a grouped subquery, use just generated
+    condition as the join condition for the outer join.
+  */
+  if (grouped_subquery) {
+    assert(join_cond == nullptr);
+    join_cond = condition;
+    condition = nullptr;
+  }
+  // If this is a quantified comparison predicate, add the generated comparison
+  if (is_eq_all || is_ne_any) {
+    Item_field *const field = new (thd->mem_root)
+        Item_field(thd, &this->context, tr->table->field[0]);
+    if (field == nullptr) return true;
 
-  if (join_cond == nullptr)  // it's EXISTS and we couldn't decorrelate anything
+    Item_bool_func *compare;
+    if (is_eq_all) {
+      compare = new (thd->mem_root) Item_func_eq(left_expr, field);
+    } else {
+      compare = new (thd->mem_root) Item_func_ne(left_expr, field);
+    }
+    if (compare == nullptr) return true;
+
+    Item *count_field = new (thd->mem_root)
+        Item_field(thd, &this->context, tr->table->field[count_field_no]);
+    if (count_field == nullptr) return true;
+
+    Item_int *const number_0 = new (thd->mem_root) Item_int(int32{0}, 1);
+    if (number_0 == nullptr) return true;
+
+    if (grouped_subquery) {
+      count_field =
+          new (thd->mem_root) Item_func_coalesce(count_field, number_0);
+      if (count_field == nullptr) return true;
+    }
+    Item *count_check;
+    if (is_eq_all) {
+      count_check = new (thd->mem_root) Item_func_eq(count_field, number_0);
+    } else {
+      count_check = new (thd->mem_root) Item_func_ne(count_field, number_0);
+    }
+    if (count_check == nullptr) return true;
+
+    Item_field *const distinct_field = new (thd->mem_root)
+        Item_field(thd, &this->context, tr->table->field[distinct_field_no]);
+    if (distinct_field == nullptr) return true;
+
+    Item *inner_nulls_check = nullptr;
+    Item *outer_nulls_check = nullptr;
+    Item *any_non_nulls_check = nullptr;
+    if (nulls_field_no >= 0) {
+      Item *nulls_field = new (thd->mem_root)
+          Item_field(thd, &this->context, tr->table->field[nulls_field_no]);
+      if (nulls_field == nullptr) return true;
+
+      inner_nulls_check =
+          new (thd->mem_root) Item_func_eq(nulls_field, number_0);
+      if (inner_nulls_check == nullptr) return true;
+    }
+    if ((is_ne_any || !allany_pred->ignore_unknown()) &&
+        left_expr->is_nullable()) {
+      outer_nulls_check = new (thd->mem_root) Item_func_isnotnull(left_expr);
+      if (outer_nulls_check == nullptr) return true;
+    }
+    if (is_eq_all && nulls_field_no >= 0 && !allany_pred->ignore_unknown()) {
+      any_non_nulls_check =
+          new (thd->mem_root) Item_func_eq(distinct_field, number_0);
+      if (any_non_nulls_check == nullptr) return true;
+      Item *const true_result = new (thd->mem_root) Item_null();
+      if (true_result == nullptr) return true;
+      Item *const false_result = new (thd->mem_root) Item_func_false();
+      if (false_result == nullptr) return true;
+      any_non_nulls_check = new (thd->mem_root)
+          Item_bool_if(any_non_nulls_check, true_result, false_result);
+      if (any_non_nulls_check == nullptr) return true;
+    }
+    if (inner_nulls_check != nullptr) {
+      Item *true_result;
+      if (is_ne_any) {
+        true_result = new (thd->mem_root) Item_func_false();
+        if (true_result == nullptr) return true;
+      } else {
+        true_result = new (thd->mem_root) Item_func_true();
+        if (true_result == nullptr) return true;
+      }
+      Item *const false_result = new (thd->mem_root) Item_null();
+      if (false_result == nullptr) return true;
+      inner_nulls_check = new (thd->mem_root)
+          Item_bool_if(inner_nulls_check, true_result, false_result);
+      if (inner_nulls_check == nullptr) return true;
+    }
+    if (outer_nulls_check != nullptr && !allany_pred->ignore_unknown()) {
+      Item *true_result;
+      if (is_ne_any) {
+        true_result = new (thd->mem_root) Item_func_true();
+        if (true_result == nullptr) return true;
+      } else {
+        true_result = new (thd->mem_root) Item_func_false();
+        if (true_result == nullptr) return true;
+      }
+      Item *const false_result = new (thd->mem_root) Item_null();
+      if (false_result == nullptr) return true;
+      outer_nulls_check = new (thd->mem_root)
+          Item_bool_if(outer_nulls_check, true_result, false_result);
+      if (outer_nulls_check == nullptr) return true;
+    }
+    Item_int *const number_1 = new (thd->mem_root) Item_int(int32{1}, 1);
+    if (number_1 == nullptr) return true;
+    Item *distinct_check;
+    if (is_ne_any) {
+      distinct_check =
+          new (thd->mem_root) Item_func_gt(distinct_field, number_1);
+    } else {
+      distinct_check =
+          new (thd->mem_root) Item_func_eq(distinct_field, number_1);
+    }
+    if (distinct_check == nullptr) return true;
+
+    if (is_ne_any) {
+      // If table is empty, result is FALSE.
+      // If searched value is NULL, result is UNKNOWN.
+      // If there is more than one distinct, non-NULL value, result is TRUE.
+      // If value in subquery is different from searched value, result is TRUE.
+      // If subquery contains at least one NULL, result is UNKNOWN,
+      // otherwise FALSE.
+      condition = new (thd->mem_root) Item_cond_or(compare, distinct_check);
+      if (condition == nullptr) return true;
+      if (inner_nulls_check != nullptr) {
+        condition =
+            new (thd->mem_root) Item_cond_or(condition, inner_nulls_check);
+        if (condition == nullptr) return true;
+      }
+      condition = new (thd->mem_root) Item_cond_and(condition, count_check);
+      if (condition == nullptr) return true;
+      if (outer_nulls_check != nullptr) {
+        condition =
+            new (thd->mem_root) Item_cond_and(condition, outer_nulls_check);
+        if (condition == nullptr) return true;
+      }
+    } else if (is_eq_all) {
+      // If table is empty, result is TRUE.
+      // If searched value is NULL, result is UNKNOWN.
+      // If there is more than one distinct, non-NULL value, or the distinct
+      // value is different from the searched value, result is FALSE.
+      // If subquery contains at least one NULL, result is UNKNOWN,
+      // otherwise result is FALSE.
+      condition = new (thd->mem_root) Item_cond_and(distinct_check, compare);
+      if (condition == nullptr) return true;
+      if (inner_nulls_check != nullptr) {
+        condition =
+            new (thd->mem_root) Item_cond_and(condition, inner_nulls_check);
+        if (condition == nullptr) return true;
+      }
+      condition = new (thd->mem_root) Item_cond_or(count_check, condition);
+      if (condition == nullptr) return true;
+      if (outer_nulls_check != nullptr) {
+        condition =
+            new (thd->mem_root) Item_cond_or(condition, outer_nulls_check);
+        if (condition == nullptr) return true;
+      }
+      if (any_non_nulls_check != nullptr) {
+        condition =
+            new (thd->mem_root) Item_cond_or(condition, any_non_nulls_check);
+        if (condition == nullptr) return true;
+      }
+    }
+  } else if (allany_pred != nullptr) {
+    // Handles quantified comparison predicates not handled above.
+
+    // Replace the aggregate with a field from the aggregated table:
+    Item *field = new (thd->mem_root)
+        Item_field(thd, &this->context, tr->table->field[0]);
+    if (field == nullptr) return true;
+
+    Item_bool_func *const compare = allany_pred->compare_func()->create(
+        allany_pred->m_pos, left_expr, field);
+    if (compare == nullptr) return true;
+
+    condition = compare;
+
+    if (nulls_field_no > 0) {
+      field = new (thd->mem_root)
+          Item_field(thd, &this->context, tr->table->field[nulls_field_no]);
+      if (field == nullptr) return true;
+
+      Item_int *const number_0 = new (thd->mem_root) Item_int(int32{0}, 1);
+      if (number_0 == nullptr) return true;
+      Item *null_check;
+      if (is_any_pred) {
+        null_check = new (thd->mem_root) Item_func_ne(field, number_0);
+        if (null_check == nullptr) return true;
+        Item *const true_result = new (thd->mem_root) Item_null();
+        if (true_result == nullptr) return true;
+        Item *const false_result = new (thd->mem_root) Item_func_false();
+        if (false_result == nullptr) return true;
+        null_check = new (thd->mem_root)
+            Item_bool_if(null_check, true_result, false_result);
+        if (null_check == nullptr) return true;
+        condition = new (thd->mem_root) Item_cond_or(condition, null_check);
+        if (condition == nullptr) return true;
+      } else {
+        null_check = new (thd->mem_root) Item_func_eq(field, number_0);
+        if (null_check == nullptr) return true;
+        Item *const true_result = new (thd->mem_root) Item_func_true();
+        if (true_result == nullptr) return true;
+        Item *false_result;
+        if (allany_pred->ignore_unknown()) {
+          false_result = new (thd->mem_root) Item_func_false();
+        } else {
+          false_result = new (thd->mem_root) Item_null();
+        }
+        if (false_result == nullptr) return true;
+        null_check = new (thd->mem_root)
+            Item_bool_if(null_check, true_result, false_result);
+        if (null_check == nullptr) return true;
+        condition = new (thd->mem_root) Item_cond_and(condition, null_check);
+        if (condition == nullptr) return true;
+      }
+    }
+    field = new (thd->mem_root)
+        Item_field(thd, &this->context, tr->table->field[count_field_no]);
+    if (field == nullptr) return true;
+
+    Item_int *const number_0 = new (thd->mem_root) Item_int(int32{0}, 1);
+    if (number_0 == nullptr) return true;
+    if (grouped_subquery) {
+      field = new (thd->mem_root) Item_func_coalesce(field, number_0);
+      if (field == nullptr) return true;
+    }
+    if (is_any_pred) {
+      Item *const count_check =
+          new (thd->mem_root) Item_func_ne(field, number_0);
+      if (count_check == nullptr) return true;
+      condition = new (thd->mem_root) Item_cond_and(condition, count_check);
+      if (condition == nullptr) return true;
+    } else {
+      Item *const count_check =
+          new (thd->mem_root) Item_func_eq(field, number_0);
+      if (count_check == nullptr) return true;
+
+      condition = new (thd->mem_root) Item_cond_or(condition, count_check);
+      if (condition == nullptr) return true;
+    }
+  }
+  if (!grouped_subquery) {
+    if (root == &m_where_cond) {
+      assert(join_cond == nullptr);
+      join_cond = condition;
+      condition = nullptr;
+
+      // Make the IS [NOT] NULL condition:
+      Item_field *const derived_field = new (thd->mem_root)
+          Item_field(thd, &this->context, tr->table->field[0]);
+      if (derived_field == nullptr) return true;
+
+      assert(condition == nullptr);
+      if (!tr->outer_join) {
+        condition = new (thd->mem_root) Item_func_true();
+      } else if (use_anti_join) {
+        condition = new (thd->mem_root) Item_func_isnull(derived_field);
+      } else {
+        condition = new (thd->mem_root) Item_func_isnotnull(derived_field);
+      }
+      if (condition == nullptr) return true;
+
+      // We only need to test the first column for null-ness:
+      // if the NOT NULL test eliminates it, i.e. if it's NULL:
+      // - if it's not NULL-complemented: it's a NULL in the right member of the
+      // LEFT JOIN, thus in the subquery, thus it wouldn't pass the IN
+      // condition,
+      // - if it is NULL-complemented: then one IN sub-equality failed, thus it
+      // wouldn't pass the IN condition.
+      // Reciprocically: if the NOT NULL does not eliminate it: it's not
+      // NULL-complemented, so all IN sub-equalities passed, it would pass
+      // the IN condition.
+      // If the subquery was rather with EXISTS, the SELECT list's first
+      // expression is 1, so if it's NULL it's surely NULL-complemented;
+      // if there were decorrelated equalities one of them failed, or
+      // the inner table was empty.
+    } else if (!aggregated_subquery) {
+      /*
+        Handle EXISTS, NOT EXISTS, and IN and NOT IN with non-nullable
+        expressions where the subquery predicate is placed in the SELECT list.
+        The derived table is deduplicated. Perform an outer join between the
+        outer table(s) and the derived table using the join condition.
+        The selected expression is replaced with the condition:
+
+         IN, EXISTS:         (it.iv IS NOT NULL)
+         NOT IN, NOT EXISTS: (it.iv IS NULL)
+
+        Because of the outer join, a non-existing value from the subquery is
+        represented by a NULL value, thus the expression is reduced to a simple
+        IS [NOT] NULL check.
+      */
+      Item_field *const derived_field = new (thd->mem_root)
+          Item_field(thd, &this->context, tr->table->field[0]);
+      if (derived_field == nullptr) return true;
+
+      assert(join_cond == nullptr);
+      join_cond = condition;
+      condition = nullptr;
+
+      switch (subq_pred->value_transform) {
+        case Item::BOOL_IDENTITY:
+        case Item::BOOL_IS_TRUE:
+          condition = new (thd->mem_root) Item_func_isnotnull(derived_field);
+          if (condition == nullptr) return true;
+          break;
+        case Item::BOOL_NEGATED:
+        case Item::BOOL_IS_FALSE:
+          condition = new (thd->mem_root) Item_func_isnull(derived_field);
+          if (condition == nullptr) return true;
+          break;
+        default:
+          assert(false);
+      }
+    }
+  }
+  if (join_cond == nullptr) {
     join_cond = new (thd->mem_root) Item_func_true();
-
+    if (join_cond == nullptr) return true;
+  }
   join_cond->apply_is_true();
-  if (!join_cond->fixed && join_cond->fix_fields(thd, &join_cond)) return true;
+  if (!join_cond->fixed && join_cond->fix_fields(thd, nullptr)) return true;
   tr->set_join_cond(join_cond);
 
-  // Make the IS [NOT] NULL condition:
-  derived_field =
-      new (thd->mem_root) Item_field(thd, &this->context, tr->table->field[0]);
-  if (derived_field == nullptr) return true;
-
-  Item *null_check;
-  if (!tr->outer_join) {
-    null_check = new (thd->mem_root) Item_func_true();
-  } else if (subq_pred->can_do_aj) {
-    null_check = new (thd->mem_root) Item_func_isnull(derived_field);
-  } else {
-    null_check = new (thd->mem_root) Item_func_isnotnull(derived_field);
+  if (condition == nullptr) {
+    condition = new (thd->mem_root) Item_func_true();
+    if (condition == nullptr) return true;
   }
-  null_check->apply_is_true();
-  if (null_check->fix_fields(thd, &null_check)) return true;
+  // Synthesized columns need name copied from original expression
+  if (!condition->item_name.is_set()) {
+    condition->item_name.set(subq_pred->item_name.ptr());
+  }
 
-  // We only need to test the first column for null-ness:
-  // if the NOT NULL test eliminates it, i.e. if it's NULL:
-  // - if it's not NULL-complemented: it's a NULL in the right member of the
-  // LEFT JOIN, thus in the subquery, thus it wouldn't pass the IN
-  // condition,
-  // - if it is NULL-complemented: then one IN sub-equality failed, thus it
-  // wouldn't pass the IN condition.
-  // Reciprocically: if the NOT NULL does not eliminate it: it's not
-  // NULL-complemented, so all IN sub-equalities passed, it would pass the IN
-  // condition.
-  // If the subquery was rather with EXISTS, the SELECT list's first
-  // expression is 1, so if it's NULL it's surely NULL-complemented; if there
-  // were decorrelated equalities one of them failed, or the inner table
-  // was empty.
+  if (root == &m_where_cond) {
+    condition->apply_is_true();
+  } else {
+    condition->increment_ref_count();
+  }
+  if (!condition->fixed && condition->fix_fields(thd, nullptr)) return true;
 
-  // Walk the parent query's WHERE, to find the subquery item, and replace it.
-  if (replace_subcondition(thd, &m_where_cond, subq_pred, null_check, false))
-    return true; /* purecov: inspected */
+  Item *old_expr = unwrap_rollup_group(*root);
 
-  // WHERE now references the derived table's column, so used_tables needs an
-  // update; so does not_null_tables (by making it up to date, we allow
-  // simplify_joins() to optimize more).
-  m_where_cond->update_used_tables();
+  if (replace_subcondition(thd, root, subq_pred, condition, false)) return true;
+
+  if (root != &m_where_cond) {
+    if (base_ref_items[root_field_no] != *root) {
+      base_ref_items[root_field_no] = *root;
+    }
+    if (is_grouped()) {
+      replace_order_item(group_list.first, old_expr,
+                         unwrap_rollup_group(*root));
+    }
+    if (is_ordered()) {
+      replace_order_item(order_list.first, old_expr,
+                         unwrap_rollup_group(*root));
+    }
+  }
   return false;
 }
 
@@ -6345,9 +6947,18 @@ bool Query_block::transform_grouped_to_derived(THD *thd, bool *break_off) {
     int field_no = 1;
 
     for (auto vr : unique_view_refs) {
-      if (baptize_item(thd, vr, &field_no)) return true;
-      if (new_derived->add_item_to_list(vr)) return true;
-      if (update_context_to_derived(vr, new_derived)) return true;
+      /*
+        Copy is needed to preserve the hidded propery during transformation.
+        add_item_to_list() below resets this property and will be later restored
+        by replace_item_view_ref().
+      */
+      Item_view_ref *vr_copy = new (thd->mem_root)
+          Item_view_ref(vr->context, vr->ref_pointer(), vr->original_db_name(),
+                        vr->original_table_name(), vr->original_table_name(),
+                        vr->item_name.ptr(), vr->m_table_ref);
+      if (baptize_item(thd, vr_copy, &field_no)) return true;
+      if (new_derived->add_item_to_list(vr_copy)) return true;
+      if (update_context_to_derived(vr_copy, new_derived)) return true;
       vr->depended_from = nullptr;
     }
 
@@ -6376,6 +6987,7 @@ bool Query_block::transform_grouped_to_derived(THD *thd, bool *break_off) {
       }
     }
 
+    new_derived->original_tables_map = original_tables_map;
     if (new_derived->has_sj_candidates() &&
         new_derived->flatten_subqueries(thd))
       return true;
@@ -6630,9 +7242,9 @@ static bool query_block_contains_subquery(Query_block *select,
   return false;
 }
 
-static bool walk_join_conditions(mem_root_deque<Table_ref *> &list,
-                                 std::function<bool(Item **expr_p)> action,
-                                 Item::Collect_scalar_subquery_info *info) {
+bool walk_join_conditions(mem_root_deque<Table_ref *> &list,
+                          std::function<bool(Item **expr_p)> action,
+                          Item::Collect_scalar_subquery_info *info) {
   for (Table_ref *tl : list) {
     if (tl->join_cond() != nullptr) {
       info->m_join_condition_context = tl->join_cond();
@@ -6721,7 +7333,27 @@ bool Query_block::nest_derived(THD *thd, Item *join_cond,
       *nested_join_list,
       [join_cond, &nested_join_list](Table_ref *tr) mutable -> bool {
         if (tr->join_cond() == join_cond) {
-          nested_join_list = &tr->embedding->nested_join->m_tables;
+          // In certain cases, we can have a degenerate join (after other
+          // transformations, i.e. we have a join clause, but only table.
+          // In optimizer trace, this is printed as e.g.
+          //     <constant table> join
+          //     cte2
+          //     on (select 3 from cte2) <> 0             <-- scalar subquery
+          // In such a case there will be no join nest, so tr->embedding will
+          // be empty. The resulting join after we add the new derived table:
+          //   ( <constant table>
+          //     left join
+          //     (select 3 AS `3` from cte2) derived_2_5  <-- new derived table
+          //     on true )
+          //   join cte2
+          //   on derived_2_5.`3` <> 0
+          // which will be simplified in due course to
+          //   (select 3 AS `3` from `cte2`) derived_2_5
+          //   join cte2
+          //   where derived_2_5.`3` <> 0
+          if (tr->embedding != nullptr) {
+            nested_join_list = &tr->embedding->nested_join->m_tables;
+          }
           return true;  // break off walk
         }
         return false;

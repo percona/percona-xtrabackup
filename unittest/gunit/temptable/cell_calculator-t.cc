@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -133,7 +133,7 @@ uint8 *Table_wrapper::get_data_ptr(int offset) {
 }
 
 uint8 *Table_wrapper::get_null_ptr(int bit) {
-  int offset = bit / 8;
+  int const offset = bit / 8;
   return m_record0.data() + offset;
 }
 
@@ -160,17 +160,17 @@ TEST(CellCalculator, NullEmpty) {
 
   table.store_short_value(value, 0x1234);
 
-  temptable::Cell cell_valid(false, Table_wrapper::FIELD_SHORT_LENGTH,
-                             value.data());
-  temptable::Cell cell_empty(false, 0, value.data());
-  temptable::Cell cell_null1(true, 0, nullptr);
-  temptable::Cell cell_null2(true, Table_wrapper::FIELD_SHORT_LENGTH,
-                             value.data());
+  temptable::Cell const cell_valid(false, Table_wrapper::FIELD_SHORT_LENGTH,
+                                   value.data());
+  temptable::Cell const cell_empty(false, 0, value.data());
+  temptable::Cell const cell_null1(true, 0, nullptr);
+  temptable::Cell const cell_null2(true, Table_wrapper::FIELD_SHORT_LENGTH,
+                                   value.data());
 
   KEY_PART_INFO key;
   key.init_from_field(table.get_field_short());
 
-  temptable::Cell_calculator calculator(key);
+  temptable::Cell_calculator const calculator(key);
 
   EXPECT_EQ(calculator.hash(cell_null1), 1);
   EXPECT_EQ(calculator.hash(cell_null2), 1);
@@ -198,18 +198,18 @@ TEST(CellCalculator, Short) {
   table.store_short_value(value2a, 0x4321);
   table.store_short_value(value2b, 0x4321);
 
-  temptable::Cell cell1a(false, Table_wrapper::FIELD_SHORT_LENGTH,
-                         value1a.data());
-  temptable::Cell cell1b(false, Table_wrapper::FIELD_SHORT_LENGTH,
-                         value1b.data());
-  temptable::Cell cell2a(false, Table_wrapper::FIELD_SHORT_LENGTH,
-                         value2a.data());
-  temptable::Cell cell2b(false, Table_wrapper::FIELD_SHORT_LENGTH,
-                         value2b.data());
+  temptable::Cell const cell1a(false, Table_wrapper::FIELD_SHORT_LENGTH,
+                               value1a.data());
+  temptable::Cell const cell1b(false, Table_wrapper::FIELD_SHORT_LENGTH,
+                               value1b.data());
+  temptable::Cell const cell2a(false, Table_wrapper::FIELD_SHORT_LENGTH,
+                               value2a.data());
+  temptable::Cell const cell2b(false, Table_wrapper::FIELD_SHORT_LENGTH,
+                               value2b.data());
 
   /* check for field */
 
-  temptable::Cell_calculator field_calculator(table.get_field_short());
+  temptable::Cell_calculator const field_calculator(table.get_field_short());
 
   EXPECT_EQ(field_calculator.hash(cell1a), field_calculator.hash(cell1b));
   EXPECT_EQ(field_calculator.hash(cell2a), field_calculator.hash(cell2b));
@@ -228,7 +228,7 @@ TEST(CellCalculator, Short) {
   KEY_PART_INFO key;
   key.init_from_field(table.get_field_short());
 
-  temptable::Cell_calculator key_calculator(key);
+  temptable::Cell_calculator const key_calculator(key);
 
   EXPECT_EQ(key_calculator.hash(cell1a), key_calculator.hash(cell1b));
   EXPECT_EQ(key_calculator.hash(cell2a), key_calculator.hash(cell2b));
@@ -260,14 +260,15 @@ TEST(CellCalculator, StringPad) {
   value3a.fill(' ');
   std::memcpy(value3a.data(), "abcdfg", 6);
 
-  temptable::Cell cell1a(false, value1a.size(), value1a.data());
-  temptable::Cell cell1b(false, value1b.size(), value1b.data());
-  temptable::Cell cell2a(false, value2a.size(), value2a.data());
-  temptable::Cell cell3a(false, value3a.size(), value3a.data());
+  temptable::Cell const cell1a(false, value1a.size(), value1a.data());
+  temptable::Cell const cell1b(false, value1b.size(), value1b.data());
+  temptable::Cell const cell2a(false, value2a.size(), value2a.data());
+  temptable::Cell const cell3a(false, value3a.size(), value3a.data());
 
   /* check for field */
 
-  temptable::Cell_calculator field_calculator(table.get_field_string_pad());
+  temptable::Cell_calculator const field_calculator(
+      table.get_field_string_pad());
 
   EXPECT_EQ(field_calculator.hash(cell1a), field_calculator.hash(cell1b));
 
@@ -286,7 +287,7 @@ TEST(CellCalculator, StringPad) {
   KEY_PART_INFO full_key;
   full_key.init_from_field(table.get_field_string_pad());
 
-  temptable::Cell_calculator full_key_calculator(full_key);
+  temptable::Cell_calculator const full_key_calculator(full_key);
 
   EXPECT_EQ(full_key_calculator.hash(cell1a), full_key_calculator.hash(cell1b));
 
@@ -308,7 +309,7 @@ TEST(CellCalculator, StringPad) {
   prefix_key.length =
       3 * table.get_field_string_pad()->charset_for_protocol()->mbmaxlen;
 
-  temptable::Cell_calculator prefix_key_calculator(prefix_key);
+  temptable::Cell_calculator const prefix_key_calculator(prefix_key);
 
   EXPECT_EQ(prefix_key_calculator.hash(cell1a),
             prefix_key_calculator.hash(cell1b));
@@ -343,14 +344,15 @@ TEST(CellCalculator, StringNoPad) {
   value3a.fill(' ');
   std::memcpy(value3a.data(), "abcdfg", 6);
 
-  temptable::Cell cell1a(false, value1a.size(), value1a.data());
-  temptable::Cell cell1b(false, value1b.size(), value1b.data());
-  temptable::Cell cell2a(false, value2a.size(), value2a.data());
-  temptable::Cell cell3a(false, value3a.size(), value3a.data());
+  temptable::Cell const cell1a(false, value1a.size(), value1a.data());
+  temptable::Cell const cell1b(false, value1b.size(), value1b.data());
+  temptable::Cell const cell2a(false, value2a.size(), value2a.data());
+  temptable::Cell const cell3a(false, value3a.size(), value3a.data());
 
   /* check for field */
 
-  temptable::Cell_calculator field_calculator(table.get_field_string_nopad());
+  temptable::Cell_calculator const field_calculator(
+      table.get_field_string_nopad());
 
   EXPECT_EQ(field_calculator.hash(cell1a), field_calculator.hash(cell1b));
 
@@ -369,7 +371,7 @@ TEST(CellCalculator, StringNoPad) {
   KEY_PART_INFO full_key;
   full_key.init_from_field(table.get_field_string_nopad());
 
-  temptable::Cell_calculator full_key_calculator(full_key);
+  temptable::Cell_calculator const full_key_calculator(full_key);
 
   EXPECT_EQ(full_key_calculator.hash(cell1a), full_key_calculator.hash(cell1b));
 
@@ -391,7 +393,7 @@ TEST(CellCalculator, StringNoPad) {
   prefix_key.length =
       3 * table.get_field_string_nopad()->charset_for_protocol()->mbmaxlen;
 
-  temptable::Cell_calculator prefix_key_calculator(prefix_key);
+  temptable::Cell_calculator const prefix_key_calculator(prefix_key);
 
   EXPECT_EQ(prefix_key_calculator.hash(cell1a),
             prefix_key_calculator.hash(cell1b));

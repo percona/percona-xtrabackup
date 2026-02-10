@@ -36,7 +36,7 @@ SELECT test_emit_log("info", "message #2");
 
 --echo # Message with level lower than error should not be logged when level = error
 UPDATE performance_schema.setup_loggers SET level="error";
-UPDATE performance_schema.setup_loggers SET level='none' WHERE name='logger/error/error_log';
+UPDATE performance_schema.setup_loggers SET level='none' WHERE name='logger/sql/error_log';
 
 --disable_result_log
 SELECT test_emit_log("debug", "message #3");
@@ -64,11 +64,17 @@ SELECT test_emit_log_with_attributes("invalid", "message #13");
 --echo # Test internal filtering by test component for complex log records
 SET GLOBAL test_server_telemetry_logs.filter_severity=2;
 UPDATE performance_schema.setup_loggers SET level="debug";
+# ignore new, separately tested loggers
+UPDATE performance_schema.setup_loggers SET level='none' WHERE name LIKE 'logger/sql/%';
+UPDATE performance_schema.setup_loggers SET level='debug' WHERE name LIKE 'logger/sql/error_log';
 SELECT test_emit_log_with_attributes("debug", "message #14");
 SET GLOBAL test_server_telemetry_logs.filter_severity=9999;
 
 --echo # Test C++ logging wrappers
 UPDATE performance_schema.setup_loggers SET level="warn";
+# ignore new, separately tested loggers
+UPDATE performance_schema.setup_loggers SET level='none' WHERE name LIKE 'logger/sql/%';
+UPDATE performance_schema.setup_loggers SET level='warn' WHERE name LIKE 'logger/sql/error_log';
 SELECT test_log_wrappers(1, "test");
 
 --echo # Test for possible array holes when registering/unregistering loggers
@@ -82,7 +88,7 @@ SELECT test_invalid_operations_export();
 
 --echo # Test that MySQL error log entries are also emitted as telemetry logs
 call mtr.add_suppression("Test message");
-UPDATE performance_schema.setup_loggers SET level='warn' WHERE name='logger/error/error_log';
+UPDATE performance_schema.setup_loggers SET level='warn' WHERE name='logger/sql/error_log';
 SELECT test_error_log();
 
 --echo # Test reloading the components
@@ -100,7 +106,7 @@ SHOW STATUS LIKE 'Performance_schema_logger_lost';
 SHOW GLOBAL VARIABLES LIKE "performance_schema_max_logger_classes";
 
 --echo # Restart server, test '--performance_schema_logger' parameter to change the default log level
---let $restart_parameters="restart: --performance_schema_logger='logger/test_logs_componentA/%=level:ERROR' --performance_schema_logger='logger/test_logs_componentA/test2=level:debug' --performance_schema_logger='logger/error/error_log=level:none'"
+--let $restart_parameters="restart: --performance_schema_logger='logger/test_logs_componentA/%=level:ERROR' --performance_schema_logger='logger/test_logs_componentA/test2=level:debug' --performance_schema_logger='logger/sql/%=level:none'"
 --let $do_not_echo_parameters = 1;
 --source include/restart_mysqld.inc
 --let $do_not_echo_parameters =;
@@ -135,5 +141,6 @@ UNINSTALL COMPONENT 'file://component_test_server_telemetry_logs_export';
 
 let $MYSQLD_DATADIR= `select @@datadir`;
 --echo Component logs:
+--replace_regex /[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z/TIMESTAMP/
 cat_file $MYSQLD_DATADIR/test_server_telemetry_logs_component.log;
 remove_file $MYSQLD_DATADIR/test_server_telemetry_logs_component.log;

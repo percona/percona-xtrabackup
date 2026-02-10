@@ -589,3 +589,133 @@ SELECT * FROM t WHERE a = CURRENT_TIMESTAMP;
 SELECT * FROM t WHERE a = CURRENT_DATE;
 SET timestamp = DEFAULT;
 DROP TABLE t;
+
+--echo #
+--echo # Bug#37907697: Assertion `mtime.time_type == MYSQL_TIMESTAMP_TIME'
+--echo #
+
+SELECT CAST(70503052756 AS TIME);
+SELECT CAST(70503052756 AS TIME(6));
+SELECT CAST(20250101 AS TIME);
+SELECT CAST(20250101 AS TIME(6));
+SELECT CAST(70503052756.0 AS TIME);
+SELECT CAST(70503052756.123456 AS TIME(6));
+SELECT CAST(20250101.0 AS TIME);
+SELECT CAST(20250101.123456 AS TIME(6));
+SELECT CAST(70503052756.0E0 AS TIME);
+SELECT CAST(70503052756.123456E0 AS TIME(6));
+SELECT CAST(20250101.0E0 AS TIME);
+SELECT CAST(20250101.123456E0 AS TIME(6));
+
+--echo #
+--echo # Bug#36065557: using preparation statement to query the time type
+--echo #               some data not found.
+--echo #
+
+CREATE TABLE t1(
+  id_col INTEGER,
+  time_6 TIME(6) DEFAULT '01:01:01.000000',
+  time_0 TIME
+);
+
+INSERT INTO t1(id_col, time_6, time_0) VALUES
+(31,'07:59:59.000000', '07:59:59'),
+(32,'07:59:59.000000', '07:59:59'),
+(51,'00:00:00.000000', '00:00:00'),
+(52,'00:00:00.000000', '00:00:00'),
+(71,'06:06:06.000000', '06:06:06'),
+(72,'06:06:06.000000', '06:06:06');
+
+prepare stmt from
+"SELECT id_col, time_6, time_0
+ FROM t1
+ WHERE time_6 IN (?, '06:06:06.000000','00:00:00');";
+
+set @time_val='07:59:59';
+
+execute stmt USING @time_val;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#35500028: Incorrect result when select time col use
+--echo #               WHERE IN (NULL, 'xx:xx:xx.xxxxxx')
+--echo #
+
+CREATE TABLE t1 (
+  id INTEGER NOT NULL,
+  tm TIME(6) DEFAULT NULL,
+  PRIMARY KEY (id)
+);
+
+INSERT INTO t1(id) VALUES (1), (2);
+INSERT INTO t1 VALUES (3, '00:00:00.000000'), (4, '00:00:00.000000');
+
+SELECT COUNT(*) FROM t1 WHERE tm IN ('00:00:00.000000', NULL) ORDER BY 1;
+SELECT COUNT(*) FROM t1 WHERE tm IN ('00:00:00.000000') ORDER BY 1;
+SELECT COUNT(*) FROM t1 WHERE tm IN ('00:00:00.000000', NULL);
+SELECT COUNT(*) FROM t1 WHERE tm IN ('00:00:00.000000');
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#34188599: IN() does not work correctly for TIME columns
+--echo #
+
+CREATE TABLE t (a TIME);
+
+INSERT INTO t VALUES ('08:00:00');
+
+SELECT * FROM t WHERE a IN ('08:00:00', NULL);
+
+SELECT * FROM t WHERE a IN ('08:00:00', '');
+
+SELECT * FROM t WHERE a IN ('08:00:00', '07:59:59');
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#38095630: Assertion `hour != 0 || minute |= 0 || second != 0'
+--echo #
+
+CREATE TABLE t1(t TIME PRIMARY KEY);
+
+SELECT table1.t
+FROM t1 AS table1,
+     (WITH RECURSIVE cte1 AS
+      (SELECT * FROM t1 WHERE t <> TAN(-1677610521))
+      SELECT * FROM cte1
+     ) AS table2;
+
+INSERT INTO t1 VALUES(TIME'-00:00:00.000001');
+
+SELECT * FROM t1;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#38111130: mysqld crash - Assertion `is_valid() && tv.is_valid()'
+--echo #               fails in my_temporal.cc
+--echo #
+
+SELECT CAST(-0.971042 AS TIME);
+
+--echo #
+--echo # Bug#38159825: Assertion failure in my_double_to_time_with_warn
+--echo #
+
+SELECT CAST('21:07:58' / -1345980785 AS TIME) AS f;
+SELECT CAST('21:07:58' / -1345980785 AS TIME(6)) AS f;
+SELECT CAST(9 / '-1317798799' AS TIME) AS f;
+SELECT CAST(9 / '-1317798799' AS TIME(6)) AS f;
+
+--echo #
+--echo # Bug#38537045: Assertion failed: (*right)->data_type() ==
+--echo #     MYSQL_TYPE_TIME || (*right)->data_type() == MYSQL_TYPE_NULL
+--echo #
+
+CREATE TABLE t(c TIME);
+
+SELECT 1 FROM t WHERE DEFAULT(c) > c AND @f = c;
+
+DROP TABLE t;

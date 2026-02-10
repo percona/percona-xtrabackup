@@ -4,17 +4,17 @@ INSTALL COMPONENT "file://component_test_mysql_system_variable_set";
 INSTALL COMPONENT "file://component_test_sys_var_service";
 
 ## I.  Validate that connection is rejected when server is in offline mode
-#      with timestamp and user name.
+#      with generic error.
 ## II. Validate that connection is rejected when server is in offline mode
 #      with timestamp and reason.
 ## III.Validate that connection is rejected when server is in offline mode.
 #      with default error message.
 
 #
-# I. Offline mode - rejects with username and timestamp.
+# I. Offline mode - rejects with generic error.
 #
 SET GLOBAL offline_mode=ON;
-Application terminated with expected error: The server is currently in offline mode since DATE, set by user root (code 6401)
+Application terminated with expected error: The server is currently in offline mode (code 3032)
 ok
 
 #

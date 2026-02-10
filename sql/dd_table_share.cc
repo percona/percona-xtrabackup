@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -53,7 +53,9 @@
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "sql/aggregated_stats.h"
+#include "sql/dd/cache/dictionary_client.h"
 #include "sql/dd/collection.h"
+#include "sql/dd/dd.h"             // dd::get_dictionary
 #include "sql/dd/dd_table.h"       // dd::FIELD_NAME_SEPARATOR_CHAR
 #include "sql/dd/dd_tablespace.h"  // dd::get_tablespace_name
 #include "sql/dd/dd_trigger.h"     // dd::load_triggers
@@ -61,6 +63,7 @@
 #include "sql/dd/impl/utils.h"  // dd::eat_str
 #include "sql/dd/properties.h"  // dd::Properties
 #include "sql/dd/string_type.h"
+#include "sql/dd/types/abstract_table.h"
 #include "sql/dd/types/check_constraint.h"     // dd::Check_constraint
 #include "sql/dd/types/column.h"               // dd::enum_column_types
 #include "sql/dd/types/column_type_element.h"  // dd::Column_type_element
@@ -71,6 +74,7 @@
 #include "sql/dd/types/partition.h"            // dd::Partition
 #include "sql/dd/types/partition_value.h"      // dd::Partition_value
 #include "sql/dd/types/table.h"                // dd::Table
+#include "sql/dd/types/view.h"
 #include "sql/default_values.h"  // prepare_default_value_buffer...
 #include "sql/error_handler.h"   // Internal_error_handler
 #include "sql/field.h"
@@ -569,6 +573,31 @@ static row_type dd_get_old_row_format(dd::Table::enum_row_format new_format) {
   return ROW_TYPE_FIXED;
 }
 
+static bool set_table_share_db_plugin(THD *thd, TABLE_SHARE *share,
+                                      LEX_CSTRING engine_name, bool is_table) {
+  plugin_ref tmp_plugin = ha_resolve_by_name_raw(thd, engine_name);
+  if (tmp_plugin != nullptr) {
+#ifndef NDEBUG
+    auto *hton = plugin_data<handlerton *>(tmp_plugin);
+#endif
+
+    assert(hton && ha_storage_engine_is_enabled(hton));
+    assert(!ha_check_storage_engine_flag(hton, HTON_NOT_USER_SELECTABLE));
+
+    plugin_unlock(nullptr, share->db_plugin);
+    share->db_plugin = my_plugin_lock(nullptr, &tmp_plugin);
+  } else {
+    if (is_table) {
+      my_error(ER_UNKNOWN_STORAGE_ENGINE, MYF(0), engine_name.str);
+      return true;
+    } else {
+      share->db_plugin = nullptr;
+    }
+  }
+
+  return false;
+}
+
 /** Fill TABLE_SHARE from dd::Table object */
 static bool fill_share_from_dd(THD *thd, TABLE_SHARE *share,
                                const dd::Table *tab_obj) {
@@ -586,22 +615,12 @@ static bool fill_share_from_dd(THD *thd, TABLE_SHARE *share,
 
   // Read table engine type
   LEX_CSTRING engine_name = lex_cstring_handle(tab_obj->engine());
-  if (share->is_secondary_engine())
-    engine_name = {share->secondary_engine.str, share->secondary_engine.length};
+  if (share->is_secondary_engine()) {
+    engine_name = {.str = share->secondary_engine.str,
+                   .length = share->secondary_engine.length};
+  }
 
-  plugin_ref tmp_plugin = ha_resolve_by_name_raw(thd, engine_name);
-  if (tmp_plugin) {
-#ifndef NDEBUG
-    handlerton *hton = plugin_data<handlerton *>(tmp_plugin);
-#endif
-
-    assert(hton && ha_storage_engine_is_enabled(hton));
-    assert(!ha_check_storage_engine_flag(hton, HTON_NOT_USER_SELECTABLE));
-
-    plugin_unlock(nullptr, share->db_plugin);
-    share->db_plugin = my_plugin_lock(nullptr, &tmp_plugin);
-  } else {
-    my_error(ER_UNKNOWN_STORAGE_ENGINE, MYF(0), engine_name.str);
+  if (set_table_share_db_plugin(thd, share, engine_name, true)) {
     return true;
   }
 
@@ -647,6 +666,13 @@ static bool fill_share_from_dd(THD *thd, TABLE_SHARE *share,
     table_options.get("stats_persistent", &bool_opt);
     share->db_create_options |=
         bool_opt ? HA_OPTION_STATS_PERSISTENT : HA_OPTION_NO_STATS_PERSISTENT;
+  }
+
+  if (table_options.exists("create_external_table")) {
+    table_options.get("create_external_table", &bool_opt);
+    if (bool_opt) {
+      share->db_create_options |= HA_OPTION_CREATE_EXTERNAL_TABLE;
+    }
   }
 
   share->db_options_in_use = share->db_create_options;
@@ -702,8 +728,9 @@ static bool fill_share_from_dd(THD *thd, TABLE_SHARE *share,
   table_options.get("key_block_size", &share->key_block_size);
 
   // Prepare the default_value buffer.
-  if (prepare_default_value_buffer_and_table_share(thd, *tab_obj, share))
+  if (prepare_default_value_buffer_and_table_share(thd, tab_obj, share)) {
     return true;
+  }
 
   // Storage media flags
   if (table_options.exists("storage")) {
@@ -1115,11 +1142,11 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
 
 /**
   Populate TABLE_SHARE::field array according to column metadata
-  from dd::Table object.
+  from dd::Abstract_table object.
 */
 
 static bool fill_columns_from_dd(THD *thd, TABLE_SHARE *share,
-                                 const dd::Table *tab_obj) {
+                                 const dd::Abstract_table *tab_obj) {
   // Allocate space for fields in TABLE_SHARE.
   const uint fields_size = ((share->fields + 1) * sizeof(Field *));
   share->field = (Field **)share->mem_root.Alloc((uint)fields_size);
@@ -1637,6 +1664,10 @@ static void get_partition_options(MEM_ROOT *mem_root,
   if (part_options.exists("min_rows"))
     part_options.get("min_rows", &part_elem->part_min_rows);
 
+  if (part_options.exists("secondary_load")) {
+    part_options.get("secondary_load", &part_elem->secondary_load);
+  }
+
   part_elem->data_file_name =
       copy_option_string(mem_root, part_options, "data_file_name");
   part_elem->index_file_name =
@@ -2043,7 +2074,6 @@ static bool fill_partitioning_from_dd(THD *thd, TABLE_SHARE *share,
   //
 
   partition_element *curr_part_elem;
-  List_iterator<partition_element> part_elem_it;
 
   /* Partitions are sorted first on level and then on number. */
 
@@ -2072,11 +2102,6 @@ static bool fill_partitioning_from_dd(THD *thd, TABLE_SHARE *share,
     if (part_info->partitions.push_back(curr_part_elem, &share->mem_root))
       return true;
 
-    const auto &part_options = part_obj->options();
-    if (part_options.exists("secondary_load")) {
-      part_options.get("secondary_load", &curr_part_elem->secondary_load);
-    }
-
     for (const dd::Partition *sub_part_obj : part_obj->subpartitions()) {
       partition_element *curr_sub_part_elem =
           new (&share->mem_root) partition_element;
@@ -2092,12 +2117,6 @@ static bool fill_partitioning_from_dd(THD *thd, TABLE_SHARE *share,
       if (curr_part_elem->subpartitions.push_back(curr_sub_part_elem,
                                                   &share->mem_root))
         return true;
-
-      const auto &sub_part_options = sub_part_obj->options();
-      if (sub_part_options.exists("secondary_load")) {
-        sub_part_options.get("secondary_load",
-                             &curr_sub_part_elem->secondary_load);
-      }
     }
   }
 
@@ -2192,6 +2211,9 @@ static bool fill_foreign_keys_from_dd(TABLE_SHARE *share,
                              fk->referenced_table_name().c_str(),
                              fk->referenced_table_name().length()))
         return true;
+      if (lex_string_strmake(&share->mem_root, &share->foreign_key[i].fk_name,
+                             fk->name().c_str(), fk->name().length()))
+        return true;
       if (lex_string_strmake(&share->mem_root,
                              &share->foreign_key[i].unique_constraint_name,
                              fk->unique_constraint_name().c_str(),
@@ -2202,7 +2224,11 @@ static bool fill_foreign_keys_from_dd(TABLE_SHARE *share,
       share->foreign_key[i].delete_rule = fk->delete_rule();
 
       share->foreign_key[i].columns = fk->elements().size();
-      if (!(share->foreign_key[i].column_name =
+      if (!(share->foreign_key[i].referencing_column_names =
+                (LEX_CSTRING *)share->mem_root.Alloc(
+                    share->foreign_key[i].columns * sizeof(LEX_CSTRING))))
+        return true;
+      if (!(share->foreign_key[i].referenced_column_names =
                 (LEX_CSTRING *)share->mem_root.Alloc(
                     share->foreign_key[i].columns * sizeof(LEX_CSTRING))))
         return true;
@@ -2210,15 +2236,22 @@ static bool fill_foreign_keys_from_dd(TABLE_SHARE *share,
       uint j = 0;
 
       for (const dd::Foreign_key_element *fk_el : fk->elements()) {
-        if (lex_string_strmake(&share->mem_root,
-                               &share->foreign_key[i].column_name[j],
-                               fk_el->column().name().c_str(),
-                               fk_el->column().name().length()))
+        if (lex_string_strmake(
+                &share->mem_root,
+                &share->foreign_key[i].referencing_column_names[j],
+                fk_el->column().name().c_str(),
+                fk_el->column().name().length()))
+          return true;
+        if (lex_string_strmake(
+                &share->mem_root,
+                &share->foreign_key[i].referenced_column_names[j],
+                fk_el->referenced_column_name().c_str(),
+                fk_el->referenced_column_name().length()))
+
           return true;
 
         ++j;
       }
-
       ++i;
     }
   }
@@ -2246,6 +2279,10 @@ static bool fill_foreign_keys_from_dd(TABLE_SHARE *share,
         return true;
       share->foreign_key_parent[i].update_rule = fk_p->update_rule();
       share->foreign_key_parent[i].delete_rule = fk_p->delete_rule();
+      if (lex_string_strmake(&share->mem_root,
+                             &share->foreign_key_parent[i].fk_name,
+                             fk_p->fk_name().c_str(), fk_p->fk_name().length()))
+        return true;
       ++i;
     }
   }
@@ -2346,6 +2383,42 @@ bool open_table_def(THD *thd, TABLE_SHARE *share, const dd::Table &table_def) {
     return false;
   }
   return true;
+}
+
+bool open_view_def(THD *thd, TABLE_SHARE *share,
+                   const dd::Abstract_table *abstract_table) {
+  share->is_mv_se_materialized =
+      abstract_table->options().exists("materialization_engine");
+  if (share->is_mv_se_materialized) {
+    MEM_ROOT *old_root = thd->mem_root;
+    thd->mem_root = &share->mem_root;  // Needed for make_field()++
+    share->blob_fields = 0;
+
+    LEX_CSTRING engine_name{};
+    abstract_table->options().get("materialization_engine", &engine_name,
+                                  thd->mem_root);
+    share->secondary_engine = engine_name;
+    bool error = set_table_share_db_plugin(thd, share, engine_name, false) ||
+                 prepare_default_value_buffer_and_table_share(
+                     thd, abstract_table, share) ||
+                 fill_columns_from_dd(thd, share, abstract_table);
+    thd->mem_root = old_root;
+    if (error || prepare_share(thd, share, nullptr)) {
+      return true;
+    }
+  }
+
+  //  Clone the view reference object and hold it in
+  //  TABLE_SHARE member view_object.
+  share->is_view = true;
+  const auto *tmp_view = dynamic_cast<const dd::View *>(abstract_table);
+  share->view_object = tmp_view->clone();
+
+  share->table_category = get_table_category(share->db, share->table_name);
+  thd->status_var.opened_shares++;
+  global_aggregated_stats.get_shard(thd->thread_id()).opened_shares++;
+
+  return false;
 }
 
 /*

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -75,6 +75,7 @@
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/strings/m_ctype.h"
 #include "mysql_version.h"
+#include "mysqld.h"
 #include "mysqld_error.h"
 #include "mysys_err.h"
 #include "sql/auth/auth_acls.h"
@@ -111,6 +112,11 @@
 #endif
 
 #include "sql/server_component/log_builtins_imp.h"
+#include "sql/server_component/mysql_timestamp_imp.h"
+
+#include <mysql/psi/mysql_telemetry_logs_client.h>
+extern PSI_logger_key key_slow_query_logger;
+extern PSI_logger_key key_general_logger;
 
 using std::max;
 using std::min;
@@ -648,8 +654,8 @@ bool File_query_log::write_general(ulonglong event_utime,
 
   /* Note that my_b_write() assumes it knows the length for this */
   char local_time_buff[iso8601_size];
-  int time_buff_len = make_iso8601_timestamp(local_time_buff, event_utime,
-                                             iso8601_sysvar_logtimestamps);
+  int time_buff_len = Mysql_timestamp_imp::make_iso8601_timestamp(
+      local_time_buff, event_utime, iso8601_sysvar_logtimestamps);
 
   if (my_b_write(&log_file, pointer_cast<uchar *>(local_time_buff),
                  time_buff_len))
@@ -702,8 +708,8 @@ bool File_query_log::write_slow(THD *thd, ulonglong current_utime,
   if (!(specialflag & SPECIAL_SHORT_LOG_FORMAT)) {
     char my_timestamp[iso8601_size];
 
-    make_iso8601_timestamp(my_timestamp, current_utime,
-                           iso8601_sysvar_logtimestamps);
+    Mysql_timestamp_imp::make_iso8601_timestamp(my_timestamp, current_utime,
+                                                iso8601_sysvar_logtimestamps);
 
     buff_len = snprintf(buff, sizeof buff, "# Time: %s\n", my_timestamp);
 
@@ -738,13 +744,14 @@ bool File_query_log::write_slow(THD *thd, ulonglong current_utime,
     char end_time_buff[iso8601_size];
 
     if (query_start_utime) {
-      make_iso8601_timestamp(start_time_buff, query_start_utime,
-                             iso8601_sysvar_logtimestamps);
-      make_iso8601_timestamp(end_time_buff, query_start_utime + query_utime,
-                             iso8601_sysvar_logtimestamps);
+      Mysql_timestamp_imp::make_iso8601_timestamp(
+          start_time_buff, query_start_utime, iso8601_sysvar_logtimestamps);
+      Mysql_timestamp_imp::make_iso8601_timestamp(
+          end_time_buff, query_start_utime + query_utime,
+          iso8601_sysvar_logtimestamps);
     } else {
       start_time_buff[0] = '\0'; /* purecov: inspected */
-      make_iso8601_timestamp(
+      Mysql_timestamp_imp::make_iso8601_timestamp(
           end_time_buff, current_utime,
           iso8601_sysvar_logtimestamps); /* purecov: inspected */
     }
@@ -1273,6 +1280,157 @@ bool Log_to_file_event_handler::log_general(
   return retval;
 }
 
+/**
+   Methods responsible for logging over OpenTelemetry OTLP protocol.
+*/
+static bool telemetry_logger_log_slow(
+    THD *thd [[maybe_unused]], ulonglong current_utime [[maybe_unused]],
+    ulonglong query_start_utime [[maybe_unused]],
+    ulonglong query_utime [[maybe_unused]],
+    ulonglong lock_utime [[maybe_unused]], bool is_command [[maybe_unused]],
+    const char *sql_text [[maybe_unused]], size_t sql_text_len [[maybe_unused]],
+    PSI_LogRecord &rec [[maybe_unused]]) {
+#ifdef HAVE_PSI_SERVER_TELEMETRY_LOGS_INTERFACE
+  // slow query log entries do not have level or message fields,
+  // map them to "warning" and empty message
+  if (rec.check_enabled()) {
+    Security_context *sctx = thd->security_context();
+    const LEX_CSTRING sctx_user = sctx->user();
+    const LEX_CSTRING sctx_priv_user = sctx->priv_user();
+    const LEX_CSTRING sctx_host = sctx->host();
+    const LEX_CSTRING sctx_ip = sctx->ip();
+
+    rec.add_attribute_string_view("priv_user", sctx_priv_user.str,
+                                  sctx_priv_user.length);
+    rec.add_attribute_string_view("user", sctx_user.str, sctx_user.length);
+    rec.add_attribute_string_view("host", sctx_host.str, sctx_host.length);
+    rec.add_attribute_string_view("ip", sctx_ip.str, sctx_ip.length);
+    rec.add_attribute_string_view("query", sql_text, sql_text_len);
+    rec.add_attribute_uint64("query_time", query_utime);
+    rec.add_attribute_uint64("lock_time", lock_utime);
+    rec.add_attribute_bool("is_command", is_command);
+    rec.add_attribute_uint64("rows_sent", thd->get_sent_row_count());
+    rec.add_attribute_uint64("rows_examined", thd->get_examined_row_count());
+
+    char start_time_buff[iso8601_size];
+    char end_time_buff[iso8601_size];
+
+    if (query_start_utime) {
+      Mysql_timestamp_imp::make_iso8601_timestamp(
+          start_time_buff, query_start_utime, iso8601_sysvar_logtimestamps);
+      Mysql_timestamp_imp::make_iso8601_timestamp(
+          end_time_buff, query_start_utime + query_utime,
+          iso8601_sysvar_logtimestamps);
+    } else {
+      start_time_buff[0] = '\0'; /* purecov: inspected */
+      Mysql_timestamp_imp::make_iso8601_timestamp(
+          end_time_buff, current_utime,
+          iso8601_sysvar_logtimestamps); /* purecov: inspected */
+    }
+    rec.add_attribute_string("start", start_time_buff);
+    rec.add_attribute_string("end", end_time_buff);
+
+    // extra fields if enabled
+    if (thd->copy_status_var_ptr) {
+      rec.add_attribute_uint64("thread", thd->thread_id());
+      rec.add_attribute_uint64(
+          "errno", thd->is_error() ? thd->get_stmt_da()->mysql_errno() : 0);
+      rec.add_attribute_bool("killed", thd->killed);
+      rec.add_attribute_uint64("bytes_received",
+                               thd->status_var.bytes_received -
+                                   thd->copy_status_var_ptr->bytes_received);
+      rec.add_attribute_uint64(
+          "bytes_sent",
+          thd->status_var.bytes_sent - thd->copy_status_var_ptr->bytes_sent);
+      rec.add_attribute_uint64(
+          "read_first", thd->status_var.ha_read_first_count -
+                            thd->copy_status_var_ptr->ha_read_first_count);
+      rec.add_attribute_uint64(
+          "read_last", thd->status_var.ha_read_last_count -
+                           thd->copy_status_var_ptr->ha_read_last_count);
+      rec.add_attribute_uint64("read_key",
+                               thd->status_var.ha_read_key_count -
+                                   thd->copy_status_var_ptr->ha_read_key_count);
+      rec.add_attribute_uint64(
+          "read_next", thd->status_var.ha_read_next_count -
+                           thd->copy_status_var_ptr->ha_read_next_count);
+      rec.add_attribute_uint64(
+          "read_prev", thd->status_var.ha_read_prev_count -
+                           thd->copy_status_var_ptr->ha_read_prev_count);
+      rec.add_attribute_uint64("read_rnd",
+                               thd->status_var.ha_read_rnd_count -
+                                   thd->copy_status_var_ptr->ha_read_rnd_count);
+      rec.add_attribute_uint64(
+          "read_rnd_next",
+          thd->status_var.ha_read_rnd_next_count -
+              thd->copy_status_var_ptr->ha_read_rnd_next_count);
+      rec.add_attribute_uint64(
+          "sort_merge_passes",
+          thd->status_var.filesort_merge_passes -
+              thd->copy_status_var_ptr->filesort_merge_passes);
+      rec.add_attribute_uint64(
+          "sort_range_count",
+          thd->status_var.filesort_range_count -
+              thd->copy_status_var_ptr->filesort_range_count);
+      rec.add_attribute_uint64("sort_rows",
+                               thd->status_var.filesort_rows -
+                                   thd->copy_status_var_ptr->filesort_rows);
+      rec.add_attribute_uint64(
+          "sort_scan_count", thd->status_var.filesort_scan_count -
+                                 thd->copy_status_var_ptr->filesort_scan_count);
+      rec.add_attribute_uint64(
+          "created_tmp_disk_tables",
+          thd->status_var.created_tmp_disk_tables -
+              thd->copy_status_var_ptr->created_tmp_disk_tables);
+      rec.add_attribute_uint64(
+          "created_tmp_tables",
+          thd->status_var.created_tmp_tables -
+              thd->copy_status_var_ptr->created_tmp_tables);
+      rec.add_attribute_uint64(
+          "count_hit_tmp_table_size",
+          thd->status_var.count_hit_tmp_table_size -
+              thd->copy_status_var_ptr->count_hit_tmp_table_size);
+    }
+
+    rec.emit();
+  }
+#endif           // HAVE_PSI_SERVER_TELEMETRY_LOGS_INTERFACE
+  return false;  // success
+}
+
+static bool telemetry_logger_log_general(
+    THD *thd [[maybe_unused]], my_thread_id thread_id [[maybe_unused]],
+    const char *command_type [[maybe_unused]],
+    size_t command_type_len [[maybe_unused]],
+    const char *sql_text [[maybe_unused]], size_t sql_text_len [[maybe_unused]],
+    PSI_LogRecord &rec [[maybe_unused]]) {
+#ifdef HAVE_PSI_SERVER_TELEMETRY_LOGS_INTERFACE
+  // OTEL general log export:
+  // general log entries do not have level or message fields,
+  // map them to "info" and empty message
+  if (rec.check_enabled()) {
+    Security_context *sctx = thd->security_context();
+    const LEX_CSTRING sctx_user = sctx->user();
+    const LEX_CSTRING sctx_priv_user = sctx->priv_user();
+    const LEX_CSTRING sctx_host = sctx->host();
+    const LEX_CSTRING sctx_ip = sctx->ip();
+
+    rec.add_attribute_uint64("thread", thread_id);
+    rec.add_attribute_string_view("command_type", command_type,
+                                  command_type_len);
+    rec.add_attribute_string_view("sql_text", sql_text, sql_text_len);
+    rec.add_attribute_string_view("user", sctx_user.str, sctx_user.length);
+    rec.add_attribute_string_view("priv_user", sctx_priv_user.str,
+                                  sctx_priv_user.length);
+    rec.add_attribute_string_view("host", sctx_host.str, sctx_host.length);
+    rec.add_attribute_string_view("ip", sctx_ip.str, sctx_ip.length);
+    rec.emit();
+  }
+#endif  // HAVE_PSI_SERVER_TELEMETRY_LOGS_INTERFACE
+
+  return false;  // success
+}
+
 bool Query_logger::is_log_table_enabled(enum_log_table_type log_type) const {
   if (log_type == QUERY_LOG_SLOW)
     return (opt_slow_log && (log_output_options & LOG_TABLE));
@@ -1299,12 +1457,13 @@ void Query_logger::cleanup() {
 bool Query_logger::slow_log_write(THD *thd, const char *query,
                                   size_t query_length, bool aggregate,
                                   ulonglong lock_usec, ulonglong exec_usec) {
-  assert(thd->enable_slow_log && opt_slow_log);
+  PSI_LogRecord rec(key_slow_query_logger, OTELLogLevel::TLOG_WARN,
+                    (query != nullptr && *query != '\0') ? query : "none");
+  const bool telemetry_log = rec.check_enabled();
+  const bool legacy_log = thd->enable_slow_log && opt_slow_log &&
+                          ((*slow_log_handler_list) != nullptr);
 
-  if (!(*slow_log_handler_list)) return false;
-
-  /* do not log slow queries from replication threads */
-  if (thd->slave_thread && !opt_log_slow_replica_statements) return false;
+  if (!legacy_log && !telemetry_log) return false;
 
   /* fill in user_host value: the format is "%s[%s] @ %s [%s]" */
   char user_host_buff[MAX_USER_HOST_SIZE + 1];
@@ -1339,17 +1498,28 @@ bool Query_logger::slow_log_write(THD *thd, const char *query,
     query_length = cn.length();
   }
 
+  const ulonglong start_utime =
+      (thd->start_time.tv_sec * 1000000ULL) + thd->start_time.tv_usec;
+
+  // telemetry logging is independent of other destinations
+  telemetry_logger_log_slow(thd, current_utime, start_utime, query_utime,
+                            lock_utime, is_command, query, query_length, rec);
+
+  if (!(thd->enable_slow_log && opt_slow_log) || !(*slow_log_handler_list))
+    return false;
+
+  /* do not log slow queries from replication threads */
+  if (thd->slave_thread && !opt_log_slow_replica_statements) return false;
+
   mysql_rwlock_rdlock(&LOCK_logger);
 
   bool error = false;
   for (Log_event_handler **current_handler = slow_log_handler_list;
        *current_handler;) {
     error |= (*current_handler++)
-                 ->log_slow(thd, current_utime,
-                            (thd->start_time.tv_sec * 1000000ULL) +
-                                thd->start_time.tv_usec,
-                            user_host_buff, user_host_len, query_utime,
-                            lock_utime, is_command, query, query_length);
+                 ->log_slow(thd, current_utime, start_utime, user_host_buff,
+                            user_host_len, query_utime, lock_utime, is_command,
+                            query, query_length);
   }
 
   mysql_rwlock_unlock(&LOCK_logger);
@@ -1385,19 +1555,33 @@ bool Query_logger::general_log_write(THD *thd, enum_server_command command,
   const std::string &cn = Command_names::str_global(command);
   mysql_event_tracking_general_notify(thd, cn.c_str(), cn.length());
 
+  PSI_LogRecord rec(key_general_logger, OTELLogLevel::TLOG_INFO,
+                    (query != nullptr && *query != '\0') ? query : "none");
+  const bool telemetry_log = rec.check_enabled();
+
   /*
     Do we want to log this kind of command?
     Is general log enabled?
     Any active handlers?
   */
-  if (!log_command(thd, command) || !opt_general_log ||
-      !(*general_log_handler_list))
+  if (!log_command(thd, command) ||
+      ((!opt_general_log || !(*general_log_handler_list)) && !telemetry_log)) {
     return false;
+  }
+
+  const ulonglong current_utime = my_micro_time();
+
+  // telemetry logging is independent of other destinations
+  telemetry_logger_log_general(thd, thd->thread_id(), cn.c_str(), cn.length(),
+                               query, query_length, rec);
+
+  if (!opt_general_log || !(*general_log_handler_list)) {
+    return false;
+  }
 
   char user_host_buff[MAX_USER_HOST_SIZE + 1];
   const size_t user_host_len =
       make_user_name(thd->security_context(), user_host_buff);
-  const ulonglong current_utime = my_micro_time();
 
   mysql_rwlock_rdlock(&LOCK_logger);
 
@@ -1417,13 +1601,16 @@ bool Query_logger::general_log_write(THD *thd, enum_server_command command,
 
 bool Query_logger::general_log_print(THD *thd, enum_server_command command,
                                      const char *format, ...) {
+  PSI_LogRecord rec(key_general_logger, OTELLogLevel::TLOG_INFO, "");
+  const bool telemetry_log = rec.check_enabled();
+
   /*
     Do we want to log this kind of command?
     Is general log enabled?
     Any active handlers?
   */
-  if (!log_command(thd, command) || !opt_general_log ||
-      !(*general_log_handler_list)) {
+  if (!log_command(thd, command) ||
+      ((!opt_general_log || !(*general_log_handler_list)) && !telemetry_log)) {
     /* Send a general log message to the audit API. */
     const std::string &cn = Command_names::str_global(command);
     mysql_event_tracking_general_notify(thd, cn.c_str(), cn.length());
@@ -1631,7 +1818,9 @@ bool log_slow_applicable(THD *thd) {
     Do not log administrative statements unless the appropriate option is
     set.
   */
-  if (thd->enable_slow_log && opt_slow_log) {
+  PSI_LogRecord rec(key_slow_query_logger, OTELLogLevel::TLOG_WARN, "");
+  const bool telemetry_log = rec.check_enabled();
+  if ((thd->enable_slow_log && opt_slow_log) || telemetry_log) {
     const bool suppress_logging = log_throttle_qni.log(thd, warn_no_index);
 
     if (!suppress_logging && log_this_query) return true;
@@ -1836,11 +2025,10 @@ bool Error_log_throttle::flush() {
 
 static bool slow_log_write(THD *thd, /* purecov: inspected */
                            const char *query, size_t query_length,
-                           bool aggregate, ulonglong time_usec,
-                           ulonglong lock_usec) {
-  return opt_slow_log &&
-         query_logger.slow_log_write(thd, query, query_length, aggregate,
-                                     time_usec, lock_usec);
+                           bool aggregate, ulonglong lock_usec,
+                           ulonglong time_usec) {
+  return query_logger.slow_log_write(thd, query, query_length, aggregate,
+                                     lock_usec, time_usec);
 }
 
 Slow_log_throttle log_throttle_qni(&opt_log_throttle_queries_not_using_indexes,
@@ -1864,6 +2052,10 @@ static mysql_mutex_t LOCK_error_log;
 // E.g. log_error_dest is "stderr" if we are not logging to file.
 static const char *error_log_file = nullptr;
 
+// This variable is different from log_dia_dest.
+// E.g. log_dia_dest is "stdout" if we are not logging to file.
+static const char *dia_log_file = nullptr;
+
 void discard_error_log_messages() {
   log_sink_buffer_flush(LOG_BUFFER_DISCARD_ONLY);
 }
@@ -1883,13 +2075,15 @@ bool init_error_log() {
 
   if (log_builtins_init() < 0) {
     log_write_errstream(
-        STRING_WITH_LEN("failed to initialize basic error logging"));
+        STRING_WITH_LEN("failed to initialize basic error logging"),
+        LOG_TYPE_ERROR);
     return true;
   } else
     return false;
 }
 
-bool open_error_log(const char *filename, bool get_lock) {
+bool open_error_log(const char *filename, bool get_lock, uint log_type) {
+  assert(log_type != LOG_TYPE_DIAG || log_diagnostic_enable);
   assert(filename);
   int retries = 2, errors = 0;
   MY_STAT f_stat;
@@ -1912,16 +2106,22 @@ bool open_error_log(const char *filename, bool get_lock) {
 
   do {
     errors = 0;
-    if (!my_freopen(filename, "a", stderr)) errors++;
-    if (!my_freopen(filename, "a", stdout)) errors++;
+    if (log_type & LOG_TYPE_ERROR && !my_freopen(filename, "a", stderr))
+      errors++;
+    if (log_type & LOG_TYPE_DIAG && !my_freopen(filename, "a", stdout))
+      errors++;
   } while (retries-- && errors);
 
   if (errors) goto fail;
 
-  /* The error stream must be unbuffered. */
-  setbuf(stderr, nullptr);
-
-  error_log_file = filename;  // Remember name for later reopen
+  /* The stream must be unbuffered. */
+  if (log_type & LOG_TYPE_ERROR) {
+    setbuf(stderr, nullptr);
+    error_log_file = filename;
+  } else if (log_type & LOG_TYPE_DIAG) {
+    setbuf(stdout, nullptr);
+    dia_log_file = filename;
+  }
 
   return false;
 
@@ -1946,19 +2146,22 @@ void destroy_error_log() {
   if (error_log_initialized) {
     error_log_initialized = false;
     error_log_file = nullptr;
+    dia_log_file = nullptr;
     mysql_mutex_destroy(&LOCK_error_log);
     log_builtins_exit();
   }
 }
 
-bool reopen_error_log() {
+static bool reopen_error_log(const char *filename, uint log_type) {
   int component_failures;
   bool result = false;
 
   assert(error_log_initialized);
+  assert(log_type != LOG_TYPE_DIAG || log_diagnostic_enable);
 
-  // call flush function in all logging services
-  if ((component_failures = log_builtins_error_stack_flush()) < 0) {
+  // call flush function in all logging services if we reopen the error log
+  if (log_type & LOG_TYPE_ERROR &&
+      (component_failures = log_builtins_error_stack_flush()) < 0) {
     // If flushing failed and there is a user session, alert the user.
     if (current_thd)
       push_warning_printf(
@@ -1971,9 +2174,9 @@ bool reopen_error_log() {
     LogErr(ERROR_LEVEL, ER_LOG_COMPONENT_FLUSH_FAILED, -component_failures);
   }
 
-  if (error_log_file) {
+  if (filename) {
     mysql_mutex_lock(&LOCK_error_log);
-    result = open_error_log(error_log_file, true);
+    result = open_error_log(filename, true, log_type);
     mysql_mutex_unlock(&LOCK_error_log);
 
     /*
@@ -1984,16 +2187,27 @@ bool reopen_error_log() {
       log_builtins_error_stack_flush() above.
     */
     if (result)
-      my_error(ER_DA_CANT_OPEN_ERROR_LOG, MYF(0), error_log_file, ".",
+      my_error(ER_DA_CANT_OPEN_ERROR_LOG, MYF(0), filename, ".",
                ""); /* purecov: inspected */
   }
 
   return result;
 }
 
-void log_write_errstream(const char *buffer, size_t length) {
+bool reopen_error_log() {
+  if (log_diagnostic_enable)
+    return reopen_error_log(error_log_file, LOG_TYPE_ERROR) ||
+           reopen_error_log(dia_log_file, LOG_TYPE_DIAG);
+
+  return reopen_error_log(error_log_file, LOG_TYPE_ERROR | LOG_TYPE_DIAG);
+}
+
+void log_write_errstream(const char *buffer, size_t length,
+                         enum enum_log_type log_type) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("buffer: %s", buffer));
+
+  assert(log_type != LOG_TYPE_DIAG || log_diagnostic_enable);
 
   /*
     This must work even if the mutex has not been initialized yet.
@@ -2002,8 +2216,9 @@ void log_write_errstream(const char *buffer, size_t length) {
   */
   if (error_log_initialized) mysql_mutex_lock(&LOCK_error_log);
 
-  fprintf(stderr, "%.*s\n", (int)length, buffer);
-  fflush(stderr);
+  FILE *stream = (log_type == LOG_TYPE_DIAG ? stdout : stderr);
+  fprintf(stream, "%.*s\n", (int)length, buffer);
+  fflush(stream);
 
   if (error_log_initialized) mysql_mutex_unlock(&LOCK_error_log);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,13 +26,12 @@
 #include <gtest/gtest.h>
 #include <list>
 #include <stdexcept>
+#include <utility>
 
 #include "plugin/x/src/ngs/error_code.h"
 #include "plugin/x/src/query_string_builder.h"
 
-namespace xpl {
-
-namespace test {
+namespace xpl::test {
 
 namespace {
 
@@ -111,7 +110,9 @@ TEST_F(Query_string_builder_testsuite, format_fillNumericValues) {
 
 struct Query_and_expected {
   Query_and_expected(std::string query, std::string expected, std::string value)
-      : m_query(query), m_expected(expected), m_value(value) {}
+      : m_query(std::move(query)),
+        m_expected(std::move(expected)),
+        m_value(std::move(value)) {}
 
   std::string m_query;
   std::string m_expected;
@@ -158,7 +159,9 @@ INSTANTIATE_TEST_SUITE_P(
 struct Query_and_expected_values {
   Query_and_expected_values(std::string query, std::string expected,
                             std::list<std::string> values)
-      : m_query(query), m_expected(expected), m_values(values) {}
+      : m_query(std::move(query)),
+        m_expected(std::move(expected)),
+        m_values(std::move(values)) {}
 
   std::string m_query;
   std::string m_expected;
@@ -171,7 +174,7 @@ struct Query_and_expected_values {
      << " expected:" << query_and_expected.m_expected << std::endl
      << " [";
 
-  std::ostream_iterator<std::string> out_it(os, ", ");
+  std::ostream_iterator<std::string> const out_it(os, ", ");
   std::copy(query_and_expected.m_values.begin(),
             query_and_expected.m_values.end(), out_it);
 
@@ -184,7 +187,7 @@ class Query_string_builder_multiple_tags_param_testsuite
  public:
   void SetUp() override {
     values = GetParam().m_values;
-    expected_query = &GetParam().m_expected[0];
+    expected_query = GetParam().m_expected.data();
 
     query.put(GetParam().m_query.c_str());
   }
@@ -195,7 +198,7 @@ class Query_string_builder_multiple_tags_param_testsuite
 
 TEST_P(Query_string_builder_multiple_tags_param_testsuite,
        format_putStringValueInsideQuery_whenMultipleTagsInFormat) {
-  std::list<std::string>::const_iterator i = values.begin();
+  auto i = values.begin();
 
   // In each iteration format creates new object without previous state
   // Thus similar test are needed with one call/multiple args
@@ -271,9 +274,9 @@ class Query_string_builder_multiple_too_many_tags_param_testsuite
 
 TEST_P(Query_string_builder_multiple_too_many_tags_param_testsuite,
        format_putStringValueInsideQuery_whenMultipleTagsInFormat) {
-  std::list<std::string>::const_iterator i = values.begin();
+  auto i = values.begin();
 
-  ASSERT_LT(0u, values.size());
+  ASSERT_LT(0U, values.size());
 
   // In each iteration format creates new object without previous state
   // Thus similar test are needed with one call/multiple args
@@ -291,6 +294,4 @@ INSTANTIATE_TEST_SUITE_P(
         Query_and_expected_values("SELECT ? FROM", "",
                                   Assign_list("First")("Second"))));
 
-}  // namespace test
-
-}  // namespace xpl
+}  // namespace xpl::test

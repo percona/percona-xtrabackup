@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -57,6 +57,7 @@ static void get_metric_simple_integer(void *measurement_context,
   delivery->value_int64(delivery_context, value);
 }
 
+#ifdef HAVE_PSI_METRICS_INTERFACE
 static void get_metric_mutex_instances_lost(
     void * /* measurement_context */, measurement_delivery_callback_t delivery,
     void *delivery_context) {
@@ -271,11 +272,16 @@ static PSI_metric_info_v1 ps_metrics[] = {
 static PSI_meter_info_v1 ps_meters[] = {
     {"mysql.perf_schema", "MySql performance_schema lost instruments", 10, 0, 0,
      ps_metrics, std::size(ps_metrics)}};
+#endif /* HAVE_PSI_METRICS_INTERFACE */
 
 void register_pfs_metric_sources() {
+#ifdef HAVE_PSI_METRICS_INTERFACE
   mysql_meter_register(ps_meters, std::size(ps_meters));
+#endif /* HAVE_PSI_METRICS_INTERFACE */
 }
 
 void unregister_pfs_metric_sources() {
+#ifdef HAVE_PSI_METRICS_INTERFACE
   mysql_meter_unregister(ps_meters, std::size(ps_meters));
+#endif /* HAVE_PSI_METRICS_INTERFACE */
 }

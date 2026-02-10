@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -100,7 +100,7 @@ IndexMergeIterator::~IndexMergeIterator() {
     true if error
 */
 
-bool IndexMergeIterator::Init() {
+bool IndexMergeIterator::DoInit() {
   empty_record(table());
 
   handler *file = table()->file;
@@ -217,7 +217,7 @@ bool IndexMergeIterator::Init() {
     The sets of rows retrieved in 1) and 2) are guaranteed to be disjoint.
 */
 
-int IndexMergeIterator::Read() {
+int IndexMergeIterator::DoRead() {
   int result;
   DBUG_TRACE;
 

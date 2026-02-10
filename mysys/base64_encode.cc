@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,26 +27,30 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA  */
 
 #include "base64_encode.h"
+
+#include <openssl/bio.h>
 #include <openssl/err.h>
-#include <regex>
-#include <sstream>
-#include "encode_ptr.h"
+#include <openssl/evp.h>
+// IWYU pragma: no_include <openssl/types.h>
+#include <openssl/pem.h>
+
+#include <stdio.h>
 
 #include <cassert>
 #include <fstream>
-#include <iomanip>
-#include <ios>
 #include <iostream>
+#include <memory>
+#include <sstream>
 
-namespace oci {
+#include "encode_ptr.h"  // EVP_PKEY_ptr
 
-namespace ssl {
+namespace oci::ssl {
 /**
  * BASE64 encode encrypted data.
  */
 std::string base64_encode(const void *binary, size_t length) {
-  std::unique_ptr<BIO, decltype(&BIO_free_all)> b64(BIO_new(BIO_f_base64()),
-                                                    &BIO_free_all);
+  std::unique_ptr<BIO, decltype(&BIO_free_all)> const b64(
+      BIO_new(BIO_f_base64()), &BIO_free_all);
   BIO_set_flags(b64.get(), BIO_FLAGS_BASE64_NO_NL);
   auto *sink = BIO_new(BIO_s_mem());
   BIO_push(b64.get(), sink);
@@ -67,8 +71,8 @@ std::string base64_encode(const Data &data) {
  */
 Data base64_decode(const std::string &encoded) {
   if (encoded.empty()) return {};
-  std::unique_ptr<BIO, decltype(&BIO_free_all)> b64(BIO_new(BIO_f_base64()),
-                                                    &BIO_free_all);
+  std::unique_ptr<BIO, decltype(&BIO_free_all)> const b64(
+      BIO_new(BIO_f_base64()), &BIO_free_all);
   BIO_set_flags(b64.get(), BIO_FLAGS_BASE64_NO_NL);
   auto *source = BIO_new_mem_buf(
       const_cast<void *>(static_cast<const void *>(encoded.c_str())),
@@ -99,7 +103,7 @@ std::string load_public_key_file(const std::string &public_key_file) {
 EVP_PKEY_ptr load_public_key(const std::string &public_key_content) {
   void *ptr;
   ptr = static_cast<void *>(const_cast<char *>(public_key_content.c_str()));
-  BIO_ptr bio{BIO_new_mem_buf(ptr, public_key_content.size())};
+  BIO_ptr const bio{BIO_new_mem_buf(ptr, public_key_content.size())};
   if (!bio) return {nullptr};
   EVP_PKEY *result;
 
@@ -150,5 +154,4 @@ bool verify(const std::string &digest, const std::string &message,
   std::cerr << "Match!\n";
   return true;
 }
-}  // namespace ssl
-}  // namespace oci
+}  // namespace oci::ssl

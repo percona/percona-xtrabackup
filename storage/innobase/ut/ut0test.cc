@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -186,8 +186,8 @@ Ret_t Tester::open_table(std::vector<std::string> &tokens) noexcept {
   std::string table_name = tokens[1];
   dict_table_t *table = is_table_open(table_name);
   if (table == nullptr) {
-    table = dict_table_open_on_name(table_name.c_str(), false, false,
-                                    DICT_ERR_IGNORE_NONE);
+    table = dd_table_open_on_name(nullptr, nullptr, table_name.c_str(), false,
+                                  DICT_ERR_IGNORE_NONE);
   }
   if (table == nullptr) {
     XLOG("FAIL: Could not open table: " << table_name);
@@ -600,15 +600,16 @@ DISPATCH_FUNCTION_DEF(Tester::print_tree) {
 
   std::string table_name = tokens[1];
 
-  dict_table_t *table = dict_table_open_on_name(table_name.c_str(), false,
-                                                false, DICT_ERR_IGNORE_NONE);
+  MDL_ticket *mdl;
+  dict_table_t *table = dd_table_open_on_name(
+      current_thd, &mdl, table_name.c_str(), false, DICT_ERR_IGNORE_NONE);
   if (table == nullptr) {
     TLOG("Could not open table: " << table_name);
     return RET_FAIL;
   }
 
-  auto guard =
-      create_scope_guard([table]() { dict_table_close(table, false, false); });
+  auto guard = create_scope_guard(
+      [table, &mdl]() { dd_table_close(table, current_thd, &mdl, false); });
 
   const dict_index_t *clust_index = table->first_index();
   BFT::Callback cb;

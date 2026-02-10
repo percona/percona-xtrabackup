@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 CREATE TABLE t1 (  `id` int(11) NOT NULL default '0', `id2` int(11) NOT NULL default '0', `id3` int(11) NOT NULL default '0', `dummy1` char(30) default NULL, PRIMARY KEY  (`id`,`id2`), KEY `index_id3` (`id3`)) ENGINE=MyISAM;
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
@@ -96,3 +97,4 @@ ALTER TABLE m1 COMMENT 'test';
 FLUSH TABLE m1;
 UNLOCK TABLES;
 DROP TABLE m1, t1;
+include/rpl/set_gtid_mode_on.inc

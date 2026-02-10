@@ -40,25 +40,25 @@ Warning	1287	'@@terminology_use_previous' is deprecated and will be removed in a
 
 ---- mutex ----
 * performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME)
-include/assert.inc [There should be 12 unique 'new' mutex names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'new' mutex names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' mutex names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME)
-include/assert.inc [There should be 12 unique 'new' mutex names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'new' mutex names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' mutex names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_instance(EVENT_NAME)
-include/assert.inc [There should be 12 unique 'new' mutex names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'new' mutex names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' mutex names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME)
-include/assert.inc [There should be 12 unique 'new' mutex names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'new' mutex names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' mutex names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME)
-include/assert.inc [There should be 12 unique 'new' mutex names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'new' mutex names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' mutex names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME)
-include/assert.inc [There should be 12 unique 'new' mutex names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'new' mutex names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' mutex names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.mutex_instances(NAME)
-include/assert.inc [There should be 12 unique 'new' mutex names in performance_schema.mutex_instances(NAME) on server 2]
+include/assert.inc [There should be 11 unique 'new' mutex names in performance_schema.mutex_instances(NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' mutex names in performance_schema.mutex_instances(NAME) on server 2]
 
 ---- rwlock ----
@@ -86,25 +86,25 @@ include/assert.inc [There should be 0 unique 'old' rwlock names in performance_s
 
 ---- cond ----
 * performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME)
-include/assert.inc [There should be 7 unique 'new' cond names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'new' cond names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' cond names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME)
-include/assert.inc [There should be 7 unique 'new' cond names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'new' cond names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' cond names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_instance(EVENT_NAME)
-include/assert.inc [There should be 7 unique 'new' cond names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'new' cond names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' cond names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME)
-include/assert.inc [There should be 7 unique 'new' cond names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'new' cond names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' cond names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME)
-include/assert.inc [There should be 7 unique 'new' cond names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'new' cond names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' cond names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME)
-include/assert.inc [There should be 7 unique 'new' cond names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'new' cond names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' cond names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.cond_instances(NAME)
-include/assert.inc [There should be 7 unique 'new' cond names in performance_schema.cond_instances(NAME) on server 2]
+include/assert.inc [There should be 6 unique 'new' cond names in performance_schema.cond_instances(NAME) on server 2]
 include/assert.inc [There should be 0 unique 'old' cond names in performance_schema.cond_instances(NAME) on server 2]
 
 ---- memory ----
@@ -243,25 +243,25 @@ Warning	1287	'@@terminology_use_previous' is deprecated and will be removed in a
 ---- mutex ----
 * performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' mutex names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
-include/assert.inc [There should be 12 unique 'old' mutex names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'old' mutex names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' mutex names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
-include/assert.inc [There should be 12 unique 'old' mutex names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'old' mutex names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_instance(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' mutex names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
-include/assert.inc [There should be 12 unique 'old' mutex names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'old' mutex names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' mutex names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
-include/assert.inc [There should be 12 unique 'old' mutex names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'old' mutex names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' mutex names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
-include/assert.inc [There should be 12 unique 'old' mutex names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'old' mutex names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' mutex names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
-include/assert.inc [There should be 12 unique 'old' mutex names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 11 unique 'old' mutex names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.mutex_instances(NAME)
 include/assert.inc [There should be 0 unique 'new' mutex names in performance_schema.mutex_instances(NAME) on server 2]
-include/assert.inc [There should be 12 unique 'old' mutex names in performance_schema.mutex_instances(NAME) on server 2]
+include/assert.inc [There should be 11 unique 'old' mutex names in performance_schema.mutex_instances(NAME) on server 2]
 
 ---- rwlock ----
 * performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME)
@@ -289,25 +289,25 @@ include/assert.inc [There should be 1 unique 'old' rwlock names in performance_s
 ---- cond ----
 * performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' cond names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
-include/assert.inc [There should be 7 unique 'old' cond names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'old' cond names in performance_schema.events_waits_summary_by_account_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' cond names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
-include/assert.inc [There should be 7 unique 'old' cond names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'old' cond names in performance_schema.events_waits_summary_by_host_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_instance(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' cond names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
-include/assert.inc [There should be 7 unique 'old' cond names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'old' cond names in performance_schema.events_waits_summary_by_instance(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' cond names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
-include/assert.inc [There should be 7 unique 'old' cond names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'old' cond names in performance_schema.events_waits_summary_by_thread_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' cond names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
-include/assert.inc [There should be 7 unique 'old' cond names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'old' cond names in performance_schema.events_waits_summary_by_user_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME)
 include/assert.inc [There should be 0 unique 'new' cond names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
-include/assert.inc [There should be 7 unique 'old' cond names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
+include/assert.inc [There should be 6 unique 'old' cond names in performance_schema.events_waits_summary_global_by_event_name(EVENT_NAME) on server 2]
 * performance_schema.cond_instances(NAME)
 include/assert.inc [There should be 0 unique 'new' cond names in performance_schema.cond_instances(NAME) on server 2]
-include/assert.inc [There should be 7 unique 'old' cond names in performance_schema.cond_instances(NAME) on server 2]
+include/assert.inc [There should be 6 unique 'old' cond names in performance_schema.cond_instances(NAME) on server 2]
 
 ---- memory ----
 * performance_schema.memory_summary_by_account_by_event_name(EVENT_NAME)

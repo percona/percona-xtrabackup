@@ -1,0 +1,224 @@
+# Verify that the service status is respected by the MRS
+#
+--source include/have_router.inc
+# mrs metadata logging is only enabled when md version is >= 4.0.2
+--source ../include/mrs/is_mrs_schema_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+
+--echo *******************************************************
+--echo # Create an example service "svc"
+--echo *******************************************************
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t1
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## I.  Verify the Router logs to the router_general_log metadata table when it is configured
+--echo #
+--echo # 1. Verify there are log entries in the table
+--echo # 2. Verify the fields the Router is supposed to fill are set to non null values (only check those that are not forced NOT NULL by the schema definition)
+--echo # 3. Verify that in debug mode there are no SQL statements cused by the logging itself logged
+--echo # 4. Verify the log level can be changed dynamically and is honored by the metadata logger
+--echo #
+--echo ## II.  Verify that the logger configuration can be changed dynamically, is verified and expected warnings are logged if invalid
+--echo #
+--echo # 1. Verify that WARNING is logged and when logLevel is invalid value
+--echo # 2. Verify that WARNING is logged and when flushInterval is invalid type
+--echo # 3. Verify that WARNING is logged and when flushInterval is less than allowed minumum
+--echo # 4. Verify that WARNING is logged and when flushInterval is greater than allowed maximum
+--echo # 5. Verify that WARNING is logged and when bufferSize is invalid type
+--echo # 6. Verify that WARNING is logged and when bufferSize is less than allowed minumum
+--echo # 7. Verify that WARNING is logged and when bufferSize is greater than allowed maximum
+--echo
+--echo ## III.  Verify that the logger reports the dropped logs when the buffer gets full and there is no way to write to the server
+--echo #
+--echo #
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic/t1/1 --wait-until-status 60 --display none
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic/t1 --response-type RAW --expected-status 200 --display none
+
+--echo
+--echo #
+--echo # I.1
+--let mrs_log_expected_level="DEBUG"
+--let $mrs_log_expected_message="%"
+--source ../include/mrs/changes/wait_log_in_metadata.inc
+
+--echo
+--echo #
+--echo # I.2
+--echo Check that all the fields that the Router is supposed to set are not null (we only check those that are not forced NOT NULL by the schema definition)
+--assert(`select count(*) = 0 from mysql_rest_service_metadata.router_general_log where domain IS NULL OR message IS NULL OR thread_id IS NULL`)
+
+--echo
+--echo #
+--echo # I.3
+--echo Check that there are no SQL logs caused by the metadata logger itself
+--assert(`select count(*) = 0 from mysql_rest_service_metadata.router_general_log where message LIKE '%router_general_log%'`)
+
+--echo
+--echo #
+--echo # I.4
+--echo Set the log_level in the global config to INFO, also set the bufferSize to invalid value to trigger WARNING messages
+UPDATE mysql_rest_service_metadata.config SET data =
+        JSON_SET(IFNULL(data, "{}"), "$.mrsMetadataLogger",
+                        JSON_OBJECT("logLevel", "INFO", "flushInterval", 1, "bufferSize", "inv"));
+
+--echo Wait for the MRS to read that change
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo Wait for the flush of the logs
+--source ../include/mrs/changes/wait_logs_flushed.inc
+
+--echo Delete all the logs so far
+truncate mysql_rest_service_metadata.router_general_log;
+
+--echo Wait for the MRS schema monitor to do another round so that there are some new debug logs triggered
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo Make sure there are no DEBUG level logs
+--assert(`select count(*) = 0 from mysql_rest_service_metadata.router_general_log where log_type = "DEBUG"`)
+
+--echo
+--echo #
+--echo # II.1
+UPDATE mysql_rest_service_metadata.config SET data =
+    JSON_SET(IFNULL(data, "{}"),
+                    "$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INVALID",
+                                                       "flushInterval", 1));
+
+--let mrs_log_expected_level="WARNING"
+--let $mrs_log_expected_message="mrsMetadataLoggerOptions.logLevel: Log level 'invalid' is not valid. Valid values are: fatal, system, error, warning, info, note, and debug"
+--source ../include/mrs/changes/wait_log_in_metadata.inc
+
+--echo
+--echo #
+--echo # II.2
+UPDATE mysql_rest_service_metadata.config SET data =
+    JSON_SET(IFNULL(data, "{}"),
+                    "$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+                                                       "flushInterval", "inv",
+                                                       "bufferSize", 1));
+
+--let mrs_log_expected_level="WARNING"
+--let $mrs_log_expected_message="mrsMetadataLoggerOptions.flushInterval must be integer value from range [1, 86400] was 'inv'"
+--source ../include/mrs/changes/wait_log_in_metadata.inc
+
+--echo
+--echo #
+--echo # II.3
+UPDATE mysql_rest_service_metadata.config SET data =
+    JSON_SET(IFNULL(data, "{}"),
+                    "$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+                                                       "flushInterval", 0,
+                                                       "bufferSize", 1));
+
+--let mrs_log_expected_level="WARNING"
+--let $mrs_log_expected_message="mrsMetadataLoggerOptions.flushInterval must be integer value from range [1, 86400] was '0'"
+--source ../include/mrs/changes/wait_log_in_metadata.inc
+
+--echo
+--echo #
+--echo # II.4
+UPDATE mysql_rest_service_metadata.config SET data =
+    JSON_SET(IFNULL(data, "{}"),
+                    "$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+                                                       "flushInterval", 86401,
+                                                       "bufferSize", 1));
+
+--let mrs_log_expected_level="WARNING"
+--let $mrs_log_expected_message="mrsMetadataLoggerOptions.flushInterval must be integer value from range [1, 86400] was '86401'"
+--source ../include/mrs/changes/wait_log_in_metadata.inc
+
+--echo
+--echo #
+--echo # II.5
+UPDATE mysql_rest_service_metadata.config SET data =
+    JSON_SET(IFNULL(data, "{}"),
+                    "$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+                                                       "flushInterval", "1",
+                                                       "bufferSize", "inv"));
+
+--let mrs_log_expected_level="WARNING"
+--let $mrs_log_expected_message="mrsMetadataLoggerOptions.bufferSize must be integer value from range [1, 10000] was 'inv'"
+--source ../include/mrs/changes/wait_log_in_metadata.inc
+
+--echo
+--echo #
+--echo # II.6
+UPDATE mysql_rest_service_metadata.config SET data =
+    JSON_SET(IFNULL(data, "{}"),
+                    "$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+                                                       "flushInterval", 1,
+                                                       "bufferSize", 0));
+
+--let mrs_log_expected_level="WARNING"
+--let $mrs_log_expected_message="mrsMetadataLoggerOptions.bufferSize must be integer value from range [1, 10000] was '0'"
+--source ../include/mrs/changes/wait_log_in_metadata.inc
+
+--echo
+--echo #
+--echo # II.7
+UPDATE mysql_rest_service_metadata.config SET data =
+    JSON_SET(IFNULL(data, "{}"),
+                    "$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+                                                       "flushInterval", 1,
+                                                       "bufferSize", 10001));
+
+--let mrs_log_expected_level="WARNING"
+--let $mrs_log_expected_message="mrsMetadataLoggerOptions.bufferSize must be integer value from range [1, 10000] was '10001'"
+--source ../include/mrs/changes/wait_log_in_metadata.inc
+
+--echo
+--echo #
+--echo # III.
+
+--echo set the options to valid values again (buffer size to a small value)
+UPDATE mysql_rest_service_metadata.config SET data =
+    JSON_SET(IFNULL(data, "{}"),
+                    "$.mrsMetadataLogger", JSON_OBJECT("logLevel", "DEBUG",
+                                                       "flushInterval", 1,
+                                                       "bufferSize", 1));
+
+--echo Wait for the MRS to read that change
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo Delete all the logs so far
+truncate mysql_rest_service_metadata.router_general_log;
+
+--echo Set the global mode to read-only to make the logging to metadata impossible
+SET GLOBAL super_read_only = 1;
+
+--echo Wait until the Router notices it (based on the filelog)
+--let $grep_pattern = .*WARNING .* Node .* is read-only, stopping the REST service.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+--echo Turn off the ro mode
+SET GLOBAL super_read_only = 0;
+SET GLOBAL read_only = 0;
+
+--let mrs_log_expected_level="WARNING"
+--let $mrs_log_expected_message="Metadata logger could not log % messages. They were dropped."
+--source ../include/mrs/changes/wait_log_in_metadata.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

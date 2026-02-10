@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,6 @@
 Single_primary_message::Single_primary_message(Single_primary_message_type type)
     : Plugin_gcs_message(CT_SINGLE_PRIMARY_MESSAGE),
       single_primary_message_type(type),
-      primary_uuid(""),
       election_mode(ELECTION_MODE_END) {}
 
 Single_primary_message::Single_primary_message(std::string &uuid,
@@ -44,7 +43,6 @@ Single_primary_message::~Single_primary_message() = default;
 
 Single_primary_message::Single_primary_message(const uchar *buf, size_t len)
     : Plugin_gcs_message(CT_SINGLE_PRIMARY_MESSAGE),
-      primary_uuid(""),
       election_mode(ELECTION_MODE_END) {
   decode(buf, len);
 }
@@ -81,7 +79,7 @@ void Single_primary_message::decode_payload(const unsigned char *buffer,
         if (slider + payload_item_length <= end) {
           assert(single_primary_message_type ==
                  SINGLE_PRIMARY_PRIMARY_ELECTION);
-          uint16 election_mode_aux = uint2korr(slider);
+          uint16 const election_mode_aux = uint2korr(slider);
           election_mode = (enum_primary_election_mode)election_mode_aux;
         }
     }
@@ -95,7 +93,7 @@ void Single_primary_message::encode_payload(
     std::vector<unsigned char> *buffer) const {
   DBUG_TRACE;
 
-  uint16 single_primary_message_type_aux = (uint16)single_primary_message_type;
+  auto single_primary_message_type_aux = (uint16)single_primary_message_type;
   encode_payload_item_int2(buffer, PIT_SINGLE_PRIMARY_MESSAGE_TYPE,
                            single_primary_message_type_aux);
 

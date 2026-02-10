@@ -17,8 +17,8 @@ INSERT INTO t1 VALUES ( 1, 'd', 'a' ),
 --source suite/query_rewrite_plugins/include/install_rewriter.inc
 
 INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
-VALUES ( 'SELECT c1, c2 FROM test.t1 ORDER BY ?',
-         'SELECT c1, c2 FROM test.t1 ORDER BY 2, ? DESC' );
+VALUES ( 'SELECT c1, c2 FROM test.t1 ORDER BY 1',
+         'SELECT c1, c2 FROM test.t1 ORDER BY 2, 1 DESC' );
 
 CALL query_rewrite.flush_rewrite_rules();
 
@@ -71,8 +71,12 @@ SELECT c1 * 3 FROM test.t1;
 SELECT c1 + 3 FROM test.t1;
 
 INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
-VALUES ( 'SELECT COUNT( c1 ), c2, c3 FROM test.t1 GROUP BY ?, ?',
-         'SELECT SUM( c1 ), c2, c3 FROM test.t1 GROUP BY ?, ?' );
+VALUES ( 'SELECT COUNT( c1 ), c2, c3 FROM test.t1 GROUP BY 2, 3',
+         'SELECT SUM( c1 ), c2, c3 FROM test.t1 GROUP BY 2, 3' );
+
+INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
+VALUES ( 'SELECT COUNT( c1 ), c2, c3 FROM test.t1 GROUP BY 3, 2',
+         'SELECT SUM( c1 ), c2, c3 FROM test.t1 GROUP BY 3, 2' );
 
 CALL query_rewrite.flush_rewrite_rules();
 
@@ -89,8 +93,13 @@ SELECT COUNT( c1 ), c2, c3 FROM test.t1 GROUP BY 3, 2;
 SELECT COUNT( c1 ), c2, c3 FROM test.t1 GROUP BY c2, c3;
 
 INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
-VALUES ( 'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY ?, ? HAVING c > ?',
-         'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY ?, ? HAVING c < ?'
+VALUES ( 'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY 2, 3 HAVING c > ?',
+         'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY 2, 3 HAVING c < ?'
+         );
+
+INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
+VALUES ( 'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY 3, 2 HAVING c > ?',
+         'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY 3, 2 HAVING c < ?'
          );
 
 CALL query_rewrite.flush_rewrite_rules();
@@ -132,8 +141,8 @@ SET sql_mode = 'PIPES_AS_CONCAT';
 INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
 VALUES ( 'SELECT c1,c2,c3 FROM test.t1 WHERE c1=? ' ||
          'UNION ' ||
-         'SELECT c1 FROM test.t1 WHERE c1=? ORDER BY ?',
-         'SELECT c1,c2, c3 FROM test.t1 WHERE c1 IN ( ?,? ) ORDER BY ?' );
+         'SELECT c1 FROM test.t1 WHERE c1=? ORDER BY 2',
+         'SELECT c1,c2, c3 FROM test.t1 WHERE c1 IN ( ?,? ) ORDER BY 2' );
 
 CALL query_rewrite.flush_rewrite_rules();
 

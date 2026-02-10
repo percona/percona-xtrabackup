@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -537,6 +537,19 @@ class io_context : public execution_context {
       // https://github.com/google/sanitizers/wiki/ThreadSanitizerPopularDataRaces#data-race-on-vptr-during-construction
       std::lock_guard<std::mutex> lk(io_ctx.mtx_);
       io_ctx.timer_queues_.push_back(this);
+    }
+
+    ~timer_queue() override {
+      // remove every pending-timer from the pending-timers before destroying to
+      // avoid the owned Timer to destruct the pending-timer a 2nd time.
+      //
+      // A pending_timer_.erase() does NOT work here as it first destructs the
+      // node and then updates the iterators.
+      for (auto cur = pending_timers_.begin(); cur != pending_timers_.end();
+           cur = pending_timers_.begin()) {
+        // extract and then destroy it.
+        pending_timers_.extract(cur);
+      }
     }
 
     void shutdown() noexcept override {}

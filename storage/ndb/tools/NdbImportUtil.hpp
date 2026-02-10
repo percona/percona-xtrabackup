@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,10 +35,10 @@
 #include <mgmapi.h>
 #include <ndb_global.h>
 #include <ndb_limits.h>
-#include <stdint.h>
 #include <NdbApi.hpp>
 #include <NdbOut.hpp>
 #include <OutputStream.hpp>
+#include <cstdint>
 #include "NdbImport.hpp"
 #include "portlib/NdbTick.h"
 #include "portlib/ndb_compiler.h"
@@ -329,7 +329,7 @@ class NdbImportUtil {
     bool full() const { return m_cnt >= m_rowbatch || m_rowsize >= m_rowbytes; }
     void lock() {
       Lockable::lock();
-      if (m_stat_locks != 0) m_stat_locks->add(1);
+      if (m_stat_locks != nullptr) m_stat_locks->add(1);
     }
     void unlock() { Lockable::unlock(); }
 #if defined(VM_TRACE) || defined(TEST_NDBIMPORTUTIL)
@@ -450,12 +450,12 @@ class NdbImportUtil {
       const Range *r = m_ranges.front();
       const Range *r2 = map2.m_ranges.front();
       for (uint i = 0; i < size(); i++) {
-        require(r != 0 && r2 != 0);
+        require(r != nullptr && r2 != nullptr);
         if (!r->equal(*r2)) return false;
         r = r->next();
         r2 = r2->next();
       }
-      require(r == 0 && r2 == 0);
+      require(r == nullptr && r2 == nullptr);
       return true;
     }
     void add(const Row *row, bool reject) {
@@ -467,7 +467,7 @@ class NdbImportUtil {
       r.m_reject = (uint)reject;
       add(r);
     }
-    void add(Range range2);
+    void add(const Range &range2);
     void add(const RowMap &map2);
     Range *find(uint64 rowid);
     bool remove(uint64 rowid);
@@ -779,19 +779,20 @@ class NdbImportUtil {
   Error c_error;
   Lockable c_error_lock;
 
-  void set_error_gen(Error &error, int line, const char *fmt = 0, ...)
+  void set_error_gen(Error &error, int line, const char *fmt = nullptr, ...)
       ATTRIBUTE_FORMAT(printf, 4, 5);
-  void set_error_usage(Error &error, int line, const char *fmt = 0, ...)
+  void set_error_usage(Error &error, int line, const char *fmt = nullptr, ...)
       ATTRIBUTE_FORMAT(printf, 4, 5);
   void set_error_alloc(Error &error, int line);
   void set_error_mgm(Error &error, int line, NdbMgmHandle handle);
   void set_error_con(Error &error, int line, const Ndb_cluster_connection *con);
   void set_error_ndb(Error &error, int line, const NdbError &ndberror,
-                     const char *fmt = 0, ...);
-  void set_error_os(Error &error, int line, const char *fmt = 0, ...)
+                     const char *fmt = nullptr, ...);
+  void set_error_os(Error &error, int line, const char *fmt = nullptr, ...)
       ATTRIBUTE_FORMAT(printf, 4, 5);
-  void set_error_data(Error &error, int line, int code, const char *fmt = 0,
-                      ...) ATTRIBUTE_FORMAT(printf, 5, 6);
+  void set_error_data(Error &error, int line, int code,
+                      const char *fmt = nullptr, ...)
+      ATTRIBUTE_FORMAT(printf, 5, 6);
   void copy_error(Error &error, const Error &error2);
   bool has_error(const Error &error) {
     return error.type != Error::Type_noerror;

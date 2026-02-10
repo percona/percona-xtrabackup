@@ -1,0 +1,111 @@
+# FR 5) UPDATE and DELETE operations on parent of foreign key table must
+# generate binlog for CASCADE operations
+# FR 5.1) Test foreign key cascade generates child binlogs with row-based binary logging.
+# Set BINLOG_FORMAT to 'ROW'.
+# Create tables t1, t2, t22, t3, and t4 with foreign key constraints.
+# Insert data into the tables.
+# Perform DELETE and UPDATE operations on t1.
+# Verify that the binary log is generated correctly.
+# Check the contents of the binary log file fk_binlog.sql.
+# Apply the binary log to the database and verify the results.
+SET BINLOG_FORMAT='ROW';
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+reset binary logs and gtids;
+CREATE TABLE t1 (f1 INT PRIMARY KEY);
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT, UNIQUE KEY(f2), FOREIGN KEY (f2) REFERENCES t1(f1) ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE TABLE t22 (f1 INT PRIMARY KEY, f2 INT, FOREIGN KEY (f2) REFERENCES t1(f1) ON DELETE SET NULL ON UPDATE SET NULL);
+CREATE TABLE t3 (f1 INT PRIMARY KEY, f2 INT, UNIQUE KEY(f2), FOREIGN KEY (f2) REFERENCES t2(f2) ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE TABLE t4 (f1 INT PRIMARY KEY, f2 INT, FOREIGN KEY (f2) REFERENCES t3(f2) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t1 VALUES (1),(2),(3);
+INSERT INTO t2 VALUES (1, 1),(2, 2),(3, 3);
+INSERT INTO t22 VALUES (1, 1),(2, 2),(3, 3);
+INSERT INTO t3 VALUES (1, 1),(2, 2),(3, 3);
+INSERT INTO t4 VALUES (1, 1),(2, 2),(3, 3);
+DELETE FROM t1 WHERE f1=2;
+UPDATE t1 SET f1=5 WHERE f1=3;
+flush logs;
+mysqlbinlog var/log/master_binlog_file > var/tmp/fk_binlog.sql
+DELETE FROM t2;
+DELETE FROM t22;
+DELETE FROM t3;
+DELETE FROM t4;
+DROP TABLE t4, t3, t22, t2, t1;
+Pattern "NO_FOREIGN_KEY_CHECKS_F" found
+Pattern "USE_SQL_FOREIGN_KEY_F" found
+reset binary logs and gtids;
+SELECT * FROM t2 ORDER BY f1;
+f1	f2
+1	1
+3	5
+SELECT * FROM t22 ORDER BY f1;
+f1	f2
+1	1
+2	NULL
+3	NULL
+SELECT * FROM t3 ORDER BY f1;
+f1	f2
+1	1
+3	5
+SELECT * FROM t4 ORDER BY f1;
+f1	f2
+1	1
+3	5
+DROP TABLE t4, t3, t22, t2, t1;
+SET BINLOG_FORMAT='STATEMENT';
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+reset binary logs and gtids;
+# FR 5.2) Test foreign key support with mixed statement and row-based binary logging.
+# Set BINLOG_FORMAT to 'STATEMENT' initially.
+# Create tables t1, t2, and t3 with foreign key constraints.
+# Insert data into the tables.
+# Perform DELETE operation on t1 with BINLOG_FORMAT set to 'STATEMENT'.
+# Switch to BINLOG_FORMAT 'ROW' and perform UPDATE operation on t1.
+# Switch back to BINLOG_FORMAT 'STATEMENT' and perform another DELETE operation on t1.
+# Switch to BINLOG_FORMAT 'ROW' again and perform another UPDATE operation on t1.
+# Verify that the binary log is generated correctly.
+# Check the contents of the binary log file fk_both_binlog.sql.
+# Apply the binary log to the database and verify the results.
+CREATE TABLE t1 (f1 INT PRIMARY KEY);
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT, FOREIGN KEY (f2) REFERENCES t1(f1) ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE TABLE t3 (f1 INT PRIMARY KEY, f2 INT, FOREIGN KEY (f2) REFERENCES t1(f1) ON DELETE SET NULL ON UPDATE SET NULL);
+INSERT INTO t1 VALUES (1),(2),(3),(4),(5);
+INSERT INTO t2 VALUES (1, 1),(2, 2),(3, 3), (4, 4), (5, 5);
+INSERT INTO t3 VALUES (1, 1),(2, 2),(3, 3), (4, 4), (5, 5);
+DELETE FROM t1 WHERE f1=2;
+SET BINLOG_FORMAT='ROW';
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+UPDATE t1 SET f1=9 WHERE f1=3;
+SET BINLOG_FORMAT='STATEMENT';
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+DELETE FROM t1 WHERE f1=4;
+SET BINLOG_FORMAT='ROW';
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+UPDATE t1 SET f1=10 WHERE f1=5;
+flush logs;
+mysqlbinlog var/log/master_binlog_file > var/tmp/fk_both_binlog.sql
+DELETE FROM t2;
+DELETE FROM t3;
+SELECT * FROM t2;
+f1	f2
+SELECT * FROM t3;
+f1	f2
+DROP TABLE t3, t2, t1;
+reset binary logs and gtids;
+SELECT * FROM t2 ORDER BY f1;
+f1	f2
+1	1
+3	9
+5	10
+SELECT * FROM t3 ORDER BY f1;
+f1	f2
+1	1
+2	NULL
+3	NULL
+4	NULL
+5	NULL
+DROP TABLE t3, t2, t1;

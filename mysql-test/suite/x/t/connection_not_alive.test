@@ -4,6 +4,8 @@
 --source include/no_ps_protocol.inc
 --let $xplugin_disable_ssl_for_x_at_client_side=1
 --let $xplugin_cache_x_root=1
+--source include/have_debug.inc
+--source include/have_debug_sync.inc
 --source include/xplugin_preamble.inc
 --source include/xplugin_create_user.inc
 
@@ -42,12 +44,22 @@
 LOCK TABLES test.table WRITE;
 -->endsql
 
+
+# Synchronize disconnection with connection_alive check.
+# MySQLd doesn't check that frequently, thus missing the
+# correct moment may lead to wait until the timeout.
 -->newsession try_update_lock_table
 -->callmacro Get_connection_id
+-->noquery_result
+SET SESSION DEBUG="+d,syncpoint_xpl_connection_alive_wait,xpl_connection_alive_once";
 -->stmtsql UPDATE test.table SET field = field + 1;
--->closesession abort
-
 -->setsession
+SET SESSION DEBUG_SYNC="now WAIT_FOR reached_xpl_connection_alive_wait";
+-->setsession try_update_lock_table
+-->closesession abort
+-->setsession
+SET SESSION DEBUG_SYNC="now SIGNAL continue_xpl_connection_alive_wait";
+-->query_result
 -->callmacro Assert_connection_not_alive	%ID%
 
 -->setsession lock_table
@@ -59,6 +71,9 @@ UNLOCK TABLES;
 
 -->title =III. Aborting of updating table session used by transaction
 
+# Synchronize disconnection with connection_alive check.
+# MySQLd doesn't check that frequently, thus missing the
+# correct moment may lead to wait until the timeout.
 -->newsession transaction
 -->sql
 START TRANSACTION;
@@ -67,10 +82,16 @@ UPDATE test.table SET field = 7;
 
 -->newsession try_update_table_in_trans
 -->callmacro Get_connection_id
+-->noquery_result
+SET SESSION DEBUG="+d,syncpoint_xpl_connection_alive_wait,xpl_connection_alive_once";
 -->stmtsql UPDATE test.table SET field = field * 10;
--->closesession abort
-
 -->setsession
+SET SESSION DEBUG_SYNC="now WAIT_FOR reached_xpl_connection_alive_wait";
+-->setsession try_update_table_in_trans
+-->closesession abort
+-->setsession
+SET SESSION DEBUG_SYNC="now SIGNAL continue_xpl_connection_alive_wait";
+-->query_result
 -->callmacro Assert_connection_not_alive	%ID%
 
 -->setsession transaction

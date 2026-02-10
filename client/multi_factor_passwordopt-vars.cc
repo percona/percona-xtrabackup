@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -56,7 +56,7 @@ void parse_command_line_password_option(const struct my_option *opt,
     --password3. Thus extract factor from option.
   */
   unsigned int factor = 0;
-  if (strcmp(opt->name, "password"))
+  if (strcmp(opt->name, "password") != 0)
     factor = opt->name[strlen("password")] - '0' - 1;
   if (argument) {
     char *start = argument;

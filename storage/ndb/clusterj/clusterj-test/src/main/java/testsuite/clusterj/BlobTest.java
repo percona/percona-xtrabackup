@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -150,7 +150,7 @@ public class BlobTest extends AbstractClusterJModelTest {
      * @param size the length of the returned byte[]
      * @return the byte[] filled with the pattern
      */
-    protected byte[] getBlobBytes(int size) {
+    static byte[] getBlobBytes(int size) {
         byte[] result = new byte[size];
         for (int i = 0; i < size; ++i) {
             result[i] = (byte)((i % 256) - 128);

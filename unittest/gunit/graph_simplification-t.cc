@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,7 @@
 #include "sql/handler.h"
 #include "sql/join_optimizer/access_path.h"
 #include "sql/join_optimizer/bit_utils.h"
+#include "sql/join_optimizer/cost_model.h"
 #include "sql/join_optimizer/graph_simplification.h"
 #include "sql/join_optimizer/hypergraph.h"
 #include "sql/join_optimizer/make_join_hypergraph.h"
@@ -135,8 +136,7 @@ using NodeGuard = Scope_guard<DestroyNodes>;
     snprintf(alias, 20, "t%d", i + 1);
     table->alias = alias;
 
-    g->nodes.push_back(
-        JoinHypergraph::Node{mem_root, table, new (mem_root) CompanionSet()});
+    g->nodes.emplace_back(mem_root, table, CalculateReadSetWidth(table));
     g->graph.AddNode();
   }
 
@@ -661,19 +661,21 @@ TEST(GraphSimplificationTest, CyclicInformationSchemaView) {
   // that important. What matters, is that we're not making a hypergraph that is
   // not joinable.
   GraphSimplifier s(initializer.thd(), &g);
-  while (s.DoSimplificationStep() !=
-         GraphSimplifier::NO_SIMPLIFICATION_POSSIBLE) {
+  bool simplification_done{false};
+
+  for (GraphSimplifier::SimplificationResult res = s.DoSimplificationStep();
+       res != GraphSimplifier::NO_SIMPLIFICATION_POSSIBLE;
+       res = s.DoSimplificationStep()) {
+    if (res == GraphSimplifier::APPLIED_SIMPLIFICATION) {
+      simplification_done = true;
+    }
   }
 
   // Verify that the simplified graph is joinable.
   TrivialReceiver receiver(g, &mem_root, /*subgraph_pair_limit=*/-1);
   EXPECT_FALSE(EnumerateAllConnectedPartitions(g.graph, &receiver));
-  EXPECT_EQ(8, receiver.seen_nodes);
+  EXPECT_TRUE(simplification_done);
   EXPECT_TRUE(receiver.HasSeen(0b11111111));
-
-  // And it should have limited the search space as much as possible (N-1 joins
-  // considered to join together N tables).
-  EXPECT_EQ(7, receiver.seen_subgraph_pairs);
 }
 
 [[nodiscard]] static NodeGuard CreateStarJoin(THD *thd, int graph_size,

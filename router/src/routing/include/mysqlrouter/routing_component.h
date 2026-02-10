@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -37,7 +37,7 @@
 
 #include "connection.h"
 #include "mysql/harness/config_parser.h"
-#include "tcp_address.h"
+#include "routing_guidelines/routing_guidelines.h"
 
 class MySQLRoutingBase;
 class BaseProtocol;
@@ -57,6 +57,7 @@ class ROUTING_EXPORT MySQLRoutingAPI {
   std::string get_destination_cluster_name() const;
   std::string get_destination_replicaset_name() const;
 
+  DestinationNodesStateNotifier *get_destinations_state_notifier() const;
   int get_max_connections() const;
   uint64_t get_max_connect_errors() const;
 
@@ -72,6 +73,23 @@ class ROUTING_EXPORT MySQLRoutingAPI {
 
   struct ConnData {
     using time_point_type = std::chrono::time_point<std::chrono::system_clock>;
+
+    ConnData() = default;
+
+    ConnData(std::string src, std::string dst, std::size_t bytes_up,
+             std::size_t bytes_down, time_point_type started,
+             time_point_type connected_to_server,
+             time_point_type last_sent_to_server,
+             time_point_type last_received_from_server)
+        : src(std::move(src)),
+          dst(std::move(dst)),
+          bytes_up(bytes_up),
+          bytes_down(bytes_down),
+          started(started),
+          connected_to_server(connected_to_server),
+          last_sent_to_server(last_sent_to_server),
+          last_received_from_server(last_received_from_server) {}
+
     std::string src;
     std::string dst;
 
@@ -84,13 +102,27 @@ class ROUTING_EXPORT MySQLRoutingAPI {
     time_point_type last_received_from_server;
   };
 
+  struct SslOptions {
+    mysql_ssl_mode ssl_mode;
+    std::string tls_version;
+    std::string ssl_cipher;
+    std::string ca;
+    std::string capath;
+    std::string crl;
+    std::string crlpath;
+    std::string cert;
+    std::string key;
+    std::string curves;
+  };
+
   std::vector<ConnData> get_connections() const;
 
   // status
   int get_active_connections() const;
   int get_total_connections() const;
 
-  std::vector<mysql_harness::TCPAddress> get_destinations() const;
+  std::vector<mysql_harness::Destination> get_destination_candidates() const;
+  SslOptions get_destination_ssl_options() const;
 
   void start_accepting_connections();
   void restart_accepting_connections();
@@ -123,9 +155,24 @@ class ROUTING_EXPORT MySQLRoutingComponent {
   uint64_t current_total_connections();
   uint64_t max_total_connections() const { return max_total_connections_; }
 
-  MySQLRoutingConnectionBase *get_connection(const std::string &ep);
+  const rapidjson::Document &routing_guidelines_document() const;
+
+  rapidjson::Document routing_guidelines_document_schema() const;
 
   std::vector<std::string> route_names() const;
+
+  void set_routing_guidelines(const std::string &routing_guidelines_document);
+
+  bool routing_guidelines_initialized() const;
+
+  std::shared_ptr<routing_guidelines::Routing_guidelines_engine>
+  get_routing_guidelines() {
+    std::lock_guard<std::mutex> lock{routing_guidelines_mtx_};
+    return routing_guidelines_;
+  }
+
+  MySQLRoutingConnectionBase *get_connection(
+      const std::string &client_endpoint);
 
  private:
   // disable copy, as we are a single-instance
@@ -138,6 +185,10 @@ class ROUTING_EXPORT MySQLRoutingComponent {
   uint64_t max_total_connections_{0};
 
   MySQLRoutingComponent() = default;
+
+  mutable std::mutex routing_guidelines_mtx_;
+  std::shared_ptr<routing_guidelines::Routing_guidelines_engine>
+      routing_guidelines_{nullptr};
 };
 
 #endif

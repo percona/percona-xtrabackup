@@ -1,4 +1,5 @@
 "WL6369 Explain for Connection"
+include/rpl/set_gtid_mode_off.inc
 QUERY: DELETE from t1 
 STATUS:NOT_EQUAL
 SYNC_POINT:before_reset_query_plan
@@ -487,11 +488,11 @@ QUERY: SELECT DISTINCT topic FROM t2 WHERE NOT EXISTS(SELECT * FROM t3 WHERE num
 STATUS:NOT_EQUAL
 SYNC_POINT:before_reset_query_plan
 Diff: EXPLAIN NORMAL vs OTHER
-@@ -58,2 +58,3 @@
+@@ -57,2 +57,3 @@
              "filtered": "100.00",
 +            "using_where": true,
              "not_exists": true,
-@@ -69,4 +70,3 @@
+@@ -67,4 +68,3 @@
                "numeropost"
 -            ],
 -            "attached_condition": "<if>(is_not_null_compl(t3), <if>(found_match(t3), false, true), true)"
@@ -724,3 +725,4 @@ Diff: EXPLAIN NORMAL vs OTHER
          }
 QUERY: SELECT DISTINCT alias2.pk AS field1, alias2.pk AS field2, alias2.pk AS field3 FROM t1 AS alias1 RIGHT JOIN t2 AS alias2  ON  alias1.col_varchar_key =  alias2.col_varchar_key WHERE alias1.col_int >alias1.col_int HAVING field3 = 7 ORDER BY field1, field2, field3 LIMIT 10 OFFSET 1
 STATUS: EQUAL
+include/rpl/set_gtid_mode_on.inc

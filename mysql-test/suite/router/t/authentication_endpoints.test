@@ -1,0 +1,18 @@
+# Verify that authentication endpoints are created and avaiable
+# despite the number of authentication application assgined to
+# service.
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/schema/basic_schema.sql
+
+--let $test_param_authentication=
+--source ../include/test/authentication_endpoints.inc
+
+--let $test_param_authentication=/custom
+--source ../include/test/authentication_endpoints.inc
+
+
+# Cleanup
+

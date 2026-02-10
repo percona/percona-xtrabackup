@@ -78,11 +78,11 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	use `test`; CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY)
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 [connection server2]
 include/assert.inc ['There are two values in table t1']
@@ -91,11 +91,11 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000003	#	Query	#	#	use `test`; CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY)
 server-binary-log.000003	#	Query	#	#	BEGIN
 server-binary-log.000003	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000003	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000003	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000003	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000003	#	Query	#	#	BEGIN
 server-binary-log.000003	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000003	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000003	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000003	#	Xid	#	#	COMMIT /* XID */
 include/diff_tables.inc [server1:test.t1, server2:test.t1]
 

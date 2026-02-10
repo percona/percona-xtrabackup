@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 call mtr.add_suppression('Unsafe statement written to the binary log using statement format since BINLOG_FORMAT = STATEMENT.');
 SET @old_log_output=@@global.log_output;
 SET GLOBAL log_output="FILE,TABLE";
@@ -2093,8 +2094,14 @@ execute abc;
 deallocate prepare abc;
 create procedure proc_1() flush privileges;
 call proc_1();
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 call proc_1();
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 call proc_1();
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create function func_1() returns int begin flush privileges; return 1; end|
 ERROR 0A000: FLUSH is not allowed in stored function or trigger
 create function func_1() returns int begin call proc_1(); return 1; end|
@@ -2644,7 +2651,7 @@ call proc_1();
 drop user pstest_xyz@localhost;
 call proc_1();
 call proc_1();
-ERROR HY000: Operation CREATE USER failed for 'pstest_xyz'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'pstest_xyz'@'localhost' (User account already exists)
 drop user pstest_xyz@localhost;
 call proc_1();
 drop user pstest_xyz@localhost;
@@ -2660,7 +2667,7 @@ execute abc;
 drop user pstest_xyz@localhost;
 execute abc;
 execute abc;
-ERROR HY000: Operation CREATE USER failed for 'pstest_xyz'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'pstest_xyz'@'localhost' (User account already exists)
 drop user pstest_xyz@localhost;
 execute abc;
 drop user pstest_xyz@localhost;
@@ -4204,3 +4211,4 @@ Variable_name	Value
 Com_stmt_reprepare	1
 deallocate prepare ps;
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc

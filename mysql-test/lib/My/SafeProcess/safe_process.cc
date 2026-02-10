@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -148,9 +148,9 @@ static void wait_pid(bool should_sigkill) {
     if (WIFEXITED(status)) {
       // Process has exited, collect return status
       exit_code = WEXITSTATUS(status);
-      // Print info about the exit_code except for 62 which occurs when
-      // test is skipped
-      if (exit_code != 0 && exit_code != 62)
+      // Print info about the exit_code except for 62 which occurs when a
+      // test is skipped and 66 which occurs if a test provisionally passes
+      if (exit_code != 0 && exit_code != 62 && exit_code != 66)
         print_message("Child process: %d, exit: %d",
                       static_cast<int>(child_pid), exit_code);
       else
@@ -169,16 +169,15 @@ static void wait_pid(bool should_sigkill) {
     print_message("The waitpid returned: %d", static_cast<int>(ret_pid));
     exit(1);
   }
-  return;
 }
 
-static void abort_child(void) {
+static void abort_child() {
   message("Aborting child: %d", static_cast<int>(child_pid));
   kill(-child_pid, SIGABRT);
   wait_pid(false);
 }
 
-static void kill_child(void) {
+static void kill_child() {
   // Terminate whole process group
   message("Terminating child: %d", static_cast<int>(child_pid));
   kill(-child_pid, SIGTERM);
@@ -217,7 +216,7 @@ extern "C" void handle_signal(int sig, siginfo_t *si,
 
 int main(int argc, char *const argv[]) {
   char *const *child_argv = nullptr;
-  pid_t own_pid = getpid();
+  pid_t const own_pid = getpid();
   pid_t parent_pid = getppid();
   bool nocore = false;
   struct sigaction sa, sa_abort;
@@ -246,24 +245,23 @@ int main(int argc, char *const argv[]) {
       if (i >= argc) die("No real args -> nothing to do");
       child_argv = &argv[i + 1];
       break;
-    } else {
-      if (strcmp(arg, "--verbose") == 0) {
-        verbose++;
-      } else if (strncmp(arg, "--parent-pid", 12) == 0) {
-        /* Override parent_pid with a value provided by user */
-        const char *start;
-        if ((start = strstr(arg, "=")) == nullptr)
-          die("Could not find start of option value in '%s'", arg);
-        start++; /* Step past = */
-        if ((parent_pid = atoi(start)) == 0)
-          die("Invalid value '%s' passed to --parent-id", start);
-      } else if (strcmp(arg, "--nocore") == 0) {
-        nocore = true;  // Don't allow the process to dump core
-      } else if (strncmp(arg, "--env ", 6) == 0) {
-        putenv(strdup(arg + 6));
-      } else
-        die("Unknown option: %s", arg);
     }
+    if (strcmp(arg, "--verbose") == 0) {
+      verbose++;
+    } else if (strncmp(arg, "--parent-pid", 12) == 0) {
+      /* Override parent_pid with a value provided by user */
+      const char *start;
+      if ((start = strstr(arg, "=")) == nullptr)
+        die("Could not find start of option value in '%s'", arg);
+      start++; /* Step past = */
+      if ((parent_pid = atoi(start)) == 0)
+        die("Invalid value '%s' passed to --parent-id", start);
+    } else if (strcmp(arg, "--nocore") == 0) {
+      nocore = true;  // Don't allow the process to dump core
+    } else if (strncmp(arg, "--env ", 6) == 0) {
+      putenv(strdup(arg + 6));
+    } else
+      die("Unknown option: %s", arg);
   }
   if (!child_argv || *child_argv == nullptr) die("nothing to do");
 
@@ -295,7 +293,7 @@ int main(int argc, char *const argv[]) {
     setpgid(0, 0);
 
     if (nocore) {
-      struct rlimit corelim = {0, 0};
+      struct rlimit const corelim = {0, 0};
       if (setrlimit(RLIMIT_CORE, &corelim) < 0) {
         message("setrlimit failed, errno=%d", errno);
       }

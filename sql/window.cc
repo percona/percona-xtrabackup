@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -78,11 +78,7 @@
 #include "sql_string.h"
 #include "template_utils.h"
 
-/**
-  Shallow clone the list of ORDER objects using mem_root and return
-  the cloned list.
-*/
-static ORDER *clone(THD *thd, ORDER *order) {
+ORDER *clone(THD *thd, ORDER *order) {
   ORDER *clone = nullptr;
   ORDER **prev_next = &clone;
   for (; order != nullptr; order = order->next) {
@@ -205,12 +201,22 @@ static Item_cache *make_result_item(Item *value) {
       result = new Item_cache_decimal();
       break;
     case STRING_RESULT:
-      if (value->is_temporal())
-        result = new Item_cache_datetime(value->data_type());
-      else if (value->data_type() == MYSQL_TYPE_JSON)
-        result = new Item_cache_json();
-      else
-        result = new Item_cache_str(value);
+      switch (value->data_type()) {
+        case MYSQL_TYPE_JSON:
+          result = new Item_cache_json();
+          break;
+        case MYSQL_TYPE_TIME:
+          result = new Item_cache_time();
+          break;
+        case MYSQL_TYPE_DATE:
+        case MYSQL_TYPE_DATETIME:
+        case MYSQL_TYPE_TIMESTAMP:
+          result = new Item_cache_datetime(value->data_type());
+          break;
+        default:
+          result = new Item_cache_str(value);
+          break;
+      }
       break;
     default:
       assert(false);
@@ -255,6 +261,11 @@ bool Window::setup_range_expressions(THD *thd) {
       if (m_frame->m_to->m_border_type == WBT_CURRENT_ROW)
         m_frame->m_to->m_border_type = WBT_UNBOUNDED_FOLLOWING;
     }
+  } else if (o->value.first->item_initial->is_non_deterministic()) {
+    // With RANGE frame, the ordering must be monotonically ascending or
+    // descending, so forbid non-deterministic expressions.
+    my_error(ER_WINDOW_RANGE_FRAME_ORDER_TYPE, MYF(0), printable_name());
+    return true;
   }
 
   for (PT_border *border : {m_frame->m_from, m_frame->m_to}) {

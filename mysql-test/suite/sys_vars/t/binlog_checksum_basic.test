@@ -43,6 +43,9 @@ XA ROLLBACK 'trx1';
 --echo # Check that changing binlog_checksum if the session owns
 --echo # a GTID is not allowed.
 --echo #
+# We need to change the value of gtid_mode to OFF first
+--source include/rpl/set_gtid_mode_off.inc
+
 SET GLOBAL GTID_MODE=OFF_PERMISSIVE;
 SET GLOBAL GTID_MODE=ON_PERMISSIVE;
 SET GLOBAL ENFORCE_GTID_CONSISTENCY=ON;
@@ -51,10 +54,6 @@ SET SESSION GTID_NEXT='11111111-AAAA-2222-BBBB-000000000000:5';
 --error ER_CANT_SET_VARIABLE_WHEN_OWNING_GTID
 SET @@global.binlog_checksum = CRC32;
 SET SESSION GTID_NEXT='AUTOMATIC';
-SET GLOBAL GTID_MODE=ON_PERMISSIVE;
-SET GLOBAL GTID_MODE=OFF_PERMISSIVE;
-SET GLOBAL ENFORCE_GTID_CONSISTENCY=OFF;
-SET GLOBAL GTID_MODE=OFF;
 
 # cleanup
 set @@global.binlog_checksum = @save_binlog_checksum;

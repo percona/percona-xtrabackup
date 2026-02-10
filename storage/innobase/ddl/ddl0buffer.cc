@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -80,8 +80,6 @@ inline void merge_sort(T *arr, T *aux_arr, const size_t low, const size_t high,
 
 Key_sort_buffer::Key_sort_buffer(dict_index_t *index, size_t size) noexcept
     : m_index(index), m_buffer_size(size) {
-  m_max_tuples = m_buffer_size / std::max(ulint{1}, m_index->get_min_size());
-  m_dtuples.resize(m_max_tuples);
   m_heap = mem_heap_create(1024, UT_LOCATION_HERE);
 }
 
@@ -98,6 +96,7 @@ void Key_sort_buffer::deep_copy(size_t n_fields, size_t data_size) noexcept {
 void Key_sort_buffer::clear() noexcept {
   m_n_tuples = 0;
   m_total_size = 0;
+  m_dtuples = {};
   mem_heap_empty(m_heap);
 }
 
@@ -225,7 +224,7 @@ dberr_t Key_sort_buffer::serialize(IO_buffer io_buffer,
     if (err != DB_SUCCESS) {
       return err;
     }
-    ut_ad(ptr > io_buffer.first);
+    ut_ad(ptr >= io_buffer.first);
     ut_a(size_t(ptr - io_buffer.first) < IO_BLOCK_SIZE);
     /* After writing buffer contains [0, IO_BLOCK_SIZE) bytes,
     so aligning it to  IO_BLOCK_SIZE guarantees space for

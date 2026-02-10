@@ -16,6 +16,7 @@
 #
 #############################################################################
 
+--source include/not_rpl_gtid_only.inc
 # Skip the test case on group replication runs since it uses
 # MyISAM engine tables.
 --source include/force_myisam_default.inc

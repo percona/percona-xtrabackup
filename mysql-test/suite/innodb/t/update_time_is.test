@@ -36,6 +36,7 @@ delimiter ;|
 --source include/restart_mysqld.inc
 
 --echo check the update_time Before DML, whether it is NULL
+--sorted_result
 SELECT table_name,update_time
 FROM information_schema.tables
 WHERE table_name IN ('tab1','tab3','tab4','tab5');
@@ -70,6 +71,7 @@ SELECT * FROM tab5;
 --echo check the update_time After Commit, whether it is not NULL
 --sorted_result
 SET information_schema_stats_expiry=0;
+--sorted_result
 SELECT table_name,COUNT(update_time)
 FROM information_schema.tables
 WHERE table_name IN ('tab1','tab3','tab4','tab5')

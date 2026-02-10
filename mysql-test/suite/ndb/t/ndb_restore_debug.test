@@ -5,6 +5,8 @@
 --echo ********************************************************
 --echo ndb_restore threads exit cleanly on tuple restore error
 --echo ********************************************************
+--echo Initial tests using ndb_restore error insert to trigger
+--echo error on all parts.
 
 create table t1(id int primary key, val int) engine=ndb;
 --disable_query_log
@@ -43,7 +45,9 @@ eval LOAD DATA INFILE '$dump_file' INTO TABLE ndb_restore_output
 UPDATE ndb_restore_output SET a = TRIM(TRAILING "\r" FROM a);
 --enable_query_log
 
-select count(*) > 0 from ndb_restore_output where a like "Thread % failed, exiting" order by a;
+select count(*) into @msgcount from ndb_restore_output where a like "%Thread % failed, exiting" order by a;
+select @msgcount as 'Count of thread exit messages';
+select * from ndb_restore_output where @msgcount != 4;
 
 truncate table t1;
 
@@ -63,7 +67,382 @@ eval LOAD DATA INFILE '$dump_file' INTO TABLE ndb_restore_output
 UPDATE ndb_restore_output SET a = TRIM(TRAILING "\r" FROM a);
 
 --enable_query_log
-select count(*) > 0 from ndb_restore_output where a like "Thread % failed, exiting" order by a;
+select count(*) into @msgcount from ndb_restore_output where a like "%Thread % failed, exiting" order by a;
+select @msgcount as 'Count of thread exit messages';
+select * from ndb_restore_output where @msgcount != 4;
+drop table t1;
+
+
+--echo Test single part restore failures, should cause all parts to stop promptly
+--echo Constraint violation on DATA restore
+# Testing single restore thread errors
+create table test.t1 (a int primary key, b int, c int) engine=ndb;
+--disable_query_log
+let $i = 0;
+while($i < 1000)
+{
+  eval insert into t1 values ($i, $i, $i);
+  inc $i;
+}
+--enable_query_log
+
+# Have rows 0,0,0 ... 999,999,999
+# Now insert :
+insert into test.t1 values (1000,1000,999);
+
+# Backup
+--source suite/ndb/t/ndb_backup_nowait_start.inc
+--source suite/ndb/t/ndb_backup_nowait_wait.inc
+
+truncate test.t1;
+alter table test.t1 add unique(c);
+
+# Restore backup - should fail on duplicate key
+# during data restore
+# Check process exit code show failure
+--disable_query_log
+--echo Test restore failure handling for data apply failure
+--let dump_file = $MYSQLTEST_VARDIR/tmp/restore.out
+let $error_result = 0;
+--error 0,1
+--exec $NDB_RESTORE --show-part-id -b $the_backup_id -n 1 -r $NDB_BACKUPS-$the_backup_id >> $dump_file 2>&1
+if ($__error)
+{
+  let $error_result = 1;
+}
+--error 0,1
+--exec $NDB_RESTORE --show-part-id -b $the_backup_id -n 2 -r $NDB_BACKUPS-$the_backup_id >> $dump_file 2>&1
+if ($__error)
+{
+  let $error_result = 1;
+}
+
+if (!$error_result)
+{
+  --die One ndb_restore invocation should have failed
+}
+
+
+# Load the file into a temporary table
+truncate table ndb_restore_output;
+
+eval LOAD DATA INFILE '$dump_file' INTO TABLE ndb_restore_output
+  FIELDS TERMINATED BY '\n';
+--remove_file $dump_file
+
+# Remove Windows line feeds
+UPDATE ndb_restore_output SET a = TRIM(TRAILING "\r" FROM a);
+--enable_query_log
+
+# Check output contains useful messages
+--echo Expect 1 error type message
+select count(*) into @msgcount from ndb_restore_output where a like "%Permanent% duplicate value in unique index%";
+select @msgcount as 'Count of error message 1';
+select * from ndb_restore_output where @msgcount != 1;
+--echo Expect 1 error location message
+select count(*) into @msgcount from ndb_restore_output where a like "%Failed restoring DATA to table%";
+select @msgcount as 'Count of error message 2';
+select * from ndb_restore_output where @msgcount != 1;
+--echo Expect 1 error detail message
+select count(*) into @msgcount from ndb_restore_output where a like "%Failing tuple :%";
+select @msgcount as 'Count of error message 3';
+select * from ndb_restore_output where @msgcount != 1;
+
+drop table test.t1;
+
+--echo Constraint violation on LOG restore
+# Schema uses composite primary key + partitioning to allow 2 rows fighting
+# over secondary key value to be placed in the same fragment + so restored
+# by the same ndb_restore process + thread, so that the restore proceeds
+# in DATA, LOG order, so that we get a deterministic order + testcase.
+
+create table test.t1 (a int, b int, c int, primary key (a,b)) engine=ndb partition by key(a);
+--disable_query_log
+let $i = 0;
+while($i < 1000)
+{
+  eval insert into t1 values ($i, $i, $i);
+  inc $i;
+}
+--enable_query_log
+
+--echo Cause backup stall while log open
+--exec $NDB_MGM -e "all error 10040" >> $NDB_TOOLS_OUTPUT
+
+# Backup
+--source suite/ndb/t/ndb_backup_nowait_start.inc
+
+# Give some time for data without extra row
+# to be captured
+--sleep 4
+
+# Insert extra row, should be placed in log only
+insert into t1 values(999,1000,999);
+
+--exec $NDB_MGM -e "all error 0" >> $NDB_TOOLS_OUTPUT
+--source suite/ndb/t/ndb_backup_nowait_wait.inc
+
+truncate test.t1;
+alter table test.t1 add unique(c);
+
+# Restore backup - should fail on duplicate key
+# during log restore
+# Check process exit code shows failure
+--disable_query_log
+--echo Test restore failure handling for log apply failure
+--let dump_file = $MYSQLTEST_VARDIR/tmp/restore.out
+let $error_result = 0;
+--error 0,1
+--exec $NDB_RESTORE --show-part-id -b $the_backup_id -n 1 -r $NDB_BACKUPS-$the_backup_id --error-insert=5 >> $dump_file 2>&1
+if ($__error)
+{
+  let $error_result = 1;
+}
+--error 0,1
+--exec $NDB_RESTORE --show-part-id -b $the_backup_id -n 2 -r $NDB_BACKUPS-$the_backup_id --error-insert=5 >> $dump_file 2>&1
+if ($__error)
+{
+  let $error_result = 1;
+}
+
+if (!$error_result)
+{
+  --die One ndb_restore invocation should have failed
+}
+
+# Load the file into a temporary table
+truncate table ndb_restore_output;
+
+eval LOAD DATA INFILE '$dump_file' INTO TABLE ndb_restore_output
+  FIELDS TERMINATED BY '\n';
+--remove_file $dump_file
+
+# Remove Windows line feeds
+UPDATE ndb_restore_output SET a = TRIM(TRAILING "\r" FROM a);
+--enable_query_log
+
+# Check output contains useful messages
+--echo Expect 1 error type message
+select count(*) into @msgcount from ndb_restore_output where a like "%Permanent% duplicate value in unique index%";
+select @msgcount as 'Count of error message 1';
+select * from ndb_restore_output where @msgcount != 1;
+--echo Expect 1 error location message
+select count(*) into @msgcount from ndb_restore_output where a like "%Failed restoring LOG entry type INSERT to table%";
+select @msgcount as 'Count of error message 2';
+select * from ndb_restore_output where @msgcount != 1;
+--echo Expect 1 error detail message
+select count(*) into @msgcount from ndb_restore_output where a like "%Failing log entry :%";
+select @msgcount as 'Count of error message 3';
+select * from ndb_restore_output where @msgcount != 1;
+
+#select * from ndb_restore_output;
+
+drop table test.t1;
+
+
+--echo Test that a temporary error applying
+--echo log eventually results in failure
+
+create table test.t1 (a int primary key, b int) engine=ndb;
+
+--echo Cause backup stall while log open
+--exec $NDB_MGM -e "all error 10040" >> $NDB_TOOLS_OUTPUT
+
+# Backup
+--source suite/ndb/t/ndb_backup_nowait_start.inc
+
+# Give some time for data without extra row
+# to be captured
+--sleep 4
+
+# Insert extra row, should be placed in log only
+insert into t1 values(1,1);
+
+--exec $NDB_MGM -e "all error 0" >> $NDB_TOOLS_OUTPUT
+--source suite/ndb/t/ndb_backup_nowait_wait.inc
+
+
+--echo Take a row lock to block restore
+begin;
+select * from test.t1 where a=1 for update;
+
+
+# Restore backup - should fail on temporary error
+# during log restore
+# Check process exit code shows failure
+--disable_query_log
+--echo Test restore failure handling for log apply failure
+--echo after retries
+--let dump_file = $MYSQLTEST_VARDIR/tmp/restore.out
+let $error_result = 0;
+--error 0,1
+--exec $NDB_RESTORE --show-part-id -b $the_backup_id -n 1 -r $NDB_BACKUPS-$the_backup_id >> $dump_file 2>&1
+if ($__error)
+{
+  let $error_result = 1;
+}
+--error 0,1
+--exec $NDB_RESTORE --show-part-id -b $the_backup_id -n 2 -r $NDB_BACKUPS-$the_backup_id >> $dump_file 2>&1
+if ($__error)
+{
+  let $error_result = 1;
+}
+
+if (!$error_result)
+{
+  --die One ndb_restore invocation should have failed
+}
+
+rollback;
+
+# Load the file into a temporary table
+truncate table ndb_restore_output;
+
+eval LOAD DATA INFILE '$dump_file' INTO TABLE ndb_restore_output
+  FIELDS TERMINATED BY '\n';
+--remove_file $dump_file
+
+# Remove Windows line feeds
+UPDATE ndb_restore_output SET a = TRIM(TRAILING "\r" FROM a);
+--enable_query_log
+
+# Check output contains useful messages
+--echo Expect error message
+select count(*) into @msgcount from ndb_restore_output where a like "%Error restoring the data log%";
+select @msgcount as 'Count of error message 1';
+select * from ndb_restore_output where @msgcount != 1;
+
+#select * from ndb_restore_output;
+
+drop table test.t1;
+
+--echo ----------------
+--echo Test hint option
+--echo ----------------
+
+--echo Create backup with good amount of DATA + LOG content
+create table t1(id int primary key, val int) engine=ndb;
+--disable_query_log
+let $i = 0;
+while($i < 1000)
+{
+  eval insert into t1 values ($i, $i);
+  inc $i;
+}
+--enable_query_log
+
+--echo Cause backup stall
+--exec $NDB_MGM -e "all error 10039" >> $NDB_TOOLS_OUTPUT
+
+--source suite/ndb/t/ndb_backup_nowait_start.inc
+
+update t1 set val=val+1;
+
+--exec $NDB_MGM -e "all error 0" >> $NDB_TOOLS_OUTPUT
+--source suite/ndb/t/ndb_backup_nowait_wait.inc
+
+--disable_query_log
+--echo Show transactions balanced across nodes by default
+--echo (based on optimized node selection on localhost)
+
+#
+# Intention is to show rough 'balance' of where transactions
+# are hinted when restoring DATA and LOG parts
+# We are examining the transaction balance when restoring the
+# backup of one (of two) data nodes
+# The balance of rows between the data node's backup files
+# should be roughly 50:50, based on MD5 hash etc.
+#
+# During restore there are two data nodes, so the transaction
+# balance options are basically :
+#   50% : 50% (Round robin)
+#   100% : 0% (All hinted to node 1)
+#   0% : 100% (All hinted to node 2)
+#
+# The BACKUP should overall roughly contain :
+#   - Some system DATA rows to restore
+#   - 1000 DATA rows to restore
+#   - 1000 LOG rows to restore
+#
+# One node's backup files should roughly contain :
+#   - Some system DATA rows to restore
+#   - ~1000/2 DATA rows to restore (depending on MD5)
+#   - ~1000/2 LOG rows to restore (depending on MD5)
+#
+# When restoring, we may expect the DATA + LOG transactions
+# to be restored :
+#   - No hinting : 50:50 to each node
+#     ~50% of ~1000/2 + ~1000/2 = ~500
+#   - Hinting : 100:0 to one node
+#     ~100% of ~1000/2 + ~1000/2 = ~1000
+#
+# To accomodate uncertainties (#sys rows, MD5 balance, exact RR)
+# this is validated by rounding to the number of '45% of expected' units
+# e.g.
+#   - Expect restore of one data node backup to generate
+#     ~1000 transactions (~500 DATA, ~500 LOG)
+#   - Look at how many transactions each data node processes
+#     0..449 : 0
+#     450..899 : 1
+#     900..1349 : 2
+#   - Therefore expect to see
+#     Unhinted case (50%:50%)
+#       Node 1 : 1  Node 2 : 1
+#     Hinted case : (100%:0%)
+#       Node 1 : 2  Node 2 : 0
+#
+
+# Get baseline
+select sum(val) from ndbinfo.counters where counter_name="COMMITS" and node_id=1 into @node1_trans;
+select sum(val) from ndbinfo.counters where counter_name="COMMITS" and node_id=2 into @node2_trans;
+
+--exec $NDB_RESTORE --show-part-id -b $the_backup_id -n 1 -r $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+--echo Transaction balance of node 1 restore
+
+# Calculate transaction diff per node, in units of 45% of expected transactions
+--echo Expect balance ~ 50% : 50% (1 : 1)
+select FLOOR((sum(val)-@node1_trans)/450) as n1_trans from ndbinfo.counters where counter_name="COMMITS" and node_id=1;
+select FLOOR((sum(val)-@node2_trans)/450) as n2_trans from ndbinfo.counters where counter_name="COMMITS" and node_id=2;
+
+# Get baseline
+select sum(val) from ndbinfo.counters where counter_name="COMMITS" and node_id=1 into @node1_trans;
+select sum(val) from ndbinfo.counters where counter_name="COMMITS" and node_id=2 into @node2_trans;
+
+--exec $NDB_RESTORE --show-part-id -b $the_backup_id -n 2 -r $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+--echo Transaction balance of node 2 restore
+
+# Calculate transaction diff per node, in units of 45% of expected transactions
+--echo Expect balance ~ 50% : 50% (1 : 1)
+select FLOOR((sum(val)-@node1_trans)/450) as n1_trans from ndbinfo.counters where counter_name="COMMITS" and node_id=1;
+select FLOOR((sum(val)-@node2_trans)/450) as n2_trans from ndbinfo.counters where counter_name="COMMITS" and node_id=2;
+
+--echo Show that --hint causes each restore to use transactions
+--echo hinted towards the specific node
+
+# Get baseline
+select sum(val) from ndbinfo.counters where counter_name="COMMITS" and node_id=1 into @node1_trans;
+select sum(val) from ndbinfo.counters where counter_name="COMMITS" and node_id=2 into @node2_trans;
+
+--exec $NDB_RESTORE --show-part-id -b $the_backup_id -n 1 -r --hint $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+--echo Transaction balance of node 1 hinted restore
+
+# Calculate transaction diff per node, in units of 45% of expected transactions
+--echo Expect balance ~ 100% : 0% (2 : 0)
+select FLOOR((sum(val)-@node1_trans)/450) as n1_trans from ndbinfo.counters where counter_name="COMMITS" and node_id=1;
+select FLOOR((sum(val)-@node2_trans)/450) as n2_trans from ndbinfo.counters where counter_name="COMMITS" and node_id=2;
+
+# Get baseline
+select sum(val) from ndbinfo.counters where counter_name="COMMITS" and node_id=1 into @node1_trans;
+select sum(val) from ndbinfo.counters where counter_name="COMMITS" and node_id=2 into @node2_trans;
+
+--exec $NDB_RESTORE --show-part-id -b $the_backup_id -n 2 -r --hint $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+--echo Transaction balance of node 2 hinted restore
+
+# Calculate transaction diff per node, in units of 45% of expected transactions
+--echo Expect balance ~ 0% : 100% (0 : 2)
+select FLOOR((sum(val)-@node1_trans)/450) as n1_trans from ndbinfo.counters where counter_name="COMMITS" and node_id=1;
+select FLOOR((sum(val)-@node2_trans)/450) as n2_trans from ndbinfo.counters where counter_name="COMMITS" and node_id=2;
+--enable_query_log
 
 drop table t1;
 

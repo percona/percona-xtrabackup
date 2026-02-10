@@ -1,0 +1,121 @@
+# Verify that changes in the mrs_user table are reflected in the MRS even if
+# the user is cached.
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+CREATE USER user_valid@'%' IDENTIFIED BY 'pwd';
+
+## Test starts here
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc1"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic1
+--let $mrs_add_schema_auth=TRUE
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/o1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_auth_app=default authentication
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc1
+--let $mrs_add_auth_registered_users_only=1
+--source ../include/mrs/auth_app/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+# add a "user_valid" user to mrs_users and assign a proper role to be able to access
+# defined object o1
+insert into mysql_rest_service_metadata.mrs_user(id, auth_app_id, name,
+vendor_user_id, login_permitted)
+values (0x11EFD1DC9D62CD2E89FABBBF8E89057E,
+(select id from mysql_rest_service_metadata.auth_app limit 1),
+"user_valid", "user_valid@%", 1);
+
+insert into mysql_rest_service_metadata.mrs_user_has_role(user_id, role_id)
+values (0x11EFD1DC9D62CD2E89FABBBF8E89057E, 0x31000000000000000000000000000000);
+
+# Check that the user can access o1
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user_valid
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/basic1/o1
+  --json-schema-file $SCHEMA_DIR/items_first_less_than_limit.sch
+  --exclude-json-pointer "/*"
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+# Revoke login rights to that user and wait for MRS to notice change
+update mysql_rest_service_metadata.mrs_user set login_permitted = 0 where id = 0x11EFD1DC9D62CD2E89FABBBF8E89057E;
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+# Check that the user can't access o1 anymore
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user_valid
+  -p pwd
+  --expected-status Unauthorized
+  --session-file $MYSQL_TMP_DIR/user1_session2.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/basic1/o1
+  --expected-status Unauthorized
+  --session-file $MYSQL_TMP_DIR/user1_session2.dat;
+
+# Restore login rights to that user and wait for MRS to notice change
+update mysql_rest_service_metadata.mrs_user set login_permitted = 1 where id = 0x11EFD1DC9D62CD2E89FABBBF8E89057E;
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+# Check that the user can access o1 again
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user_valid
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user1_session3.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/basic1/o1
+  --json-schema-file $SCHEMA_DIR/items_first_less_than_limit.sch
+  --exclude-json-pointer "/*"
+  --session-file $MYSQL_TMP_DIR/user1_session3.dat;
+
+# Delete the user from metadata and wait for MRS to notice change
+delete from mysql_rest_service_metadata.mrs_user where id = 0x11EFD1DC9D62CD2E89FABBBF8E89057E;
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+# Check that the user can't access o1 anymore
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user_valid
+  -p pwd
+  --expected-status Unauthorized
+  --session-file $MYSQL_TMP_DIR/user1_session4.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/basic1/o1
+  --expected-status Unauthorized
+  --session-file $MYSQL_TMP_DIR/user1_session4.dat;
+
+# Cleanup
+DROP USER user_valid@'%';
+remove_file $MYSQL_TMP_DIR/user1_session.dat;
+remove_file $MYSQL_TMP_DIR/user1_session2.dat;
+remove_file $MYSQL_TMP_DIR/user1_session3.dat;
+remove_file $MYSQL_TMP_DIR/user1_session4.dat;
+--source ../include/mrs/cleanup.inc

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -253,10 +253,10 @@ static byte *trx_undo_log_v_idx(page_t *undo_page, const dict_table_t *table,
 
   ut_ad(n_idx > 0);
 
-  /* Size to reserve, max 5 bytes for each index id and position, plus
+  /* Size to reserve, max (11 + 5) bytes for each index id and position, plus
   5 bytes for num of indexes, 2 bytes for write total length.
   1 byte for undo log record format version marker */
-  ulint size = n_idx * (5 + 5) + 5 + 2 + (first_v_col ? 1 : 0);
+  ulint size = n_idx * (11 + 5) + 5 + 2 + (first_v_col ? 1 : 0);
 
   if (trx_undo_left(undo_page, ptr) < size) {
     return (nullptr);
@@ -280,7 +280,7 @@ static byte *trx_undo_log_v_idx(page_t *undo_page, const dict_table_t *table,
   for (it = vcol->v_indexes->begin(); it != vcol->v_indexes->end(); ++it) {
     dict_v_idx_t v_index = *it;
 
-    ptr += mach_write_compressed(ptr, static_cast<ulint>(v_index.index->id));
+    ptr += mach_u64_write_much_compressed(ptr, v_index.index->id);
 
     ptr += mach_write_compressed(ptr, v_index.nth_field);
   }
@@ -313,7 +313,7 @@ static const byte *trx_undo_read_v_idx_low(const dict_table_t *table,
   const dict_index_t *clust_index = table->first_index();
 
   for (ulint i = 0; i < num_idx; i++) {
-    space_index_t id = mach_read_next_compressed(&ptr);
+    space_index_t id = mach_read_next_much_compressed(&ptr);
     ulint pos = mach_read_next_compressed(&ptr);
     const dict_index_t *index = clust_index->next();
 
@@ -995,7 +995,7 @@ static const byte *trx_undo_read_blob_update(const byte *undo_ptr,
 static byte *trx_undo_report_blob_update(page_t *undo_page, dict_index_t *index,
                                          byte *undo_ptr, const byte *field,
                                          ulint flen, const upd_t *update,
-                                         upd_field_t *fld, mtr_t *mtr) {
+                                         const upd_field_t *fld, mtr_t *mtr) {
   DBUG_TRACE;
 
   /* Access the LOB reference object. */
@@ -1031,8 +1031,7 @@ static byte *trx_undo_report_blob_update(page_t *undo_page, dict_index_t *index,
   const ulint bytes_changed = upd_t::get_total_modified_bytes(*bdiff_v);
 
   /* Whether the update to the LOB can be considered as a small change. */
-  const bool small_change =
-      (bytes_changed <= lob::ref_t::LOB_SMALL_CHANGE_THRESHOLD);
+  const bool small_change = lob::ref_t::is_small_change(bytes_changed, ref);
 
   if (!small_change) {
     /* This is not a small change.  So write the size of the vector as
@@ -1317,12 +1316,12 @@ static ulint trx_undo_page_report_modify(
     in new table */
     if (dict_index_is_online_ddl(index) && index->table->n_v_cols > 0) {
       for (i = 0; i < upd_get_n_fields(update); i++) {
-        upd_field_t *fld = upd_get_nth_field(update, i);
+        const upd_field_t *fld = upd_get_nth_field(update, i);
         ulint pos = fld->field_no;
 
         /* These columns must not have an index
         on them */
-        if (upd_fld_is_virtual_col(fld) &&
+        if (fld->is_virtual() &&
             dict_table_get_nth_v_col(table, pos)->v_indexes->empty()) {
           n_updated--;
         }
@@ -1332,9 +1331,9 @@ static ulint trx_undo_page_report_modify(
     ptr += mach_write_compressed(ptr, n_updated);
 
     for (i = 0; i < upd_get_n_fields(update); i++) {
-      upd_field_t *fld = upd_get_nth_field(update, i);
+      const upd_field_t *fld = upd_get_nth_field(update, i);
 
-      bool is_virtual = upd_fld_is_virtual_col(fld);
+      bool is_virtual = fld->is_virtual();
       bool is_multi_val = upd_fld_is_multi_value_col(fld);
       ulint max_v_log_len = 0;
 
@@ -1760,8 +1759,11 @@ const byte *trx_undo_update_rec_get_update(
 
   trx_write_trx_id(buf, trx_id);
 
-  upd_field_set_field_no(upd_field, index->get_sys_col_pos(DATA_TRX_ID), index);
+  auto const trx_id_col = index->table->get_sys_col(DATA_TRX_ID);
+  upd_field_set_field_no(upd_field, dict_col_get_clust_pos(trx_id_col, index),
+                         index);
   dfield_set_data(&(upd_field->new_val), buf, DATA_TRX_ID_LEN);
+  trx_id_col->copy_type(dfield_get_type(&upd_field->new_val));
 
   upd_field = upd_get_nth_field(update, n_fields + 1);
 
@@ -1769,9 +1771,11 @@ const byte *trx_undo_update_rec_get_update(
 
   trx_write_roll_ptr(buf, roll_ptr);
 
-  upd_field_set_field_no(upd_field, index->get_sys_col_pos(DATA_ROLL_PTR),
-                         index);
+  auto const data_roll_ptr_col = index->table->get_sys_col(DATA_ROLL_PTR);
+  upd_field_set_field_no(
+      upd_field, dict_col_get_clust_pos(data_roll_ptr_col, index), index);
   dfield_set_data(&(upd_field->new_val), buf, DATA_ROLL_PTR_LEN);
+  data_roll_ptr_col->copy_type(dfield_get_type(&upd_field->new_val));
 
   /* Store then the updated ordinary columns to the update vector */
 
@@ -2374,7 +2378,7 @@ err_exit:
     bool is_temp)        /*!< in: true if temp undo rec. */
 {
   trx_undo_rec_t *undo_rec;
-  ulint rseg_id;
+  ulint undo_num;
   space_id_t space_id;
   page_no_t page_no;
   ulint offset;
@@ -2382,8 +2386,8 @@ err_exit:
   bool is_insert;
   mtr_t mtr;
 
-  trx_undo_decode_roll_ptr(roll_ptr, &is_insert, &rseg_id, &page_no, &offset);
-  space_id = trx_rseg_id_to_space_id(rseg_id, is_temp);
+  trx_undo_decode_roll_ptr(roll_ptr, &is_insert, &undo_num, &page_no, &offset);
+  space_id = trx_undo_num_to_space_id(undo_num, is_temp);
 
   bool found;
   const page_size_t &page_size = fil_space_get_page_size(space_id, &found);

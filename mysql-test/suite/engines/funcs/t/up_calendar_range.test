@@ -13,7 +13,9 @@ INSERT INTO t1 (c1) VALUES(ADDTIME(NOW(),'3 03:01:01'));
 INSERT INTO t1 (c1) VALUES(ADDTIME(NOW(),'4 04:01:01'));
 --sorted_result
 SELECT * FROM t1 ORDER BY c1;
+--disable_warnings
 UPDATE t1 SET c1 = NOW() WHERE c1 >= ADDTIME(NOW(),'2 02:01:01');
+--enable_warnings
 --sorted_result
 SELECT * FROM t1 ORDER BY c1;
 DROP TABLE t1;

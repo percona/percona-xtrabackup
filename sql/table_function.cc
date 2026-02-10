@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -95,6 +95,12 @@ bool Table_function::init_args() {
   return false;
 }
 
+void Table_function::fix_after_pullout(Query_block *parent_query_block,
+                                       Query_block *removed_query_block) {
+  do_fix_after_pullout(parent_query_block, removed_query_block);
+  table->pos_in_table_list->dep_tables = used_tables();
+}
+
 /******************************************************************************
   Implementation of JSON_TABLE function
 ******************************************************************************/
@@ -138,7 +144,7 @@ bool Table_function_json::init_json_table_col_lists(uint *nest_idx,
     if (col->m_jtc_type != enum_jt_column::JTC_NESTED_PATH) {
       col->m_field_idx = m_vt_list.elements;
       m_vt_list.push_back(col);
-      if (check_column_name(col->field_name)) {
+      if (check_column_name(to_lex_cstring(col->field_name))) {
         my_error(ER_WRONG_COLUMN_NAME, MYF(0), col->field_name);
         return true;
       }
@@ -768,6 +774,11 @@ void Table_function_json::do_cleanup() {
   is_source_parsed = false;
   for (uint i = 0; i < MAX_NESTED_PATH; i++) m_jds[i].cleanup();
   for (uint i = 0; i < m_all_columns.size(); i++) m_all_columns[i]->cleanup();
+}
+
+void Table_function_json::do_fix_after_pullout(
+    Query_block *parent_query_block, Query_block *removed_query_block) {
+  source->fix_after_pullout(parent_query_block, removed_query_block);
 }
 
 void JT_data_source::cleanup() {

@@ -127,8 +127,8 @@ var router_start_transaction =
 var router_update_attributes =
     common_stmts.get("router_update_attributes_v2", options);
 
-var router_update_last_check_in_v2 =
-    common_stmts.get("router_update_last_check_in_v2", options);
+var router_update_last_check_in_v2_4 =
+    common_stmts.get("router_update_last_check_in_v2_4", options);
 
 
 ({
@@ -180,9 +180,9 @@ var router_update_last_check_in_v2 =
           rows: [[mysqld.session.ssl_session_cache_hits]]
         }
       }
-    } else if (stmt === router_update_last_check_in_v2.stmt) {
+    } else if (stmt === router_update_last_check_in_v2_4.stmt) {
       mysqld.global.update_last_check_in_count++;
-      return router_update_last_check_in_v2;
+      return router_update_last_check_in_v2_4;
     } else if (stmt.match(router_update_attributes.stmt_regex)) {
       mysqld.global.update_attributes_count++;
       return router_update_attributes;

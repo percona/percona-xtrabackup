@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,6 @@ class Named_pipe_listener {
   SECURITY_ATTRIBUTES *mp_sa_pipe_security;
   HANDLE m_pipe_handle;
   char m_pipe_path_name[512];
-  HANDLE h_connected_pipe;
   OVERLAPPED m_connect_overlapped;
 
  public:

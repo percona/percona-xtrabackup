@@ -555,7 +555,7 @@ if (`SELECT COUNT(*) FROM ndbinfo.dict_obj_info WHERE parent_obj_id = $t1_id`)
 {
   echo Detected failure to drop all objects related to t1;
   echo t1_id: $t1_id;
-  SELECT * FROM ndbinfo.dict_obj_info WHERE parent_obj_id = $t1_id;
+  eval SELECT * FROM ndbinfo.dict_obj_info WHERE parent_obj_id = $t1_id;
   die Failed to drop all objects for t1;
 }
 
@@ -716,6 +716,146 @@ DROP TABLE ndb_restore_output;
 SET GLOBAL ndb_metadata_check = @old_ndb_metadata_check_server2;
 --connection server1
 SET GLOBAL ndb_metadata_check = @old_ndb_metadata_check_server1;
+
+--echo Coverage of increased --parallelism setting
+create table t1 (a int primary key, b int) engine=ndb;
+
+--echo Insert enough rows to get some volume of data
+--echo per backup PART
+--disable_query_log
+--disable_result_log
+--let $rows=40000
+while ($rows)
+{
+  --eval insert into t1 values ($rows, $rows);
+  --dec $rows
+}
+--enable_query_log
+--enable_result_log
+
+select count(1), sum(a) from t1;
+
+--source include/ndb_backup.inc
+
+truncate t1;
+
+--exec $NDB_RESTORE -b $the_backup_id -n 1 --restore-data --parallelism=1000000 $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+--exec $NDB_RESTORE -b $the_backup_id -n 2 --restore-data --parallelism=1000000 $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+
+select count(1), sum(a) from t1;
+
+--echo Cleanup
+drop table t1;
+
+--echo Coverage of ndb_restore read_size setting
+--echo Create table with one partition to increase individual
+--echo backup filesize
+--echo Avoid redo log overload on restore by using nologging
+CREATE TABLE t1 (a int primary key, b longblob) engine=ndb
+  COMMENT="NDB_TABLE=NOLOGGING=1"
+  partition by key(a) partitions 1;
+
+--echo Insert lots of rows
+# With Bug#38608189 ndbxfrm loop guard limits file read size
+# there was a problem with the larger read_size as ndbxfrm
+# had a low bound on how many (max 32kB) file reads it would
+# allow to be done to satisfy a single user read request.
+# In cases where a large read buffer was supplied, too many
+# (max 32kB) reads were required.
+#
+# With compressed backups, a (max 32kB) file read may generate
+# quite a lot of uncompressed data so that a large buffer can
+# be filled with a few reads and the bug is not hit.
+#
+# To get coverage of the bug fix even with compressed backups,
+# here we backup data that is hard to compress, so that it
+# is more likely that the bug fix is validated.
+#
+# This is done by generating unique content per row, embedding
+# the row number, and then encrypting it.
+#
+--disable_query_log
+--disable_result_log
+set @saved_block_encryption_mode = @@block_encryption_mode;
+set block_encryption_mode='aes-256-cbc';
+--let $rows=2560
+while ($rows)
+{
+  --eval insert into t1 values ($rows, AES_ENCRYPT(repeat('$rows-$rows', 1024), 'secret', '0123456789abcdef'));
+  --dec $rows
+}
+--enable_result_log
+--enable_query_log
+set block_encryption_mode=@saved_block_encryption_mode;
+
+select count(1) from t1;
+
+--echo Backup
+--source include/ndb_backup.inc
+
+--echo Restore with large backup read filesize
+truncate t1;
+--exec $NDB_RESTORE -b $the_backup_id -n 1 --restore-data --read-size=32M --show-part-id $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+--exec $NDB_RESTORE -b $the_backup_id -n 2 --restore-data --read-size=4M --show-part-id $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+
+--echo Check row count
+select count(1) from t1;
+
+drop table t1;
+
+--echo Test backupid ranges
+--echo Test generation backup with max explicit id (2^32 - 2)
+--exec $NDB_MGM -e "start backup 4294967294" >> $NDB_TOOLS_OUTPUT
+
+--echo Check ndb_restore can open max id backup
+--exec $NDB_RESTORE -b4294967294 -n 1 -r --print_meta $NDB_BACKUPS-4294967294 >> $NDB_TOOLS_OUTPUT
+--exec $NDB_RESTORE -b4294967294 -n 1 -r --print_data $NDB_BACKUPS-4294967294 >> $NDB_TOOLS_OUTPUT
+--exec $NDB_RESTORE -b4294967294 -n 2 -r --print_data $NDB_BACKUPS-4294967294 >> $NDB_TOOLS_OUTPUT
+
+--echo Test behaviour of generating auto-numbered
+--echo next backup of 2^32-1
+--exec $NDB_MGM -e "start backup" >> $NDB_TOOLS_OUTPUT
+
+--echo Check ndb_restore can open max id backup
+--exec $NDB_RESTORE -b4294967295 -n 1 -r --print_meta $NDB_BACKUPS-4294967295 >> $NDB_TOOLS_OUTPUT
+--exec $NDB_RESTORE -b4294967295 -n 1 -r --print_data $NDB_BACKUPS-4294967295 >> $NDB_TOOLS_OUTPUT
+--exec $NDB_RESTORE -b4294967295 -n 2 -r --print_data $NDB_BACKUPS-4294967295 >> $NDB_TOOLS_OUTPUT
+
+--echo Test behaviour of generating auto-numbered
+--echo next backup of 0
+--exec $NDB_MGM -e "start backup" >> $NDB_TOOLS_OUTPUT
+
+--echo Check ndb_restore can open zero id backup
+--exec $NDB_RESTORE -b0 -n 1 -r --print_meta $NDB_BACKUPS-0 >> $NDB_TOOLS_OUTPUT
+--exec $NDB_RESTORE -b0 -n 1 -r --print_data $NDB_BACKUPS-0 >> $NDB_TOOLS_OUTPUT
+--exec $NDB_RESTORE -b0 -n 2 -r --print_data $NDB_BACKUPS-0 >> $NDB_TOOLS_OUTPUT
+
+
+--echo Test behaviour with start backup + out-of-range backup ids
+--echo MGM client allows 1..4294967294 (not 0 or 4294967295)
+--error 255
+--exec $NDB_MGM -e "start backup 0"
+--error 255
+--exec $NDB_MGM -e "start backup 4294967295"
+--error 255
+--exec $NDB_MGM -e "start backup 4294967296"
+--error 255
+--exec $NDB_MGM -e "start backup 999999999999"
+
+--echo Test behaviour of ndb_restore with various backup ids
+--echo Too large are rejected
+--error 2
+--exec $NDB_RESTORE -b4294967296 -n 1 -r --print_meta $NDB_BACKUPS-0
+--error 2
+--exec $NDB_RESTORE -b999999999999 -n 1 -r --print_meta $NDB_BACKUPS-0
+--echo Negative are rejected
+--error 2
+--exec $NDB_RESTORE -b-1 -n 1 -r --print_meta $NDB_BACKUPS-0
+--error 2
+--exec $NDB_RESTORE -b-2 -n 1 -r --print_meta $NDB_BACKUPS-0
+--echo No id is rejected
+--error 2
+--exec $NDB_RESTORE -n 1 -r --print_meta $NDB_BACKUPS-0
 
 --source suite/ndb/include/backup_restore_cleanup.inc
 --remove_file $NDB_TOOLS_OUTPUT

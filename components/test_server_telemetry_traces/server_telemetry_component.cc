@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -407,7 +407,7 @@ static telemetry_locker_t *tm_stmt_start(telemetry_session_t * /* session */,
     *flags = TRACE_STATEMENTS;
 
     const Statement_Data info;
-    data->m_stmt_stack.push_back(std::move(info));
+    data->m_stmt_stack.push_back(info);
 
   } else {
     *flags = TRACE_NOTHING;
@@ -480,7 +480,7 @@ static telemetry_locker_t *tm_stmt_notify_qa(telemetry_locker_t *locker,
   }
 
   // dump all received query attributes as JSON
-  std::set<std::string> dummy_filter;
+  std::set<std::string> const dummy_filter;
   std::string all_qa;
   if (!query_attrs_to_json(thd, dummy_filter, all_qa, g_log)) {
     g_log.write("> tm_stmt_notify_qa: all query attributes [%s]\n",
@@ -708,12 +708,9 @@ static bool unregister_udf() {
 }
 
 static bool register_udf() {
-  if (udf_registration_srv->udf_register("test_component_trace_log", INT_RESULT,
-                                         (Udf_func_any)test_component_trace_log,
-                                         nullptr, nullptr)) {
-    return true;
-  }
-  return false;
+  return udf_registration_srv->udf_register(
+             "test_component_trace_log", INT_RESULT,
+             (Udf_func_any)test_component_trace_log, nullptr, nullptr) != 0;
 }
 
 /**

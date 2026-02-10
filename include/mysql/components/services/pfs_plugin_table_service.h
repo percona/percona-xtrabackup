@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -88,7 +88,7 @@ struct PFS_string {
 typedef struct PFS_string PFS_string;
 
 /**
-  This is an opaque structure to denote filed in plugin/component code.
+  This is an opaque structure to denote field in plugin/component code.
 */
 typedef struct PSI_field PSI_field;
 /**

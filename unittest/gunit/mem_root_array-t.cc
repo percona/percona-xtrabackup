@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -186,7 +186,7 @@ TEST_F(MemRootTest, ResizeSame) {
   DestroyCounter foo(&counter);
   for (int ix = 0; ix < 10; ++ix) array.push_back(foo);
   EXPECT_EQ(10U, array.size());
-  array.resize(10U);
+  EXPECT_FALSE(array.resize(10U));
   EXPECT_EQ(10U, array.size());
   array.clear();
   EXPECT_EQ(10U, counter);
@@ -197,7 +197,7 @@ TEST_F(MemRootTest, ResizeGrow) {
   array.reserve(100);
   size_t counter = 0;
   DestroyCounter foo(&counter);
-  array.resize(10, foo);
+  EXPECT_FALSE(array.resize(10, foo));
   EXPECT_EQ(0U, counter);
   array.clear();
   EXPECT_EQ(0U, MemRootTest::destroy_counter);
@@ -209,9 +209,9 @@ TEST_F(MemRootTest, ResizeShrink) {
   Mem_root_array<DestroyCounter> array(m_mem_root_p);
   array.reserve(100);
   DestroyCounter foo(&counter);
-  array.resize(10, foo);
+  EXPECT_FALSE(array.resize(10, foo));
   EXPECT_EQ(0U, counter);
-  array.resize(5);
+  EXPECT_FALSE(array.resize(5));
   EXPECT_EQ(5U, counter);
 }
 
@@ -220,7 +220,7 @@ TEST_F(MemRootTest, Erase) {
   size_t counter = 0;
   DestroyCounter foo(&counter);
   A array(m_mem_root_p);
-  array.resize(10, foo);
+  EXPECT_FALSE(array.resize(10, foo));
   EXPECT_EQ(10U, array.size());
   EXPECT_EQ(0U, counter);
 
@@ -251,7 +251,7 @@ TEST_F(MemRootTest, Erase2) {
   size_t counter = 0;
   DestroyCounter foo(&counter);
   A array(m_mem_root_p);
-  array.resize(10, foo);
+  EXPECT_FALSE(array.resize(10, foo));
   EXPECT_EQ(10U, array.size());
   EXPECT_EQ(0U, counter);
 

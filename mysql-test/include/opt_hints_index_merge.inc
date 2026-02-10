@@ -3,7 +3,7 @@
 SET EXPLAIN_FORMAT=tree;
 
 CREATE TABLE t1 (f1 INT, f2 INT, f3 CHAR(1), f4 CHAR(1), f5 CHAR(1), f6 CHAR(1), f7 CHAR(1),
-PRIMARY KEY (f5, f1), KEY (f2), KEY (f3), KEY (f4), KEY(f7) );
+PRIMARY KEY (f5, f1), KEY (f2), KEY (f3), KEY (f4), KEY(f7), KEY idx(f3, f4) INVISIBLE);
 INSERT INTO t1 VALUES (1, 1, 'a', 'h', 'i', '', ''), (2, 3, 'a', 'h', 'i', '', ''),
                       (3, 2, 'b', '', 'j', '', ''), (4, 2, 'b', '', 'j', '', '');
 INSERT INTO t1 VALUES (5, 1, 'a', 'h', 'i', '', ''), (6, 3, 'a', 'h', 'i', '', ''),
@@ -335,8 +335,8 @@ EXPLAIN SELECT /*+ INDEX_MERGE(t1 f2, f3, f4) */ f2 FROM t1 FORCE INDEX (f2, f3)
 --replace_regex $elide_costs
 EXPLAIN SELECT /*+ INDEX_MERGE(t1 f2, f3, f4) */ f2 FROM t1 USE INDEX (f2, f3) WHERE f4 = 'h' AND f2 = 2 AND f3 = 'b';
 
+ALTER TABLE t1 ALTER INDEX idx VISIBLE;
 
-ALTER TABLE t1 ADD KEY idx(f3, f4);
 --echo # Original query
 --replace_regex $elide_costs
 EXPLAIN SELECT f2 FROM t1 WHERE f2 = 2 AND f3 = 'b' AND f4 = 'h';

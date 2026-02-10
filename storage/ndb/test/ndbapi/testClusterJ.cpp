@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -124,18 +124,10 @@ bool write_properties(const char *connStr, const char *mysqlStr) {
   if (!fp) return false;
   fprintf(fp,
           "com.mysql.clusterj.connectstring=%s\n"
-          "com.mysql.clusterj.connect.retries=4\n"
-          "com.mysql.clusterj.connect.delay=5\n"
-          "com.mysql.clusterj.connect.verbose=1\n"
-          "com.mysql.clusterj.connect.timeout.before=30\n"
-          "com.mysql.clusterj.connect.timeout.after=20\n"
           "com.mysql.clusterj.jdbc.url=jdbc:mysql://%s/test\n"
           "com.mysql.clusterj.jdbc.driver=com.mysql.cj.jdbc.Driver\n"
           "com.mysql.clusterj.jdbc.username=root\n"
           "com.mysql.clusterj.jdbc.password=\n"
-          "com.mysql.clusterj.username=\n"
-          "com.mysql.clusterj.password=\n"
-          "com.mysql.clusterj.database=test\n"
           "com.mysql.clusterj.max.transactions=1024\n",
           connStr, mysqlStr);
   fclose(fp);
@@ -198,10 +190,14 @@ int run_tests(int argc, char **argv) {
 
   /* Create the arguments to the Java command line */
   NdbProcess::Args args;
+  const char *extra_java_opts = getenv("JVM_OPTS");
   args.add("-Djava.library.path=", ndbClientDir.c_str());
   args.add("-Dclusterj.properties=", paths.propsFile().c_str());
   args.add("-Duser.timezone=GMT-3");
+  args.add("-ea");
+  if (getenv("LOG_GC")) args.add("-Xlog:gc=trace:file=clusterj-%p-gc.log");
   args.add2("-cp", classpath.c_str());
+  if (extra_java_opts) args.add(extra_java_opts);
   args.add("testsuite.clusterj.AllTests");
   args.add(clusterjTestJar.c_str());
 

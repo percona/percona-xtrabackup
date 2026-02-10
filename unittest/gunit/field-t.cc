@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,7 @@
 #include "sql/sql_class.h"
 #include "sql/sql_time.h"
 #include "strings/m_ctype_internals.h"
+#include "unittest/gunit/benchmark.h"
 #include "unittest/gunit/fake_table.h"
 #include "unittest/gunit/mysys_util.h"
 #include "unittest/gunit/test_utils.h"
@@ -54,17 +55,12 @@ class FieldTest : public ::testing::Test {
   Field_set *create_field_set(TYPELIB *tl);
 };
 
-static void compareMysqlTime(const MYSQL_TIME &first,
-                             const MYSQL_TIME &second) {
-  EXPECT_EQ(first.year, second.year);
-  EXPECT_EQ(first.month, second.month);
-  EXPECT_EQ(first.day, second.day);
-  EXPECT_EQ(first.hour, second.hour);
-  EXPECT_EQ(first.minute, second.minute);
-  EXPECT_EQ(first.second, second.second);
-  EXPECT_EQ(first.second_part, second.second_part);
-  EXPECT_EQ(first.neg, second.neg);
-  EXPECT_EQ(first.time_type, second.time_type);
+static void compareMysqlTime(const Time_val &first, const Time_val &second) {
+  EXPECT_EQ(first.hour(), second.hour());
+  EXPECT_EQ(first.minute(), second.minute());
+  EXPECT_EQ(first.second(), second.second());
+  EXPECT_EQ(first.microsecond(), second.microsecond());
+  EXPECT_EQ(first.is_negative(), second.is_negative());
 }
 
 class Mock_table : public TABLE {
@@ -80,19 +76,19 @@ class Mock_table : public TABLE {
 // It just verifies that store_time has been passed what is expected
 class Mock_protocol : public Protocol {
  private:
-  MYSQL_TIME t;
+  Time_val t;
   uint p;
 
  public:
   Mock_protocol(THD *) {}
 
-  bool store_time(const MYSQL_TIME &time, uint precision) override {
+  bool store_time(const Time_val &time, uint precision) override {
     t = time;
     p = precision;
     return false;
   }
 
-  void verify_time(const MYSQL_TIME &time, uint precision) {
+  void verify_time(const Time_val &time, uint precision) {
     compareMysqlTime(time, t);
     EXPECT_EQ(precision, p);
   }
@@ -155,23 +151,23 @@ class Mock_protocol : public Protocol {
   bool flush() override { return true; }
 };
 
-TEST_F(FieldTest, FieldTimef) {
+TEST_F(FieldTest, FieldTime) {
   uchar fieldBuf[7];
-  MysqlTime time(0, 0, 0, 12, 23, 12, 123400, false, MYSQL_TIMESTAMP_TIME);
+  Time_val time = Time_val(false, 12, 23, 12, 123400);
 
-  Field_timef *field = new (thd()->mem_root)
-      Field_timef(fieldBuf + 1, fieldBuf, false, Field::NONE, "f1", 4);
+  Field_time *field = new (thd()->mem_root)
+      Field_time(fieldBuf + 1, fieldBuf, false, Field::NONE, "f1", 4);
   // Test public member functions
   EXPECT_EQ(4UL, field->decimals());  // TS-TODO
   EXPECT_EQ(MYSQL_TYPE_TIME, field->type());
   EXPECT_EQ(MYSQL_TYPE_TIME2, field->binlog_type());
 
-  longlong packed = TIME_to_longlong_packed(time);
-
-  EXPECT_EQ(0, field->store_packed(packed));
+  EXPECT_EQ(0, field->store_time(time, 4));
   EXPECT_DOUBLE_EQ(122312.1234, field->val_real());
   EXPECT_EQ(122312, field->val_int());
-  EXPECT_EQ(packed, field->val_time_temporal());
+  Time_val rtime;
+  EXPECT_FALSE(field->val_time(&rtime));
+  EXPECT_EQ(0, time.compare(rtime));
 
   my_decimal decval;
   my_decimal *dec = field->val_decimal(&decval);
@@ -196,7 +192,9 @@ TEST_F(FieldTest, FieldTimef) {
   EXPECT_EQ(field->type(), copy->type());
   EXPECT_DOUBLE_EQ(field->val_real(), copy->val_real());
   EXPECT_EQ(field->val_int(), copy->val_int());
-  EXPECT_EQ(field->val_time_temporal(), copy->val_time_temporal());
+  EXPECT_FALSE(copy->val_time(&rtime));
+  EXPECT_EQ(0, time.compare(rtime));
+
   EXPECT_EQ(0, field->cmp(field->field_ptr(), copy->field_ptr()));
 
   // Test reset
@@ -204,38 +202,28 @@ TEST_F(FieldTest, FieldTimef) {
   EXPECT_DOUBLE_EQ(0.0, field->val_real());
   EXPECT_EQ(0, field->val_int());
 
-  // Test inherited member functions
-  // Functions inherited from Field_time_common
-  field->store_time(&time, 4);
+  field->store_time(time, 4);
   EXPECT_EQ(4UL, field->decimals());
   EXPECT_EQ(MYSQL_TYPE_TIME, field->type());
   EXPECT_DOUBLE_EQ(122312.1234, field->val_real());
   EXPECT_EQ(122312, field->val_int());
-  EXPECT_EQ(packed, field->val_time_temporal());
+  EXPECT_FALSE(field->val_time(&rtime));
+  EXPECT_EQ(0, time.compare(rtime));
 
   String timeStr(15);
   EXPECT_STREQ("12:23:12.1234", field->val_str(&timeStr, &timeStr)->c_ptr());
 
-  field->store_time(&time, 0);
-  EXPECT_DOUBLE_EQ(122312.1234, field->val_real());  // Correct?
+  Time_val bigTime{false, 123, 45, 45, 555500};
+  EXPECT_EQ(0, field->store_time(bigTime, 4));
 
-  MYSQL_TIME dateTime;
-  MysqlTime bigTime(0, 0, 0, 123, 45, 45, 555500, false, MYSQL_TIMESTAMP_TIME);
-  EXPECT_EQ(0, field->store_time(&bigTime, 4));
-  EXPECT_FALSE(field->get_date(&dateTime, 0));
-
-  make_datetime((Date_time_format *)nullptr, &dateTime, &timeStr, 6);
-  // Skip 'yyyy-mm-dd ' since that will depend on current time zone.
-  EXPECT_STREQ("03:45:45.555500", timeStr.c_ptr() + 11);
-
-  MYSQL_TIME t;
-  EXPECT_FALSE(field->get_time(&t));
-  compareMysqlTime(bigTime, t);
+  Time_val t;
+  EXPECT_FALSE(field->val_time(&t));
+  EXPECT_EQ(0, Time_val{bigTime}.compare(t));
 
   Mock_protocol protocol(thd());
   EXPECT_EQ(protocol.connection_type(), NO_VIO_TYPE);
   EXPECT_FALSE(field->send_to_protocol(&protocol));
-  protocol.verify_time(bigTime, 4);
+  protocol.verify_time(t, 4);
 
   // Function inherited from Field_temporal
   EXPECT_TRUE(is_temporal_type(field->type()));
@@ -283,7 +271,7 @@ TEST_F(FieldTest, FieldTimef) {
 
   // Some of the functions inherited from Field
   Field *f = field;
-  EXPECT_EQ(TYPE_OK, f->store_time(&time, MYSQL_TIMESTAMP_TIME));
+  EXPECT_EQ(TYPE_OK, field->store_time(time, 4));
   EXPECT_DOUBLE_EQ(122312.1234, f->val_real());  // Why decimals  here?
   EXPECT_STREQ("12:23:12.1234", f->val_str(&timeStr)->c_ptr());
   EXPECT_STREQ("122312", f->val_int_as_str(&timeStr, false)->c_ptr());
@@ -303,29 +291,26 @@ TEST_F(FieldTest, FieldTimef) {
   ::destroy_at(field);
 }
 
-TEST_F(FieldTest, FieldTimefCompare) {
+TEST_F(FieldTest, FieldTimeCompare) {
   const int nFields = 7;
   uchar fieldBufs[nFields][7];
 
-  MysqlTime times[nFields] = {
-      {0, 0, 0, 12, 23, 12, 100000, true, MYSQL_TIMESTAMP_TIME},
-      {0, 0, 0, 0, 0, 0, 10000, true, MYSQL_TIMESTAMP_TIME},
-      {0, 0, 0, 0, 0, 0, 0, false, MYSQL_TIMESTAMP_TIME},
-      {0, 0, 0, 0, 0, 0, 999900, false, MYSQL_TIMESTAMP_TIME},
-      {0, 0, 0, 0, 0, 0, 999990, false, MYSQL_TIMESTAMP_TIME},
-      {0, 0, 0, 11, 59, 59, 999999, false, MYSQL_TIMESTAMP_TIME},
-      {0, 0, 0, 12, 00, 00, 100000, false, MYSQL_TIMESTAMP_TIME}};
+  Time_val times[nFields] = {
+      {true, 12, 23, 12, 100000}, {true, 0, 0, 0, 10000},
+      {false, 0, 0, 0, 0},        {false, 0, 0, 0, 999900},
+      {false, 0, 0, 0, 999990},   {false, 11, 59, 59, 999999},
+      {false, 12, 00, 00, 100000}};
 
   Field *fields[nFields];
   uchar sortStrings[nFields][6];
   for (int i = 0; i < nFields; ++i) {
     char fieldName[3];
     sprintf(fieldName, "f%c", i);
-    fields[i] = new (thd()->mem_root) Field_timef(
+    fields[i] = new (thd()->mem_root) Field_time(
         fieldBufs[i] + 1, fieldBufs[i], false, Field::NONE, fieldName, 6);
 
-    longlong packed = TIME_to_longlong_packed(times[i]);
-    EXPECT_EQ(0, fields[i]->store_packed(packed));
+    Time_val time = times[i];
+    EXPECT_EQ(0, fields[i]->store_time(time, 6));
     fields[i]->make_sort_key(sortStrings[i], fields[i]->pack_length());
   }
 
@@ -361,18 +346,6 @@ TEST_F(FieldTest, FieldTimefCompare) {
             << fields[j]->val_str(&tmp)->c_ptr();
       }
     }
-}
-
-TEST_F(FieldTest, FieldTime) {
-  uchar fieldBuf[7];
-  MysqlTime bigTime(0, 0, 0, 123, 45, 45, 555500, false, MYSQL_TIMESTAMP_TIME);
-
-  Field_time *field = new (thd()->mem_root)
-      Field_time(fieldBuf + 1, fieldBuf, false, Field::NONE, "f1");
-  EXPECT_EQ(0, field->store_time(&bigTime, 4));
-  MYSQL_TIME t;
-  EXPECT_FALSE(field->get_time(&t));
-  compareMysqlTime(bigTime, t);
 }
 
 const char *type_names3[] = {"one", "two", "three", nullptr};
@@ -604,38 +577,26 @@ TEST_F(FieldTest, MakeSortKey) {
   }
   {
     SCOPED_TRACE("Field_timestamp");
-    Field_timestamp fts(false, "");
-    test_integer_field(&fts);
+    Field_timestamp fts(nullptr, nullptr, 0, Field::NONE, "",
+                        DATETIME_MAX_DECIMALS);
+    test_make_sort_key(&fts);
   }
   {
-    SCOPED_TRACE("Field_timestampf");
-    Field_timestampf ftsf(nullptr, nullptr, 0, Field::NONE, "",
-                          DATETIME_MAX_DECIMALS);
-    test_make_sort_key(&ftsf);
-  }
-  {
-    SCOPED_TRACE("field_newdate");
-    Field_newdate fnd(false, "");
+    SCOPED_TRACE("field_date");
+    Field_date fnd(false, "");
     uchar from[] = {'3', '2', '1'};
     uchar expected[] = {'1', '2', '3'};
     test_make_sort_key(&fnd, from, expected, 3);
   }
   {
     SCOPED_TRACE("Field_time");
-    Field_time ft("");
-    uchar from[] = {3, 2, 1};
-    uchar expected[] = {129, 2, 3};
-    test_make_sort_key(&ft, from, expected, 3);
-  }
-  {
-    SCOPED_TRACE("Field_timef");
-    Field_timef ftf(false, "", 0);
+    Field_time ftf(false, "", 0);
     test_make_sort_key(&ftf);
   }
   {
     SCOPED_TRACE("Field_datetime");
-    Field_datetime fdt(nullptr, nullptr, '\0', Field::NONE, nullptr);
-    test_integer_field(&fdt);
+    Field_datetime fdt(nullptr, nullptr, '\0', Field::NONE, nullptr, 0);
+    test_make_sort_key(&fdt);
   }
   {
     SCOPED_TRACE("Field_string");
@@ -746,6 +707,33 @@ TEST_F(FieldTest, copyInteger) {
     testCopyInteger(false, false);
   }
 }
+
+static void BM_val_time(size_t iters) {
+  StopBenchmarkTiming();
+
+  uchar field_buffer[7];
+  Field_time *field = pointer_cast<Field_time *>(
+      my_malloc(PSI_NOT_INSTRUMENTED, sizeof(Field_time), MYF(0)));
+  new (field)
+      Field_time(field_buffer + 1, field_buffer, 0, Field::NONE, "tm", 6);
+  Time_val time = Time_val(false, 12, 23, 45, 123456);
+  (void)field->store_time(time, 6);
+
+  StartBenchmarkTiming();
+
+  Time_val tv;
+  int dummy = 0;
+  for (size_t i = 0; i < iters; ++i) {
+    (void)field->val_time(&tv);
+    dummy += tv.second();
+  }
+
+  ASSERT_NE(0, dummy);  // To keep the optimizer from removing the loop.
+  MysqlTime timex;
+  *implicit_cast<MYSQL_TIME *>(&timex) = MYSQL_TIME(tv);
+  my_free(field);
+}
+BENCHMARK(BM_val_time)
 
 }  // namespace field_unittests
 

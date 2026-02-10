@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -170,7 +170,7 @@ class OrExpr : public Expression {
   void push_back(Expression *expr) { m_cond.push_back(expr); }
 };
 
-void add_host(Vector<SimpleCpcClient *> &hosts, BaseString tmp) {
+void add_host(Vector<SimpleCpcClient *> &hosts, const BaseString &tmp) {
   Vector<BaseString> split;
   tmp.split(split, ":");
 
@@ -180,7 +180,7 @@ void add_host(Vector<SimpleCpcClient *> &hosts, BaseString tmp) {
   hosts.push_back(new SimpleCpcClient(split[0].c_str(), port));
 }
 
-void add_hosts(Vector<SimpleCpcClient *> &hosts, BaseString list) {
+void add_hosts(Vector<SimpleCpcClient *> &hosts, const BaseString &list) {
   Vector<BaseString> split;
   list.split(split);
   for (unsigned i = 0; i < split.size(); i++) {

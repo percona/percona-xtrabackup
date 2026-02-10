@@ -4,6 +4,7 @@
 --source include/not_valgrind.inc
 --source include/not_sparc_debug.inc
 --source include/have_debug.inc
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
 
 # Create table with R-tree index.
 create table t1 (c1 int, c2 geometry srid 4326 not null, spatial index (c2))engine=innodb;

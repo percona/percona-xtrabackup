@@ -12,6 +12,8 @@ CREATE USER some_user@localhost;
 # such a host from MTR
 SET @@global.debug="+d,wl_9262_set_max_length_hostname";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET @@global.debug="-d,wl_9262_set_max_length_hostname";
 SELECT CURRENT_USER();
 CURRENT_USER()
@@ -72,6 +74,8 @@ GRANT <ALL_DYNAMIC_PRIVILEGES> ON *.* TO `u1`@`localhost`
 GRANT `r1`@`%`,`r2`@`%` TO `u1`@`localhost`
 SET @@global.debug="-d,induce_acl_load_failure";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 DROP USER u1@localhost;
 DROP ROLE r1,r2;
 #

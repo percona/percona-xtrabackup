@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -106,10 +106,8 @@ int main(int argc, const char **argv) {
         if (!fprintf(hdr_file, "0x%02x, ", c))
           throw_error("Failed writing output file", out_filename);
       } else {
-        if (feof(in_file))
-          break;
-        else
-          throw_error("Failed reading input file", in_filename);
+        if (feof(in_file)) break;
+        throw_error("Failed reading input file", in_filename);
       }
 
       // line break every 16th element

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,10 @@
 
 #include "sql/dd/impl/system_views/character_sets.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Character_sets &Character_sets::instance() {
-  static Character_sets *s_instance = new Character_sets();
+  static auto *s_instance = new Character_sets();
   return *s_instance;
 }
 
@@ -47,5 +46,4 @@ Character_sets::Character_sets() {
       "cs.default_collation_id=col.id ");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

@@ -305,25 +305,3 @@ thread_stack
 tls_version
 RESET PERSIST;
 # Restart server
-# Install version token plugin
-##################
-INSTALL PLUGIN version_tokens SONAME 'version_token.so';
-SELECT @@version_tokens_session_number;
-@@version_tokens_session_number
-0
-SET @@persist_only.version_tokens_session_number=3;
-ERROR HY000: Variable 'version_tokens_session_number' is a non persistent read only variable
-# return 0 row
-SELECT * FROM performance_schema.persisted_variables;
-VARIABLE_NAME	VARIABLE_VALUE
-# Restart server
-# return 0 row
-SELECT * FROM performance_schema.persisted_variables;
-VARIABLE_NAME	VARIABLE_VALUE
-SELECT VARIABLE_NAME FROM performance_schema.variables_info WHERE VARIABLE_SOURCE = 'PERSISTED';
-VARIABLE_NAME
-UNINSTALL PLUGIN version_tokens;
-Warnings:
-Warning	1620	Plugin is busy and will be uninstalled on shutdown
-RESET PERSIST;
-# Restart server

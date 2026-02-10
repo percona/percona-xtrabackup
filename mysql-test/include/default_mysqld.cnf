@@ -27,7 +27,7 @@ loose-enable-performance-schema
 # Run tests with a small number of instrumented objects
 # to limit memory consumption with MTR
 loose-performance-schema-accounts-size=100
-loose-performance-schema-digests-size=200
+loose-performance-schema-digests-size=400
 loose-performance-schema-hosts-size=100
 loose-performance-schema-users-size=100
 loose-performance-schema-setup-actors-size=100

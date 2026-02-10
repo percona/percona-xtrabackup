@@ -480,7 +480,7 @@ c3 varchar(10) COLLATE utf8mb3_bin default NULL,
 spatial_point point NOT NULL SRID 0,
 PRIMARY KEY(id),
 SPATIAL KEY (spatial_point)
-)ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_bin;
+)ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	3778	'utf8mb3_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.

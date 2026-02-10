@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -289,7 +290,7 @@ class Gcs_async_buffer {
     in use was the standard output.
   */
 
-  const std::string get_information() const;
+  std::string get_information() const;
 
   /**
     Consumer thread invokes this method to process log events until it is
@@ -509,7 +510,9 @@ class Gcs_default_logger : public Logger_interface {
 */
 class Gcs_default_debugger {
  public:
-  explicit Gcs_default_debugger(Gcs_async_buffer *sink);
+  explicit Gcs_default_debugger(
+      Gcs_async_buffer *sink,
+      std::shared_ptr<Clock_timestamp_interface> clock_timestamp_provider);
   virtual ~Gcs_default_debugger() = default;
 
   /**
@@ -550,7 +553,8 @@ class Gcs_default_debugger {
       MY_ATTRIBUTE((format(printf, 2, 0))) {
     Gcs_log_event &event = m_sink->get_entry();
     char *buffer = event.get_buffer();
-    size_t size = append_prefix(buffer);
+    size_t size = append_timestamp(buffer, event.get_max_buffer_size());
+    size += append_prefix(buffer + size);
     size += vsnprintf(buffer + size, event.get_max_buffer_size() - size, format,
                       args);
     if (unlikely(size > event.get_max_buffer_size())) {
@@ -631,7 +635,8 @@ class Gcs_default_debugger {
     if (Gcs_debug_options::test_debug_options(options)) {
       Gcs_log_event &event = get_entry();
       char *buffer = event.get_buffer();
-      size_t size = append_prefix(buffer);
+      size_t size = append_timestamp(buffer, event.get_max_buffer_size());
+      size += append_prefix(buffer + size);
       size +=
           snprintf(buffer + size, event.get_max_buffer_size() - size, args...);
       if (unlikely(size > event.get_max_buffer_size())) {
@@ -649,6 +654,21 @@ class Gcs_default_debugger {
     Reference to an asynchronous buffer that encapsulates a sink.
   */
   Gcs_async_buffer *m_sink;
+
+  /**
+    @brief The GCS TRACE file timestamp provider.
+
+    The application using this  library may choose to use a specific format for
+    the timestamps, so that the logs created by GCS can be correlated with
+    other application logs.
+
+    This must be injected before the debugger is used, typically before it is
+    initialized.
+
+    The application owns this object, so it is the application responsibility
+    to delete the this object and thus free resources.
+   */
+  std::shared_ptr<Clock_timestamp_interface> m_clock_timestamp_provider;
 
   /**
     Add extra information as a message prefix.
@@ -679,6 +699,21 @@ class Gcs_default_debugger {
     strcpy(buffer + size, GCS_NEWLINE);
     buffer[size + GCS_NEWLINE_SIZE] = '\0';
     return GCS_NEWLINE_SIZE;
+  }
+
+  /**
+    Appends a timestamp, in UTC, to the buffer. It also adds an extra white
+    space at the end.
+    @param buffer the buffer to store the timestamp to.
+    @param size the size of the buffer.
+    @return the number of bytes appended.
+   */
+  inline size_t append_timestamp(char *buffer, size_t size) {
+    m_clock_timestamp_provider->get_timestamp_as_c_string(buffer, &size);
+    if (size == 0) return 0;
+
+    buffer[size] = ' ';
+    return size + 1;
   }
 
   /*
@@ -716,7 +751,6 @@ class Gcs_debug_manager : public Gcs_debug_options {
 
   /**
     Get a reference to the debugger object if there is any.
-
     @return The current debugging system.
   */
 
@@ -830,6 +864,27 @@ class Gcs_file_sink : public Sink_interface {
   Gcs_file_sink &operator=(const Gcs_file_sink &d);
 };
 #endif /* XCOM_STANDALONE */
+
+class Gcs_clock_timestamp_provider : public Clock_timestamp_interface {
+ public:
+  Gcs_clock_timestamp_provider() = default;
+  ~Gcs_clock_timestamp_provider() override = default;
+  // non-copyable
+  Gcs_clock_timestamp_provider(const Gcs_clock_timestamp_provider &other) =
+      delete;
+  Gcs_clock_timestamp_provider &operator=(
+      const Gcs_clock_timestamp_provider &other) = delete;
+  // non-movable
+  Gcs_clock_timestamp_provider(Gcs_clock_timestamp_provider &&other) = delete;
+  Gcs_clock_timestamp_provider &operator=(
+      Gcs_clock_timestamp_provider &&other) = delete;
+
+  enum_gcs_error initialize() override { return GCS_OK; }
+  enum_gcs_error finalize() override { return GCS_OK; }
+
+  void get_timestamp_as_c_string(char *buffer, size_t *size) override;
+  void get_timestamp_as_string(std::string &str) override;
+};
 
 #define MYSQL_GCS_LOG(l, x)                                   \
   do {                                                        \

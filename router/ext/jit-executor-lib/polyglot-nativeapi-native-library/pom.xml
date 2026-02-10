@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.graalvm.polyglot.library</groupId>
+        <artifactId>mysql-middleware-polyglot-library-bundle</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <groupId>org.graalvm.polyglot.library</groupId>
+    <artifactId>polyglot-nativeapi-native-library</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <properties>
+        <maven.compiler.target>22</maven.compiler.target>
+        <maven.compiler.source>22</maven.compiler.source>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+
+        <dependency>
+            <groupId>org.graalvm.polyglot</groupId>
+            <artifactId>polyglot</artifactId>
+            <version>${graalvm.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.graalvm.polyglot.library</groupId>
+            <artifactId>polyglot-nativeapi</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <directory>${project.build.directory.override}</directory>
+        <plugins>
+            <plugin>
+                <artifactId>exec-maven-plugin</artifactId>
+                <groupId>org.codehaus.mojo</groupId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>prepare-output-dir</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>
+                                ${mkdir.command}
+                            </executable>
+                            <commandlineArgs>
+                                ${mkdir.args} ${project.build.directory}
+                            </commandlineArgs>
+                            <successCodes>
+                                <successCode>0</successCode>
+                                <successCode>1</successCode>
+                            </successCodes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>build-polyglot-library</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>
+                                ${env.JAVA_HOME}${file.separator}bin${file.separator}${native-image.command}
+                            </executable>
+                            <commandlineArgs>
+                                -p %classpath
+                                -H:+ReportExceptionStackTraces
+                                -o ${project.build.directory}${file.separator}libpolyglot
+                                --no-fallback
+                                --shared
+                                -H:+UnlockExperimentalVMOptions
+                                -H:-PerfDataMemoryMappedFile
+                                -H:-SupportCompileInIsolates
+                                -H:AlignedHeapChunkSize=128k
+                                -H:LargeArrayThreshold=32k
+                                --enable-monitoring=jvmstat
+                                -H:+ReportExceptionStackTraces
+                                -H:+PreserveFramePointer
+                                -H:-DeleteLocalSymbols
+                                -H:+AsyncSignalSafeDiagnostics
+                                -H:+IgnoreMaxHeapSizeWhileInVMOperation
+                                -H:-UnlockExperimentalVMOptions
+                                -R:SpectrePHTBarriers=GuardTargets
+                                -J-Xmx20g
+                                --initialize-at-run-time=org.graalvm.polyglot.nativeapi.PolyglotNativeAPI$NativeDataHolder
+                                --verbose
+                            </commandlineArgs>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+    <repositories>
+        <repository>
+            <id>artifactory.libs-release</id>
+            <url>https://artifactory.oci.oraclecorp.com/libs-release</url>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>artifactory.libs-release</id>
+            <url>https://artifactory.oci.oraclecorp.com/libs-release</url>
+        </pluginRepository>
+    </pluginRepositories>
+</project>

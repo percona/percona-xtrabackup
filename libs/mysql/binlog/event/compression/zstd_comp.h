@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,6 @@
 #include "mysql/allocators/memory_resource.h"  // Memory_resource
 #include "mysql/binlog/event/compression/compressor.h"
 #include "mysql/containers/buffers/buffer_sequence_view.h"
-#include "mysql/utils/nodiscard.h"
 
 struct ZSTD_outBuffer_s;
 
@@ -78,15 +77,15 @@ class Zstd_comp : public Compressor {
   void do_feed(const Char_t *input_data, Size_t input_size) override;
 
   /// @copydoc Compressor::do_compress
-  [[NODISCARD]] Compress_status do_compress(
+  [[nodiscard]] Compress_status do_compress(
       Managed_buffer_sequence_t &out) override;
 
   /// @copydoc Compressor::do_finish
-  [[NODISCARD]] Compress_status do_finish(
+  [[nodiscard]] Compress_status do_finish(
       Managed_buffer_sequence_t &out) override;
 
   /// @copydoc Compressor::do_get_grow_constraint_hint
-  [[NODISCARD]] Grow_constraint_t do_get_grow_constraint_hint() const override;
+  [[nodiscard]] Grow_constraint_t do_get_grow_constraint_hint() const override;
 
   /// Deallocate the ZSTD compression context.
   void destroy();
@@ -112,7 +111,7 @@ class Zstd_comp : public Compressor {
   ///
   /// @retval exceeds_max_size buffer_sequence was full and at its max
   /// capacity.  buffer_sequence has not been modified.
-  [[NODISCARD]] Compress_status get_obuf(
+  [[nodiscard]] Compress_status get_obuf(
       Managed_buffer_sequence_t &managed_buffer_sequence,
       ZSTD_outBuffer_s &obuf);
 

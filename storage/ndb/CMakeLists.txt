@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -36,15 +36,15 @@ INCLUDE(ndb_add_executable)
 MSVC_CPPCHECK_DISABLE()
 DISABLE_MISSING_PROFILE_WARNING()
 
-IF(NOT WITHOUT_SERVER)
-  IF(WIN32)
-    SET(DEFAULT_TLS_SEARCH_PATH "$HOMEPATH/ndb-tls")
-  ELSE()
-    SET(DEFAULT_TLS_SEARCH_PATH "$HOME/ndb-tls")
-  ENDIF()
-  SET(WITH_NDB_TLS_SEARCH_PATH ${DEFAULT_TLS_SEARCH_PATH}
-      CACHE STRING "Search path for TLS keys and certificates")
+IF(WIN32)
+  SET(DEFAULT_TLS_SEARCH_PATH "$HOMEPATH/ndb-tls")
+ELSE()
+  SET(DEFAULT_TLS_SEARCH_PATH "$HOME/ndb-tls")
+ENDIF()
+SET(WITH_NDB_TLS_SEARCH_PATH ${DEFAULT_TLS_SEARCH_PATH}
+    CACHE STRING "Search path for TLS keys and certificates")
 
+IF(NOT WITHOUT_SERVER)
   #
   # Add the ndbcluster plugin
   #
@@ -132,10 +132,11 @@ IF(NOT WITHOUT_SERVER)
   # unless it is explicitly disabled on the command line.
   MYSQL_ADD_PLUGIN(ndbcluster ${NDBCLUSTER_SOURCES} STORAGE_ENGINE
     DEFAULT STATIC_ONLY
-    LINK_LIBRARIES ndbclient_static extra::rapidjson
-    SYSTEM_INCLUDE_DIRECTORIES 
-    ${CMAKE_SOURCE_DIR}/extra/unordered_dense/unordered_dense-4.4.0/include)
-
+    LINK_LIBRARIES
+    ndbclient_static
+    extra::rapidjson
+    extra::unordered_dense
+    )
   SET_PROPERTY(SOURCE plugin/ha_ndbcluster.cc
                PROPERTY COMPILE_DEFINITIONS
                NDB_TLS_SEARCH_PATH="${WITH_NDB_TLS_SEARCH_PATH}")
@@ -155,6 +156,7 @@ IF(NOT WITHOUT_SERVER)
   NDB_ADD_TEST("ndb_bitmap-t" "plugin/ndb_bitmap.cc" LIBS ndbgeneral)
   NDB_ADD_TEST("ndb_blobs_buffer-t" "plugin/ndb_blobs_buffer.cc" LIBS ndbgeneral)
   NDB_ADD_TEST("ndb_binlog_index_rows-t" "plugin/ndb_binlog_index_rows.cc" LIBS ndbgeneral)
+  NDB_ADD_TEST("ndb_string_utils-t" "plugin/ndb_string_utils.cc" LIBS ndbgeneral)
 ELSEIF(NOT WITH_NDB)
   IF(WITH_NDBCLUSTER_STORAGE_ENGINE)
     MESSAGE(WARNING "Skips building ndbcluster plugin, WITHOUT_SERVER=ON "

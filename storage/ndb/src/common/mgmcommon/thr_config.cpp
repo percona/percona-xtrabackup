@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -136,7 +136,8 @@ int THRConfig::setLockExecuteThreadToCPU(const char *mask) {
         "(error: %d)",
         mask, res);
     return -1;
-  } else if (res == 0) {
+  }
+  if (res == 0) {
     m_err_msg.assfmt(
         "LockExecuteThreadToCPU: %s"
         " with empty bitmask not allowed",
@@ -1141,7 +1142,7 @@ int THRConfig::handle_spec(const char *str, unsigned realtime,
       return ret_code;
     }
 
-    T_Type type = (T_Type)loc_type;
+    auto type = (T_Type)loc_type;
     m_setInThreadConfig.set(loc_type);
 
     int cpu_values = 0;
@@ -1173,8 +1174,8 @@ int THRConfig::handle_spec(const char *str, unsigned realtime,
       m_err_msg.assfmt("Cannot set spintime on non-exec threads");
       return -1;
     }
-    if (values[IX_NOSEND].found &&
-        !(type == T_LDM || type == T_TC || type == T_MAIN || type == T_REP)) {
+    if (values[IX_NOSEND].found && type != T_LDM && type != T_TC &&
+        type != T_MAIN && type != T_REP) {
       m_err_msg.assfmt("Can only set nosend on main, ldm, tc and rep threads");
       return -1;
     }
@@ -1246,7 +1247,7 @@ int THRConfig::handle_spec(const char *str, unsigned realtime,
         m_threads[type][index + i].m_nosend = values[IX_NOSEND].unsigned_val;
       }
     }
-  } while (1);
+  } while (true);
   return 0;
 }
 
@@ -1358,6 +1359,9 @@ TAPTEST(thr_config) {
   /**
    * BASIC test
    */
+
+  const char errmsg_missing[] = "MISSING ERROR MESSAGE, ADD ONE!";
+
   {
     const char *ok[] = {
         "main", "ldm", "recv", "rep", "main,rep,recv,ldm,ldm",
@@ -1441,8 +1445,12 @@ TAPTEST(thr_config) {
     for (Uint32 i = 0; ok[i]; i++) {
       THRConfig tmp;
       int res = tmp.do_parse(ok[i], 0, 0);
+      const char *errmsg = (res == 0 ? "" : tmp.getErrorMessage());
       printf("do_parse(%s) => %s - %s\n", ok[i], res == 0 ? "OK" : "FAIL",
-             res == 0 ? tmp.getConfigString() : tmp.getErrorMessage());
+             res == 0 ? tmp.getConfigString()
+             : errmsg ? errmsg
+                      : errmsg_missing);
+      OK(errmsg != nullptr);
       OK(res == 0);
       {
         BaseString out(tmp.getConfigString());
@@ -1455,8 +1463,10 @@ TAPTEST(thr_config) {
     for (Uint32 i = 0; fail[i]; i++) {
       THRConfig tmp;
       int res = tmp.do_parse(fail[i], 0, 0);
+      const char *errmsg = (res == 0 ? "" : tmp.getErrorMessage());
       printf("do_parse(%s) => %s - %s\n", fail[i], res == 0 ? "OK" : "FAIL",
-             res == 0 ? "" : tmp.getErrorMessage());
+             errmsg ? errmsg : errmsg_missing);
+      OK(errmsg != nullptr);
       OK(res != 0);
     }
   }
@@ -1589,13 +1599,15 @@ TAPTEST(thr_config) {
       tmp.setLockExecuteThreadToCPU(t[i + 0]);
       const int _res = tmp.do_parse(t[i + 1], 0, 0);
       const int expect_res = strcmp(t[i + 2], "OK") == 0 ? 0 : -1;
-      const int res = _res == expect_res ? 0 : -1;
+      const int res = (_res == expect_res ? 0 : -1);
       int ok = expect_res == 0 ? strcmp(tmp.getConfigString(), t[i + 3]) == 0
                                : strcmp(tmp.getErrorMessage(), t[i + 3]) == 0;
+      const char *errmsg = (_res == 0 ? "" : tmp.getErrorMessage());
       printf("mask: %s conf: %s => %s(%s) - %s - %s\n", t[i + 0], t[i + 1],
-             _res == 0 ? "OK" : "FAIL", _res == 0 ? "" : tmp.getErrorMessage(),
+             _res == 0 ? "OK" : "FAIL", errmsg ? errmsg : errmsg_missing,
              tmp.getConfigString(), ok == 1 ? "CORRECT" : "INCORRECT");
 
+      OK(errmsg != nullptr);
       OK(res == 0);
       OK(ok == 1);
     }

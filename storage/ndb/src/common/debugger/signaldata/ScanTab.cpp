@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@ bool printSCANTABREQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const ScanTabReq *const sig = (const ScanTabReq *)theData;
+  const auto *const sig = (const ScanTabReq *)theData;
 
   const UintR requestInfo = sig->requestInfo;
 
@@ -75,7 +75,7 @@ bool printSCANTABCONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const ScanTabConf *const sig = (const ScanTabConf *)theData;
+  const auto *const sig = (const ScanTabConf *)theData;
 
   const UintR requestInfo = sig->requestInfo;
 
@@ -90,7 +90,7 @@ bool printSCANTABCONF(FILE *output, const Uint32 *theData, Uint32 len,
   if (op_count) {
     if (len == ScanTabConf::SignalLength + 4 * op_count) {
       fprintf(output, " Operation(s) [api tc rows len]:\n");
-      const ScanTabConf::OpData *op =
+      const auto *op =
           (const ScanTabConf::OpData *)(theData + ScanTabConf::SignalLength);
       for (size_t i = 0; i < op_count; i++) {
         fprintf(output, " [0x%x 0x%x %d %d]", op->apiPtrI, op->tcPtrI, op->rows,
@@ -100,7 +100,7 @@ bool printSCANTABCONF(FILE *output, const Uint32 *theData, Uint32 len,
     } else if (len == ScanTabConf::SignalLength + 3 * op_count) {
       fprintf(output, " Operation(s) [api tc rows len]:\n");
       for (size_t i = 0; i < op_count; i++) {
-        const ScanTabConf::OpData *op =
+        const auto *op =
             (const ScanTabConf::OpData *)(theData + ScanTabConf::SignalLength +
                                           3 * i);
         fprintf(output, " [0x%x 0x%x %d %d]", op->apiPtrI, op->tcPtrI,
@@ -124,7 +124,7 @@ bool printSCANTABREF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const ScanTabRef *const sig = (const ScanTabRef *)theData;
+  const auto *const sig = (const ScanTabRef *)theData;
 
   fprintf(output, " apiConnectPtr: H\'%.8x\n", sig->apiConnectPtr);
 
@@ -144,7 +144,7 @@ bool printSCANFRAGNEXTREQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const ScanFragNextReq *const sig = (const ScanFragNextReq *)theData;
+  const auto *const sig = (const ScanFragNextReq *)theData;
 
   fprintf(output, " senderData: H\'%.8x\n", sig->senderData);
 
@@ -162,7 +162,7 @@ bool printSCANFRAGNEXTREQ(FILE *output, const Uint32 *theData, Uint32 len,
 bool printSCANNEXTREQ(FILE *output, const Uint32 *theData, Uint32 len,
                       Uint16 receiverBlockNo) {
   if (receiverBlockNo == DBTC) {
-    const ScanNextReq *const sig = (const ScanNextReq *)theData;
+    const auto *const sig = (const ScanNextReq *)theData;
 
     fprintf(output, " apiConnectPtr: H\'%.8x\n", sig->apiConnectPtr);
 

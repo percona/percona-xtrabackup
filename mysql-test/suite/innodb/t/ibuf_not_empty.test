@@ -2,6 +2,7 @@
 --source include/have_debug.inc
 
 call mtr.add_suppression("Failed to find tablespace for table .* in the cache. Attempting to load the tablespace with space id");
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
 
 # Suppress the known warnings in the read-only-mode
 --source include/add_mtr_suppression_for_innodb_readonly.inc

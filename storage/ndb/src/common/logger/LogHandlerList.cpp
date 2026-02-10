@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,7 +40,7 @@ LogHandlerList::LogHandlerList()
 LogHandlerList::~LogHandlerList() { removeAll(); }
 
 bool LogHandlerList::add(LogHandler *pNewHandler) {
-  LogHandlerNode *pNode = new LogHandlerNode();
+  auto *pNode = new LogHandlerNode();
   if (!pNode) return false;
 
   if (m_pHeadNode == nullptr) {

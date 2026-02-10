@@ -1,0 +1,114 @@
+TRUNCATE TABLE performance_schema.events_statements_summary_by_digest;
+TRUNCATE TABLE performance_schema.events_statements_history_long;
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+ERROR 42S02: Table 'test.marker' doesn't exist
+SELECT SQL_TEXT, DIGEST, DIGEST_TEXT
+FROM performance_schema.events_statements_history_long
+WHERE SQL_TEXT LIKE "%marker%"
+  ORDER BY SQL_TEXT;
+SQL_TEXT	DIGEST	DIGEST_TEXT
+select * from marker GROUP BY
+15, 16, 17,
+255, 256, 257,
+4095, 4096, 4097,
+65535, 65536, 65537,
+1048575, 1048576, 1048577,
+16777215, 16777216, 16777217,
+268435455, 268435456, 268435457,
+2147483647, 2147483648, 2147483649,
+4294967295	7dcde7639347b7d14c4815bb1382a75ac313276bcbd69ee0064eba5d1292cc96	SELECT * FROM `marker` GROUP BY 15 , 16 , 17 , 255 , 256 , 257 , 4095 , 4096 , 4097 , 65535 , 65536 , 65537 , 1048575 , 1048576 , 1048577 , 16777215 , 16777216 , 16777217 , 268435455 , 268435456 , 268435457 , 2147483647 , 2147483648 , 2147483649 , 4294967295
+select * from marker GROUP BY -1	cd445f5b2b5e2e8f65a1785b3a995dcf52eaeeb7c66214722a896c9221c62694	SELECT * FROM `marker` GROUP BY - ?
+select * from marker GROUP BY +1	f52563ca530ca6dbf01681a537cc48acc901b6f8664229cc597c9a6eb18bbd4f	SELECT * FROM `marker` GROUP BY + ?
+select * from marker GROUP BY 0	594286d10e82c50b09540cc6e662ef1f2f05fdca4e72da279c8b6c83a33d9355	SELECT * FROM `marker` GROUP BY ?
+select * from marker GROUP BY 1	7d776e508746fd74ceefebadd811d1027e4b28b8d8ffc46476f16e0a9baedb11	SELECT * FROM `marker` GROUP BY 1
+select * from marker GROUP BY 1 << 1	45c0e986e7a326bc2ad9d6ae9e40c748aaa84ff27a2339f53319151a2c75f2cc	SELECT * FROM `marker` GROUP BY ? << ?
+select * from marker GROUP BY 1, (2+0), 3	ab6ba8b78c59e664d764b4c3bad7240d4edb41e32ea080a91bc6b1ba76a31180	SELECT * FROM `marker` GROUP BY 1 , ( ? + ? ) , 3
+select * from marker GROUP BY 1, 2, 3	32942efc8eb36d97a9249240fb70658e722f293b3b621a54680b03573c364716	SELECT * FROM `marker` GROUP BY 1 , 2 , 3
+select * from marker GROUP BY 1, a, 3	eea8f9c777f40fd161607e8e6572e26f32a7ff42993a4a8894df4cfcc7f5e391	SELECT * FROM `marker` GROUP BY 1 , `a` , 3
+select * from marker GROUP BY 1*1	9db99c57797bf6f87715e69cbb06bb9ca5fd21d94c2711688f4db3e5022bf3c8	SELECT * FROM `marker` GROUP BY ? * ?
+select * from marker GROUP BY 1+0	5a1f0cad621759bceffddbec6c7700ac6bd97c3b6a40a775c0a7faf694b9b4be	SELECT * FROM `marker` GROUP BY ? + ?
+select * from marker GROUP BY 10000000000000000	594286d10e82c50b09540cc6e662ef1f2f05fdca4e72da279c8b6c83a33d9355	SELECT * FROM `marker` GROUP BY ?
+select * from marker GROUP BY 2	46ef24c8e6893e58ce8bdca2da288bb9ef9b5e4c74e4e679e263c528ff37d64d	SELECT * FROM `marker` GROUP BY 2
+select * from marker GROUP BY 3, 2, 1	78ebf20f9bfa038992e90fe27303cb068786e7164684f08a4a4fe91f38dec4ec	SELECT * FROM `marker` GROUP BY 3 , 2 , 1
+select * from marker GROUP BY CUBE(1, 2, 3)	e02248b0a629179d0c13976be6572b0c8f73955331e2f80eb75b0562b1c90b0d	SELECT * FROM `marker` GROUP BY CUBE ( 1 , 2 , 3 )
+select * from marker GROUP BY CUBE(1)	e9757744f64ad5e0ed55e208f807141150fee2ab34186bf8b4ba70cacb4e7c41	SELECT * FROM `marker` GROUP BY CUBE ( 1 )
+select * from marker GROUP BY ROLLUP(1, 2, 3)	bc8770176ece4a016551edcbff210026554b0151b552a69cacb3b817f3c31e7d	SELECT * FROM `marker` GROUP BY ROLLUP ( 1 , 2 , 3 )
+select * from marker GROUP BY ROLLUP(1)	e517a4327599f7b98896c1c07ab22c5f57b1fbcaf2a975a660659094c9c828c1	SELECT * FROM `marker` GROUP BY ROLLUP ( 1 )
+select * from marker ORDER BY -1	b75ddf067f1a3ecb2390ba94f54bec8ec50ec752416f8f7b3398cf7e0df534c0	SELECT * FROM `marker` ORDER BY - ?
+select * from marker ORDER BY +1	dd535f12c7c57c41bf869b7a1d834b07fa80a30cfb227b406ffd99c0c604ca6e	SELECT * FROM `marker` ORDER BY + ?
+select * from marker ORDER BY 0	0b245fc5812fb7cc4a0371becf802129eee31bea42643eeba8f269ab7d9bcda8	SELECT * FROM `marker` ORDER BY ?
+select * from marker ORDER BY 1	fab4d9afa19ab232515a76d284536bae7750e7cb7f214bf0cc138e04ec0e8324	SELECT * FROM `marker` ORDER BY 1
+select * from marker ORDER BY 1 << 1	1039d38f4dcb0f5b288c453a5840c2fc48d90bab3b702c1b783f8fd49fccfe23	SELECT * FROM `marker` ORDER BY ? << ?
+select * from marker ORDER BY 1, (2+0), 3	f3b5e3c4d9362f9e3046710e8bd9270b8fac63588ac3165a1618bbce75886099	SELECT * FROM `marker` ORDER BY 1 , ( ? + ? ) , 3
+select * from marker ORDER BY 1, 2, 3	7bf7a276bff3a95766f3eeaf5387117b981528b38887790f5c601f559a9dde26	SELECT * FROM `marker` ORDER BY 1 , 2 , 3
+select * from marker ORDER BY 1, a, 3	3832c4f7ff341febf4f25b0866352cf1a30c29c5f9d6d22f7c5a0eef3030f261	SELECT * FROM `marker` ORDER BY 1 , `a` , 3
+select * from marker ORDER BY 1*1	35b1ea590943248f77b08fba4659c60269e6db8532a65c9b21ea054d4f5c4673	SELECT * FROM `marker` ORDER BY ? * ?
+select * from marker ORDER BY 1+0	de3666e14182730d875f59d153dfba5cc0a6113ede4bc864107bf7c9d8ea6761	SELECT * FROM `marker` ORDER BY ? + ?
+select * from marker ORDER BY 10000000000000000	0b245fc5812fb7cc4a0371becf802129eee31bea42643eeba8f269ab7d9bcda8	SELECT * FROM `marker` ORDER BY ?
+select * from marker ORDER BY 2	409a7388f404c457fd47d9ab86fd9f15ccad45c1d668122988440e761bb043a1	SELECT * FROM `marker` ORDER BY 2
+select * from marker ORDER BY 3, 2, 1	2e35e24e9bb1d53c7d7e76c6dd62a189ae80652c458eaad2c7a1d8a958bdb5fb	SELECT * FROM `marker` ORDER BY 3 , 2 , 1
+SELECT COUNT_STAR, DIGEST, DIGEST_TEXT
+FROM performance_schema.events_statements_summary_by_digest
+ORDER BY DIGEST_TEXT;
+COUNT_STAR	DIGEST	DIGEST_TEXT
+1	cd445f5b2b5e2e8f65a1785b3a995dcf52eaeeb7c66214722a896c9221c62694	SELECT * FROM `marker` GROUP BY - ?
+2	594286d10e82c50b09540cc6e662ef1f2f05fdca4e72da279c8b6c83a33d9355	SELECT * FROM `marker` GROUP BY ?
+1	9db99c57797bf6f87715e69cbb06bb9ca5fd21d94c2711688f4db3e5022bf3c8	SELECT * FROM `marker` GROUP BY ? * ?
+1	5a1f0cad621759bceffddbec6c7700ac6bd97c3b6a40a775c0a7faf694b9b4be	SELECT * FROM `marker` GROUP BY ? + ?
+1	45c0e986e7a326bc2ad9d6ae9e40c748aaa84ff27a2339f53319151a2c75f2cc	SELECT * FROM `marker` GROUP BY ? << ?
+1	f52563ca530ca6dbf01681a537cc48acc901b6f8664229cc597c9a6eb18bbd4f	SELECT * FROM `marker` GROUP BY + ?
+1	7d776e508746fd74ceefebadd811d1027e4b28b8d8ffc46476f16e0a9baedb11	SELECT * FROM `marker` GROUP BY 1
+1	ab6ba8b78c59e664d764b4c3bad7240d4edb41e32ea080a91bc6b1ba76a31180	SELECT * FROM `marker` GROUP BY 1 , ( ? + ? ) , 3
+1	eea8f9c777f40fd161607e8e6572e26f32a7ff42993a4a8894df4cfcc7f5e391	SELECT * FROM `marker` GROUP BY 1 , `a` , 3
+1	32942efc8eb36d97a9249240fb70658e722f293b3b621a54680b03573c364716	SELECT * FROM `marker` GROUP BY 1 , 2 , 3
+1	7dcde7639347b7d14c4815bb1382a75ac313276bcbd69ee0064eba5d1292cc96	SELECT * FROM `marker` GROUP BY 15 , 16 , 17 , 255 , 256 , 257 , 4095 , 4096 , 4097 , 65535 , 65536 , 65537 , 1048575 , 1048576 , 1048577 , 16777215 , 16777216 , 16777217 , 268435455 , 268435456 , 268435457 , 2147483647 , 2147483648 , 2147483649 , 4294967295
+1	46ef24c8e6893e58ce8bdca2da288bb9ef9b5e4c74e4e679e263c528ff37d64d	SELECT * FROM `marker` GROUP BY 2
+1	78ebf20f9bfa038992e90fe27303cb068786e7164684f08a4a4fe91f38dec4ec	SELECT * FROM `marker` GROUP BY 3 , 2 , 1
+1	e02248b0a629179d0c13976be6572b0c8f73955331e2f80eb75b0562b1c90b0d	SELECT * FROM `marker` GROUP BY CUBE ( 1 , 2 , 3 )
+1	e9757744f64ad5e0ed55e208f807141150fee2ab34186bf8b4ba70cacb4e7c41	SELECT * FROM `marker` GROUP BY CUBE ( 1 )
+1	bc8770176ece4a016551edcbff210026554b0151b552a69cacb3b817f3c31e7d	SELECT * FROM `marker` GROUP BY ROLLUP ( 1 , 2 , 3 )
+1	e517a4327599f7b98896c1c07ab22c5f57b1fbcaf2a975a660659094c9c828c1	SELECT * FROM `marker` GROUP BY ROLLUP ( 1 )
+1	b75ddf067f1a3ecb2390ba94f54bec8ec50ec752416f8f7b3398cf7e0df534c0	SELECT * FROM `marker` ORDER BY - ?
+2	0b245fc5812fb7cc4a0371becf802129eee31bea42643eeba8f269ab7d9bcda8	SELECT * FROM `marker` ORDER BY ?
+1	35b1ea590943248f77b08fba4659c60269e6db8532a65c9b21ea054d4f5c4673	SELECT * FROM `marker` ORDER BY ? * ?
+1	de3666e14182730d875f59d153dfba5cc0a6113ede4bc864107bf7c9d8ea6761	SELECT * FROM `marker` ORDER BY ? + ?
+1	1039d38f4dcb0f5b288c453a5840c2fc48d90bab3b702c1b783f8fd49fccfe23	SELECT * FROM `marker` ORDER BY ? << ?
+1	dd535f12c7c57c41bf869b7a1d834b07fa80a30cfb227b406ffd99c0c604ca6e	SELECT * FROM `marker` ORDER BY + ?
+1	fab4d9afa19ab232515a76d284536bae7750e7cb7f214bf0cc138e04ec0e8324	SELECT * FROM `marker` ORDER BY 1
+1	f3b5e3c4d9362f9e3046710e8bd9270b8fac63588ac3165a1618bbce75886099	SELECT * FROM `marker` ORDER BY 1 , ( ? + ? ) , 3
+1	3832c4f7ff341febf4f25b0866352cf1a30c29c5f9d6d22f7c5a0eef3030f261	SELECT * FROM `marker` ORDER BY 1 , `a` , 3
+1	7bf7a276bff3a95766f3eeaf5387117b981528b38887790f5c601f559a9dde26	SELECT * FROM `marker` ORDER BY 1 , 2 , 3
+1	409a7388f404c457fd47d9ab86fd9f15ccad45c1d668122988440e761bb043a1	SELECT * FROM `marker` ORDER BY 2
+1	2e35e24e9bb1d53c7d7e76c6dd62a189ae80652c458eaad2c7a1d8a958bdb5fb	SELECT * FROM `marker` ORDER BY 3 , 2 , 1
+1	5f2628691c8329ace5e341f0d92fa6b969c8873d96ba48743dd3ea17365eeff5	SELECT `SQL_TEXT` , `DIGEST` , `DIGEST_TEXT` FROM `performance_schema` . `events_statements_history_long` WHERE `SQL_TEXT` LIKE ? ORDER BY `SQL_TEXT`
+1	b44e91261f82ff1a947927d42cca8be1350700e67e680ac10667ff65b3e2876f	TRUNCATE TABLE `performance_schema` . `events_statements_history_long`
+1	5e18b503343466373cc0ce1922b04a77902f0cce5386ce599cb95b682d29415e	TRUNCATE TABLE `performance_schema` . `events_statements_summary_by_digest`

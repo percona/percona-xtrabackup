@@ -159,7 +159,7 @@ DROP TABLE test_table;
 # with gtid-mode=ON.
 RESET BINARY LOGS AND GTIDS;
 
---exec $MYSQL -e "source $MYSQLTEST_VARDIR/tmp/mysqlbinlog_bug12601974.binlog"
+--exec $MYSQL --commands -e "source $MYSQLTEST_VARDIR/tmp/mysqlbinlog_bug12601974.binlog"
 
 --echo #"test_table" content after replaying the binlog
 SELECT * FROM test_table;

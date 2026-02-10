@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -144,7 +144,7 @@ class Mock_execution_context : public Secondary_engine_execution_context {
 namespace mock {
 
 ha_mock::ha_mock(handlerton *hton, TABLE_SHARE *table_share_arg)
-    : handler(hton, table_share_arg) {}
+    : handler(hton, table_share_arg), m_part_handler(this) {}
 
 int ha_mock::open(const char *, int, unsigned int, const dd::Table *) {
   MockShare *share =
@@ -378,19 +378,29 @@ static bool CompareJoinCost(THD *thd, const JOIN &join, double optimizer_cost,
   return false;
 }
 
-static bool ModifyAccessPathCost(THD *thd [[maybe_unused]],
-                                 const JoinHypergraph &hypergraph
-                                 [[maybe_unused]],
-                                 AccessPath *path) {
+namespace {
+bool ModifyViewAccessPathCost(THD *thd [[maybe_unused]],
+                              const JoinHypergraph &hypergraph [[maybe_unused]],
+                              AccessPath *path) {
+  if (thd->secondary_engine_optimization() !=
+      Secondary_engine_optimization::SECONDARY) {
+    return false;
+  }
   assert(!thd->is_error());
   assert(hypergraph.query_block()->join == hypergraph.join());
   AssertSupportedPath(path);
   return false;
 }
+}  // namespace
 
 static handler *Create(handlerton *hton, TABLE_SHARE *table_share, bool,
                        MEM_ROOT *mem_root) {
   return new (mem_root) mock::ha_mock(hton, table_share);
+}
+
+static uint PartitionFlags() {
+  return HA_CAN_EXCHANGE_PARTITION | HA_CANNOT_PARTITION_FK |
+         HA_TRUNCATE_PARTITION_PRECLOSE;
 }
 
 static int Init(MYSQL_PLUGIN p) {
@@ -399,15 +409,18 @@ static int Init(MYSQL_PLUGIN p) {
   handlerton *hton = static_cast<handlerton *>(p);
   hton->create = Create;
   hton->state = SHOW_OPTION_YES;
-  hton->flags = HTON_IS_SECONDARY_ENGINE;
+  hton->flags = HTON_IS_SECONDARY_ENGINE | HTON_SECONDARY_ENGINE_SUPPORTS_DDL;
   hton->db_type = DB_TYPE_UNKNOWN;
   hton->prepare_secondary_engine = PrepareSecondaryEngine;
   hton->secondary_engine_pre_prepare_hook = SecondaryEnginePrePrepareHook;
+  hton->cardinality_estimation_hook = nullptr;
   hton->optimize_secondary_engine = OptimizeSecondaryEngine;
   hton->compare_secondary_engine_cost = CompareJoinCost;
   hton->secondary_engine_flags =
       MakeSecondaryEngineFlags(SecondaryEngineFlag::SUPPORTS_HASH_JOIN);
-  hton->secondary_engine_modify_access_path_cost = ModifyAccessPathCost;
+  hton->secondary_engine_modify_view_ap_cost = ModifyViewAccessPathCost;
+  hton->partition_flags = PartitionFlags;
+  hton->secondary_engine_nrows = nullptr;
   return 0;
 }
 

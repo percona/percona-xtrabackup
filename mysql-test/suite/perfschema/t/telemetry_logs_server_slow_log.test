@@ -1,0 +1,111 @@
+################################################################################
+# Test exporting slow query log via telemetry logs service functionality using test component.
+################################################################################
+
+--source include/have_server_telemetry_logs.inc
+--source include/have_no_telemetry_component.inc
+--source include/not_parallel.inc
+--source include/no_ps_protocol.inc
+
+--echo #########
+--echo # SETUP #
+--echo #########
+
+call mtr.add_suppression("Test message #33");
+
+# Make test deteministic by controlling built-in loggers
+UPDATE performance_schema.setup_loggers SET level='none';
+
+# Install required components.
+INSTALL COMPONENT 'file://component_test_server_telemetry_logs_export';
+INSTALL COMPONENT 'file://component_test_server_telemetry_logs_client';
+
+SET @old_log_output=       @@global.log_output;
+SET @old_slow_query_log=   @@global.slow_query_log;
+SET @old_long_query_time=  @@session.long_query_time;
+SET GLOBAL log_output="FILE,TABLE";
+TRUNCATE TABLE mysql.slow_log;
+
+SET GLOBAL slow_query_log=ON;
+
+--echo ##############
+--echo # Operations #
+--echo ##############
+
+--echo # List available loggers
+SELECT * FROM performance_schema.setup_loggers;
+
+--echo # No message should not be logged by OTEL logger when level = none
+UPDATE performance_schema.setup_loggers SET level='none';
+SELECT * FROM performance_schema.setup_loggers;
+
+set session long_query_time=0.3;
+--disable_result_log
+select sleep(0.5) AS query1;
+--enable_result_log
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 QUERY_TIME 4 LOCK_TIME 12 THREAD_ID
+select * from mysql.slow_log;
+
+--echo # Slow log gets logged by OTEL logger when level = warn
+UPDATE performance_schema.setup_loggers SET level='warn' WHERE name='logger/sql/slow_log';
+--disable_result_log
+select sleep(0.5) AS query2;
+--enable_result_log
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 QUERY_TIME 4 LOCK_TIME 12 THREAD_ID
+select * from mysql.slow_log;
+
+--echo # Slow log gets logged by OTEL logger regardless of log_output setting
+SET GLOBAL log_output="NONE";
+--disable_result_log
+select sleep(0.5) AS query3;
+--enable_result_log
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 QUERY_TIME 4 LOCK_TIME 12 THREAD_ID
+select * from mysql.slow_log;
+
+--echo # Slow log does not expose secrets within the OTEL logger
+SET GLOBAL log_output="TABLE";
+--disable_result_log
+set session long_query_time=0;
+CREATE USER u1@localhost IDENTIFIED BY 'abcd';
+set session long_query_time=0.3;
+--enable_result_log
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 THREAD_ID 4 SERVER_ID
+select * from mysql.general_log;
+
+--echo # Slow log exports extra fields if log_slow_extra set
+SET GLOBAL log_slow_extra=1;
+--disable_result_log
+select sleep(0.5) AS query4;
+--enable_result_log
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 THREAD_ID 4 SERVER_ID
+select * from mysql.general_log;
+SET GLOBAL log_slow_extra=0;
+
+--echo # Slow log gets logged by OTEL logger even if slow log disabled
+SET GLOBAL slow_query_log=OFF;
+--disable_result_log
+select sleep(0.5) AS query5;
+--enable_result_log
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 QUERY_TIME 4 LOCK_TIME 12 THREAD_ID
+select * from mysql.slow_log;
+
+--echo ###########
+--echo # CLEANUP #
+--echo ###########
+
+DROP USER u1@localhost;
+SET @@global.log_output = @old_log_output;
+SET @@global.slow_query_log = @old_slow_query_log;
+SET @@session.long_query_time = @old_long_query_time;
+SET @@global.log_slow_extra = default;
+TRUNCATE TABLE mysql.slow_log;
+TRUNCATE TABLE mysql.general_log;
+
+UNINSTALL COMPONENT 'file://component_test_server_telemetry_logs_client';
+UNINSTALL COMPONENT 'file://component_test_server_telemetry_logs_export';
+
+let $MYSQLD_DATADIR= `select @@datadir`;
+--echo Component logs (OTEL logger) should log only one entry:
+--replace_regex /[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z/TIMESTAMP/ /=[0-9]+;/=NUMBER;/
+cat_file $MYSQLD_DATADIR/test_server_telemetry_logs_component.log;
+remove_file $MYSQLD_DATADIR/test_server_telemetry_logs_component.log;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -81,7 +81,6 @@ using std::min;
 */
 
 #ifdef MYSQL_SERVER
-
 /*
   The following variables/functions should really not be declared
   extern, but as it's hard to include sql_class.h here, we have to
@@ -92,6 +91,13 @@ extern void thd_increment_bytes_received(size_t length);
 
 /* Additional instrumentation hooks for the server */
 #include "mysql_com_server.h"
+
+/* Refresh cached values in the THD for the server. */
+static void server_store_cached_values(const NET *net) {
+  // Refresh only if this net is the net of the current_thd
+  if (current_thd != nullptr && current_thd->get_net() == net)
+    current_thd->store_cached_properties(THD::cached_properties::RW_STATUS);
+}
 #endif
 
 static bool net_write_buff(NET *, const uchar *, size_t);
@@ -167,6 +173,7 @@ bool my_net_init(NET *net, Vio *vio) {
   net->last_errno = 0;
 #ifdef MYSQL_SERVER
   net->extension = nullptr;
+  server_store_cached_values(net);
 #else
   NET_EXTENSION *ext = net_extension_init();
   ext->net_async_context->cur_pos = net->buff + net->where_b;
@@ -1303,6 +1310,9 @@ bool net_write_packet(NET *net, const uchar *packet, size_t length) {
     return true;
 
   net->reading_or_writing = 2;
+#ifdef MYSQL_SERVER
+  server_store_cached_values(net);
+#endif
 
   const bool do_compress = net->compress;
   if (do_compress) {
@@ -1311,6 +1321,9 @@ bool net_write_packet(NET *net, const uchar *packet, size_t length) {
       net->last_errno = ER_OUT_OF_RESOURCES;
       /* In the server, allocation failure raises a error. */
       net->reading_or_writing = 0;
+#ifdef MYSQL_SERVER
+      server_store_cached_values(net);
+#endif
       return true;
     }
   }
@@ -1324,6 +1337,9 @@ bool net_write_packet(NET *net, const uchar *packet, size_t length) {
   if (do_compress) my_free(const_cast<uchar *>(packet));
 
   net->reading_or_writing = 0;
+#ifdef MYSQL_SERVER
+  server_store_cached_values(net);
+#endif
 
   /* Socket can't be used any more */
   if (net->error == NET_ERROR_SOCKET_NOT_READABLE) {
@@ -1712,6 +1728,9 @@ static net_async_status net_read_packet_nonblocking(NET *net, ulong *ret) {
     case NET_ASYNC_PACKET_READ_IDLE:
       net_async->async_packet_read_state = NET_ASYNC_PACKET_READ_HEADER;
       net->reading_or_writing = 0;
+#ifdef MYSQL_SERVER
+      server_store_cached_values(net);
+#endif
       [[fallthrough]];
     case NET_ASYNC_PACKET_READ_HEADER:
       /*
@@ -1788,6 +1807,9 @@ end:
 
   net->read_pos[*ret] = 0;
   net->reading_or_writing = 0;
+#ifdef MYSQL_SERVER
+  server_store_cached_values(net);
+#endif
   if (net->compress) {
     mysql_compress_context *mysql_compress_ctx = compress_context(net);
     if (my_uncompress(mysql_compress_ctx, net->buff + net->where_b,
@@ -1808,6 +1830,9 @@ end:
 error:
   *ret = packet_error;
   net->reading_or_writing = 0;
+#ifdef MYSQL_SERVER
+  server_store_cached_values(net);
+#endif
   return NET_ASYNC_COMPLETE;
 }
 
@@ -2093,6 +2118,9 @@ static size_t net_read_packet(NET *net, size_t *complen) {
   *complen = 0;
 
   net->reading_or_writing = 1;
+#ifdef MYSQL_SERVER
+  server_store_cached_values(net);
+#endif
 
   /*
     We should reset compress_packet_nr even before reading the header because
@@ -2140,12 +2168,18 @@ end:
     net->error = NET_ERROR_SOCKET_UNUSABLE;
   DBUG_DUMP("net read", net->buff + net->where_b, pkt_len);
   net->reading_or_writing = 0;
+#ifdef MYSQL_SERVER
+  server_store_cached_values(net);
+#endif
   return pkt_len;
 
 error:
   if (net->error == NET_ERROR_SOCKET_NOT_WRITABLE)
     net->error = NET_ERROR_SOCKET_UNUSABLE;
   net->reading_or_writing = 0;
+#ifdef MYSQL_SERVER
+  server_store_cached_values(net);
+#endif
   return packet_error;
 }
 

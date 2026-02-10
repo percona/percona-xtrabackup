@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -152,7 +152,7 @@ static Component_db_intact table_intact;
   @retval false success
 */
 static bool open_component_table(THD *thd, enum thr_lock_type lock_type,
-                                 TABLE **table, ulong acl_to_check) {
+                                 TABLE **table, Access_bitmask acl_to_check) {
   Table_ref tables("mysql", "component", lock_type);
 
   if (mysql_persistent_dynamic_loader_imp::initialized() && !opt_noacl &&

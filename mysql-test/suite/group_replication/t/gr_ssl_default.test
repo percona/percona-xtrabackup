@@ -1,0 +1,38 @@
+################################################################################
+# Validate that Group Replication is configured with encryption
+# enabled by default.
+#
+# Steps:
+# 0. The test requires one server: server1.
+# 1. Assert that server1 is configured with encryption
+#    enabled by default.
+# 2. Clean up.
+################################################################################
+--source include/have_group_replication_plugin.inc
+--let $rpl_skip_group_replication_start= 1
+--source include/group_replication.inc
+
+
+--echo
+--echo ############################################################
+--echo # 1. Assert that server1 is configured with encryption
+--echo #    enabled by default.
+--let $rpl_connection_name= server1
+--source include/connection.inc
+--let $assert_text= Default group_replication_recovery_use_ssl is ON/1
+--let $assert_cond= "[SELECT @@GLOBAL.group_replication_recovery_use_ssl]" = 1
+--source include/assert.inc
+
+--let $assert_text= Default group_replication_ssl_mode is REQUIRED
+--let $assert_cond= "[SELECT @@GLOBAL.group_replication_ssl_mode]" = "REQUIRED"
+--source include/assert.inc
+
+--let $assert_text= SSL is allowed on group_replication_recovery channel
+--let $assert_cond= "[SELECT SSL_ALLOWED FROM performance_schema.replication_connection_configuration WHERE CHANNEL_NAME="group_replication_recovery"]" = "YES"
+--source include/assert.inc
+
+
+--echo
+--echo ############################################################
+--echo # 2. Clean up.
+--source include/group_replication_end.inc

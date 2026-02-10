@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -46,7 +46,7 @@ class MySqlRouterThreadTest : public testing::Test {
 
 void *f(void *) {
   {
-    std::unique_lock<std::mutex> lk(flag_cond_mutex);
+    std::unique_lock<std::mutex> const lk(flag_cond_mutex);
     // mutex is needed to ensure that testing thread doesn't exit
     // after a spurious wakeup after 'flag' got set, but 'notify_one()'
     // got called

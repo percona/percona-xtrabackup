@@ -2873,6 +2873,8 @@ eval $query;
 # Don't carry the 'limit_1', added as part of 'distinct' AccessPath,
 # through to the materialized subquery. (-> Too few rows in the
 # materialized temp-table.)
+# Since Bug#35842412 query plan will no longer contain a 'limit_1' part.
+
 let $query=
 SELECT DISTINCT
   table1.pk

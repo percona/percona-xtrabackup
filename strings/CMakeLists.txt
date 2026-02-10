@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -128,6 +128,10 @@ ELSEIF(WIN32)
     PUBLIC MYSQL_LIBSTRINGS_DLL
     PRIVATE MYSQL_LIBSTRINGS_EXPORT
     )
+  IF(WIN32_VS)
+    # m_normalized ... needs to have dll-interface to be used by client ...
+    TARGET_COMPILE_OPTIONS(strings_shared PUBLIC /wd4251)
+  ENDIF()
 ELSE()
   ADD_SHARED_LIBRARY(strings_shared
     $<TARGET_OBJECTS:strings_objlib>

@@ -1,0 +1,253 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+create user mrsuser@'%' identified by 'S3kre7';
+grant all on *.* to mrsuser@'%';
+
+
+## I. Create three service with the same name but hosts: <EMPTY>, HTTPHOST,HTTPS,
+#     also those secrives should only allow https or http protocol depending on its host-name.
+#     Each service should have three auth-app assigned: Facebook, Google, MySQL auth-app.
+#
+# 1. verify that REST resources use proto://host for those service that had non-empty host configured.
+#
+## II. Mark  service resources that should requires authentication.
+#
+# 1. verify that all servies: /svc, HTTPHOST/svc, HTTPSHOST/svc use three auth-apps
+# 2. verify that Oauth2 facebook uses full link to MRS server in facebok redirection
+#    (in all cases: unknown host, httphost, httpshost). In case of unknow host, MRS should use
+#    client providen host.
+# 3. verify that Oauth2 google uses full link to MRS server in facebok redirection
+#    (in all cases: unknown host, httphost, httpshost).In case of unknow host, MRS should use
+#    client providen host.
+# 4. verify that MYSQL auth-app uses relative redirection links in all cases (without proto://host)
+#
+## II. If changes done to `service_has_auth_app` are detected (test should be moved
+##     to schema-monitor test suite in futute).
+#
+# 1. verify that fourth service can use old auth_apps (added in other refresh cycle).
+#
+#
+create database host_tests;
+create table host_tests.table1(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+create table host_tests.table2(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+create table host_tests.table3(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+insert into host_tests.table1 values(1, "TABLE1");
+insert into host_tests.table2 values(2, "TABLE2");
+insert into host_tests.table3 values(3, "TABLE3");
+# Registred SERVICE at path: /svc
+SET @service_id1=@service_id;
+# Registred SERVICE at path: /svc
+SET @service_id2=@service_id;
+# Registred SERVICE at path: /svc
+SET @service_id3=@service_id;
+# Registred SERVICE at path: /update
+SET @service_id4=@service_id;
+# Registred DB_SCHEMA at path: /svc/hostTests
+SET @schema_id1=@schema_id;
+# Registred DB_SCHEMA at path: /svc/hostTests
+SET @schema_id2=@schema_id;
+# Registred DB_SCHEMA at path: /svc/hostTests
+SET @schema_id3=@schema_id;
+# Registred DB_OBJECT at path: /svc/hostTests/tab
+# Registred DB_OBJECT at path: /svc/hostTests/tab
+# Registred DB_OBJECT at path: /svc/hostTests/tab
+# Registred AUTH APP at path: /svc
+# Registred AUTH APP at path: /svc
+# Registred AUTH APP at path: /svc
+
+#
+# I.1
+GET /svc/hostTests/tab
+{
+    "items": [
+        {
+            "links": [
+                {
+                    "href": "/svc/hostTests/tab/1"
+                }
+            ]
+        }
+    ]
+}
+OK
+GET /svc/hostTests/tab
+{
+    "items": [
+        {
+            "links": [
+                {
+                    "href": "http://HTTPHOST/svc/hostTests/tab/2"
+                }
+            ]
+        }
+    ]
+}
+OK
+GET /svc/hostTests/tab
+{
+    "items": [
+        {
+            "links": [
+                {
+                    "href": "https://HTTPSHOST/svc/hostTests/tab/3"
+                }
+            ]
+        }
+    ]
+}
+OK
+
+#
+# II.1
+UPDATE `mysql_rest_service_metadata`.`db_schema` SET requires_auth=1;
+GET /svc/hostTests/tab
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc/authentication/authApps
+[
+    {
+        "name": "f",
+        "vendorId": "0x32000000000000000000000000000000"
+    },
+    {
+        "name": "g",
+        "vendorId": "0x34000000000000000000000000000000"
+    },
+    {
+        "name": "mysql",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+GET /svc/authentication/authApps
+[
+    {
+        "name": "f",
+        "vendorId": "0x32000000000000000000000000000000"
+    },
+    {
+        "name": "g",
+        "vendorId": "0x34000000000000000000000000000000"
+    },
+    {
+        "name": "mysql",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+GET /svc/authentication/authApps
+[
+    {
+        "name": "f",
+        "vendorId": "0x32000000000000000000000000000000"
+    },
+    {
+        "name": "g",
+        "vendorId": "0x34000000000000000000000000000000"
+    },
+    {
+        "name": "mysql",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+
+#
+# II.2
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, POST, OPTIONS
+Location  ->  https://accounts.google.com/o/oauth2/v2/auth?client_id=c1&response_type=code&scope=https%3a%2f%2fwww.googleapis.com%2fauth%2fuserinfo.email%20https%3a%2f%2fwww.googleapis.com%2fauth%2fuserinfo.profile&state=first&redirect_uri=https://NotMatchingHost/svc/authentication/login?authApp=g
+Referrer-Policy  ->  no-referrer
+Content-Length  ->  0
+OK
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, POST, OPTIONS
+Location  ->  https://accounts.google.com/o/oauth2/v2/auth?client_id=c1&response_type=code&scope=https%3a%2f%2fwww.googleapis.com%2fauth%2fuserinfo.email%20https%3a%2f%2fwww.googleapis.com%2fauth%2fuserinfo.profile&state=first&redirect_uri=http://HTTPHOST/svc/authentication/login?authApp=g
+Referrer-Policy  ->  no-referrer
+Content-Length  ->  0
+OK
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, POST, OPTIONS
+Location  ->  https://accounts.google.com/o/oauth2/v2/auth?client_id=c1&response_type=code&scope=https%3a%2f%2fwww.googleapis.com%2fauth%2fuserinfo.email%20https%3a%2f%2fwww.googleapis.com%2fauth%2fuserinfo.profile&state=first&redirect_uri=https://HTTPSHOST/svc/authentication/login?authApp=g
+Referrer-Policy  ->  no-referrer
+Content-Length  ->  0
+OK
+
+#
+# II.3
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, POST, OPTIONS
+Location  ->  https://www.facebook.com/v12.0/dialog/oauth?response_type=code&state=first&client_id=c1&redirect_uri=https://NotMatchingHost/svc/authentication/login?authApp=f
+Referrer-Policy  ->  no-referrer
+Content-Length  ->  0
+OK
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, POST, OPTIONS
+Location  ->  https://www.facebook.com/v12.0/dialog/oauth?response_type=code&state=first&client_id=c1&redirect_uri=http://HTTPHOST/svc/authentication/login?authApp=f
+Referrer-Policy  ->  no-referrer
+Content-Length  ->  0
+OK
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, POST, OPTIONS
+Location  ->  https://www.facebook.com/v12.0/dialog/oauth?response_type=code&state=first&client_id=c1&redirect_uri=https://HTTPSHOST/svc/authentication/login?authApp=f
+Referrer-Policy  ->  no-referrer
+Content-Length  ->  0
+OK
+
+#
+# II.4
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, POST, OPTIONS
+Set-Cookie -> %COOKIE%
+Location  ->  /svc/authentication/completed?authApp=mysql&login=success
+Referrer-Policy  ->  no-referrer
+Content-Length  ->  0
+OK
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, POST, OPTIONS
+Set-Cookie -> %COOKIE%
+Location  ->  /svc/authentication/completed?authApp=mysql&login=success
+Referrer-Policy  ->  no-referrer
+Content-Length  ->  0
+OK
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, POST, OPTIONS
+Set-Cookie -> %COOKIE%
+Location  ->  /svc/authentication/completed?authApp=mysql&login=success
+Referrer-Policy  ->  no-referrer
+Content-Length  ->  0
+OK
+
+#
+# III.1
+INSERT INTO `mysql_rest_service_metadata`.`service_has_auth_app`(service_id,auth_app_id) VALUES(@service_id4, @auth_app_mysql);
+GET /update/authentication/authApps
+[
+    {
+        "name": "mysql",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+DROP SCHEMA host_tests;
+drop user mrsuser@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

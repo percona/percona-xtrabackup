@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 #include "mysql/mysql_lex_string.h"
 
 #ifdef __cplusplus
+#include <ostream>
 #include <string>
 #include <string_view>
 #endif
@@ -61,6 +62,11 @@ static inline std::string_view to_string_view(LEX_STRING str) {
 
 static inline std::string_view to_string_view(LEX_CSTRING str) {
   return std::string_view{str.str, str.length};
+}
+
+static inline std::ostream &operator<<(std::ostream &os,
+                                       const LEX_CSTRING &str) {
+  return os << to_string_view(str);
 }
 
 #endif  // defined(__cplusplus)

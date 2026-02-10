@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -92,7 +92,8 @@ bool IPCConfig::configureTransporters(Uint32 nodeId,
       // Transporter exist in TransporterRegistry but not
       // in configuration
       g_eventLogger->info(
-          "The connection to node %d could not be removed at this time", i);
+          "Node %u connection to node %d could not be removed at this time",
+          nodeId, i);
       result = false;  // Need restart
     }
   }
@@ -205,8 +206,9 @@ bool IPCConfig::configureTransporters(Uint32 nodeId,
           DBUG_PRINT("error", ("Failed to configure SHM Transporter "
                                "from %d to %d",
                                conf.localNodeId, conf.remoteNodeId));
-          g_eventLogger->info("Failed to configure SHM Transporter to node %d",
-                              conf.remoteNodeId);
+          g_eventLogger->info(
+              "Node %u failed to configure SHM transporter to node %u", nodeId,
+              conf.remoteNodeId);
           result = false;
         }
         DBUG_PRINT("info", ("Configured SHM Transporter using shmkey %d, "
@@ -237,8 +239,9 @@ bool IPCConfig::configureTransporters(Uint32 nodeId,
         conf.type = tt_TCP_TRANSPORTER;
 
         if (!tr.configureTransporter(&conf)) {
-          g_eventLogger->info("Failed to configure TCP Transporter to node %d",
-                              conf.remoteNodeId);
+          g_eventLogger->info(
+              "Node %u failed to configure TCP transporter to node %u", nodeId,
+              conf.remoteNodeId);
           result = false;
         }
         DBUG_PRINT("info", ("Configured TCP Transporter: sendBufferSize = %d, "
@@ -247,8 +250,8 @@ bool IPCConfig::configureTransporters(Uint32 nodeId,
         loopback_conf = conf;  // reuse it...
         break;
       default:
-        g_eventLogger->info("Unknown transporter type from: %u to: %u", nodeId,
-                            remoteNodeId);
+        g_eventLogger->info("Transporter from node %u to node %u: unknown type",
+                            nodeId, remoteNodeId);
         break;
     }  // switch
   }    // for
@@ -261,8 +264,8 @@ bool IPCConfig::configureTransporters(Uint32 nodeId,
     loopback_conf.localHostName = "localhost";
     loopback_conf.s_port = 1;  // prevent asking ndb_mgmd for port...
     loopback_conf.type = tt_TCP_TRANSPORTER;
-    loopback_conf.checksum = 0;
-    loopback_conf.signalId = 0;
+    loopback_conf.checksum = false;
+    loopback_conf.signalId = false;
     loopback_conf.tcp.sendBufferSize = 1024 * 1024;
     loopback_conf.tcp.maxReceiveSize = 1024 * 1024;
     loopback_conf.tcp.tcpSndBufSize = 0;
@@ -272,7 +275,8 @@ bool IPCConfig::configureTransporters(Uint32 nodeId,
     loopback_conf.requireTls = false;
 
     if (!tr.configureTransporter(&loopback_conf)) {
-      g_eventLogger->info("Failed to configure Loopback Transporter");
+      g_eventLogger->info("Node %u failed to configure loopback transporter",
+                          nodeId);
       result = false;
     }
   }

@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -99,28 +99,32 @@ ENDMACRO()
 # Unset whatever variables we have set
 # (in this or earlier versions of this file)
 MACRO(RESET_SSL_VARIABLES)
-  UNSET(WITH_SSL_PATH)
-  UNSET(WITH_SSL_PATH CACHE)
-  UNSET(OPENSSL_ROOT_DIR)
-  UNSET(OPENSSL_ROOT_DIR CACHE)
-  UNSET(OPENSSL_INCLUDE_DIR)
-  UNSET(OPENSSL_INCLUDE_DIR CACHE)
-  UNSET(OPENSSL_APPLINK_C)
-  UNSET(OPENSSL_APPLINK_C CACHE)
-  UNSET(OPENSSL_LIBRARY)
-  UNSET(OPENSSL_LIBRARY CACHE)
-  UNSET(CRYPTO_LIBRARY)
-  UNSET(CRYPTO_LIBRARY CACHE)
-  UNSET(HAVE_SHA512_DIGEST_LENGTH)
-  UNSET(HAVE_SHA512_DIGEST_LENGTH CACHE)
-  UNSET(OPENSSL_VERSION_MAJOR)
-  UNSET(OPENSSL_VERSION_MAJOR CACHE)
-  UNSET(OPENSSL_MAJOR_MINOR_FIX_VERSION)
-  UNSET(OPENSSL_MAJOR_MINOR_FIX_VERSION CACHE)
-  UNSET(ALTERNATIVE_SYSTEM_SSL)
   UNSET(ALTERNATIVE_SYSTEM_SSL CACHE)
-  UNSET(LINUX_WITH_CUSTOM_LIBRARIES)
+  UNSET(ALTERNATIVE_SYSTEM_SSL)
+  UNSET(CRYPTO_LIBRARY CACHE)
+  UNSET(CRYPTO_LIBRARY)
+  UNSET(HAVE_SHA512_DIGEST_LENGTH CACHE)
+  UNSET(HAVE_SHA512_DIGEST_LENGTH)
   UNSET(LINUX_WITH_CUSTOM_LIBRARIES CACHE)
+  UNSET(LINUX_WITH_CUSTOM_LIBRARIES)
+  UNSET(OPENSSL_APPLINK_C CACHE)
+  UNSET(OPENSSL_APPLINK_C)
+  UNSET(OPENSSL_CRYPTO_LIBRARY CACHE)
+  UNSET(OPENSSL_CRYPTO_LIBRARY)
+  UNSET(OPENSSL_INCLUDE_DIR CACHE)
+  UNSET(OPENSSL_INCLUDE_DIR)
+  UNSET(OPENSSL_LIBRARY CACHE)
+  UNSET(OPENSSL_LIBRARY)
+  UNSET(OPENSSL_MAJOR_MINOR_FIX_VERSION CACHE)
+  UNSET(OPENSSL_MAJOR_MINOR_FIX_VERSION)
+  UNSET(OPENSSL_ROOT_DIR CACHE)
+  UNSET(OPENSSL_ROOT_DIR)
+  UNSET(OPENSSL_SSL_LIBRARY CACHE)
+  UNSET(OPENSSL_SSL_LIBRARY)
+  UNSET(OPENSSL_VERSION_MAJOR CACHE)
+  UNSET(OPENSSL_VERSION_MAJOR)
+  UNSET(WITH_SSL_PATH CACHE)
+  UNSET(WITH_SSL_PATH)
 ENDMACRO(RESET_SSL_VARIABLES)
 
 # Fetch OpenSSL version number.
@@ -355,6 +359,19 @@ FUNCTION(FIND_SYSTEM_OPENSSL)
     SET(OPENSSL_ROOT_DIR "${HOMEBREW_HOME}/openssl")
   ENDIF()
 
+  IF(SOLARIS AND NOT OPENSSL_ROOT_DIR)
+    SET(OPENSSL_ROOT_DIR "/usr/openssl/3")
+    # See FIND_OPENSSL_EXECUTABLE above.
+    FIND_PROGRAM(OPENSSL_EXECUTABLE openssl
+      NO_DEFAULT_PATH
+      PATHS "${OPENSSL_ROOT_DIR}/bin"
+      DOC "path to the openssl executable"
+      )
+    IF(OPENSSL_EXECUTABLE)
+      COPY_OPENSSL_BINARY(${OPENSSL_EXECUTABLE} "" "" openssl_exe_target)
+    ENDIF()
+  ENDIF()
+
   # Will set OPENSSL_FOUND, OPENSSL_INCLUDE_DIR and others.
   FIND_PACKAGE(OpenSSL)
 
@@ -373,6 +390,7 @@ FUNCTION(FIND_SYSTEM_OPENSSL)
   FIND_OPENSSL_VERSION()
 
   # Homebrew "system" OpenSSL needs:
+  # Also SOLARIS with header files in /usr/openssl/3/include
   IF(NOT OPENSSL_INCLUDE_DIR STREQUAL "/usr/include")
     INCLUDE_DIRECTORIES(BEFORE SYSTEM ${OPENSSL_INCLUDE_DIR})
   ENDIF()
@@ -447,14 +465,15 @@ FUNCTION(FIND_CUSTOM_OPENSSL)
     ENDIF()
     GET_FILENAME_COMPONENT(OPENSSL_ROOT_DIR ${OPENSSL_INCLUDE_DIR} PATH)
     SET(WITH_SSL_PATH "${OPENSSL_ROOT_DIR}" CACHE PATH "Path to system SSL")
+    SET(EXTRA_SSL_HINT ${OPENSSL_ROOT_DIR}/lib/VC/x64/MD)
   ENDIF()
 
   FIND_LIBRARY(OPENSSL_LIBRARY
     NAMES ssl libssl ssleay32 ssleay32MD
-    HINTS ${OPENSSL_ROOT_DIR}/lib ${OPENSSL_ROOT_DIR}/lib64)
+    HINTS ${OPENSSL_ROOT_DIR}/lib ${OPENSSL_ROOT_DIR}/lib64 ${EXTRA_SSL_HINT})
   FIND_LIBRARY(CRYPTO_LIBRARY
     NAMES crypto libcrypto libeay32
-    HINTS ${OPENSSL_ROOT_DIR}/lib ${OPENSSL_ROOT_DIR}/lib64)
+    HINTS ${OPENSSL_ROOT_DIR}/lib ${OPENSSL_ROOT_DIR}/lib64 ${EXTRA_SSL_HINT})
 
   IF(OPENSSL_INCLUDE_DIR)
     FIND_OPENSSL_VERSION()
@@ -698,6 +717,7 @@ MACRO(MYSQL_CHECK_SSL_DLLS)
         ${CRYPTO_VERSION} ${OPENSSL_VERSION}
         openssl_exe_target)
       ADD_DEPENDENCIES(${openssl_exe_target} copy_openssl_dlls)
+      ADD_DEPENDENCIES(copy_custom_libraries copy_openssl_dlls)
 
       # Create symlinks for plugins, see MYSQL_ADD_PLUGIN/install_name_tool
       ADD_CUSTOM_TARGET(link_openssl_dlls ALL
@@ -711,6 +731,7 @@ MACRO(MYSQL_CHECK_SSL_DLLS)
         "${CMAKE_BINARY_DIR}/plugin_output_directory/${CRYPTO_VERSION}"
         "${CMAKE_BINARY_DIR}/plugin_output_directory/${OPENSSL_VERSION}"
         )
+      ADD_DEPENDENCIES(symlink_custom_libraries link_openssl_dlls)
       # Create symlinks for plugins built with Xcode
       IF(NOT BUILD_IS_SINGLE_CONFIG)
         ADD_CUSTOM_TARGET(link_openssl_dlls_cmake_cfg_intdir ALL
@@ -725,6 +746,7 @@ MACRO(MYSQL_CHECK_SSL_DLLS)
           "${CMAKE_BINARY_DIR}/plugin_output_directory/${CMAKE_CFG_INTDIR}/${CRYPTO_VERSION}"
           "${CMAKE_BINARY_DIR}/plugin_output_directory/${CMAKE_CFG_INTDIR}/${OPENSSL_VERSION}"
         )
+        ADD_DEPENDENCIES(symlink_custom_libraries link_openssl_dlls_cmake_cfg_intdir)
       ENDIF()
 
       # Directory layout after 'make install' is different.
@@ -737,6 +759,7 @@ MACRO(MYSQL_CHECK_SSL_DLLS)
           "../../lib/${OPENSSL_VERSION}" "${OPENSSL_VERSION}"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/plugin_output_directory/plugin"
         )
+      ADD_DEPENDENCIES(symlink_custom_libraries link_openssl_dlls_for_install)
       # See INSTALL_DEBUG_TARGET used for installing debug versions of plugins.
       IF(EXISTS ${DEBUGBUILDDIR})
         FILE(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/plugin_output_directory/plugin/debug")
@@ -747,6 +770,7 @@ MACRO(MYSQL_CHECK_SSL_DLLS)
             "../../../lib/${OPENSSL_VERSION}" "${OPENSSL_VERSION}"
           WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/plugin_output_directory/plugin/debug"
         )
+        ADD_DEPENDENCIES(symlink_custom_libraries link_openssl_dlls_for_install_debug)
       ENDIF()
 
       MESSAGE(STATUS "INSTALL ${CRYPTO_NAME} to ${INSTALL_LIBDIR}")

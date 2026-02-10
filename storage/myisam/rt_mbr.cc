@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,8 @@
 
 #include "storage/myisam/rt_mbr.h"
 
-#include <assert.h>
 #include <algorithm>
+#include <cassert>
 
 #include "my_byteorder.h"
 
@@ -696,8 +696,8 @@ Calculates key page total MBR = MBR(key1) + MBR(key2) + ...
 int rtree_page_mbr(MI_INFO *info, HA_KEYSEG *keyseg, uchar *page_buf, uchar *c,
                    uint key_length) {
   uint inc = 0;
-  uint k_len = key_length;
-  uint nod_flag = mi_test_if_nod(page_buf);
+  uint const k_len = key_length;
+  uint const nod_flag = mi_test_if_nod(page_buf);
   uchar *k;
   uchar *last = rt_PAGE_END(page_buf);
 

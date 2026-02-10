@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -154,7 +154,8 @@ static PSI_memory_info xcom_cache_memory_info[] = {
 
 void register_gcs_thread_psi_keys() {
   const char *category = "group_rpl";
-  int count = static_cast<int>(array_elements(all_gcs_psi_thread_keys_info));
+  int const count =
+      static_cast<int>(array_elements(all_gcs_psi_thread_keys_info));
 
   mysql_thread_register(category, all_gcs_psi_thread_keys_info, count);
 }
@@ -172,7 +173,7 @@ void register_gcs_mutex_cond_psi_keys() {
 
 void register_xcom_memory_psi_keys() {
   const char *category = "group_rpl";
-  int count = (int)array_elements(xcom_cache_memory_info);
+  int const count = (int)array_elements(xcom_cache_memory_info);
 
   mysql_memory_register(category, xcom_cache_memory_info, count);
 }
@@ -190,7 +191,7 @@ static uint64_t current_count = 0;
 int psi_report_mem_alloc(size_t size) {
 #ifdef HAVE_PSI_MEMORY_INTERFACE
   PSI_thread *owner = nullptr;
-  PSI_memory_key key = key_MEM_XCOM_xcom_cache;
+  PSI_memory_key const key = key_MEM_XCOM_xcom_cache;
   if (PSI_MEMORY_CALL(memory_alloc)(key, size, &owner) ==
       PSI_NOT_INSTRUMENTED) {
     return 0;

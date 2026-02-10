@@ -1,6 +1,7 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 --source include/have_log_bin.inc
+--source include/hypergraph_is_active.inc
 
 #
 # Bug#27716     multi-update did partially and has not binlogged
@@ -22,7 +23,7 @@ CREATE TABLE `t2` (
 insert into t1 values (1,1),(2,2);
 insert into t2 values (1,1),(4,4);
 reset binary logs and gtids;
-if ($HYPERGRAPH_TEST) {
+if ($hypergraph_is_active) {
   # Hypergraph uses hash join and updates the rows in a different order.
   --replace_result "'4'" "'3'"
 }

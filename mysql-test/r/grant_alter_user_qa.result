@@ -99,11 +99,9 @@ password_expired	N
 password_expired	N
 CREATE USER tu2@localhost IDENTIFIED WITH 'test_plugin_server'
             BY 'auth_@13*' PASSWORD EXPIRE;
+ERROR HY000: The selected authentication method test_plugin_server does not support password expiration
 SELECT User,plugin,password_expired
 FROM mysql.user WHERE USER='tu2';
-User	tu2
-plugin	test_plugin_server
-password_expired	Y
 
 CREATE USER tu3@localhost IDENTIFIED WITH 'test_plugin_server' AS '%auth_O0s-tring';
 SELECT User,plugin,password_expired
@@ -358,7 +356,7 @@ max_questions	2
 max_user_connections	2
 password_expired	N
 password_lifetime	NULL
-DROP USER tu1@localhost,tu2@localhost,tu3@localhost,tu4@localhost,tu5@localhost,
+DROP USER tu1@localhost,tu3@localhost,tu4@localhost,tu5@localhost,
 tu6@localhost,user1@'%',user2@'%',user4@localhost,user6@localhost,
 user7@localhost,user8@localhost,user10@localhost,u1@localhost,u2@localhost,
 u3@localhost,u4@localhost,u5@localhost,u6@localhost,u7@localhost,u8@localhost,
@@ -1635,6 +1633,8 @@ USER	AUTHENTICATION_STRING
 bug20364862_user	bug20364862_dest
 GRANT UPDATE ON mysql.* TO bug20364862_dest@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 ERROR 4102 (HY000) at line 1: SET PASSWORD has no significance for user 'bug20364862_user'@'localhost' as the authentication method used doesn't store authentication data in the MySQL server. Please consider using ALTER USER instead if you want to change authentication parameters.
@@ -1644,6 +1644,8 @@ bug20364862_user	bug20364862_dest
 REVOKE UPDATE ON mysql.* FROM bug20364862_dest@localhost;
 GRANT CREATE USER ON *.* TO bug20364862_dest@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 ERROR 4102 (HY000) at line 1: SET PASSWORD has no significance for user 'bug20364862_user'@'localhost' as the authentication method used doesn't store authentication data in the MySQL server. Please consider using ALTER USER instead if you want to change authentication parameters.
@@ -1689,7 +1691,7 @@ SHOW CREATE USER user2;
 CREATE USER for user2@%
 CREATE USER `user2`@`%` IDENTIFIED WITH 'caching_sha2_password' AS '<non-deterministic-password-hash>' REQUIRE NONE PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
 SHOW CREATE USER invalid_user;
-ERROR HY000: Operation SHOW CREATE USER failed for 'invalid_user'@'%'
+ERROR HY000: Operation SHOW CREATE USER failed for 'invalid_user'@'%' (User account does not exist)
 # case3 with all global privileges except SELECT
 GRANT ALL ON *.* TO user1@localhost;
 REVOKE SELECT ON *.* FROM user1@localhost;

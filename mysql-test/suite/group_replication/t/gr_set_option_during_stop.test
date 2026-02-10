@@ -61,7 +61,6 @@ CREATE TABLE gr_options_that_cannot_be_change (id INT PRIMARY KEY AUTO_INCREMENT
 INSERT INTO gr_options_that_cannot_be_change (name)
  SELECT VARIABLE_NAME FROM performance_schema.global_variables
  WHERE VARIABLE_NAME LIKE 'group_replication_%'
- AND VARIABLE_NAME != 'group_replication_allow_local_lower_version_join'
  AND VARIABLE_NAME != 'group_replication_bootstrap_group'
  AND VARIABLE_NAME != 'group_replication_communication_stack'
  AND VARIABLE_NAME != 'group_replication_consistency'

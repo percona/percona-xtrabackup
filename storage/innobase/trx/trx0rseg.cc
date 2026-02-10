@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -61,18 +61,12 @@ page_no_t trx_rseg_header_create(space_id_t space_id,
                                  const page_size_t &page_size,
                                  page_no_t max_size, ulint rseg_slot,
                                  mtr_t *mtr) {
-  page_no_t page_no;
-  trx_rsegf_t *rsegf;
-  trx_sysf_t *sys_header;
-  trx_rsegsf_t *rsegs_header;
-  ulint i;
-  buf_block_t *block;
-
   ut_ad(mtr);
   ut_ad(mtr_memo_contains(mtr, fil_space_get_latch(space_id), MTR_MEMO_X_LOCK));
 
   /* Allocate a new file segment for the rollback segment */
-  block = fseg_create(space_id, 0, TRX_RSEG + TRX_RSEG_FSEG_HEADER, mtr);
+  buf_block_t *block =
+      fseg_create(space_id, 0, TRX_RSEG + TRX_RSEG_FSEG_HEADER, mtr);
 
   if (block == nullptr) {
     return (FIL_NULL); /* No space left */
@@ -80,10 +74,10 @@ page_no_t trx_rseg_header_create(space_id_t space_id,
 
   buf_block_dbg_add_level(block, SYNC_RSEG_HEADER_NEW);
 
-  page_no = block->page.id.page_no();
+  const page_no_t page_no = block->page.id.page_no();
 
   /* Get the rollback segment file page */
-  rsegf = trx_rsegf_get_new(space_id, page_no, page_size, mtr);
+  trx_rsegf_t *rsegf = trx_rsegf_get_new(space_id, page_no, page_size, mtr);
 
   /* Initialize max size field */
   mlog_write_ulint(rsegf + TRX_RSEG_MAX_SIZE, max_size, MLOG_4BYTES, mtr);
@@ -93,7 +87,7 @@ page_no_t trx_rseg_header_create(space_id_t space_id,
   flst_init(rsegf + TRX_RSEG_HISTORY, mtr);
 
   /* Reset the undo log slots */
-  for (i = 0; i < TRX_RSEG_N_SLOTS; i++) {
+  for (size_t i = 0; i < TRX_RSEG_N_SLOTS; i++) {
     trx_rsegf_set_nth_undo(rsegf, i, FIL_NULL, mtr);
   }
 
@@ -101,12 +95,16 @@ page_no_t trx_rseg_header_create(space_id_t space_id,
   mlog_write_ull(rsegf + TRX_RSEG_MAX_TRX_NO, 0, mtr);
 
   if (space_id == TRX_SYS_SPACE) {
+    /* Rollback segments in system tablespace are not used during normal
+    operations to store UNDO logs. This 'if' condition is kept for the
+    legacy reason. Please see comment in trx_sysf_create() */
+
     /* All rollback segments in the system tablespace need
     to be found in the TRX_SYS page in the rseg_id slot.
     Add the rollback segment info to the free slot in the
     trx system header in the TRX_SYS page. */
 
-    sys_header = trx_sysf_get(mtr);
+    trx_sysf_t *sys_header = trx_sysf_get(mtr);
 
     trx_sysf_rseg_set_space(sys_header, rseg_slot, space_id, mtr);
 
@@ -120,7 +118,7 @@ page_no_t trx_rseg_header_create(space_id_t space_id,
   } else {
     /* Rollback Segments in independent undo tablespaces
     are tracked in the RSEG_ARRAY page. */
-    rsegs_header = trx_rsegsf_get(space_id, mtr);
+    trx_rsegsf_t *rsegs_header = trx_rsegsf_get(space_id, mtr);
 
     trx_rsegsf_set_page_no(rsegs_header, rseg_slot, page_no, mtr);
   }
@@ -249,10 +247,9 @@ static trx_rseg_t *trx_rseg_mem_initialize(ulint id, space_id_t space_id,
 
   if (fsp_is_system_temporary(space_id)) {
     mutex_create(LATCH_ID_TEMP_SPACE_RSEG, &rseg->mutex);
-  } else if (fsp_is_undo_tablespace(space_id)) {
-    mutex_create(LATCH_ID_UNDO_SPACE_RSEG, &rseg->mutex);
   } else {
-    mutex_create(LATCH_ID_TRX_SYS_RSEG, &rseg->mutex);
+    ut_ad(fsp_is_undo_tablespace(space_id));
+    mutex_create(LATCH_ID_UNDO_SPACE_RSEG, &rseg->mutex);
   }
 
   UT_LIST_INIT(rseg->update_undo_list);
@@ -323,8 +320,7 @@ static trx_rseg_t *trx_rseg_physical_initialize(trx_rseg_t *rseg,
       mutex is needed here. */
       ut_ad(srv_is_being_started);
 
-      ut_ad(rseg->space_id == TRX_SYS_SPACE ||
-            (srv_is_upgrade_mode != undo::is_reserved(rseg->space_id)));
+      ut_ad(undo::is_reserved(rseg->space_id));
 
       mutex_enter(&purge_sys->pq_mutex);
       purge_queue->push(std::move(elem));
@@ -395,10 +391,9 @@ trx_rseg_t *trx_rseg_mem_create(ulint id, space_id_t space_id,
 
   if (fsp_is_system_temporary(space_id)) {
     mutex_create(LATCH_ID_TEMP_SPACE_RSEG, &rseg->mutex);
-  } else if (fsp_is_undo_tablespace(space_id)) {
-    mutex_create(LATCH_ID_UNDO_SPACE_RSEG, &rseg->mutex);
   } else {
-    mutex_create(LATCH_ID_TRX_SYS_RSEG, &rseg->mutex);
+    ut_ad(fsp_is_undo_tablespace(space_id));
+    mutex_create(LATCH_ID_UNDO_SPACE_RSEG, &rseg->mutex);
   }
 
   UT_LIST_INIT(rseg->update_undo_list);
@@ -458,8 +453,7 @@ trx_rseg_t *trx_rseg_mem_create(ulint id, space_id_t space_id,
       mutex is needed here. */
       ut_ad(srv_is_being_started);
 
-      ut_ad(space_id == TRX_SYS_SPACE ||
-            (srv_is_upgrade_mode != undo::is_reserved(space_id)));
+      ut_ad(undo::is_reserved(rseg->space_id));
 
       purge_queue->push(elem);
     }
@@ -484,36 +478,7 @@ active undo logs.
 void trx_rsegs_init_start(purge_pq_t *purge_queue) {
   trx_sys->rseg_history_len = 0;
 
-  uint32_t slot;
   mtr_t mtr;
-  space_id_t space_id;
-  page_no_t page_no;
-  trx_rseg_t *rseg = nullptr;
-
-  for (slot = 0; slot < TRX_SYS_N_RSEGS; slot++) {
-    mtr.start();
-    trx_sysf_t *sys_header = trx_sysf_get(&mtr);
-
-    page_no = trx_sysf_rseg_get_page_no(sys_header, slot, &mtr);
-
-    if (page_no != FIL_NULL) {
-      space_id = trx_sysf_rseg_get_space(sys_header, slot, &mtr);
-
-      if (!undo::is_active_truncate_log_present(undo::id2num(space_id))) {
-        /* Create the trx_rseg_t object.
-        Note that all tablespaces with rollback segments
-        use univ_page_size. (system, temp & undo) */
-        rseg = trx_rseg_mem_initialize(slot, space_id, page_no, univ_page_size);
-
-        ut_a(rseg->id == slot);
-
-        purge_sys->rsegs_queue.push_back(rseg);
-
-        trx_sys->rsegs.push_back(rseg);
-      }
-    }
-    mtr.commit();
-  }
 
   undo::spaces->s_lock();
   for (auto undo_space : undo::spaces->m_spaces) {
@@ -523,8 +488,8 @@ void trx_rsegs_init_start(purge_pq_t *purge_queue) {
 
     undo_space->rsegs()->x_lock();
 
-    for (slot = 0; slot < FSP_MAX_ROLLBACK_SEGMENTS; slot++) {
-      page_no = trx_rseg_get_page_no(undo_space->id(), slot);
+    for (uint32_t slot = 0; slot < FSP_MAX_ROLLBACK_SEGMENTS; slot++) {
+      page_no_t page_no = trx_rseg_get_page_no(undo_space->id(), slot);
 
       /* There are no gaps in an RSEG_ARRAY page. New rsegs
       are added sequentially and never deleted undo the
@@ -538,8 +503,8 @@ void trx_rsegs_init_start(purge_pq_t *purge_queue) {
       /* Create the trx_rseg_t object.
       Note that all tablespaces with rollback segments
       use univ_page_size. */
-      rseg = trx_rseg_mem_initialize(slot, undo_space->id(), page_no,
-                                     univ_page_size);
+      trx_rseg_t *rseg = trx_rseg_mem_initialize(slot, undo_space->id(),
+                                                 page_no, univ_page_size);
 
       ut_a(rseg->id == slot);
 
@@ -632,11 +597,7 @@ active undo logs.
 void trx_rsegs_init(purge_pq_t *purge_queue) {
   trx_sys->rseg_history_len.store(0);
 
-  ulint slot;
   mtr_t mtr;
-  space_id_t space_id;
-  page_no_t page_no;
-  trx_rseg_t *rseg = nullptr;
 
   /* Get GTID transaction number from SYS */
   mtr.start();
@@ -649,40 +610,16 @@ void trx_rsegs_init(purge_pq_t *purge_queue) {
   auto &gtid_persistor = clone_sys->get_gtid_persistor();
   gtid_persistor.set_oldest_trx_no_recovery(gtid_trx_no);
 
-  for (slot = 0; slot < TRX_SYS_N_RSEGS; slot++) {
-    mtr.start();
-    trx_sysf_t *sys_header = trx_sysf_get(&mtr);
-
-    page_no = trx_sysf_rseg_get_page_no(sys_header, slot, &mtr);
-
-    if (page_no != FIL_NULL) {
-      space_id = trx_sysf_rseg_get_space(sys_header, slot, &mtr);
-
-      if (!undo::is_active_truncate_log_present(undo::id2num(space_id))) {
-        /* Create the trx_rseg_t object.
-        Note that all tablespaces with rollback segments
-        use univ_page_size. (system, temp & undo) */
-        rseg = trx_rseg_mem_create(slot, space_id, page_no, univ_page_size,
-                                   gtid_trx_no, purge_queue, &mtr);
-
-        ut_a(rseg->id == slot);
-
-        trx_sys->rsegs.push_back(rseg);
-      }
-    }
-    mtr.commit();
-  }
-
   undo::spaces->s_lock();
   for (auto undo_space : undo::spaces->m_spaces) {
     /* Remember the size of the purge queue before processing this
     undo tablespace. */
-    size_t purge_queue_size = purge_queue->size();
+    const size_t purge_queue_size = purge_queue->size();
 
     undo_space->rsegs()->x_lock();
 
-    for (slot = 0; slot < FSP_MAX_ROLLBACK_SEGMENTS; slot++) {
-      page_no = trx_rseg_get_page_no(undo_space->id(), slot);
+    for (ulint slot = 0; slot < FSP_MAX_ROLLBACK_SEGMENTS; slot++) {
+      page_no_t page_no = trx_rseg_get_page_no(undo_space->id(), slot);
 
       /* There are no gaps in an RSEG_ARRAY page. New rsegs
       are added sequentially and never deleted until the
@@ -694,9 +631,8 @@ void trx_rsegs_init(purge_pq_t *purge_queue) {
       mtr.start();
 
       /* Create the trx_rseg_t object.
-      Note that all tablespaces with rollback segments
-      use univ_page_size. */
-      rseg =
+      Note that all tablespaces with rollback segments use univ_page_size. */
+      trx_rseg_t *rseg =
           trx_rseg_mem_create(slot, undo_space->id(), page_no, univ_page_size,
                               gtid_trx_no, purge_queue, &mtr);
 
@@ -721,11 +657,6 @@ void trx_rsegs_init(purge_pq_t *purge_queue) {
   undo::spaces->s_unlock();
 }
 
-/** Create a rollback segment in the given tablespace. This could be either
-the system tablespace, the temporary tablespace, or an undo tablespace.
-@param[in]      space_id        tablespace to get the rollback segment
-@param[in]      rseg_id         slot number of the rseg within this tablespace
-@return page number of the rollback segment header page created */
 page_no_t trx_rseg_create(space_id_t space_id, ulint rseg_id) {
   mtr_t mtr;
   fil_space_t *space = fil_space_get(space_id);
@@ -743,10 +674,11 @@ page_no_t trx_rseg_create(space_id_t space_id, ulint rseg_id) {
                                : FIL_TYPE_TABLESPACE));
   ut_ad(univ_page_size.equals_to(page_size_t(space->flags)));
 
+  /* At runtime, rollback segments should not be created in system tablespace */
+  ut_a_ne(space_id, TRX_SYS_SPACE);
+
   if (fsp_is_system_temporary(space_id)) {
     mtr_set_log_mode(&mtr, MTR_LOG_NO_REDO);
-  } else if (space_id == TRX_SYS_SPACE) {
-    /* We will modify TRX_SYS_RSEGS in TRX_SYS page. */
   }
 
   page_no_t page_no = trx_rseg_header_create(space_id, univ_page_size,
@@ -759,7 +691,7 @@ page_no_t trx_rseg_create(space_id_t space_id, ulint rseg_id) {
 
 /** Initialize */
 void Rsegs::init() {
-  m_rsegs.reserve(TRX_SYS_N_RSEGS);
+  m_rsegs.reserve(FSP_MAX_ROLLBACK_SEGMENTS);
 
   m_latch = static_cast<rw_lock_t *>(
       ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*m_latch)));
@@ -1059,90 +991,6 @@ bool trx_rseg_init_rollback_segments(space_id_t space_id,
   }
 
   return (true);
-}
-
-/** Build a list of unique undo tablespaces found in the TRX_SYS page.
-Do not count the system tablespace. The vector will be sorted on space id.
-@param[in,out]  spaces_to_open          list of undo tablespaces found. */
-void trx_rseg_get_n_undo_tablespaces(Space_Ids *spaces_to_open) {
-  ulint i;
-  mtr_t mtr;
-  trx_sysf_t *sys_header;
-
-  ut_ad(spaces_to_open->empty());
-
-  mtr_start(&mtr);
-
-  sys_header = trx_sysf_get(&mtr);
-
-  for (i = 0; i < TRX_SYS_N_RSEGS; i++) {
-    page_no_t page_no;
-    space_id_t space_id;
-
-    page_no = trx_sysf_rseg_get_page_no(sys_header, i, &mtr);
-
-    if (page_no == FIL_NULL) {
-      continue;
-    }
-
-    space_id = trx_sysf_rseg_get_space(sys_header, i, &mtr);
-
-    /* The system space id should not be in this array. */
-    if (space_id != TRX_SYS_SPACE && !spaces_to_open->contains(space_id)) {
-      spaces_to_open->push_back(space_id);
-    }
-  }
-
-  mtr_commit(&mtr);
-
-  ut_a(spaces_to_open->size() <= TRX_SYS_N_RSEGS);
-}
-
-/** Upgrade the TRX_SYS page so that it no longer tracks rsegs in undo
-tablespaces. It should only track rollback segments in the system tablespace.
-Put FIL_NULL in the slots in TRX_SYS. Latch protection is not needed since
-this is during single-threaded startup. */
-void trx_rseg_upgrade_undo_tablespaces() {
-  ulint i;
-  mtr_t mtr;
-  trx_sysf_t *sys_header;
-
-  mtr_start(&mtr);
-  fil_space_t *space = fil_space_get(TRX_SYS_SPACE);
-  mtr_x_lock(&space->latch, &mtr, UT_LOCATION_HERE);
-
-  sys_header = trx_sysf_get(&mtr);
-
-  /* First, put FIL_NULL in all the slots that contain the space_id
-  of any non-system tablespace. The rollback segments in those
-  tablespaces are replaced when the file is replaced. */
-  for (i = 0; i < TRX_SYS_N_RSEGS; i++) {
-    page_no_t page_no;
-    space_id_t space_id;
-
-    page_no = trx_sysf_rseg_get_page_no(sys_header, i, &mtr);
-
-    if (page_no == FIL_NULL) {
-      continue;
-    }
-
-    space_id = trx_sysf_rseg_get_space(sys_header, i, &mtr);
-
-    /* The TRX_SYS page only tracks older undo tablespaces
-    that do not use the RSEG_ARRAY page. */
-    ut_a(space_id < dict_sys_t::s_min_undo_space_id);
-
-    /* Leave rollback segments in the system tablespace
-    untouched in case innodb_undo_tablespaces is later
-    set back to 0. */
-    if (space_id != 0) {
-      trx_sysf_rseg_set_space(sys_header, i, FIL_NULL, &mtr);
-
-      trx_sysf_rseg_set_page_no(sys_header, i, FIL_NULL, &mtr);
-    }
-  }
-
-  mtr_commit(&mtr);
 }
 
 /** Create the file page for the rollback segment directory in an undo

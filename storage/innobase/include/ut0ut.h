@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2024, Oracle and/or its affiliates.
+Copyright (c) 1994, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -79,9 +79,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "mysqld_error.h"
 #include "sql/derror.h"
 #endif /* !UNIV_NO_ERR_MSGS */
-
-/** Index name prefix in fast index creation, as a string constant */
-#define TEMP_INDEX_PREFIX_STR "\377"
 
 #ifndef UNIV_HOTBACKUP
 #if defined(HAVE_PAUSE_INSTRUCTION)

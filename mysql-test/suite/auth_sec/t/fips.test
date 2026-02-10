@@ -43,8 +43,6 @@ let $MYSQL_PORT= `SELECT @@port`;
 
 --echo ##Test: Default server fips mode.
 --exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "SHOW VARIABLES LIKE 'ssl_fips%';"
---echo MD5 digest:
---exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "select md5(8);show warnings;"
 
 --echo ##Test: Restart server and provide ssl-fips-mode at server startup:
 --exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
@@ -54,8 +52,6 @@ let $MYSQL_PORT= `SELECT @@port`;
 --source include/wait_until_connected_again.inc
 --echo Server fips mode:
 --exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "SHOW VARIABLES LIKE 'ssl_fips%';"
---echo MD5 digest:
---exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "select md5(8);show warnings;"
 
 --echo ##Test: Restart server and provide ssl-fips-mode at server startup: ON
 --exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
@@ -65,8 +61,6 @@ let $MYSQL_PORT= `SELECT @@port`;
 --source include/wait_until_connected_again.inc
 --echo Server fips mode:
 --exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "SHOW VARIABLES LIKE 'ssl_fips%';"
---echo MD5 digest:
---exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "select md5(8);show warnings;"
 
 --echo ##Test: Restart server and provide ssl-fips-mode at server startup: ON with skip ssl
 --exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
@@ -76,8 +70,6 @@ let $MYSQL_PORT= `SELECT @@port`;
 --source include/wait_until_connected_again.inc
 --echo Server fips mode:
 --exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "SHOW VARIABLES LIKE 'ssl_fips%';"
---echo MD5 digest:
---exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "select md5(8);show warnings;"
 
 --echo ##Test: Restart server and provide ssl-fips-mode at server startup: STRICT
 --exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
@@ -87,8 +79,6 @@ let $MYSQL_PORT= `SELECT @@port`;
 --source include/wait_until_connected_again.inc
 --echo Server fips mode:
 --exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "SHOW VARIABLES LIKE 'ssl_fips%';"
---echo MD5 digest:
---exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "select md5(8);show warnings;"
 
 --echo # restart server using restart default values
 --echo Restart server.
@@ -100,23 +90,15 @@ let $MYSQL_PORT= `SELECT @@port`;
 
 --echo ##Test: MySQL client, Set fips mode: Default
 --exec $MYSQL --ssl-mode=REQUIRED --host=127.0.0.1 -P $MASTER_MYPORT --ssl-fips-mode=OFF -e "SHOW VARIABLES LIKE 'ssl_fips%';"
---echo MD5 digest:
---exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "select md5(8);show warnings;"
 
 --echo ##Test: MySQL client, Set fips mode: OFF
 --exec $MYSQL --ssl-mode=REQUIRED --host=127.0.0.1 -P $MASTER_MYPORT --ssl-fips-mode=OFF -e "SHOW VARIABLES LIKE 'ssl_fips%';"
---echo MD5 digest:
---exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "select md5(8);show warnings;"
 
 --echo ##Test: MySQL client, Set fips mode: ON
 --exec $MYSQL --ssl-mode=REQUIRED --host=127.0.0.1 -P $MASTER_MYPORT --ssl-fips-mode=ON -e "SHOW VARIABLES LIKE 'ssl_fips%';"
---echo MD5 digest:
---exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "select md5(8);show warnings;"
 
 --echo ##Test: MySQL client, Set fips mode: STRICT
 --exec $MYSQL --ssl-mode=REQUIRED --host=127.0.0.1 -P $MASTER_MYPORT --ssl-fips-mode=STRICT -e "SHOW VARIABLES LIKE 'ssl_fips%';"
---echo MD5 digest:
---exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "select md5(8);show warnings;"
 
 --echo ##Test: MySQL client, Set fips mode: INVALID
 --error 1

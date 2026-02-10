@@ -3,6 +3,7 @@
 SET NAMES utf8mb3;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+SET explain_json_format_version = 1;
 Single window function (plus ORDER BY).
 CREATE TABLE t(i INT, j INT);
 INSERT INTO t VALUES (1,1), (1,4), (1,2), (1,4);

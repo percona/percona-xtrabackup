@@ -5,6 +5,7 @@ Note	####	Storing MySQL user name or password information in the connection meta
 [connection master]
 ==== Initialize ====
 [on master]
+call mtr.add_suppression("The replica coordinator and worker threads are stopped, possibly leaving data in inconsistent state");
 CREATE TABLE tinnodb (a INT) ENGINE = INNODB;
 SHOW CREATE TABLE tinnodb;
 Table	Create Table
@@ -23,13 +24,17 @@ include/rpl/sync_to_replica_received.inc
 ==== Verify results on slave ====
 include/rpl/stop_replica.inc
 Replica_IO_State = ''
-Last_SQL_Error = ''
+Last_SQL_Error = '... The replica coordinator and worker threads are stopped, possibly leaving data in inconsistent state. A restart should restore consistency automatically, although using non-transactional storage for data or info tables or DDL queries could lead to problems. In such cases you have to examine your data (see documentation for details).'
 Last_IO_Error = ''
 include/assert.inc [Assert that the slave table has no rows]
 ==== Clean up ====
 [on master]
 DROP TABLE tinnodb;
 set @@debug= @old_debug;
+RESET BINARY LOGS AND GTIDS;
 [on slave]
 DROP TABLE tinnodb;
+RESET REPLICA;
+RESET BINARY LOGS AND GTIDS;
+include/rpl/start_replica.inc
 include/rpl/deinit.inc

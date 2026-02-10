@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -23,12 +23,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "mysql_component_imp.h"
 
-#include <stddef.h>
+#include <cstddef>
+#include <utility>
 #include <vector>
 
 mysql_component::mysql_component(mysql_component_t *component_data,
                                  my_string urn)
-    : m_component_data(component_data), m_urn(urn) {
+    : m_component_data(component_data), m_urn(std::move(urn)) {
   for (const mysql_metadata_ref_t *metadata_iterator = component_data->metadata;
        metadata_iterator->key != nullptr; ++metadata_iterator) {
     this->set_value(metadata_iterator->key, metadata_iterator->value);

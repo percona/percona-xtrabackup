@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,8 +27,10 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "my_openssl_fips.h"
-#include <assert.h>
 #include <openssl/err.h>
+#include <openssl/opensslv.h>
+
+#include <cassert>
 
 #if OPENSSL_VERSION_NUMBER < 0x10002000L
 #include <openssl/ec.h>
@@ -37,6 +39,7 @@
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/evp.h>
 #include <openssl/provider.h>
+// IWYU pragma: no_include <openssl/types.h>
 #endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
 /**
   Get fips mode from openssl library,
@@ -107,7 +110,7 @@ bool set_fips_mode(const int fips_mode, char err_string[OPENSSL_ERROR_LENGTH]) {
       allow successful cryptographic operation and will not abort the server.
       For openssl 3.0 we turn the FIPs mode off for good measure.
     */
-    unsigned long err_library = ERR_get_error();
+    unsigned long const err_library = ERR_get_error();
     set_fips_mode_inner(fips_mode_old);
     ERR_error_string_n(err_library, err_string, OPENSSL_ERROR_LENGTH - 1);
     err_string[OPENSSL_ERROR_LENGTH - 1] = '\0';
@@ -128,7 +131,7 @@ bool set_fips_mode(const int fips_mode, char err_string[OPENSSL_ERROR_LENGTH]) {
 int test_ssl_fips_mode(char err_string[OPENSSL_ERROR_LENGTH]) {
   const unsigned test_fips_mode = get_fips_mode() == 0 ? 1 : 0;
   const int ret = set_fips_mode_inner(test_fips_mode);
-  unsigned long err = (ret == 0) ? ERR_get_error() : 0;
+  unsigned long const err = (ret == 0) ? ERR_get_error() : 0;
 
   if (err != 0) {
     ERR_error_string_n(err, err_string, OPENSSL_ERROR_LENGTH - 1);

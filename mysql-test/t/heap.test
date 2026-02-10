@@ -2,6 +2,9 @@
 # Test of heap tables.
 #
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 --disable_warnings
 drop table if exists t1,t2,t3;
 --enable_warnings
@@ -546,3 +549,5 @@ SELECT * FROM t1 WHERE c1='bar2';
 SELECT * FROM t1 IGNORE INDEX (i1) WHERE c1='bar2';
 --echo #should show one tuple!
 DROP TABLE t1;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

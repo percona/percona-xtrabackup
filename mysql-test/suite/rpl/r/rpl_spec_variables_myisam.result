@@ -71,10 +71,10 @@ SET @@session.character_set_database=utf8mb3;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 Warning	1681	Updating 'character_set_database' is deprecated. It will be made read-only in a future release.
-SET @@global.collation_server=utf8_bin;
+SET @@global.collation_server=utf8mb3_bin;
 Warnings:
 Warning	3778	'utf8mb3_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
-SET @@session.collation_server=utf8_bin;
+SET @@session.collation_server=utf8mb3_bin;
 Warnings:
 Warning	3778	'utf8mb3_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 [On Master]

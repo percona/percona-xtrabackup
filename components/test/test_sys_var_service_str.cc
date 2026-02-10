@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -22,13 +22,16 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <fcntl.h>
+#include <cstdio>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/service_implementation.h>
 #include <mysql/components/services/component_sys_var_service.h>
 #include <mysql/components/services/mysql_system_variable.h>
-#include <mysql/plugin.h>
 
-#include "my_macros.h"
 #include "typelib.h"
 
 #define MAX_BUFFER_LENGTH 100
@@ -36,6 +39,8 @@ int log_text_len = 0;
 char log_text[MAX_BUFFER_LENGTH];
 FILE *outfile;
 const char *filename = "test_component_sys_var_service_str.log";
+
+#define MAX_PATH_LEN 512
 
 #define WRITE_LOG(format, lit_log_text)                                 \
   log_text_len = sprintf(log_text, format, lit_log_text);               \
@@ -129,7 +134,7 @@ static mysql_service_status_t test_component_sys_var_service_str_init() {
     }
   }
   {
-    char var[FN_REFLEN];
+    char var[MAX_PATH_LEN];
     char *pvar;
     size_t len = sizeof(var) - 1;
 

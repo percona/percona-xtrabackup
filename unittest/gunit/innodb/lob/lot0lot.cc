@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -55,7 +55,7 @@ void lob_tester_t::print_info() {
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
 
-  trx_id_t trxid = 888;
+  trx_id_t const trxid = 888;
 
   lob::ref_t ref;
   ref.m_id = lobid;
@@ -78,14 +78,14 @@ void lob_tester_t::fetch_full() {
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
   LOG("Inserted lobid=" << lobid);
 
-  trx_id_t trxid = 28;
+  trx_id_t const trxid = 28;
 
   lob::ref_t ref;
   ref.m_id = lobid;
   lob::insert(trxid, ref, lob, SIZE);
 
-  ulint offset = 0;
-  ulint fetch_bytes = SIZE;
+  ulint const offset = 0;
+  ulint const fetch_bytes = SIZE;
   byte *buf = new byte[fetch_bytes];
   lob::read(trxid, ref, offset, fetch_bytes, buf);
   LOG("Comparing bytes=" << fetch_bytes);
@@ -108,15 +108,15 @@ void test_2() {
   ref.m_id = lobid;
   lob::insert(10, ref, lob, SIZE);
 
-  ulint replace_offset = 5;
-  ulint replace_bytes = 10;
+  ulint const replace_offset = 5;
+  ulint const replace_bytes = 10;
   byte *replace_buf = new byte[replace_bytes + 1];
   memset(replace_buf, '\0', replace_bytes + 1);
   strcpy((char *)replace_buf, "1234567890");
   lob::replace(12, ref, replace_offset, replace_bytes, replace_buf);
 
-  ulint offset = 0;
-  ulint fetch_bytes = 40;
+  ulint const offset = 0;
+  ulint const fetch_bytes = 40;
   byte *buf = new byte[fetch_bytes];
   memset(buf, '\0', fetch_bytes);
   lob::read(11, ref, offset, fetch_bytes - 1, buf);
@@ -132,7 +132,7 @@ void insert_generic(ulint size) {
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, size);
 
-  trx_id_t trxid = 10;
+  trx_id_t const trxid = 10;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -140,7 +140,7 @@ void insert_generic(ulint size) {
   lob::insert(trxid, ref, lob, size);
 
   /* Fetch the LOB that has been inserted. */
-  std::unique_ptr<byte[]> buf(new byte[size]);
+  std::unique_ptr<byte[]> const buf(new byte[size]);
   lob::read(trxid, ref, 0, size, buf.get());
 
   ASSERT_TRUE(memcmp(buf.get(), lob, size) == 0);
@@ -160,7 +160,7 @@ void test_3() {
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
 
-  trx_id_t trxid = 10;
+  trx_id_t const trxid = 10;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -169,14 +169,14 @@ void test_3() {
   LOG("Inserted LOB: " << lob);
 
   /* Fetch the LOB that has been inserted. */
-  ulint offset = 0;
+  ulint const offset = 0;
   ulint fetch_bytes = SIZE;
   byte *buf = new byte[fetch_bytes];
   lob::read(trxid, ref, offset, fetch_bytes, buf);
   LOG("Fetched LOB: " << buf);
 
   /* Insert more data in middle of LOB. */
-  ulint ins_offset = 20;
+  ulint const ins_offset = 20;
   ulint ins_bytes = 10;
   byte *ins_data = new byte[ins_bytes + 1];
   strcpy((char *)ins_data, "1234567890");
@@ -206,7 +206,7 @@ void lob_tester_t::test_4() {
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
 
-  trx_id_t trxid = 182;
+  trx_id_t const trxid = 182;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -215,7 +215,7 @@ void lob_tester_t::test_4() {
   LOG("Inserted lobid=" << lobid);
 
   /* Fetch the LOB that has been inserted. */
-  ulint offset = 0;
+  ulint const offset = 0;
   ulint fetch_bytes = SIZE;
   byte *buf = new byte[fetch_bytes];
   lob::read(trxid, ref, offset, fetch_bytes, buf);
@@ -226,7 +226,7 @@ void lob_tester_t::test_4() {
   }
 
   /* Insert more data in middle of LOB. */
-  ulint ins_offset = 11000;
+  ulint const ins_offset = 11000;
   ulint ins_bytes = 10;
   byte *ins_data = new byte[ins_bytes + 1];
   strcpy((char *)ins_data, "1234567890");
@@ -246,7 +246,7 @@ void lob_tester_t::test_4() {
     LOG("FAIL");
   }
 
-  ulint trail = SIZE - ins_offset;
+  ulint const trail = SIZE - ins_offset;
   LOG("Comparing the remaining bytes=" << trail);
   if (memcmp(buf + ins_offset, buf2 + ins_offset + ins_bytes, trail) == 0) {
     LOG("PASS");
@@ -276,7 +276,7 @@ void lob_tester_t::remove_middle_1() {
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
 
-  trx_id_t trxid = 200;
+  trx_id_t const trxid = 200;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -285,7 +285,7 @@ void lob_tester_t::remove_middle_1() {
   LOG("Inserted lobid=" << lobid);
 
   /* Fetch the LOB that has been inserted. */
-  ulint offset = 0;
+  ulint const offset = 0;
   ulint fetch_bytes = SIZE;
   byte *buf = new byte[fetch_bytes];
   lob::read(trxid, ref, offset, fetch_bytes, buf);
@@ -296,8 +296,8 @@ void lob_tester_t::remove_middle_1() {
   }
 
   /* Remove 5 bytes data in middle of LOB. */
-  ulint rm_offset = 15;
-  ulint rm_bytes = 5;
+  ulint const rm_offset = 15;
+  ulint const rm_bytes = 5;
   LOG("Removing " << rm_bytes << " bytes of data");
   lob::remove_middle(trxid, ref, rm_offset, rm_bytes);
 
@@ -314,7 +314,7 @@ void lob_tester_t::remove_middle_1() {
     LOG("FAIL");
   }
 
-  ulint trail = SIZE - rm_offset - rm_bytes;
+  ulint const trail = SIZE - rm_offset - rm_bytes;
   LOG("Comparing the remaining bytes=" << trail);
   if (memcmp(buf + rm_offset + rm_bytes, buf2 + rm_offset, trail) == 0) {
     LOG("PASS");
@@ -330,7 +330,7 @@ void lob_tester_t::remove_middle_1() {
 a variable offset.  */
 void lob_tester_t::remove_middle_stress_1() {
   const ulint SIZE = MB10;
-  ulint rm_len = 100;
+  ulint const rm_len = 100;
 
   for (ulint rm_offset = 0; rm_offset < SIZE; ++rm_offset) {
     std::cerr << "size=" << SIZE << ", len=" << rm_len << ", off=" << rm_offset
@@ -343,7 +343,7 @@ void lob_tester_t::remove_middle_stress_1() {
 a variable offset.  */
 void lob_tester_t::replace_stress() {
   const ulint SIZE = MB10;
-  ulint len = 2000;
+  ulint const len = 2000;
 
   for (ulint offset = 0; offset < SIZE; offset += 200) {
     std::cerr << "size=" << SIZE << ", len=" << len << ", off=" << offset
@@ -362,14 +362,14 @@ void lob_tester_t::replace_generic(ulint lob_size, ulint offset,
   LOG("size=" << SIZE << ", len=" << replace_len << ", off=" << offset);
 
   /* Ensure that the requested replace length is within limits. */
-  ulint can_be_replaced = lob_size - offset;
+  ulint const can_be_replaced = lob_size - offset;
   if (replace_len > can_be_replaced) {
     replace_len = can_be_replaced;
   }
 
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
-  trx_id_t trx1 = 100;
+  trx_id_t const trx1 = 100;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -377,29 +377,29 @@ void lob_tester_t::replace_generic(ulint lob_size, ulint offset,
   lob::insert(trx1, ref, lob, SIZE);
 
   /* Fetch the LOB that has been inserted. */
-  ulint fetch_offset = 0;
-  ulint fetch_bytes = SIZE;
-  std::unique_ptr<byte[]> buf(new byte[fetch_bytes]);
+  ulint const fetch_offset = 0;
+  ulint const fetch_bytes = SIZE;
+  std::unique_ptr<byte[]> const buf(new byte[fetch_bytes]);
   lob::read(trx1, ref, fetch_offset, fetch_bytes, buf.get());
   ut_ad(memcmp(buf.get(), lob, SIZE) == 0);
 
   /* Replace */
   lobid_t lobid2;
-  trx_id_t trx2 = 300;
-  ulint replace_offset = offset;
+  trx_id_t const trx2 = 300;
+  ulint const replace_offset = offset;
   byte *replace_lob = lob_data::generate_lob(&lobid2, '|', replace_len);
   lob::replace(trx2, ref, replace_offset, replace_len, replace_lob);
 
   /* Fetch the older LOB that has been originally inserted. */
-  trx_id_t trx3 = 250;
-  std::unique_ptr<byte[]> buf2(new byte[SIZE]);
+  trx_id_t const trx3 = 250;
+  std::unique_ptr<byte[]> const buf2(new byte[SIZE]);
   lob::read(trx3, ref, fetch_offset, fetch_bytes, buf2.get());
   ut_ad(memcmp(buf2.get(), lob, SIZE) == 0);
 
   /* Fetch the newer LOB that has been replaced. */
-  trx_id_t trx4 = 350;
+  trx_id_t const trx4 = 350;
   memset(buf2.get(), '\0', SIZE);
-  ulint len = lob::read(trx4, ref, fetch_offset, fetch_bytes, buf2.get());
+  ulint const len = lob::read(trx4, ref, fetch_offset, fetch_bytes, buf2.get());
 
   ut_ad(len == fetch_bytes);
 
@@ -410,14 +410,14 @@ void lob_tester_t::replace_generic(ulint lob_size, ulint offset,
   ut_ad(memcmp(buf2.get() + replace_offset, replace_lob, replace_len) == 0);
 
   // Compare the trailer
-  ulint trailer_len = SIZE - replace_offset - replace_len;
+  ulint const trailer_len = SIZE - replace_offset - replace_len;
   ut_ad(memcmp(buf2.get() + replace_offset + replace_len,
                lob + replace_offset + replace_len, trailer_len) == 0);
 
   trx_rollback(trx2, ref);
 
   /* Fetch the latest LOB. */
-  trx_id_t trx5 = 400;
+  trx_id_t const trx5 = 400;
   memset(buf2.get(), '\0', SIZE);
   lob::read(trx5, ref, fetch_offset, fetch_bytes, buf2.get());
   ut_ad(memcmp(buf2.get(), lob, SIZE) == 0);
@@ -434,7 +434,7 @@ void lob_tester_t::remove_middle_gen(ulint lob_size, ulint offset,
   const ulint SIZE = lob_size;
 
   /* Ensure that the requested removal length is within limits. */
-  ulint can_be_removed = lob_size - offset;
+  ulint const can_be_removed = lob_size - offset;
   if (rm_len > can_be_removed) {
     rm_len = can_be_removed;
   }
@@ -442,7 +442,7 @@ void lob_tester_t::remove_middle_gen(ulint lob_size, ulint offset,
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
 
-  trx_id_t trxid = 200;
+  trx_id_t const trxid = 200;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -456,13 +456,13 @@ void lob_tester_t::remove_middle_gen(ulint lob_size, ulint offset,
   lob::read(trxid, ref, fetch_offset, fetch_bytes, buf);
   ut_ad(memcmp(buf, lob, SIZE) == 0);
 
-  trx_id_t rm_trxid = 300;
+  trx_id_t const rm_trxid = 300;
 
-  ulint rm_offset = offset;
-  ulint rm_bytes = rm_len;
+  ulint const rm_offset = offset;
+  ulint const rm_bytes = rm_len;
   lob::remove_middle(rm_trxid, ref, rm_offset, rm_bytes);
 
-  trx_id_t trx3 = 400;
+  trx_id_t const trx3 = 400;
 
   /* Fetch the LOB that has been modified. */
   fetch_bytes = SIZE - rm_bytes;
@@ -475,10 +475,10 @@ void lob_tester_t::remove_middle_gen(ulint lob_size, ulint offset,
   ut_ad(memcmp(buf, buf2, rm_offset) == 0);
 
   /* Comparing the remaining bytes. */
-  ulint trail = SIZE - rm_offset - rm_bytes;
+  ulint const trail = SIZE - rm_offset - rm_bytes;
   ut_ad(memcmp(buf + rm_offset + rm_bytes, buf2 + rm_offset, trail) == 0);
 
-  trx_id_t trx4 = 250;
+  trx_id_t const trx4 = 250;
 
   /* Fetch the older LOB. */
   fetch_offset = 0;
@@ -490,7 +490,7 @@ void lob_tester_t::remove_middle_gen(ulint lob_size, ulint offset,
   /* Rollback the remove_middle() operation. */
   trx_rollback(rm_trxid, ref);
 
-  trx_id_t trx5 = 500;
+  trx_id_t const trx5 = 500;
 
   /* Fetch the latest LOB. */
   fetch_offset = 0;
@@ -511,7 +511,7 @@ void lob_tester_t::insert_rollback() {
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
 
-  trx_id_t trxid = 300;
+  trx_id_t const trxid = 300;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -519,15 +519,15 @@ void lob_tester_t::insert_rollback() {
   lob::insert(trxid, ref, lob, SIZE);
 
   /* Fetch the LOB that has been inserted. */
-  ulint fetch_offset = 0;
-  ulint fetch_bytes = SIZE;
+  ulint const fetch_offset = 0;
+  ulint const fetch_bytes = SIZE;
   byte *buf = new byte[fetch_bytes];
   lob::read(trxid, ref, fetch_offset, fetch_bytes, buf);
   ut_ad(memcmp(buf, lob, SIZE) == 0);
 
   trx_rollback(trxid, ref);
 
-  ulint len = lob::read(trxid, ref, fetch_offset, fetch_bytes, buf);
+  ulint const len = lob::read(trxid, ref, fetch_offset, fetch_bytes, buf);
   ut_ad(len == 0);
 
   lob_data::remove_lob(lobid);
@@ -538,7 +538,7 @@ void lob_tester_t::insert_rollback() {
 a variable offset.  */
 void lob_tester_t::insert_middle_stress() {
   const ulint size = MB7;
-  ulint len = 2000;
+  ulint const len = 2000;
 
   for (ulint offset = 0; offset < size; offset += 200) {
     std::cerr << "size=" << size << ", len=" << len << ", off=" << offset
@@ -557,14 +557,14 @@ void lob_tester_t::insert_middle_generic(ulint lob_size, ulint offset,
   const ulint size2 = lob_size + len;
   ulint ret_len = 0;
 
-  std::unique_ptr<byte[]> buf2(new byte[size2]);
+  std::unique_ptr<byte[]> const buf2(new byte[size2]);
 
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
   lobid_t lobid2;
   byte *lob2 = lob_data::generate_lob(&lobid2, '|', len);
 
-  trx_id_t trx1 = 100;
+  trx_id_t const trx1 = 100;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -572,24 +572,24 @@ void lob_tester_t::insert_middle_generic(ulint lob_size, ulint offset,
   lob::insert(trx1, ref, lob, SIZE);
 
   /* Fetch the LOB that has been inserted. */
-  ulint fetch_offset = 0;
-  ulint fetch_bytes = SIZE;
-  std::unique_ptr<byte[]> buf(new byte[fetch_bytes]);
+  ulint const fetch_offset = 0;
+  ulint const fetch_bytes = SIZE;
+  std::unique_ptr<byte[]> const buf(new byte[fetch_bytes]);
   lob::read(trx1, ref, fetch_offset, fetch_bytes, buf.get());
   ut_ad(memcmp(buf.get(), lob, SIZE) == 0);
 
   /* Insert Middle */
-  trx_id_t trx2 = 300;
+  trx_id_t const trx2 = 300;
   lob::insert_middle(trx2, ref, offset, lob2, len);
 
   /* Fetch the older LOB that has been originally inserted. */
-  trx_id_t trx3 = 250;
+  trx_id_t const trx3 = 250;
   memset(buf2.get(), '\0', size2);
   ret_len = lob::read(trx3, ref, 0, SIZE, buf2.get());
   ut_ad(memcmp(buf2.get(), lob, SIZE) == 0);
 
   /* Fetch the newer LOB that has been modified. */
-  trx_id_t trx4 = 350;
+  trx_id_t const trx4 = 350;
   memset(buf2.get(), '\0', size2);
   ret_len = lob::read(trx4, ref, 0, size2, buf2.get());
 
@@ -602,13 +602,13 @@ void lob_tester_t::insert_middle_generic(ulint lob_size, ulint offset,
   ut_ad(memcmp(buf2.get() + offset, lob2, len) == 0);
 
   // Compare the trailer
-  ulint trailer_len = SIZE - offset;
+  ulint const trailer_len = SIZE - offset;
   ut_ad(memcmp(buf2.get() + offset + len, lob + offset, trailer_len) == 0);
 
   trx_rollback(trx2, ref);
 
   /* Fetch the latest LOB. */
-  trx_id_t trx5 = 400;
+  trx_id_t const trx5 = 400;
   memset(buf2.get(), '\0', size2);
   lob::read(trx5, ref, 0, SIZE, buf2.get());
   ut_ad(memcmp(buf2.get(), lob, SIZE) == 0);
@@ -632,7 +632,7 @@ TEST(insert, InsertStressMB5) {
 
 TEST(replace, ReplaceStressMB3) {
   const ulint SIZE = MB3;
-  ulint len = 2000;
+  ulint const len = 2000;
   lob_tester_t tester;
 
   for (ulint offset = 0; offset < SIZE; offset += 1000) {

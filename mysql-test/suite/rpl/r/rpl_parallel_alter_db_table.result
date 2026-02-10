@@ -7,15 +7,9 @@ CREATE DATABASE d1 CHARACTER SET UTF8MB4;
 CREATE TABLE d1.t1 (a INT NOT NULL, b VARCHAR(10));
 include/rpl/sync_to_replica.inc
 include/rpl/stop_replica.inc
-SET @save_replica_parallel_type = @@GLOBAL.replica_parallel_type;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET @save_replica_parallel_workers = @@GLOBAL.replica_parallel_workers;
 SET @saved_replica_preserve_commit_order = @@GLOBAL.replica_preserve_commit_order;
 SET @saved_debug= @@GLOBAL.debug;
-SET GLOBAL replica_parallel_type = LOGICAL_CLOCK;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET GLOBAL replica_parallel_workers = 4;
 SET GLOBAL replica_preserve_commit_order= ON;
 set GLOBAL debug="+d,delay_alter_table_by_one_second";
@@ -31,9 +25,6 @@ include/assert.inc ['ALTER DATABASE runs successfully.']
 include/assert.inc ['ALTER TABLE runs successfully.']
 DROP TABLE d1.t1;
 DROP DATABASE d1;
-SET @@GLOBAL.replica_parallel_type= @save_replica_parallel_type;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET @@GLOBAL.replica_parallel_workers= @save_replica_parallel_workers;
 SET @@GLOBAL.replica_preserve_commit_order= @saved_replica_preserve_commit_order;
 SET @@GLOBAL.debug= @saved_debug;

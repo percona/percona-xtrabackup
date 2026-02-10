@@ -13,6 +13,9 @@
 
 # EXPLAIN output is different with the hypergraph optimizer.
 --source include/not_hypergraph.inc
+SET explain_json_format_version = 1;
+
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
 
 # Optimizer plan are printed as part of the test-case and changing page
 # size will affect the optimizer plan numbers. so enable it only for 16K
@@ -39,6 +42,7 @@ let $wl6737_auto_inc = auto_increment;
 let $restart_parameters = restart: --big-tables=1;
 --source include/restart_mysqld.inc
 
+SET explain_json_format_version = 1;
 --source suite/innodb/include/query_workload_itt.inc
 
 #-----------------------------------------------------------------------------
@@ -49,6 +53,7 @@ let $restart_parameters = restart: --big-tables=1;
 let $extra_restart_parameters =--big-tables=1;
 --source include/restart_innodb_read_only.inc
 
+SET explain_json_format_version = 1;
 --source suite/innodb/include/query_workload_itt.inc
 
 let $restart_parameters = restart;

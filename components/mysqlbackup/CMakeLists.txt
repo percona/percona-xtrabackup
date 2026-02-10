@@ -1,4 +1,4 @@
-# Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -29,3 +29,11 @@ MYSQL_ADD_COMPONENT(mysqlbackup
   MODULE_ONLY
   LINK_LIBRARIES library_mysys
   )
+
+IF(WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO)
+  IF(MY_COMPILER_IS_GNU)
+    TARGET_LINK_OPTIONS(component_mysqlbackup PRIVATE
+      -Wno-error=stringop-overflow
+      )
+  ENDIF()
+ENDIF()

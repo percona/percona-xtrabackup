@@ -57,6 +57,11 @@ IF(protobuf_BUILD_SHARED_LIBS)
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory
     )
 
+  IF(APPLE)
+    TARGET_LINK_OPTIONS(libprotobuf-lite
+      PRIVATE LINKER:-no_warn_duplicate_libraries)
+  ENDIF()
+
   IF(WIN32)
     ADD_CUSTOM_COMMAND(TARGET libprotobuf-lite POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different

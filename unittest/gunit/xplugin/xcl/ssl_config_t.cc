@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,8 +29,7 @@
 
 #include "plugin/x/client/context/xssl_config.h"
 
-namespace xcl {
-namespace test {
+namespace xcl::test {
 
 using ::testing::Test;
 using ::testing::Values;
@@ -42,7 +41,7 @@ using Ssl_mode_field = Ssl_config::Mode Ssl_config::*;
 class Xcl_ssl_config_tests : public Test {
  public:
   bool assert_mode_requires_ssl(const Ssl_config::Mode m) {
-    m_sut.reset(new Ssl_config());
+    m_sut = std::make_unique<Ssl_config>();
     m_sut->m_mode = m;
 
     return m_sut->does_mode_requires_ssl();
@@ -51,8 +50,8 @@ class Xcl_ssl_config_tests : public Test {
   template <typename Value_type, typename Method, typename Field>
   bool assert_value(Field field, Method method, const Value_type value,
                     const bool reset = true) {
-    if (reset) m_sut.reset(new Ssl_config());
-    auto sut = m_sut.get();
+    if (reset) m_sut = std::make_unique<Ssl_config>();
+    auto *sut = m_sut.get();
     sut->*field = value;
 
     return (sut->*method)();
@@ -118,5 +117,4 @@ TEST_F(Xcl_ssl_config_tests, requires_ca) {
       assert_value(mode, requires_ca, Ssl_config::Mode::Ssl_verify_identity));
 }
 
-}  // namespace test
-}  // namespace xcl
+}  // namespace xcl::test

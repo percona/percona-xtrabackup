@@ -11,7 +11,7 @@ create table t1 (t int);
 include/rpl/sync_to_replica.inc
 STOP REPLICA;
 include/rpl/wait_for_replica_to_stop.inc
-CHANGE REPLICATION SOURCE to SOURCE_USER='replssl',SOURCE_PASSWORD='';
+CHANGE REPLICATION SOURCE to SOURCE_USER='replssl',SOURCE_PASSWORD='', SOURCE_SSL=0;
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -97,6 +97,6 @@ SOURCE_SSL_CA ='',
 SOURCE_SSL_CERT='',
 SOURCE_SSL_KEY='',
 SOURCE_SSL_VERIFY_SERVER_CERT=0,
-SOURCE_SSL=0,
+SOURCE_SSL=1,
 SOURCE_TLS_VERSION='';
 include/rpl/deinit.inc

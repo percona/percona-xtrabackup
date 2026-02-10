@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,10 @@
 
 #include "sql/dd/impl/system_views/triggers.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Triggers &Triggers::instance() {
-  static Triggers *s_instance = new Triggers();
+  static auto *s_instance = new Triggers();
   return *s_instance;
 }
 
@@ -97,5 +96,4 @@ Triggers::Triggers() {
   m_target_def.add_where("AND IS_VISIBLE_DD_OBJECT(tbl.hidden)");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

@@ -7,6 +7,9 @@
 
 --source include/count_sessions.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 let $MYSQLD_DATADIR= `SELECT @@datadir`;
 
 ###########################################################################
@@ -64,14 +67,14 @@ CREATE SCHEMA s1;
 
 SET DEBUG= '+d, fail_while_acquiring_dd_object';
 --error ER_LOCK_WAIT_TIMEOUT
-ALTER SCHEMA s1 DEFAULT COLLATE 'utf8_bin';
+ALTER SCHEMA s1 DEFAULT COLLATE 'utf8mb3_bin';
 SET DEBUG= '-d, fail_while_acquiring_dd_object';
 
 --echo # 1.2b Fail while storing  dd object during alter.
 
 SET DEBUG= '+d, fail_while_storing_dd_object';
 --error ER_LOCK_WAIT_TIMEOUT
-ALTER SCHEMA s1 DEFAULT COLLATE 'utf8_bin';
+ALTER SCHEMA s1 DEFAULT COLLATE 'utf8mb3_bin';
 SET DEBUG= '-d, fail_while_acquiring_dd_object';
 
 --echo # 1.3a Fail while acquiring dd object during drop.
@@ -354,3 +357,5 @@ DROP TABLE t1;
 --source include/wait_until_count_sessions.inc
 
 ###########################################################################
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

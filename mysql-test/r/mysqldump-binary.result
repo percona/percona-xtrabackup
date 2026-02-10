@@ -1,4 +1,5 @@
 # Bug#22601255 Restoring a dump of binary column, made with mysqldump, warns of invalid string
+include/rpl/set_gtid_mode_off.inc
 CREATE TABLE t1(
 u CHAR(10),
 b BINARY(16),
@@ -59,3 +60,4 @@ ST_AsText(g) FROM t1;
 u='basic'	HEX(b)='EE0C6D03C34C11E5B1640026B977EB17'	HEX(blo)='EE0C6D03C34C11E5B1640026B977EB17'	HEX(g)='000000000101000000000000000000F03F000000000000F03F'	HEX(bi)='EE0C6D03C34C11E5'	ST_AsText(g)
 1	1	1	1	1	POINT(1 1)
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc

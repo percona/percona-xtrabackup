@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -24,14 +24,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 /* This test component unregister the UDF myfunc_double in the init method
    (install) and deinit (uninstall) is empty. */
 
-#include <ctype.h>
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/service_implementation.h>
 #include <mysql/components/services/udf_registration.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 
 REQUIRES_SERVICE_PLACEHOLDER(udf_registration);

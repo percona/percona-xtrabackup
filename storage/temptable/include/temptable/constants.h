@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -33,7 +33,7 @@ namespace temptable {
 
 /** Multiply a number by 1024.
  * @return n * 1024. */
-inline constexpr unsigned long long operator"" _KiB(
+constexpr unsigned long long operator""_KiB(
     /** [in] Number to multiply. */
     unsigned long long n) {
   return n << 10;
@@ -41,7 +41,7 @@ inline constexpr unsigned long long operator"" _KiB(
 
 /** Multiply a number by 1024 * 1024.
  * @return n * 1024 * 1024. */
-inline constexpr unsigned long long operator"" _MiB(
+constexpr unsigned long long operator""_MiB(
     /** [in] Number to multiply. */
     unsigned long long n) {
   return n << 20;
@@ -49,7 +49,7 @@ inline constexpr unsigned long long operator"" _MiB(
 
 /** Multiply a number by 1024 * 1024 * 1024.
  * @return n * 1024 * 1024 * 1024. */
-inline constexpr unsigned long long operator"" _GiB(
+constexpr unsigned long long operator""_GiB(
     /** [in] Number to multiply. */
     unsigned long long n) {
   return n << 30;

@@ -206,14 +206,15 @@ Select_full_range_join	1
 Select_range	0
 Select_range_check	0
 Select_scan	1
-EXPLAIN FORMAT=TREE SELECT * FROM t AS t1, t AS t2 WHERE t1.y = t2.id;
+EXPLAIN FORMAT=TREE SELECT * FROM t AS t1, t AS t2 WHERE t1.y = t2.id LIMIT 1;
 EXPLAIN
--> Nested loop inner join  (rows=10)
-    -> Table scan on t1  (rows=10)
-    -> Single-row index lookup on t2 using PRIMARY (id = t1.y)  (rows=1)
+-> Limit: 1 row(s)  (rows=1)
+    -> Nested loop inner join  (rows=10)
+        -> Table scan on t1  (rows=10)
+        -> Single-row index lookup on t2 using PRIMARY (id = t1.y)  (rows=1)
 
 FLUSH STATUS;
-SELECT * FROM t AS t1, t AS t2 WHERE t1.y = t2.id;
+SELECT * FROM t AS t1, t AS t2 WHERE t1.y = t2.id LIMIT 1;
 SHOW STATUS LIKE 'select%';
 Variable_name	Value
 Select_full_join	0

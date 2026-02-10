@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,11 +24,10 @@
 #include "sql/dd/impl/system_views/role_routine_grants.h"
 #include "sql/dd/impl/system_views/applicable_roles.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Role_routine_grants &Role_routine_grants::instance() {
-  static Role_routine_grants *s_instance = new Role_routine_grants();
+  static auto *s_instance = new Role_routine_grants();
   return *s_instance;
 }
 
@@ -66,5 +65,4 @@ Role_routine_grants::Role_routine_grants() {
   m_target_def.add_where(" AND c_enabled = TRUE");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

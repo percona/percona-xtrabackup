@@ -7,7 +7,9 @@
 SELECT reset_event_tracking_counter("all");
 
 --echo # Execute query to populate event tracker
+--disable_warnings
 FLUSH PRIVILEGES;
+--enable_warnings
 --echo # Should only show event markers for following events:
 --echo # command events
 --echo # $EVENT_TYPE

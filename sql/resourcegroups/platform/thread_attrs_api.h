@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -131,24 +131,6 @@ bool set_thread_priority(int priority);
 */
 
 bool set_thread_priority(int priority, my_thread_os_id_t thread_id);
-
-/**
-  Find number of VCPUs as seen by the current process based on the
-  affinity between each process and VCPU.
-*/
-uint32_t num_vcpus_using_affinity();
-
-/**
-  Get the number of VCPUS based on system configuration.
-*/
-
-uint32_t num_vcpus_using_config();
-
-/**
-  Get the number of VCPU.
-*/
-
-uint32_t num_vcpus();
 
 /**
   Check if thread priority setting is allowed on the platform or not.

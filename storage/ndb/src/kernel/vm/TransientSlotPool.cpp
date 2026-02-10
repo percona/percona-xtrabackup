@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -46,9 +46,11 @@ TransientSlotPool::TransientSlotPool()
 
 void TransientSlotPool::init(Uint32 type_id, Uint32 slot_size, Uint32 *min_recs,
                              const Pool_context &pool_ctx) {
-  //  const Uint32 slots_per_page = Page::DATA_WORDS_PER_PAGE / slot_size;
-
-  m_page_pool = new TransientPagePool(type_id, pool_ctx.get_mem_manager());
+  const Uint32 slots_per_page = Page::DATA_WORDS_PER_PAGE / slot_size;
+  const Uint32 highest_slot_id = RNIL - 1;
+  const Uint32 highest_page_id = (highest_slot_id + 1) / slots_per_page - 1;
+  m_page_pool = new TransientPagePool(type_id, pool_ctx.get_mem_manager(),
+                                      highest_page_id);
   m_type_id = type_id;
   *min_recs = 0;
   // m_slot_size = slot_size;

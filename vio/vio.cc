@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,14 +33,25 @@
   the file descriptor.
 */
 
-#include <sys/types.h>
-#include <new>
+#include "my_config.h"
 
-#include "my_compiler.h"
+#include <assert.h>  // for assert
+#include <limits.h>  // for INT_MAX
+#include <signal.h>  // for sigemptyset
+#ifdef HAVE_SYS_SOCKET_H
+#include <sys/socket.h>  // for sockaddr_storage
+#endif
+#include <sys/types.h>
+
+#include <atomic>  // for atomic_flag
+#include <new>
+#include <optional>  // for optional
+#include <utility>   // for move
+
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_io.h"
 #include "my_psi_config.h"
+#include "my_sys.h"
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/mysql_socket.h"
 #include "mysql/psi/psi_memory.h"  // IWYU pragma: keep
@@ -393,7 +404,7 @@ bool vio_reset(Vio *vio, enum enum_vio_type type, my_socket sd,
       Close socket only when it is not equal to the new one.
     */
     if (sd != mysql_socket_getfd(vio->mysql_socket)) {
-      if (vio->inactive == false) vio->vioshutdown(vio);
+      if (!vio->inactive) vio->vioshutdown(vio);
     }
 #ifdef HAVE_KQUEUE
     else {
@@ -426,7 +437,7 @@ Vio *internal_vio_create(uint flags) {
 Vio *mysql_socket_vio_new(MYSQL_SOCKET mysql_socket, enum_vio_type type,
                           uint flags) {
   Vio *vio;
-  my_socket sd = mysql_socket_getfd(mysql_socket);
+  my_socket const sd = mysql_socket_getfd(mysql_socket);
   DBUG_TRACE;
   DBUG_PRINT("enter", ("sd: " MY_SOCKET_FMT, sd));
 
@@ -546,7 +557,7 @@ int vio_timeout(Vio *vio, uint which, int timeout_sec) {
 
 void internal_vio_delete(Vio *vio) {
   if (!vio) return; /* It must be safe to delete null pointers. */
-  if (vio->inactive == false) vio->vioshutdown(vio);
+  if (!vio->inactive) vio->vioshutdown(vio);
   vio->~Vio();
   my_free(vio);
 }

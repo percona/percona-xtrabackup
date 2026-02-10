@@ -1,0 +1,165 @@
+--source include/have_router.inc
+
+# Set the router-id, to generate statistics
+# this way we can wait until router detects
+# changes to DB_OBJECTS.
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+
+# Service
+--let $mrs_add_service_path="/svc1"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+# Content set
+--let $mrs_add_content_set_enabled=1
+--let $mrs_add_content_set_path=/set
+--source ../include/mrs/content_set/add.inc
+SET @my_content_set=@content_set_id;
+
+# Content files
+--let $mrs_add_content="first file"
+--let $mrs_add_content_file_path=/first.html
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="second file"
+--let $mrs_add_content_file_path=/second.html
+--source ../include/mrs/content_file/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify defaultRedirects setting
+--echo #
+--echo # 1. Set defaultRedirects with an entry not matching an existing Content File
+--echo # 2. Set defaultRedirects with an entry matching an existing Content File
+--echo # 3. Empty redirect target.
+--echo # 4. Redirect target references itself.
+--echo # 5. Redirect with additional query.
+--echo # 6. Redirect with additional fragment.
+--echo # 7. Redirect with additional query and fragment.
+--echo #
+--echo
+
+
+--echo #
+--echo # I.1
+
+--let $mrs_sql_id_variable=@my_content_set
+--let $mrs_modify_options='{"defaultRedirects":{"third.html":"second.html"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/third.html
+  --display HEADER,BODY
+  --response-type RAW
+  --expected-status 307;
+
+
+--echo #
+--echo # I.2
+
+--let $mrs_sql_id_variable=@my_content_set
+--let $mrs_modify_options='{"defaultRedirects":{"first.html":"second.html"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --display HEADER,BODY
+  --response-type RAW
+  --expected-status 307;
+
+
+--echo #
+--echo # I.3
+
+--let $mrs_sql_id_variable=@my_content_set
+--let $mrs_modify_options='{"defaultRedirects":{"first.html":""}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --display HEADER,BODY
+  --response-type RAW
+  --expected-status 307;
+
+
+--echo #
+--echo # I.4
+
+--let $mrs_sql_id_variable=@my_content_set
+--let $mrs_modify_options='{"defaultRedirects":{"first.html":"first.html"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --display HEADER,BODY
+  --response-type RAW
+  --expected-status 307;
+
+
+--echo #
+--echo # I.5
+
+--let $mrs_sql_id_variable=@my_content_set
+--let $mrs_modify_options='{"defaultRedirects":{"first.html":"second.html"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--let $mrs_client_arg_path='/svc1/set/first.html?q1=a&q2=b&q3=c'
+--let $mrs_client_arg_display=header,body
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_expected_status=307
+--replace_regex /^Date.*/Date -> %DATE%/
+--source ../include/mrs/mrs_client.inc
+
+
+--echo #
+--echo # I.6
+
+--let $mrs_sql_id_variable=@my_content_set
+--let $mrs_modify_options='{"defaultRedirects":{"first.html":"second.html"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--let $mrs_client_arg_path='/svc1/set/first.html#fragment'
+--let $mrs_client_arg_display=header,body
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_expected_status=307
+--replace_regex /^Date.*/Date -> %DATE%/
+--source ../include/mrs/mrs_client.inc
+
+
+--echo #
+--echo # I.7
+
+--let $mrs_sql_id_variable=@my_content_set
+--let $mrs_modify_options='{"defaultRedirects":{"first.html":"second.html"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--let $mrs_client_arg_path='/svc1/set/first.html?q1=a&q2=b#fragment'
+--let $mrs_client_arg_display=header,body
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_expected_status=307
+--replace_regex /^Date.*/Date -> %DATE%/
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+--let $cleanup_arg_mrs_existing_service=/svc1/set/first.html
+--let $cleanup_arg_mrs_existing_service=/svc1/set/second.html
+--source ../include/mrs/cleanup.inc

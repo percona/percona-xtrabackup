@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -85,17 +85,24 @@ class PT_create_table_option;
 class PT_ddl_table_option;
 class PT_derived_table;
 class PT_exclusion;
+class PT_external_file_format;
+class PT_external_file_list;
 class PT_field_def_base;
+class PT_file_attributes;
 class PT_frame;
 class PT_group;
 class PT_tablesample;
 class PT_insert_values_list;
 class PT_into_destination;
 class PT_isolation_level;
+class PT_jdv_name_value;
+class PT_jdv_name_value_list;
 class PT_item_list;
 class PT_joined_table;
 class PT_json_table_column;
 class PT_key_part_specification;
+class PT_library_list;
+class PT_library_with_alias;
 class PT_limit_clause;
 class PT_locking_clause;
 class PT_locking_clause_list;
@@ -125,7 +132,6 @@ class PT_start_option_value_list_following_option_type;
 class PT_sub_partition;
 class PT_subpartition;
 class PT_subquery;
-class PT_subselect;
 class PT_table_constraint_def;
 class PT_table_element;
 class PT_table_reference;
@@ -156,6 +162,7 @@ struct LEX;
 struct Sql_cmd_srs_attributes;
 struct udf_func;
 struct PT_install_component_set_element;
+enum class Json_constructor_null_clause;
 
 template <class T>
 class List;
@@ -418,6 +425,7 @@ union MY_SQL_PARSER_STYPE {
   Condition_information_item::Name cond_info_item_name;
   List<Condition_information_item> *cond_info_list;
   bool is_not_empty;
+  uint table_type;
   Set_signal_information *signal_item_list;
   enum_trigger_order_type trigger_action_order_type;
   struct {
@@ -426,10 +434,10 @@ union MY_SQL_PARSER_STYPE {
   } trg_characteristics;
   Index_hint *key_usage_element;
   List<Index_hint> *key_usage_list;
-  PT_subselect *subselect;
   PT_item_list *item_list2;
   PT_order_expr *order_expr;
   PT_order_list *order_list;
+  Mem_root_array_YY<PT_order_list *> group_list_array;
   Limit_options limit_options;
   Query_options select_options;
   PT_limit_clause *limit_clause;
@@ -462,8 +470,10 @@ union MY_SQL_PARSER_STYPE {
   PT_start_option_value_list_following_option_type
       *start_option_value_list_following_option_type;
   PT_set *set;
-  Line_separators line_separators;
-  Field_separators field_separators;
+  Line_separators *line_separators;
+  Field_separators *field_separators;
+  URI_information *outfile_uri;
+  File_information *outfile_file_info;
   PT_into_destination *into_destination;
   PT_select_var *select_var_ident;
   PT_select_var_list *select_var_list;
@@ -489,12 +499,12 @@ union MY_SQL_PARSER_STYPE {
   } column_value_pair;
   struct {
     PT_item_list *column_list;
-    PT_item_list *value_list;
-  } column_value_list_pair;
-  struct {
-    PT_item_list *column_list;
     PT_insert_values_list *row_value_list;
   } column_row_value_list_pair;
+  struct {
+    PT_item_list *column_list;
+    PT_item_list *value_list;
+  } column_value_list_pair;
   struct {
     PT_item_list *column_list;
     PT_query_expression_body *insert_query_expression;
@@ -722,6 +732,18 @@ union MY_SQL_PARSER_STYPE {
     Parse_tree_root *statement;
     LEX_CSTRING schema_name_for_explain;
   } explainable_stmt;
+
+  PT_library_list *library_list;
+  PT_library_with_alias *library_with_alias;
+
+  PT_jdv_name_value *jdv_name_value;
+  PT_jdv_name_value_list *jdv_name_value_list;
+
+  Json_constructor_null_clause json_constructor_null_clause;
+
+  PT_external_file_format *external_file_format;
+  PT_external_file_list *external_file_list;
+  PT_file_attributes *file_attributes;
 };
 
 static_assert(sizeof(MY_SQL_PARSER_STYPE) <= 32, "YYSTYPE is too big");

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1164,6 +1164,87 @@ Query_block *build_show_procedures_query(const POS &pos, THD *thd, String *wild,
   Item *type_condition =
       top_query.prepare_equal_item(alias_type, tmp_lex_string);
   if (top_query.add_condition(type_condition)) return nullptr;
+
+  // ... [ AND ] Name LIKE <value> ...
+  if (wild) {
+    Item *like = top_query.prepare_like_item(alias_name, wild);
+    if (!like || top_query.add_condition(like)) return nullptr;
+  }
+
+  // ... [ AND ] <user provided condition> ...
+  if (where_cond && top_query.add_condition(where_cond)) return nullptr;
+
+  // ... ORDER BY 'Db, Name' ...
+  if (top_query.add_order_by(alias_db) || top_query.add_order_by(alias_name))
+    return nullptr;
+
+  Query_block *sl = top_query.prepare_query_block();
+
+  // sql_command is set to SQL_QUERY after above call, so.
+  thd->lex->sql_command = current_cmd;
+
+  return sl;
+}
+
+// Build a substitute query for SHOW LIBRARY
+
+Query_block *build_show_library_query(const POS &pos, THD *thd, String *wild,
+                                      Item *where_cond) {
+  enum_sql_command current_cmd = thd->lex->sql_command;
+
+  static const LEX_CSTRING system_view_name = {STRING_WITH_LEN("LIBRARIES")};
+
+  // Define field name literal used in query to be built.
+  static const LEX_CSTRING field_db = {STRING_WITH_LEN("LIBRARY_SCHEMA")};
+  static const LEX_CSTRING alias_db = {STRING_WITH_LEN("Db")};
+
+  static const LEX_CSTRING field_name = {STRING_WITH_LEN("LIBRARY_NAME")};
+  static const LEX_CSTRING alias_name = {STRING_WITH_LEN("Name")};
+
+  static const LEX_CSTRING field_language = {STRING_WITH_LEN("LANGUAGE")};
+  static const LEX_CSTRING alias_language = {STRING_WITH_LEN("Language")};
+
+  static const LEX_CSTRING field_definer = {STRING_WITH_LEN("CREATOR")};
+  static const LEX_CSTRING alias_definer = {STRING_WITH_LEN("Creator")};
+
+  static const LEX_CSTRING field_modified = {STRING_WITH_LEN("LAST_ALTERED")};
+  static const LEX_CSTRING alias_modified = {STRING_WITH_LEN("Modified")};
+
+  static const LEX_CSTRING field_created = {STRING_WITH_LEN("CREATED")};
+  static const LEX_CSTRING alias_created = {STRING_WITH_LEN("Created")};
+
+  static const LEX_CSTRING field_comment = {STRING_WITH_LEN("LIBRARY_COMMENT")};
+  static const LEX_CSTRING alias_comment = {STRING_WITH_LEN("Comment")};
+
+  /*
+     Build sub query.
+     ...
+  */
+  Select_lex_builder sub_query(&pos, thd);
+  if (sub_query.add_select_item(field_db, alias_db) ||
+      sub_query.add_select_item(field_name, alias_name) ||
+      sub_query.add_select_item(field_language, alias_language) ||
+      sub_query.add_select_item(field_definer, alias_definer) ||
+      sub_query.add_select_item(field_modified, alias_modified) ||
+      sub_query.add_select_item(field_created, alias_created) ||
+      sub_query.add_select_item(field_comment, alias_comment))
+    return nullptr;
+
+  // ... FROM information_schema.libraries ...
+  if (sub_query.add_from_item(INFORMATION_SCHEMA_NAME, system_view_name))
+    return nullptr;
+
+  /*
+    Build the top level query
+  */
+
+  Select_lex_builder top_query(&pos, thd);
+
+  // SELECT * FROM <sub_query> ...
+  if (top_query.add_star_select_item() ||
+      top_query.add_from_item(
+          sub_query.prepare_derived_table(system_view_name)))
+    return nullptr;
 
   // ... [ AND ] Name LIKE <value> ...
   if (wild) {

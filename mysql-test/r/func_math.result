@@ -2082,7 +2082,7 @@ INSERT INTO t1 VALUES(97, 1);
 SET SQL_MODE='';
 SELECT 27 DIV (c2/c1) / 17 AS c1 FROM t1 GROUP BY c1;
 c1
-154.0588
+154.1765
 Warnings:
 Warning	1052	Column 'c1' in group statement is ambiguous
 SELECT 27 DIV CAST(c2/c1 AS CHAR) / 17 AS c1 FROM t1 GROUP BY c1;
@@ -2092,7 +2092,7 @@ Warnings:
 Warning	1052	Column 'c1' in group statement is ambiguous
 SELECT 27 DIV CAST(c2/c1 AS DOUBLE) / 17 AS c1 FROM t1 GROUP BY c1;
 c1
-154.0588
+154.1765
 Warnings:
 Warning	1052	Column 'c1' in group statement is ambiguous
 SET SQL_MODE=DEFAULT;

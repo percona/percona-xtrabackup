@@ -3,6 +3,9 @@
 
 -- source include/have_innodb_max_16k.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 #######################################################################
 #                                                                     #
 # Please, DO NOT TOUCH this file as well as the innodb.result file.   #
@@ -28,7 +31,7 @@ let $MYSQLD_DATADIR= `select @@datadir`;
 # the test to be run multiple times without restarting the mysqld server.
 # See Bug#43309 Test main.innodb can't be run twice
 -- disable_query_log
-call mtr.add_suppression("Cannot add field .* in table .* because after adding it, the row size is");
+call mtr.add_suppression("Cannot create the table .* because the record size will exceed the maximum allowed size for a record.");
 call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* in ALTER TABLE `test`.`t1`");
 call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* in RENAME TABLE table `test`.`t1`");
 call mtr.add_suppression("Cannot delete/update rows with cascading foreign key constraints that exceed max depth of 15. Please drop excessive foreign constraints and try again");
@@ -2669,3 +2672,5 @@ connection default;
 drop table t1;
 drop function f1;
 SET @@global.log_bin_trust_function_creators= @old_log_bin_trust_function_creators;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

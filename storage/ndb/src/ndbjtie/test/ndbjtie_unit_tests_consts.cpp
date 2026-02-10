@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+ Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -26,9 +26,9 @@
  * ndbjtie_unit_tests_classes.cpp
  */
 
-#include <assert.h>
 #include <my_config.h>
-#include <string.h>
+#include <cassert>
+#include <cstring>
 
 #include "NdbApi.hpp"
 #include "ndbjtie_unit_tests_consts.hpp"

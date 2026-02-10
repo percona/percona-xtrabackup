@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,8 @@
 
 #ifndef COMPONENT_SERVICES_BITS_PSI_TLS_CHANNEL_BITS_H
 #define COMPONENT_SERVICES_BITS_PSI_TLS_CHANNEL_BITS_H
+
+#include <cstddef>
 
 /**
   @file mysql/components/services/bits/psi_tls_channel_bits.h
@@ -51,9 +53,9 @@
 */
 #define PSI_CURRENT_TLS_CHANNEL_VERSION 1
 
-const size_t MAX_CHANNEL_NAME_SIZE = 64;
-const size_t MAX_PROPERTY_NAME_SIZE = 64;
-const size_t MAX_PROPERTY_VALUE_SIZE = 512;
+constexpr size_t MAX_CHANNEL_NAME_SIZE = 64;
+constexpr size_t MAX_PROPERTY_NAME_SIZE = 64;
+constexpr size_t MAX_PROPERTY_VALUE_SIZE = 512;
 
 /** TLS property */
 class TLS_channel_property {

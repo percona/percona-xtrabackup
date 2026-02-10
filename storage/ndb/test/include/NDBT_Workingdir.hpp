@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
 
    This program is free software; you can redistribute it and/or modify
@@ -55,7 +55,7 @@ class NDBT_Workingdir {
     if (access(m_wd.c_str(), F_OK) == 0) NdbDir::remove_recursive(m_wd.c_str());
   }
 
-  const char *path(void) const { return m_wd.c_str(); }
+  const char *path() const { return m_wd.c_str(); }
 };
 
 #endif

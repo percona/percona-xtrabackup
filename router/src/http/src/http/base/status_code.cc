@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -28,9 +28,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace http {
-namespace base {
-namespace status_code {
+namespace http::base::status_code {
 
 name_type to_string(key_type key) {
   switch (key) {
@@ -165,6 +163,4 @@ name_type to_string(key_type key) {
   }
 }
 
-}  // namespace status_code
-}  // namespace base
-}  // namespace http
+}  // namespace http::base::status_code

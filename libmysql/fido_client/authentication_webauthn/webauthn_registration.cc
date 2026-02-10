@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,8 +26,8 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
 #include <openssl/sha.h>
+#include <cassert>
 
 #include <common.h>
 
@@ -65,7 +65,7 @@ bool webauthn_registration::parse_challenge(const char *challenge) {
   length = base64_decode(challenge, (uint64)strlen(challenge), tmp_value,
                          &end_ptr, 0);
   if (length < 0) return true;
-  unsigned char *to = reinterpret_cast<unsigned char *>(tmp_value);
+  auto *to = reinterpret_cast<unsigned char *>(tmp_value);
   /* skip capability flag */
   to++;
   if (!to) return true;
@@ -129,31 +129,29 @@ bool webauthn_registration::parse_challenge(const char *challenge) {
 bool webauthn_registration::make_challenge_response(
     unsigned char *&challenge_response) {
   /* copy client response into buf */
-  unsigned long authdata_len = get_authdata_len();
-  unsigned long sig_len = get_sig_len();
-  unsigned long cert_len = get_x5c_len();
-  unsigned long client_data_json_len = get_client_data_json_len();
+  unsigned long const authdata_len = get_authdata_len();
+  unsigned long const sig_len = get_sig_len();
+  unsigned long const cert_len = get_x5c_len();
+  unsigned long const client_data_json_len = get_client_data_json_len();
   unsigned short capability = 0;
-  unsigned short capability_len = 1;
-  unsigned long attstmt_len = get_attestation_statement_length();
+  unsigned short const capability_len = 1;
+  unsigned long const attstmt_len = get_attestation_statement_length();
   const char *fmt = get_fmt();
-  unsigned long fmt_len = strlen(fmt);
+  unsigned long const fmt_len = strlen(fmt);
 
   /* calculate total required buffer length */
-  size_t len = capability_len + net_length_size(authdata_len) +
-               net_length_size(sig_len) +
-               (cert_len ? net_length_size(cert_len) + cert_len : 0) +
-               authdata_len + sig_len + net_length_size(client_data_json_len) +
-               client_data_json_len + attstmt_len +
-               net_length_size(attstmt_len) + fmt_len +
-               net_length_size(fmt_len);
-  unsigned char *str = new (std::nothrow) unsigned char[len];
+  size_t const len =
+      capability_len + net_length_size(authdata_len) +
+      net_length_size(sig_len) +
+      (cert_len ? net_length_size(cert_len) + cert_len : 0) + authdata_len +
+      sig_len + net_length_size(client_data_json_len) + client_data_json_len +
+      attstmt_len + net_length_size(attstmt_len) + fmt_len +
+      net_length_size(fmt_len);
+  auto *str = new (std::nothrow) unsigned char[len];
   if (!str) return true;
   unsigned char *pos = str;
 
-  auto cleanup = create_scope_guard([&] {
-    if (str) delete[] str;
-  });
+  auto cleanup = create_scope_guard([&] { delete[] str; });
   if (is_fido2()) {
     capability |= RESIDENT_KEYS;
   }
@@ -196,8 +194,8 @@ bool webauthn_registration::make_challenge_response(
 
   /* base64 encode the whole thing */
   assert(len == (size_t)(pos - str));
-  uint64 needed = base64_needed_encoded_length((uint64)len);
-  unsigned char *tmp_value = new unsigned char[needed];
+  uint64 const needed = base64_needed_encoded_length((uint64)len);
+  auto *tmp_value = new unsigned char[needed];
   base64_encode(str, len, reinterpret_cast<char *>(tmp_value));
   /* Ensure caller will release this memory. */
   challenge_response = tmp_value;
@@ -231,7 +229,7 @@ void webauthn_registration::set_client_data(const unsigned char *salt,
                         base64_salt);
   unsigned char client_data_buf[512] = {0};
   /* construct client data JSON string */
-  size_t client_data_len = snprintf(
+  size_t const client_data_len = snprintf(
       reinterpret_cast<char *>(client_data_buf), sizeof(client_data_buf),
       "{\"type\":\"webauthn.create\",\"challenge\":"
       "\"%s\",\"origin\":\"https://%s\",\"crossOrigin\":false}",

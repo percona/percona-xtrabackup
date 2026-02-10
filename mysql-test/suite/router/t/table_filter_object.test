@@ -1,0 +1,329 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify constrains on FilterObject
+--echo #
+--echo # 1. Verify that FilterObject doesn't accept other types than JsonObject and null.
+--echo # 2. Verify that "$null" opertator doesn't accept other types than null.
+--echo #
+--echo ## II. Verify valid options for FilterObject from point I
+--echo #
+--echo # 1. Verify that FilterObject may be empty.
+--echo # 2. Verify that FilterObject may be an empty JsonObject.
+--echo # 3. Verify that FilterObject may be a null JsonValue.
+--echo # 4. Verify that "$null" operator accepts null JsonValue.
+--echo #
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/table
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/table3
+--source ../include/mrs/db_object/add.inc
+
+UPDATE `mysql_rest_service_metadata`.`object_field` SET allow_sorting=TRUE;
+--source ../include/mrs/end_object_definition.inc
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/basic/table?q=10'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table?q=String'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table?q=true'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table?q=[]'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_arg_path='/svc/basic/table?q={"comments":{"\\\$null":"invalid-value"}}'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table?q={"comments":{"\\\$notnull":"invalid-value"}}'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.1
+--let $mrs_client_arg_path='/svc/basic/table?q='
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=status
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.2
+--let $mrs_client_arg_path='/svc/basic/table?q={"name":"Thrid row"}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=status
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.3
+--let $mrs_client_arg_path='/svc/basic/table?q=null'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=status
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.4
+--let $mrs_client_arg_path='/svc/basic/table?q={"comments":{"\\\$null":null}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=status
+--source ../include/mrs/mrs_client.inc
+
+--echo  0 rows are returned
+--let $mrs_client_arg_path='/svc/basic/table?q={"name":"Thrid row1"}'
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo It returns positive number of records----
+--let $mrs_client_arg_path='/svc/basic/table?q={"name":"Thrid row"}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo ###################### Filter on table3 Starts
+
+--echo "Cases related to $eq"	
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cvarchar":{"\\\$eq":"first row"}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"csmallint":{"\\\$eq":32767}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cdate":{"\\\$eq":{"\\\$date":"2020-12-03"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"geo0":{"\\\$eq":"POINT(110 100)"}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"vec":{"\\\$eq":"[1,0]"}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"ctinyint":{"\\\$eq":127}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $ne"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"csmallint":{"\\\$ne":32767}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cdate":{"\\\$ne":{"\\\$date":"2020-12-03"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $lt"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"csmallint":{"\\\$lt":32767}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cdate":{"\\\$lt":{"\\\$date":"2020-12-03"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $lte"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"csmallint":{"\\\$lte":32767}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cdate":{"\\\$lte":{"\\\$date":"2020-12-03"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $gt"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"csmallint":{"\\\$gt":32766}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cdate":{"\\\$gt":{"\\\$date":"2020-12-02"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to gte"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"csmallint":{"\\\$gte":32766}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cdate":{"\\\$gte":{"\\\$date":"2020-12-02"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $instr"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cvarchar":{"\\\$instr":"second"}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $ninstr"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cvarchar":{"\\\$ninstr":"second"}}'
+
+--echo "Cases related to $like"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cvarchar":{"\\\$like":"%second%"}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $null"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cvarchar":{"\\\$null":null}}'
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $notnull"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cvarchar":{"\\\$notnull":null}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $between"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"id":{"\\\$between":[2,3]}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cvarchar":{"\\\$between":["se","th"]}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cdate":{"\\\$between":[{"\\\$date":"2020-12-01"},{"\\\$date":"2020-12-02"}]}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cdate":{"\\\$between":["2020-12-01","2020-12-02"]}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $fts"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"\\\$match":{"\\\$params":["cvarchar", "ctext"],"\\\$against":{"\\\$expr":"second","\\\$modifier":"IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"\\\$match":{"\\\$params":["cvarchar", "ctext"],"\\\$against":{"\\\$expr":"second","\\\$modifier":"IN NATURAL LANGUAGE MODE"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"\\\$match":{"\\\$params":["cvarchar", "ctext"],"\\\$against":{"\\\$expr":"second","\\\$modifier":"IN BOOLEAN MODE"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"\\\$match":{"\\\$params":["cvarchar", "ctext"],"\\\$against":{"\\\$expr":"second","\\\$modifier":"WITH QUERY EXPANSION"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Few negative cases"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"vec":{"$eq":"POINT(110 100)"}}'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"csmallint":{"$lt":"32767"}}'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"csmallint":{"$gt":"32767"}}'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--echo "Few complex cases"
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cblob":{"\\\$or":[{"\\\$between":[4,0]},{"ctext":{"\\\$and":[{"\\\$between":[3,8]},{"\\\$ninstr":"123.45"},{"geo0":{"\\\$and":[{"cfloat":{"\\\$or":[{"\\\$between":["2004-04-14","2009-04-11"]},{"ctime":{"\\\$or":[{"\\\$like":"2e2"},{"\\\$between":["hello","k_"]}]}},{"\\\$gte":8}]}},{"\\\$instr":"-960954368e1228275712"}]}},{"\\\$eq":"8e1"}]}},{"\\\$gte":0},{"\\\$null":null}]}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"cyear":{"\\\$or":[{"\\\$lte":1196294144.3},{"ctext":{"\\\$or":[{"\\\$gte":1},{"\\\$between":["2001-02-11","2009-05-24"]}]}},{"ctinyint":{"\\\$or":[{"cblob":{"\\\$and":[{"\\\$between":["_","_"]},{"\\\$ninstr":"1376518144e-1934753792"},{"\\\$between":[7,0]},{"cdouble":{"\\\$and":[{"\\\$ne":"747241472e793772032"}]}},{"\\\$lt":-453705728.6}]}},{"\\\$notnull":null}]}},{"\\\$between":["2005-11-03","2002-02-15"]}]}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"ctext":{"\\\$and":[{"\\\$between":[2,4]},{"cenum":{"\\\$and":[{"\\\$between":["HELLO","2009-02-02_2007-02-2313:04:04.015156"]},{"\\\$ninstr":"-1381171200e1335164928"}]}},{"\\\$gte":9},{"cfloat":{"\\\$or":[{"\\\$like":"9e0"}]}},{"\\\$eq":"h%2003-05-2219:56:33.033844"}]}}'
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo "Cases related to $orderby"
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"csmallint":{"\\\$lte":3},"\\\$orderby":{"id":-1,"cvarchar":"DESC","csmallint":"ASC"}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"csmallint":{"\\\$lte":3},"\\\$orderby":{"csmallint":"-1","cdate":"1","cset":1}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"\\\$orderby":{"id":-1,"vec":"DESC","csmallint":"ASC"}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/table3?q={"\\\$orderby":{"csmallint":"-1","cdate":"1","cset":1}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--let $mrs_client_arg_display=body,status
+--source ../include/mrs/mrs_client.inc
+
+--echo ###################### Filter on table3 Ends
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

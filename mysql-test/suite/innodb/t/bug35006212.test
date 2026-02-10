@@ -1,0 +1,126 @@
+--source include/have_debug_sync.inc
+--source include/have_innodb_16k.inc
+
+# This is the test against a scenario where a LOB is being modified at
+# the same time that it's being converted to MySQL format at a
+# transaction isolation level other than READ UNCOMMITTED.
+#
+# This is known to happen on a combination of conditions:
+# - A range scan is performed against the clustered index (only a
+#   clustered index may contain LOB fields)
+# - The record is used to perform an end-range check
+# - End-range checks are performed against the last row in a page, so it
+#   must be the last row in its page (excluding the supremum pseudo-row)
+# - The row must have been checked as part of the same row_search_mvcc()
+#   call
+# - If a row on the page falls outside of range used for the scan, the
+#   scan is aborted and the end range check is never performed - so the
+#   row must be in range
+# - Because having a LOB field precludes the scan from placing matching
+#   rows in buffer, a row matching the scan is immediately returned from
+#   row_search_mvcc(); therefore the row must not be a matching one
+# - When the last row on the page has been deleted, the deleted version
+#   meets the criteria for row_search_mvcc() - it matches the range
+#   condition, but would not have been returned by row_search_mvcc()
+# - The version of the row which is being used for the end range check
+#   (the latest version, need not be in read view) must have its LOB
+#   field in an "is being modified" state - this may happen if a
+#   concurrent connection is inserting a new row (with the same key)
+#   into the gap created by the deleteion, after the first connection
+#   creates a read view for its scan
+# - Although the new record's LOB "is being modified", the modifying
+#   thread must not hold an X lock on the page. This happens with a LOB
+#   that is sufficiently long to force the writing thread to release the
+#   lock while writing the redo log - which it does when calling
+#   log_free_check()
+
+# Note: the bug may be reproduced in earlier builds by adding the line:
+# SET DEBUG = "+d, compare_end_range";
+# The fix for the bug also removed the debug switch, so the line is not
+# included
+
+# With records of around 3k size when 'filler' field is populated to
+# maximum length, but the 'lob' is NULL, we can estimate that there will
+# be 5 per page.
+CREATE TABLE `t` (
+    `id` INT UNSIGNED NOT NULL PRIMARY KEY,
+    `filler` VARCHAR(3000) CHARACTER SET ascii,
+    `lob` BLOB
+  ) ENGINE= InnoDB;
+
+# Inserting 10 records guarantees at least 1 page will be filled.
+DELIMITER $$;
+CREATE PROCEDURE `populate`()
+BEGIN
+    DECLARE `i` INT DEFAULT 1;
+    WHILE `i` <= 10 DO
+      INSERT INTO `t` (`id`, `filler`) VALUES (`i`, REPEAT('a', 3000));
+      SET `i` = `i` + 1;
+    END WHILE;
+END$$
+DELIMITER ;$$
+
+CALL populate();
+
+# We use a trick to discover the ID of the record on the last page
+
+BEGIN;
+SELECT id FROM `t` FOR SHARE;
+--disable_result_log
+SELECT
+    SUBSTRING_INDEX(SUBSTRING_INDEX(ENGINE_LOCK_ID, ':', 4), ':', -1) as page_no,
+    MAX(LOCK_DATA) as max_id FROM performance_schema.data_locks
+  WHERE LOCK_TYPE='RECORD'
+  AND OBJECT_NAME='t'
+  AND LOCK_DATA <> 'supremum pseudo-record'
+  GROUP BY page_no ORDER BY page_no
+  LIMIT 1
+  INTO @_, @id_str;
+--enable_result_log
+ROLLBACK;
+
+SET @my_id = CAST(@id_str AS UNSIGNED INTEGER);
+
+CREATE TABLE `op_id` (
+  `id` INT UNSIGNED NOT NULL PRIMARY KEY
+);
+
+INSERT INTO `op_id` VALUES (@my_id);
+
+SET GLOBAL innodb_purge_stop_now = ON;
+SET GLOBAL innodb_purge_run_now = ON;
+
+DELETE FROM `t` WHERE `id` = @my_id;
+
+--source include/wait_innodb_all_purged.inc
+
+SET DEBUG_SYNC="after_mvcc_assign_read_view SIGNAL have_read_view WAIT_FOR continue_select";
+send SELECT `id`, length(`lob`) FROM `t` FORCE INDEX(primary) WHERE `id` <=10 and `id` >=1;
+
+connect(conn1,localhost,root,,);
+
+--disable_result_log
+SELECT `id` FROM `op_id` INTO @my_id;
+--enable_result_log
+
+SET DEBUG_SYNC="now WAIT_FOR have_read_view";
+
+SET DEBUG_SYNC="blob_write_middle SIGNAL continue_select WAIT_FOR resume_blob";
+send INSERT INTO `t` (`id`, `lob`) VALUES (@my_id, REPEAT('x', 17000));
+
+connection default;
+
+reap;
+
+SET DEBUG_SYNC="now SIGNAL resume_blob";
+
+connection conn1;
+
+reap;
+
+connection default;
+disconnect conn1;
+
+DROP PROCEDURE `populate`;
+DROP TABLE `t`;
+DROP TABLE `op_id`;

@@ -19,4 +19,3 @@ INSERT INTO t2 VALUES (1);
 SET GTID_NEXT= '#';
 DROP TABLE t2;
 SET GTID_NEXT='AUTOMATIC';
-include/rpl/set_gtid_mode.inc [OFF on servers 1]

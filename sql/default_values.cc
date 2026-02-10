@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -98,11 +98,14 @@ size_t column_pack_length(const dd::Column &col_obj) {
   @retval      false         Success.
 */
 
-static bool find_record_length(const dd::Table &table, size_t min_length,
-                               TABLE_SHARE *share) {
+static bool find_record_length(const dd::Abstract_table &table,
+                               size_t min_length, TABLE_SHARE *share) {
   // Get the table property 'pack_record' and initialize out parameters.
-  bool pack_record;
-  if (table.options().get("pack_record", &pack_record)) return true;
+  bool pack_record = false;
+  if (table.options().exists("pack_record") &&
+      table.options().get("pack_record", &pack_record)) {
+    return true;
+  }
 
   assert(share);
   share->fields = 0;
@@ -260,18 +263,20 @@ err:
   return retval;
 }
 
-bool prepare_default_value_buffer_and_table_share(THD *thd,
-                                                  const dd::Table &table,
-                                                  TABLE_SHARE *share) {
+bool prepare_default_value_buffer_and_table_share(
+    THD *thd, const dd::Abstract_table *table, TABLE_SHARE *share) {
   assert(share);
 
   // Get the handler temporarily, needed to get minimal record length as
   // well as extra record length.
-  handler *file = nullptr;
+  bool partitioned =
+      share->is_mv_se_materialized
+          ? false
+          : dynamic_cast<const dd::Table *>(table)->partition_type() !=
+                dd::Table::PT_NONE;
   handlerton *engine = share->db_type();
-  if (!(file = get_new_handler(nullptr,
-                               table.partition_type() != dd::Table::PT_NONE,
-                               thd->mem_root, engine))) {
+  handler *file = get_new_handler(nullptr, partitioned, thd->mem_root, engine);
+  if (file == nullptr) {
     my_error(ER_OUTOFMEMORY, MYF(ME_FATALERROR),
              static_cast<int>(sizeof(handler)));
     return true;
@@ -284,7 +289,9 @@ bool prepare_default_value_buffer_and_table_share(THD *thd,
   ::destroy_at(file);
 
   // Get the number of columns, record length etc.
-  if (find_record_length(table, min_length, share)) return true;
+  if (find_record_length(*table, min_length, share)) {
+    return true;
+  }
 
   // Adjust buffer size and allocate the default value buffer.
   share->rec_buff_length = ALIGN_SIZE(share->reclength + 1 + extra_length);

@@ -12,6 +12,10 @@
 let $engine_type= MEMORY;
 
 --source include/no_valgrind_without_big.inc
+
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 # Test requires: sp-protocol/ps-protocol/view-protocol/cursor-protocol disabled
 --source include/no_protocol.inc
 
@@ -45,3 +49,5 @@ if (!$run)
 
 ##### Cleanup
 --source suite/stress/include/ddl.cln
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

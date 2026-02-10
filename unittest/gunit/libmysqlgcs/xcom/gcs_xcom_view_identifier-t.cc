@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +45,7 @@ TEST_F(XcomVIewIds, CompareViewsTest) {
   ASSERT_FALSE(view_id1 < view_id2);
 
   Gcs_xcom_view_identifier view_id3(1, 23);
-  Gcs_xcom_view_identifier view_id4(1, 24);
+  Gcs_xcom_view_identifier const view_id4(1, 24);
   ASSERT_TRUE(view_id3 < view_id4);
   ASSERT_NE(view_id1, view_id3);
   ASSERT_NE(view_id1, view_id4);
@@ -57,18 +57,18 @@ TEST_F(XcomVIewIds, CompareViewsTest) {
   ASSERT_NE(view_id1, view_id4);
   ASSERT_EQ(view_id3, view_id4);
 
-  Gcs_xcom_view_identifier view_id5(0, 30);
+  Gcs_xcom_view_identifier const view_id5(0, 30);
   ASSERT_TRUE(view_id5 < view_id4);
   ASSERT_TRUE(view_id5 < view_id3);
 }
 
 TEST_F(XcomVIewIds, SetOrderingTest) {
-  Gcs_xcom_view_identifier view_id1(2, 0);
-  Gcs_xcom_view_identifier view_id2(0, 0);
-  Gcs_xcom_view_identifier view_id3(1, 25);
-  Gcs_xcom_view_identifier view_id4(1, 24);
-  Gcs_xcom_view_identifier view_id5(0, 30);
-  Gcs_xcom_view_identifier view_id6(1, 25);
+  Gcs_xcom_view_identifier const view_id1(2, 0);
+  Gcs_xcom_view_identifier const view_id2(0, 0);
+  Gcs_xcom_view_identifier const view_id3(1, 25);
+  Gcs_xcom_view_identifier const view_id4(1, 24);
+  Gcs_xcom_view_identifier const view_id5(0, 30);
+  Gcs_xcom_view_identifier const view_id6(1, 25);
 
   std::set<Gcs_xcom_view_identifier> view_set;
   view_set.insert(view_id1);

@@ -1,8 +1,3 @@
-#
-# Bug #29627690	NOT ABLE TO IMPORT PARTITIONED TABLESPACE OLDER THAN 8.0.14
-# After wl#13352, we no longer try to induce 8.0.14 behaviour by debug
-# variable. innodb.partition_upgrade* tests checks import from 8.0.14.
-# Keeping this test to run on current version.
 select @@lower_case_table_names;
 @@lower_case_table_names
 1
@@ -175,62 +170,3 @@ c1
 5
 8
 DROP TABLE t1;
-Test 5:-
-# 1. Create table in 8.0.13 version
-# 2. Upgrade the table to 8.0.15 version
-# 3. Add another partition (PART_two)
-# 4. Do flush table and generate cfg files
-# 5. These ibd and cfg files are present in 8.0.15_cfg.zip
-# 6. Do import from the cfg file and ibd from 8.0.15_cfg.zip.
-CREATE DATABASE db1;
-use db1;
-CREATE TABLE t1 (
-f1 int
-) ENGINE=InnoDB
-PARTITION BY RANGE (f1)
-(PARTITION PART_one VALUES LESS THAN (10),
-PARTITION PART_two VALUES LESS THAN (20));
-ALTER TABLE t1 DISCARD TABLESPACE;
-ALTER TABLE t1 IMPORT TABLESPACE;
-SELECT * from t1 ORDER BY f1;
-f1
-9
-19
-ALTER TABLE t1 FORCE;
-SELECT * from t1 ORDER BY f1;
-f1
-9
-19
-DROP TABLE t1;
-Test 6:-
-# 1. Create table in 8.0.13 version
-# 2. Upgrade the table to 8.0.15 version
-# 3. Add another partition (PART_two)
-# 4. Upgrade to 8.0.17 versiosn
-# 5. Add another partition (PART_three)
-# 6. Do flush table and generate cfg files
-# 7. These ibd and cfg files are present in 8.0.17_cfg.zip
-# 6. Do import from the cfg file and ibd from 8.0.17_cfg.zip
-use db1;
-CREATE TABLE t1 (
-f1 int
-) ENGINE=InnoDB
-PARTITION BY RANGE (f1)
-(PARTITION PART_one VALUES LESS THAN (10),
-PARTITION PART_two VALUES LESS THAN (20),
-PARTITION PART_three VALUES LESS THAN (30));
-ALTER TABLE t1 DISCARD TABLESPACE;
-ALTER TABLE t1 IMPORT TABLESPACE;
-SELECT * from t1 ORDER BY f1;
-f1
-9
-19
-29
-ALTER TABLE t1 FORCE;
-SELECT * from t1 ORDER BY f1;
-f1
-9
-19
-29
-DROP TABLE t1;
-DROP DATABASE db1;

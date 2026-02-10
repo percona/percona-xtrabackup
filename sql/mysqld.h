@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -179,6 +179,7 @@ extern bool opt_verbose;
 extern MYSQL_PLUGIN_IMPORT std::atomic<int32>
     connection_events_loop_aborted_flag;
 extern long opt_upgrade_mode;
+extern long opt_check_table_funs;
 extern bool opt_initialize;
 extern bool opt_safe_user_create;
 extern bool opt_local_infile, opt_myisam_use_mmap;
@@ -214,7 +215,6 @@ extern bool opt_replica_preserve_commit_order;
 #ifndef NDEBUG
 extern uint replica_rows_last_search_algorithm_used;
 #endif
-extern ulong mts_parallel_option;
 #ifdef _WIN32
 extern bool opt_enable_named_pipe;
 extern char *named_pipe_full_access_group;
@@ -237,7 +237,6 @@ extern const char *default_storage_engine;
 extern const char *default_tmp_storage_engine;
 extern ulonglong temptable_max_ram;
 extern ulonglong temptable_max_mmap;
-extern bool temptable_use_mmap;
 extern bool using_udf_functions;
 extern bool locked_in_memory;
 extern bool opt_using_transactions;
@@ -285,6 +284,8 @@ extern char *my_bind_addr_str;
 extern char *my_admin_bind_addr_str;
 extern uint mysqld_admin_port;
 extern bool listen_admin_interface_in_separate_thread;
+extern bool container_aware;
+extern ulonglong server_memory;
 extern char glob_hostname[HOSTNAME_LENGTH + 1];
 extern char system_time_zone_dst_on[30], system_time_zone_dst_off[30];
 extern char *opt_init_file;
@@ -356,7 +357,7 @@ extern char *opt_mysql_tmpdir;
 extern size_t mysql_unpacked_real_data_home_len;
 extern MYSQL_PLUGIN_IMPORT MY_TMPDIR mysql_tmpdir_list;
 extern const char *show_comp_option_name[];
-extern const char *first_keyword, *binary_keyword;
+extern const char *first_keyword;
 extern MYSQL_PLUGIN_IMPORT const char *my_localhost;
 extern const char *in_left_expr_name;
 extern SHOW_VAR status_vars[];
@@ -386,6 +387,7 @@ extern char *opt_protocol_compression_algorithms;
 /** The size of the host_cache. */
 extern uint host_cache_size;
 extern ulong log_error_verbosity;
+extern bool innodb_native_foreign_keys;
 
 extern bool persisted_globals_load;
 extern bool opt_keyring_operations;
@@ -465,7 +467,6 @@ extern PSI_mutex_key key_LOCK_delegate_connection_mutex;
 extern PSI_mutex_key key_LOCK_group_replication_connection_mutex;
 
 extern PSI_mutex_key key_commit_order_manager_mutex;
-extern PSI_mutex_key key_mutex_replica_worker_hash;
 
 extern PSI_rwlock_key key_rwlock_LOCK_logger;
 extern PSI_rwlock_key key_rwlock_channel_map_lock;
@@ -497,7 +498,6 @@ extern PSI_cond_key key_cond_mta_gaq;
 extern PSI_cond_key key_RELAYLOG_update_cond;
 extern PSI_cond_key key_gtid_ensure_index_cond;
 extern PSI_cond_key key_COND_thr_lock;
-extern PSI_cond_key key_cond_slave_worker_hash;
 extern PSI_cond_key key_commit_order_manager_cond;
 extern PSI_cond_key key_COND_group_replication_connection_cond_var;
 extern PSI_thread_key key_thread_bootstrap;
@@ -506,6 +506,7 @@ extern PSI_thread_key key_thread_one_connection;
 extern PSI_thread_key key_thread_compress_gtid_table;
 extern PSI_thread_key key_thread_parser_service;
 extern PSI_thread_key key_thread_handle_con_admin_sockets;
+extern PSI_thread_key key_thread_rpl_opt_tracker;
 extern PSI_cond_key key_monitor_info_run_cond;
 
 extern PSI_file_key key_file_binlog;
@@ -672,6 +673,8 @@ extern uint opt_large_page_size;
 extern char lc_messages_dir[FN_REFLEN];
 extern char *lc_messages_dir_ptr;
 extern const char *log_error_dest;
+extern const char *log_dia_dest;
+extern bool log_diagnostic_enable;
 extern MYSQL_PLUGIN_IMPORT char reg_ext[FN_EXTLEN];
 extern MYSQL_PLUGIN_IMPORT uint reg_ext_length;
 extern MYSQL_PLUGIN_IMPORT uint lower_case_table_names;
@@ -724,10 +727,12 @@ extern mysql_mutex_t LOCK_rotate_binlog_master_key;
 extern mysql_mutex_t LOCK_partial_revokes;
 extern mysql_mutex_t LOCK_global_conn_mem_limit;
 extern mysql_mutex_t LOCK_authentication_policy;
+extern mysql_mutex_t LOCK_rpl_opt_tracker;
 
 extern mysql_cond_t COND_server_started;
 extern mysql_cond_t COND_compress_gtid_table;
 extern mysql_cond_t COND_manager;
+extern mysql_cond_t COND_rpl_opt_tracker;
 
 extern mysql_rwlock_t LOCK_sys_init_connect;
 extern mysql_rwlock_t LOCK_sys_init_replica;
@@ -819,6 +824,7 @@ bool update_named_pipe_full_access_group(const char *new_group_name);
 extern LEX_STRING opt_mandatory_roles;
 extern bool opt_mandatory_roles_cache;
 extern bool opt_always_activate_granted_roles;
+extern bool opt_activate_mandatory_roles;
 
 extern mysql_component_t mysql_component_mysql_server;
 extern mysql_component_t mysql_component_performance_schema;
@@ -830,8 +836,8 @@ extern SERVICE_TYPE_NO_CONST(registry) * srv_registry_no_lock;
    mysql_server component */
 extern SERVICE_TYPE(dynamic_loader_scheme_file) * scheme_file_srv;
 extern SERVICE_TYPE(dynamic_loader) * dynamic_loader_srv;
-extern SERVICE_TYPE(registry_registration) * registry_registration;
-extern SERVICE_TYPE(registry_registration) * registry_registration_no_lock;
+extern SERVICE_TYPE_NO_CONST(registry_registration) * srv_registry_registration;
+extern SERVICE_TYPE_NO_CONST(registry_query) * srv_registry_query;
 
 class Deployed_components;
 extern Deployed_components *g_deployed_components;

@@ -1,3 +1,4 @@
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
 SELECT @@innodb_temp_data_file_path;
 @@innodb_temp_data_file_path
 ibtmp1:12M:autoextend

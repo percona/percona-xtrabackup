@@ -40,18 +40,27 @@ INSERT INTO `£Τ£Έ` VALUES ('¤Ά¤¤¤¦¤¨¤ª'),('¤Ά¤¤¤¦¤¨'),('¤Ά¤¤¤¦'),('¤Ά¤¤'),('¤Ά')
 INSERT INTO `£Τ£Ή` VALUES ('νάνένήνίνΰ'),('νάνένήνί'),('νάνένή'),('νάνέ'),('νά'),('');
 
 #InnoDB
+--sorted_result
 SELECT `£Γ£±`, CHAR_LENGTH(`£Γ£±`) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, CHAR_LENGTH(`£Γ£±`) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, CHAR_LENGTH(`£Γ£±`) FROM `£Τ£³`;
 
 #MyISAM
+--sorted_result
 SELECT `£Γ£±`, CHAR_LENGTH(`£Γ£±`) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, CHAR_LENGTH(`£Γ£±`) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, CHAR_LENGTH(`£Γ£±`) FROM `£Τ£¶`;
 
 #MEMORY
+--sorted_result
 SELECT `£Γ£±`, CHAR_LENGTH(`£Γ£±`) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, CHAR_LENGTH(`£Γ£±`) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, CHAR_LENGTH(`£Γ£±`) FROM `£Τ£Ή`;
 
 DROP TABLE `£Τ£±`;

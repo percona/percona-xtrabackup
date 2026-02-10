@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -75,7 +75,6 @@ class Slave_committed_queue;
 class Slave_worker;
 class String;
 struct LEX_SOURCE_INFO;
-struct db_worker_hash_entry;
 
 extern uint sql_replica_skip_counter;
 
@@ -1158,15 +1157,6 @@ class Relay_log_info : public Rpl_info {
   // number's is determined by global replica_parallel_workers
   Slave_worker_array workers;
 
-  // To map a database to a worker
-  malloc_unordered_map<std::string,
-                       unique_ptr_with_deleter<db_worker_hash_entry>>
-      mapping_db_to_worker{key_memory_db_worker_hash_entry};
-  bool inited_hash_workers;  //  flag to check if mapping_db_to_worker is inited
-
-  mysql_mutex_t slave_worker_hash_lock;  // for mapping_db_to_worker
-  mysql_cond_t slave_worker_hash_cond;   // for mapping_db_to_worker
-
   /*
     For the purpose of reporting the worker status in performance schema table,
     we need to preserve the workers array after worker thread was killed. So, we
@@ -1209,16 +1199,12 @@ class Relay_log_info : public Rpl_info {
   /*
     Container for references of involved partitions for the current event group
   */
-  // CGAP dynarray holds id:s of partitions of the Current being executed Group
-  Prealloced_array<db_worker_hash_entry *, 4> curr_group_assigned_parts;
   // deferred array to hold partition-info-free events
   Prealloced_array<Slave_job_item, 8> curr_group_da;
 
   bool curr_group_seen_gtid;   // current group started with Gtid-event or not
   bool curr_group_seen_begin;  // current group started with B-event or not
   bool curr_group_isolated;    // current group requires execution in isolation
-  bool mts_end_group_sets_max_dbs;  // flag indicates if partitioning info is
-                                    // discovered
   volatile ulong
       mts_wq_underrun_w_id;  // Id of a Worker whose queue is getting empty
   /*
@@ -2160,11 +2146,6 @@ bool mysql_show_relaylog_events(THD *thd);
 inline bool is_mts_worker(const THD *thd) {
   return thd->system_thread == SYSTEM_THREAD_SLAVE_WORKER;
 }
-
-/**
- Auxiliary function to check if we have a db partitioned MTS
- */
-bool is_mts_db_partitioned(Relay_log_info *rli);
 
 /**
   Checks whether the supplied event encodes a (2pc-aware) DDL

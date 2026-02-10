@@ -109,6 +109,9 @@ c1	c2
 2	NULL
 3	NULL
 # Mysqldump output
+SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;
+SET @@SESSION.SQL_LOG_BIN= 0;
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ 'GTID_SET';
 
 CREATE DATABASE /*!32312 IF NOT EXISTS*/ `tde_db` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
 
@@ -122,8 +125,10 @@ CREATE TABLE `t1` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ENCRYPTION='Y';
 /*!40101 SET character_set_client = @saved_cs_client */;
 INSERT INTO `t1` VALUES (0,'abc'),(1,'xyz'),(2,NULL),(3,NULL);
+SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 # Redirecting mysqldump output to MYSQL_TMP_DIR/mysqldump_encrypt.sql
 DROP DATABASE tde_db;
+RESET BINARY LOGS AND GTIDS;
 Pattern "ALTER INSTANCE ROTATE INNODB MASTER KEY" found
 # Loading tables from mysqldump_encrypt.sql
 SELECT * FROM tde_db.t1 LIMIT 10;

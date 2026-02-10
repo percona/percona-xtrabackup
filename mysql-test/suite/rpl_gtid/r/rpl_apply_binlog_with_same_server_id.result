@@ -1,3 +1,4 @@
+include/rpl/reset_replica.inc
 call mtr.add_suppression("using --replicate-same-server-id in conjunction with --log-replica-updates would lead to infinite loops in this server.");
 # restart: --replicate-same-server-id=1 --server_id=1 --relay-log=replicate-relay-bin
 SET GLOBAL RELAY_LOG_PURGE=OFF;

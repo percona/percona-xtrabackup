@@ -137,17 +137,17 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000001	#	Write_rows	#	#	table_id: #
-master-bin.000001	#	Update_rows	#	#	table_id: #
-master-bin.000001	#	Delete_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+master-bin.000001	#	Update_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+master-bin.000001	#	Delete_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 include/rpl/sync_to_replica.inc
 [connection master]
@@ -178,17 +178,17 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000001	#	Write_rows	#	#	table_id: #
-master-bin.000001	#	Update_rows	#	#	table_id: #
-master-bin.000001	#	Delete_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+master-bin.000001	#	Update_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+master-bin.000001	#	Delete_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 include/rpl/sync_to_replica.inc
 [connection master]
@@ -233,14 +233,14 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t2)
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t3)
-master-bin.000001	#	Write_rows	#	#	table_id: #
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t2)
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t3)
-master-bin.000001	#	Write_rows	#	#	table_id: #
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 # case 2: Calling the function call_drop_temp_table_if_exists() once and
 # recreating the function drop_temp_table_if_exists() with a different
@@ -261,8 +261,8 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t2)
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t3)
-master-bin.000001	#	Write_rows	#	#	table_id: #
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 master-bin.000001	#	Query	#	#	use `test`; DROP FUNCTION drop_temp_table_if_exists
 master-bin.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` FUNCTION `drop_temp_table_if_exists`() RETURNS int
@@ -292,14 +292,14 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t2)
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t3)
-master-bin.000001	#	Write_rows	#	#	table_id: #
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t2)
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t3)
-master-bin.000001	#	Write_rows	#	#	table_id: #
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 # case 4: prepare the function call call_drop_temp_table_if_exists() once and
 # execute once. Recreate the function drop_temp_table_if_exists() and the
@@ -320,8 +320,8 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t2)
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t3)
-master-bin.000001	#	Write_rows	#	#	table_id: #
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 master-bin.000001	#	Query	#	#	use `test`; DROP FUNCTION drop_temp_table_if_exists
 master-bin.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` FUNCTION `drop_temp_table_if_exists`() RETURNS int
@@ -353,7 +353,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t4)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 #
 # Verify that a Event invoking a stored routine that has temporary table DDL
@@ -367,7 +367,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t4)
-master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000001	#	Xid	#	#	COMMIT /* XID */
 master-bin.000001	#	Query	#	#	use `test`; DROP EVENT IF EXISTS`test`.`call_routine_with_temp_table_ddl`
 [connection master]

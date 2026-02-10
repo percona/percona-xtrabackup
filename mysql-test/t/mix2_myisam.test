@@ -9,6 +9,9 @@
 # Thread stack overrun in debug mode on sparc
 --source include/not_sparc_debug.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 let $engine_type= MyISAM;
 let $other_engine_type= MEMORY;
 # There are unfortunately only MyISAM and MEMORY all time available
@@ -30,3 +33,6 @@ let $no_autoinc_update= 0;
 let $no_spatial_key= 0;
 
 -- source include/mix2.inc
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

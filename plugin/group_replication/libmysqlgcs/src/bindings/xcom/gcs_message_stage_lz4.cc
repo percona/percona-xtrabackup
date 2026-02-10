@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +24,8 @@
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_message_stage_lz4.h"
 
 #include <lz4.h>
-#include <string.h>
 #include <cassert>
+#include <cstring>
 #include <limits>
 #include <map>
 
@@ -74,13 +74,13 @@ Gcs_message_stage_lz4::apply_transformation(Gcs_packet &&packet) {
   std::vector<Gcs_packet> packets_out;
 
   /* Get the original payload information. */
-  int original_payload_length = packet.get_payload_length();
+  int const original_payload_length = packet.get_payload_length();
   char const *original_payload_pointer =
       reinterpret_cast<char const *>(packet.get_payload_pointer());
 
   /* Get an upper-bound on the transformed payload size and create a packet big
      enough to hold it. */
-  unsigned long long new_payload_length =
+  unsigned long long const new_payload_length =
       LZ4_compressBound(original_payload_length);
   bool packet_ok;
   Gcs_packet new_packet;
@@ -118,7 +118,7 @@ Gcs_message_stage_lz4::revert_transformation(Gcs_packet &&packet) {
   int uncompressed_len = 0;
 
   /* Get the compressed payload information. */
-  int original_payload_length = packet.get_payload_length();
+  int const original_payload_length = packet.get_payload_length();
   char const *original_payload_pointer =
       reinterpret_cast<char const *>(packet.get_payload_pointer());
 
@@ -128,7 +128,7 @@ Gcs_message_stage_lz4::revert_transformation(Gcs_packet &&packet) {
    The size of the uncompressed payload is stored in the dynamic header, i.e.
    the payload size before the stage was applied.
    */
-  unsigned long long expected_new_payload_length =
+  unsigned long long const expected_new_payload_length =
       dynamic_header.get_payload_length();
   bool packet_ok;
   Gcs_packet new_packet;

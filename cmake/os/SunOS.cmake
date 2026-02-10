@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -51,8 +51,9 @@ IF(NOT FORCE_UNSUPPORTED_COMPILER)
     MESSAGE(WARNING "Clang is experimental!!")
   ELSEIF(MY_COMPILER_IS_GNU)
     # 9.2.0 generated code which dumped core in optimized mode.
-    IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10.2)
-      MESSAGE(FATAL_ERROR "GCC 10.2 or newer is required")
+    # gcc 10.2 is EOL.
+    IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11.4)
+      MESSAGE(FATAL_ERROR "GCC 11.4 or newer is required")
     ENDIF()
   ELSE()
     MESSAGE(FATAL_ERROR "Unsupported compiler!")

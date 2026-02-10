@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -112,6 +112,7 @@ INCLUDE(cmake/configure.cmake)
 INCLUDE(cmake/packaging.cmake)
 INCLUDE(cmake/Plugin.cmake)
 INCLUDE(cmake/fuzzer.cmake)
+INCLUDE(cmake/install_macros.cmake)
 
 INCLUDE_DIRECTORIES(${PROJECT_BINARY_DIR}/include)
 
@@ -143,9 +144,15 @@ ADD_CUSTOM_TARGET(mysqlrouter_all)
 # Load all modules, including plugins
 ADD_SUBDIRECTORY(src)
 
+IF(WITH_INTERNAL)
+  INCLUDE(${CMAKE_SOURCE_DIR}/internal/cmake/router.cmake)
+ENDIF()
+
 # Enable testing
 
 
 IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
   ADD_SUBDIRECTORY(tests)
 ENDIF()
+
+ADD_SUBDIRECTORY(tests/mrs_client)

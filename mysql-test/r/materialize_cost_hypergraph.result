@@ -10,8 +10,8 @@ test.t1	analyze	status	OK
 # same row and cost estimates.
 EXPLAIN FORMAT=TREE SELECT i FROM t1 UNION SELECT 7 ORDER BY i;
 EXPLAIN
--> Sort: i  (cost=11.5..11.5 rows=6)
-    -> Table scan on <union temporary>  (cost=3.94..8.88 rows=6)
+-> Sort: i  (cost=6.52..6.52 rows=6)
+    -> Table scan on <union temporary>  (cost=3.12..3.95 rows=6)
         -> Union materialize with deduplication  (cost=2.95..2.95 rows=6)
             -> Table scan on t1  (cost=0.313..1.57 rows=5)
             -> Rows fetched before execution  (cost=0..0 rows=1)
@@ -19,8 +19,8 @@ EXPLAIN
 EXPLAIN FORMAT=TREE SELECT * FROM (SELECT i FROM t1 UNION SELECT 7) d1
 ORDER BY i;
 EXPLAIN
--> Sort: d1.i  (cost=11.5..11.5 rows=6)
-    -> Table scan on d1  (cost=3.94..8.88 rows=6)
+-> Sort: d1.i  (cost=6.52..6.52 rows=6)
+    -> Table scan on d1  (cost=3.12..3.95 rows=6)
         -> Union materialize with deduplication  (cost=2.95..2.95 rows=6)
             -> Table scan on t1  (cost=0.313..1.57 rows=5)
             -> Rows fetched before execution  (cost=0..0 rows=1)
@@ -29,8 +29,8 @@ EXPLAIN
 # same row and cost estimates.
 EXPLAIN FORMAT=TREE SELECT * FROM t1 UNION SELECT * FROM t1 ORDER BY i;
 EXPLAIN
--> Sort: i  (cost=16.5..16.5 rows=10)
-    -> Table scan on <union temporary>  (cost=6.5..11.9 rows=10)
+-> Sort: i  (cost=12.1..12.1 rows=10)
+    -> Table scan on <union temporary>  (cost=6.07..7.57 rows=10)
         -> Union materialize with deduplication  (cost=5.9..5.9 rows=10)
             -> Table scan on t1  (cost=0.359..1.8 rows=5)
             -> Table scan on t1  (cost=0.359..1.8 rows=5)
@@ -38,8 +38,8 @@ EXPLAIN
 EXPLAIN FORMAT=TREE SELECT * FROM (SELECT * FROM t1 UNION SELECT * FROM t1)
 d1 ORDER BY i;
 EXPLAIN
--> Sort: d1.i  (cost=16.5..16.5 rows=10)
-    -> Table scan on d1  (cost=6.5..11.9 rows=10)
+-> Sort: d1.i  (cost=12.1..12.1 rows=10)
+    -> Table scan on d1  (cost=6.07..7.57 rows=10)
         -> Union materialize with deduplication  (cost=5.9..5.9 rows=10)
             -> Table scan on t1  (cost=0.359..1.8 rows=5)
             -> Table scan on t1  (cost=0.359..1.8 rows=5)
@@ -52,12 +52,209 @@ EXPLAIN FORMAT=TREE INSERT INTO t1 SELECT MAX(i), 3 FROM
 (SELECT * FROM t1 ORDER BY j LIMIT 5) AS d1;
 EXPLAIN
 -> Insert into t1
-    -> Table scan on <temporary>  (cost=18.1..18.1 rows=1)
-        -> Temporary table  (cost=12.3..12.3 rows=1)
-            -> Aggregate: max(d1.i)  (cost=12.1..12.1 rows=1)
-                -> Table scan on d1  (cost=6.23..11 rows=5)
-                    -> Materialize  (cost=5.05..5.05 rows=5)
+    -> Table scan on <temporary>  (cost=12.9..12.9 rows=1)
+        -> Temporary table  (cost=12.8..12.8 rows=1)
+            -> Aggregate: max(d1.i)  (cost=9.59..9.59 rows=1)
+                -> Table scan on d1  (cost=8.01..8.68 rows=5)
+                    -> Materialize  (cost=7.84..7.84 rows=5)
                         -> Sort: t1.j, limit input to 5 row(s) per chunk  (cost=3.9..3.9 rows=5)
                             -> Table scan on t1  (cost=0.359..1.8 rows=5)
 
 DROP TABLE t1;
+CREATE TABLE tv(id INT, id2 INT, id3 INT);
+INSERT INTO tv VALUES (1, 2, 3), (4, 5, 6), (7, 8, 9), (10, 11, 12);
+INSERT INTO tv SELECT * FROM tv;
+INSERT INTO tv SELECT * FROM tv;
+ANALYZE TABLE tv;
+Table	Op	Msg_type	Msg_text
+test.tv	analyze	status	OK
+CREATE FUNCTION get_cost(jobj json, jval varchar(200)) returns float
+DETERMINISTIC
+main_block:
+BEGIN
+DECLARE val, children_cost float;
+DECLARE childobj json;
+DECLARE i int;
+DECLARE json_field varchar(100);
+set children_cost = 0;
+set @jval = jval;
+set @i = 0;
+label1: WHILE true DO
+set json_field = concat("$.inputs[", @i, "]");
+set childobj = json_extract(jobj, json_field);
+if childobj is null then
+leave label1;
+end if;
+set children_cost = children_cost + json_extract(childobj, @jval);
+set @i=(SELECT @i + 1);
+END WHILE label1;
+select (json_extract(jobj, @jval) - children_cost) into val;
+return val;
+END ||
+CREATE FUNCTION get_child_cost(rootobj json, jval varchar(200)) returns float
+DETERMINISTIC
+main_block:
+BEGIN
+DECLARE childobj json;
+set childobj = rootobj->"$.query_plan.inputs[0]";
+return get_cost(childobj, jval);
+END
+||
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT avg(id) FROM tv s GROUP BY id2;
+SELECT json_extract(@jsonstr, "$.query_plan.inputs[0].access_type") access_type;
+access_type
+"temp_table_aggregate"
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost1;
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT avg(id),avg(id) FROM tv s GROUP BY id2;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost2;
+SELECT @cost1 < @cost2;
+@cost1 < @cost2
+1
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT avg(id),avg(id) FROM tv s GROUP BY id2, id3;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost3;
+SELECT @cost2 < @cost3;
+@cost2 < @cost3
+1
+INSERT INTO tv SELECT * FROM tv;
+ANALYZE TABLE tv;
+Table	Op	Msg_type	Msg_text
+test.tv	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT avg(id),avg(id) FROM tv s GROUP BY id2, id3;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost4;
+SELECT @cost3 < @cost4;
+@cost3 < @cost4
+1
+SELECT round(@cost4, 1);
+round(@cost4, 1)
+45.3
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_BIG_RESULT avg(id) FROM tv s GROUP BY id2;
+SELECT json_extract(@jsonstr, "$.query_plan.access_type") access_type;
+access_type
+"aggregate"
+SELECT get_cost(json_extract(@jsonstr, "$.query_plan"), "$.estimated_total_cost") est INTO @cost1;
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_BIG_RESULT avg(id),avg(id) FROM tv s GROUP BY id2;
+SELECT get_cost(json_extract(@jsonstr, "$.query_plan"), "$.estimated_total_cost") est INTO @cost2;
+SELECT @cost1 < @cost2;
+@cost1 < @cost2
+1
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_BIG_RESULT avg(id),avg(id) FROM tv s GROUP BY id2, id3;
+SELECT get_cost(json_extract(@jsonstr, "$.query_plan"), "$.estimated_total_cost") est INTO @cost3;
+SELECT @cost2 < @cost3;
+@cost2 < @cost3
+1
+INSERT INTO tv SELECT * FROM tv;
+ANALYZE TABLE tv;
+Table	Op	Msg_type	Msg_text
+test.tv	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_BIG_RESULT avg(id),avg(id) FROM tv s GROUP BY id2, id3;
+SELECT get_cost(json_extract(@jsonstr, "$.query_plan"), "$.estimated_total_cost") est INTO @cost4;
+SELECT @cost3 < @cost4;
+@cost3 < @cost4
+1
+SELECT round(@cost4, 1);
+round(@cost4, 1)
+23.1
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT DISTINCT id FROM tv s;
+SELECT json_extract(@jsonstr, "$.query_plan.inputs[0].access_type") access_type;
+access_type
+"materialize"
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost1;
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT DISTINCT id,id2 FROM tv s;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost2;
+SELECT @cost1 < @cost2;
+@cost1 < @cost2
+1
+INSERT INTO tv SELECT * FROM tv limit 10;
+ANALYZE TABLE tv;
+Table	Op	Msg_type	Msg_text
+test.tv	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT DISTINCT id,id2 FROM tv s;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost3;
+SELECT @cost2 < @cost3;
+@cost2 < @cost3
+1
+SELECT round(@cost3, 1);
+round(@cost3, 1)
+53.3
+EXPLAIN FORMAT=JSON INTO @jsonstr WITH v AS
+(VALUES ROW(1) UNION ALL SELECT id FROM tv) SELECT * FROM v;
+SELECT json_extract(@jsonstr, "$.query_plan.inputs[0].access_type") access_type;
+access_type
+"materialize"
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost1;
+EXPLAIN FORMAT=JSON INTO @jsonstr WITH v AS
+(VALUES ROW(1,2) UNION ALL SELECT id,id2 FROM tv) SELECT * FROM v;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost2;
+SELECT @cost1 < @cost2;
+@cost1 < @cost2
+1
+INSERT INTO tv SELECT * FROM tv limit 10;
+ANALYZE TABLE tv;
+Table	Op	Msg_type	Msg_text
+test.tv	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @jsonstr WITH v AS
+(VALUES ROW(1,2) UNION ALL SELECT id,id2 FROM tv) SELECT * FROM v;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost3;
+SELECT @cost2 < @cost3;
+@cost2 < @cost3
+1
+SELECT round(@cost3, 1);
+round(@cost3, 1)
+19.1
+EXPLAIN FORMAT=JSON INTO @jsonstr
+SELECT SQL_BIG_RESULT count(id) a FROM tv GROUP BY id ORDER BY a;
+SELECT json_extract(@jsonstr, "$.query_plan.inputs[0].access_type") access_type;
+access_type
+"stream"
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost1;
+EXPLAIN FORMAT=JSON INTO @jsonstr
+SELECT SQL_BIG_RESULT count(id), any_value(id2) a FROM tv GROUP BY id ORDER BY a;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost2;
+SELECT @cost1 < @cost2;
+@cost1 < @cost2
+1
+INSERT INTO tv(id, id2) SELECT 1000*rand(), 1000*rand() FROM tv;
+ANALYZE TABLE tv;
+Table	Op	Msg_type	Msg_text
+test.tv	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @jsonstr
+SELECT SQL_BIG_RESULT count(id), any_value(id2) a FROM tv GROUP BY id ORDER BY a;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost3;
+SELECT @cost2 < @cost3;
+@cost2 < @cost3
+1
+SELECT round(@cost3, 1);
+round(@cost3, 1)
+3.7
+select @@tmp_table_size into @orig_tmp_table_size;
+TRUNCATE tv;
+INSERT INTO tv WITH RECURSIVE cte (n) AS
+(SELECT 1 UNION ALL SELECT n + 1 FROM cte WHERE n < 1000)
+SELECT n,n,n FROM cte order by rand();
+ANALYZE TABLE tv;
+Table	Op	Msg_type	Msg_text
+test.tv	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT avg(id) FROM tv GROUP BY id2, id3;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost1;
+set tmp_table_size=34000;
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT avg(id) FROM tv GROUP BY id2, id3;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost2;
+SELECT round(@cost1) = round(@cost2);
+round(@cost1) = round(@cost2)
+1
+set tmp_table_size=30000;
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT avg(id) FROM tv GROUP BY id2, id3;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost3;
+SELECT @cost3 / @cost2 between 3 and 4;
+@cost3 / @cost2 between 3 and 4
+1
+set tmp_table_size=24000;
+EXPLAIN FORMAT=JSON INTO @jsonstr SELECT SQL_SMALL_RESULT avg(id) FROM tv GROUP BY id2, id3;
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO @cost4;
+SELECT round(@cost4 / @cost2);
+round(@cost4 / @cost2)
+5
+set tmp_table_size=@orig_tmp_table_size;
+DROP TABLE tv;
+DROP FUNCTION get_cost;
+DROP FUNCTION get_child_cost;

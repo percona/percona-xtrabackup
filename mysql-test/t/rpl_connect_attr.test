@@ -19,7 +19,7 @@
 --echo ==== Case 1: slave connection ====
  
 # Get thread id of dump thread.
---let $thread_id= `SELECT PROCESSLIST_ID FROM performance_schema.threads WHERE PROCESSLIST_COMMAND = 'Binlog Dump'`
+--let $thread_id= `SELECT PROCESSLIST_ID FROM performance_schema.threads WHERE PROCESSLIST_COMMAND = 'Binlog Dump GTID'`
  
 # Show connection attributes
 --replace_result $thread_id <thread_id>

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,10 @@
 
 #include "sql/dd/impl/system_views/routines.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Routines &Routines::instance() {
-  static Routines *s_instance = new Routines();
+  static auto *s_instance = new Routines();
   return *s_instance;
 }
 
@@ -166,7 +165,8 @@ Routines::Routines() {
   m_target_def.add_where(
       "CAN_ACCESS_ROUTINE(sch.name, rtn.name, rtn.type, "
       "rtn.definer, FALSE)");
+
+  m_target_def.add_where("AND rtn.type IN ('FUNCTION', 'PROCEDURE')");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

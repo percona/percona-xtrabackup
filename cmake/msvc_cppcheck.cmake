@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -51,6 +51,11 @@ MACRO(MSVC_CPPCHECK_ADD_SUPPRESSIONS)
       STRING_APPEND(suppress_warnings " /wd26860") # Potentially empty optional ''...'' is unwrapped, may throw exception.: Lines: ...
     ENDIF()
 
+    IF((NOT FORCE_UNSUPPORTED_COMPILER) AND MSVC_VERSION GREATER_EQUAL 1943)
+      STRING_APPEND(suppress_warnings " /wd26838") # Allocation size is the result of a signed to unsigned conversion that could overflow if negative
+      STRING_APPEND(suppress_warnings " /wd26839") # Array new allocation size is the result of a signed to unsigned conversion that could overflow if
+    ENDIF()
+
     IF((NOT FORCE_UNSUPPORTED_COMPILER) AND MSVC_VERSION GREATER_EQUAL 1937)
       STRING_APPEND(suppress_warnings " /wd26831") # Allocation size might be the result of a numerical overflow
       STRING_APPEND(suppress_warnings " /wd26832") # Allocation size is the result of a narrowing conversion that could result in overflow
@@ -87,6 +92,7 @@ MACRO(MSVC_CPPCHECK_ADD_SUPPRESSIONS)
     STRING_APPEND(suppress_warnings " /wd26438") # Avoid 'goto' (es.76)
     STRING_APPEND(suppress_warnings " /wd26439") # This kind of function should not throw. Declare it 'noexcept' (f.6).
     STRING_APPEND(suppress_warnings " /wd26440") # Function '...' can be declared 'noexcept' (f.6)
+    STRING_APPEND(suppress_warnings " /wd26445") # Do not assign gsl::span or std::string_view to a reference. They are cheap to construct and are not owners of the underlying data. (gsl.view).
     STRING_APPEND(suppress_warnings " /wd26446") # Prefer to use gsl::at() instead of unchecked subscript operator (bounds.4).
     STRING_APPEND(suppress_warnings " /wd26447") # The function is declared 'noexcept' but calls function '...()' which may throw exceptions (f.6)
     STRING_APPEND(suppress_warnings " /wd26448") # Consider using gsl::finally if final action is intended (gsl.util).
@@ -128,6 +134,7 @@ MACRO(MSVC_CPPCHECK_ADD_SUPPRESSIONS)
     STRING_APPEND(suppress_warnings " /wd26817") # Potentially expensive copy of variable '..' in range-for loop. Consider making it a const reference (es.71).
     STRING_APPEND(suppress_warnings " /wd26818") # Switch statement does not cover all cases. Consider adding a 'default' label (es.79).
     STRING_APPEND(suppress_warnings " /wd26819") # Unannotated fallthrough between switch labels (es.78).
+    STRING_APPEND(suppress_warnings " /wd26821") # For '...', consider using gsl::span instead of std::span to guarantee runtime bounds safety (gsl.view).
     STRING_APPEND(suppress_warnings " /wd26826") # Don't use C-style variable arguments (f.55).
     STRING_APPEND(suppress_warnings " /wd26830") # Potentially empty optional '...' is unwrapped
     STRING_APPEND(suppress_warnings " /wd28182") # Dereferencing NULL pointer. '..' contains the same NULL value

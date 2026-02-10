@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -435,18 +435,6 @@ public class KeyValueHandlerImpl implements ValueHandler {
         throw new ClusterJFatalInternalException(
                 local.message("ERR_Operation_Not_Supported",
                 "set(int, Object)", "KeyValueHandlerImpl"));
-    }
-
-    public void setProxy(Object proxy) {
-        throw new ClusterJFatalInternalException(
-                local.message("ERR_Operation_Not_Supported",
-                "setProxy(Object)", "KeyValueHandlerImpl"));
-    }
-
-    public Object getProxy() {
-        throw new ClusterJFatalInternalException(
-                local.message("ERR_Operation_Not_Supported",
-                "getProxy()", "KeyValueHandlerImpl"));
     }
 
     public Object invoke(Object proxy, Method method, Object[] args)

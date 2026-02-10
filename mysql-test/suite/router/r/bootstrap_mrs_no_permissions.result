@@ -1,0 +1,36 @@
+# MySQL Rest Service schema created.
+CREATE USER mrs_bootstrap_user IDENTIFIED BY 'pass';
+NOTE: The mysql user used for the bootstrap does not have rights for 'mysql_innodb_cluster_metadata' schema. Assuming 'mysql_innodb_cluster_metadata' schema does not exist and proceeding as with bootstraping against standalone, non-Cluster node. If that is not your intention, use the user that has access to 'mysql_innodb_cluster_metadata' and repeat the bootstrap.
+# Bootstrapping MySQL Router instance at 'DIRECTORY'
+
+- Storing account in keyring
+- Creating configuration .../mysqlrouter.conf
+
+# MySQL Router 'MyRouterName' configured for the Standalone MySQL Server at 'localhost'
+
+After this, MySQL Router can be started with the generated configuration with:
+
+$ mysqlrouter -c .../mysqlrouter.conf
+
+This Router instance can be reached by connecting to:
+
+## MySQL Classic protocol
+
+- Read/Write Connections: localhost:6446
+- Read/Only Connections:  localhost:6447
+- Read/Write Split Connections: localhost:6450
+
+## MySQL X protocol
+
+- Read/Write Connections: localhost:6448
+- Read/Only Connections:  localhost:6449
+
+MRS metadata query returned error: 1142 Error executing MySQL query "SELECT `major`,`minor`,`patch` FROM mysql_rest_service_metadata.msm_schema_version;": SELECT command denied to user 'mrs_bootstrap_user'@'localhost' for table 'msm_schema_version' (1142)
+Error: Invalid MRS metadata
+DROP USER 'mrs_bootstrap_user'@'%';
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

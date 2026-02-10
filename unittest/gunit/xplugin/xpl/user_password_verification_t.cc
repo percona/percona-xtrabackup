@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,9 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
+
 #include "mysql_com.h"  // NOLINT(build/include_subdir)
-#include "sha1.h"       // for SHA1_HASH_SIZE NOLINT(build/include_subdir)
 
 #include "plugin/x/src/cache_based_verification.h"
 #include "plugin/x/src/native_plain_verification.h"
@@ -34,6 +35,7 @@
 #include "unittest/gunit/xplugin/xpl/mock/sha256_password_cache.h"
 
 #define PVERSION41_CHAR '*'
+#define SHA1_HASH_SIZE 20 /* Hash size in bytes */
 
 // stub function just to make it buildable
 void scramble(char *, const char *, const char *) {}
@@ -43,8 +45,7 @@ void make_password_from_salt(char *to, const uint8 *hash_stage2) {
   octet2hex(to, (const char *)hash_stage2, SHA1_HASH_SIZE);
 }
 
-namespace xpl {
-namespace test {
+namespace xpl::test {
 
 using ::testing::_;
 using ::testing::Return;
@@ -53,7 +54,7 @@ using ::testing::ReturnRef;
 class User_password_verification : public ::testing::Test {
  public:
   void SetUp() override {
-    m_cache_mock.reset(new mock::Sha256_password_cache());
+    m_cache_mock = std::make_unique<mock::Sha256_password_cache>();
     m_cached_value = {std::begin(CACHED_VALUE_TABLE),
                       std::end(CACHED_VALUE_TABLE)};
   }
@@ -79,14 +80,14 @@ class User_password_verification : public ::testing::Test {
 };
 
 TEST_F(User_password_verification, native_plain_verification_get_salt) {
-  Native_plain_verification verificator{m_cache_mock.get()};
+  Native_plain_verification const verificator{m_cache_mock.get()};
   ASSERT_STREQ(EMPTY, verificator.get_salt().c_str());
 }
 
 TEST_F(User_password_verification, native_plain_verification_pass) {
   EXPECT_CALL(*m_cache_mock.get(), contains("user", "host", GOOD_PASSWD));
   EXPECT_CALL(*m_cache_mock.get(), upsert("user", "host", GOOD_PASSWD));
-  Native_plain_verification verificator{m_cache_mock.get()};
+  Native_plain_verification const verificator{m_cache_mock.get()};
   ASSERT_TRUE(verificator.verify_authentication_string(
       "user", "host", GOOD_PASSWD, EXPECTED_NATIVE_HASH));
 }
@@ -94,7 +95,7 @@ TEST_F(User_password_verification, native_plain_verification_pass) {
 TEST_F(User_password_verification, native_plain_verification_fail) {
   EXPECT_CALL(*m_cache_mock.get(), contains("user", "host", WRONG_PASSWD));
   EXPECT_CALL(*m_cache_mock.get(), upsert(_, _, _)).Times(0);
-  Native_plain_verification verificator{m_cache_mock.get()};
+  Native_plain_verification const verificator{m_cache_mock.get()};
   ASSERT_FALSE(verificator.verify_authentication_string(
       "user", "host", WRONG_PASSWD, EXPECTED_NATIVE_HASH));
 }
@@ -108,14 +109,14 @@ std::string get_hash(const std::string &salt, const std::string &user_string) {
 }
 
 TEST_F(User_password_verification, sha256_plain_verification_get_salt) {
-  Sha256_plain_verification verificator{m_cache_mock.get()};
+  Sha256_plain_verification const verificator{m_cache_mock.get()};
   ASSERT_STREQ(EMPTY, verificator.get_salt().c_str());
 }
 
 TEST_F(User_password_verification, sha256_plain_verification_pass) {
   EXPECT_CALL(*m_cache_mock.get(), contains("user", "host", GOOD_PASSWD));
   EXPECT_CALL(*m_cache_mock.get(), upsert("user", "host", GOOD_PASSWD));
-  Sha256_plain_verification verificator{m_cache_mock.get()};
+  Sha256_plain_verification const verificator{m_cache_mock.get()};
   ASSERT_TRUE(verificator.verify_authentication_string(
       "user", "host", GOOD_PASSWD, EXPECTED_SHA256_HASH));
 }
@@ -123,20 +124,20 @@ TEST_F(User_password_verification, sha256_plain_verification_pass) {
 TEST_F(User_password_verification, sha256_plain_verification_fail) {
   EXPECT_CALL(*m_cache_mock.get(), contains("user", "host", WRONG_PASSWD));
   EXPECT_CALL(*m_cache_mock.get(), upsert(_, _, _)).Times(0);
-  Sha256_plain_verification verificator{m_cache_mock.get()};
+  Sha256_plain_verification const verificator{m_cache_mock.get()};
   ASSERT_FALSE(verificator.verify_authentication_string(
       "user", "host", WRONG_PASSWD, EXPECTED_SHA256_HASH));
 }
 
 TEST_F(User_password_verification, sha256_memory_verification_get_salt) {
-  Cache_based_verification verificator{m_cache_mock.get()};
+  Cache_based_verification const verificator{m_cache_mock.get()};
   ASSERT_STRNE(EMPTY, verificator.get_salt().c_str());
 }
 
 TEST_F(User_password_verification, sha256_memory_verification_pass) {
   EXPECT_CALL(*m_cache_mock.get(), get_entry("user", "host"))
       .WillOnce(Return(std::pair<bool, std::string>{true, m_cached_value}));
-  mock::Cache_based_verification verificator{m_cache_mock.get()};
+  mock::Cache_based_verification const verificator{m_cache_mock.get()};
   EXPECT_CALL(verificator, get_salt()).WillRepeatedly(ReturnRef(MADE_UP_SALT));
   ASSERT_TRUE(verificator.verify_authentication_string(
       "user", "host", SHA256_MEMORY_CLIENT_STRING, ""));
@@ -145,7 +146,7 @@ TEST_F(User_password_verification, sha256_memory_verification_pass) {
 TEST_F(User_password_verification, sha256_memory_verification_no_entry) {
   EXPECT_CALL(*m_cache_mock.get(), get_entry("user", "host"))
       .WillOnce(Return(std::pair<bool, std::string>{false, ""}));
-  mock::Cache_based_verification verificator{m_cache_mock.get()};
+  mock::Cache_based_verification const verificator{m_cache_mock.get()};
   EXPECT_CALL(verificator, get_salt()).Times(0);
   ASSERT_FALSE(verificator.verify_authentication_string(
       "user", "host", SHA256_MEMORY_CLIENT_STRING, ""));
@@ -155,11 +156,10 @@ TEST_F(User_password_verification, sha256_memory_verification_fail) {
   const std::string bogus_entry(32, 'z');
   EXPECT_CALL(*m_cache_mock.get(), get_entry("user", "host"))
       .WillOnce(Return(std::pair<bool, std::string>{true, bogus_entry}));
-  mock::Cache_based_verification verificator{m_cache_mock.get()};
+  mock::Cache_based_verification const verificator{m_cache_mock.get()};
   EXPECT_CALL(verificator, get_salt()).WillRepeatedly(ReturnRef(MADE_UP_SALT));
   ASSERT_FALSE(verificator.verify_authentication_string(
       "user", "host", SHA256_MEMORY_CLIENT_STRING, ""));
 }
 
-}  // namespace test
-}  // namespace xpl
+}  // namespace xpl::test

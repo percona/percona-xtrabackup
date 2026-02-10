@@ -27,7 +27,6 @@
 
 --source include/have_debug.inc
 --source include/have_binlog_format_row.inc
---source include/have_replica_parallel_type_logical_clock.inc
 --let $rpl_gtid_utils = 1
 --let $rpl_skip_start_slave = 1
 --source include/rpl/init_source_replica.inc

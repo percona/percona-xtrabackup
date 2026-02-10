@@ -8,6 +8,9 @@
 # 2007-07-04 mleich
 #
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 # Storage engine to be used in CREATE TABLE
 --source include/have_archive.inc
 let $engine_type= ARCHIVE;
@@ -47,3 +50,5 @@ if (!$run)
 
 ##### Cleanup
 --source suite/stress/include/ddl.cln
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

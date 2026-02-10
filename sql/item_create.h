@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -104,11 +104,12 @@ class Create_func {
       <li><code>thd->lex->add_time_zone_tables_to_query_tables(thd)</code></li>
     </ul>
     @param thd The current thread
+    @param pos The parser position
     @param name The function name
     @param item_list The list of arguments to the function, can be NULL
     @return An item representing the parsed function call, or NULL
   */
-  virtual Item *create_func(THD *thd, LEX_STRING name,
+  virtual Item *create_func(THD *thd, const POS &pos, LEX_STRING name,
                             PT_item_list *item_list) = 0;
 
  protected:
@@ -128,23 +129,25 @@ class Create_qfunc : public Create_func {
     The builder create method, for unqualified functions.
     This builder will use the current database for the database name.
     @param thd The current thread
+    @param pos The parser position
     @param name The function name
     @param item_list The list of arguments to the function, can be NULL
     @return An item representing the parsed function call
   */
-  Item *create_func(THD *thd, LEX_STRING name,
+  Item *create_func(THD *thd, const POS &pos, LEX_STRING name,
                     PT_item_list *item_list) override;
 
   /**
     The builder create method, for qualified functions.
     @param thd The current thread
+    @param pos The parser position
     @param db The database name or NULL_STR to use the default db name
     @param name The function name
     @param use_explicit_name Should the function be represented as 'db.name'?
     @param item_list The list of arguments to the function, can be NULL
     @return An item representing the parsed function call
   */
-  virtual Item *create(THD *thd, LEX_STRING db, LEX_STRING name,
+  virtual Item *create(THD *thd, const POS &pos, LEX_STRING db, LEX_STRING name,
                        bool use_explicit_name, PT_item_list *item_list) = 0;
 
  protected:
@@ -175,17 +178,19 @@ extern Create_qfunc *find_qualified_function_builder(THD *thd);
 
 class Create_udf_func : public Create_func {
  public:
-  Item *create_func(THD *thd, LEX_STRING name,
+  Item *create_func(THD *thd, const POS &pos, LEX_STRING name,
                     PT_item_list *item_list) override;
 
   /**
     The builder create method, for User Defined Functions.
     @param thd The current thread
+    @param pos The parser position
     @param fct The User Defined Function metadata
     @param item_list The list of arguments to the function, can be NULL
     @return An item representing the parsed function call
   */
-  Item *create(THD *thd, udf_func *fct, PT_item_list *item_list);
+  Item *create(THD *thd, const POS &pos, udf_func *fct,
+               PT_item_list *item_list);
 
   /** Singleton. */
   static Create_udf_func s_singleton;

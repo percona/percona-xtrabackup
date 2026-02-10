@@ -9,9 +9,7 @@ CHANGE REPLICATION FILTER REPLICATE_REWRITE_DB=((db1,db2)),
 REPLICATE_IGNORE_DB=(nodb);
 include/rpl/start_replica.inc
 SET @save_replica_parallel_workers = @@GLOBAL.replica_parallel_workers;
-SET GLOBAL replica_parallel_workers = 0;
-Warnings:
-Warning	1287	'0' is deprecated and will be removed in a future release. Please use 1 instead
+SET GLOBAL replica_parallel_workers = 1;
 [connection master]
 #
 # 1. Add empty transactions on source.
@@ -62,8 +60,6 @@ include/include/rpl/assert_logical_timestamps.inc
 include/rpl/sync_to_replica.inc
 [On Replica]
 SET @@GLOBAL.replica_parallel_workers = @save_replica_parallel_workers;
-Warnings:
-Warning	1287	'0' is deprecated and will be removed in a future release. Please use 1 instead
 include/rpl/stop_replica.inc
 CHANGE REPLICATION FILTER REPLICATE_REWRITE_DB=(), REPLICATE_IGNORE_DB=();
 include/rpl/start_replica.inc

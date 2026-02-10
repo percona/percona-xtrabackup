@@ -1,0 +1,163 @@
+# Same test as "connection_delay_invalid_users.test" but with
+# exempt_unknown_users set to ON, this helped to increase
+# the code coverage.
+
+# Make sure that connection_control component can be loaded
+--source ../inc/have_component_connection_control.inc
+
+# Save the initial number of concurrent sessions
+--source include/count_sessions.inc
+
+
+--echo # Connection delay tests for invalid user accounts
+
+--echo
+--echo # ----------------------------------------------------------------------
+--echo
+
+--echo # Setup
+--echo # Install component_connection_control
+--source ../inc/install_component_connection_control.inc
+
+--echo # Save original values of connection_control variables
+SET @saved_connections_threshold = @@global.component_connection_control.failed_connections_threshold;
+SET @saved_max_delay = @@global.component_connection_control.max_connection_delay;
+SET @saved_exempt= @@global.component_connection_control.exempt_unknown_users;
+
+-- echo # Set small values for connection_control variables
+SET @@global.component_connection_control.failed_connections_threshold = 3;
+SET @@global.component_connection_control.max_connection_delay = 1000;
+
+# Exempt users
+SET @@global.component_connection_control.exempt_unknown_users= 1;
+
+# We don't need to use client side authentication plugin for this test.
+let $USE_AUTH_PLUGIN= 0;
+
+--echo
+--echo # ----------------------------------------------------------------------
+--echo
+
+--echo # Following attempts will not experience any delay in server respose
+
+let $USER=u1;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=0;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u2;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=0;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u3;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=0;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u1;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=0;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u2;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=0;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u3;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=0;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u1;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=0;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u2;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=0;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u3;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=0;
+--source ../inc/check_connection_delay.inc
+
+--echo
+--echo # Following attempts will experience delay in server respose
+
+let $USER=u1;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=1;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u2;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=2;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u3;
+let $PASSWORD=hoho;
+let $SUCCESS=0;
+let $DELAY_STATS=3;
+--source ../inc/check_connection_delay.inc
+
+--sorted_result
+SELECT * FROM performance_schema.connection_control_failed_login_attempts;
+
+let $USER=u3;
+let $PASSWORD=abcd;
+let $SUCCESS=0;
+let $DELAY_STATS=4;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u2;
+let $PASSWORD=abcd;
+let $SUCCESS=0;
+let $DELAY_STATS=5;
+--source ../inc/check_connection_delay.inc
+
+let $USER=u1;
+let $PASSWORD=abcd;
+let $SUCCESS=0;
+let $DELAY_STATS=6;
+--source ../inc/check_connection_delay.inc
+
+--sorted_result
+SELECT * FROM performance_schema.connection_control_failed_login_attempts;
+
+--echo
+--echo # ----------------------------------------------------------------------
+--echo
+
+--echo # Cleanup
+
+connection default;
+
+--echo # Restore original values of conenction_control variables
+SET @@global.component_connection_control.failed_connections_threshold = @saved_connections_threshold;
+SET @@global.component_connection_control.max_connection_delay = @saved_max_delay;
+SET @@global.component_connection_control.exempt_unknown_users= @saved_exempt;
+
+
+--echo # Uninstall component_connection_control
+--source ../inc/uninstall_component_connection_control.inc
+
+# Wait till all disconnects are completed.
+--source include/wait_until_count_sessions.inc
+
+--echo
+--echo # ----------------------------------------------------------------------

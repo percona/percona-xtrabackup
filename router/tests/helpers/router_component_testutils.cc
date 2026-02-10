@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -68,7 +68,7 @@ std::string create_state_file_content(
     const std::string &clusterset_id,
     const std::vector<uint16_t> &metadata_servers_ports,
     const uint64_t view_id) {
-  std::vector<mysql_harness::TCPAddress> metadata_servers;
+  std::vector<mysql_harness::TcpDestination> metadata_servers;
   for (const auto port : metadata_servers_ports) {
     metadata_servers.emplace_back("127.0.0.1", port);
   }
@@ -77,13 +77,12 @@ std::string create_state_file_content(
 }
 
 std::string create_state_file_content(
-    const std::vector<mysql_harness::TCPAddress> &metadata_servers,
+    const std::vector<mysql_harness::TcpDestination> &metadata_servers,
     const std::string &cluster_type_specific_id,
     const std::string &clusterset_id, const uint64_t view_id /*= 0*/) {
   std::string metadata_servers_str;
   for (auto [i, metadata_server] : stdx::views::enumerate(metadata_servers)) {
-    metadata_servers_str += "\"mysql://" + metadata_server.address() + ":" +
-                            std::to_string(metadata_server.port()) + "\"";
+    metadata_servers_str += "\"mysql://" + metadata_server.str() + "\"";
     if (i < metadata_servers.size() - 1) metadata_servers_str += ",";
   }
   std::string view_id_str;
@@ -261,7 +260,7 @@ std::string get_str_field_value(const std::string &json_string,
 
 std::string get_json_in_pretty_format(const std::string &json_string) {
   rapidjson::Document json_doc;
-  json_doc.Parse(json_string.c_str());
+  json_doc.Parse<rapidjson::kParseCommentsFlag>(json_string);
 
   rapidjson::StringBuffer buffer;
   rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);

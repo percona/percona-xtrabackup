@@ -1,0 +1,68 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+
+--echo
+--echo
+--echo ## I. Create `db_object` with invalid metadata
+--echo #
+--echo # 1. Validate that fields with invalid metadata are kipped.
+--echo #
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/t3
+--source ../include/mrs/db_object/add.inc
+
+UPDATE `mysql_rest_service_metadata`.`object_field`
+   SET `db_column`=JSON_SET(`db_column`, "$.id_generation", "xyz")
+   WHERE `name`="ctinyint";
+
+UPDATE `mysql_rest_service_metadata`.`object_field`
+   SET `db_column`=JSON_SET(`db_column`, "$.datatype", "MYSQL_SUPER_TYPE")
+   WHERE `name`="cmediumint";
+
+# Second object guarantiess that the UPDATE stmt is fetched
+# by MRS correctly (we are waiting for sync_table in `end_object_defitnition`.
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/sync_table
+--source ../include/mrs/db_object/add.inc
+--source ../include/mrs/end_object_definition.inc
+
+--let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+--let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port
+
+
+--let $mrs_client_arg_path='/svc/basic/sync_table/1'
+--let $mrs_client_arg_wait_until_found=60
+--let $mrs_client_arg_display=none
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/basic/t3/1'
+--let $mrs_client_arg_json_schema='{"not":{"required":["ctinyint"]}}'
+--let $mrs_client_arg_display=status
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/t3/1'
+--let $mrs_client_arg_json_schema='{"not":{"required":["cmediumint"]}}'
+--let $mrs_client_arg_display=status
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

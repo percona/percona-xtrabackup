@@ -1,0 +1,280 @@
+################################################################
+# Verify that "utf8" maps to "utf8mb3" for clients.
+################################################################
+SET @@sql_mode=REPLACE(@@sql_mode,'INTERPRET_UTF8_AS_UTF8MB4','');
+@@character_set_client
+utf8mb4
+@@character_set_client
+utf8mb3
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+@@character_set_client
+utf8mb4
+@@character_set_client
+utf8mb3
+SET @@sql_mode=default;
+################################################################
+# Verify that character set introducers and COLLATE respect SQL_MODE.
+################################################################
+SET @@sql_mode=REPLACE(@@sql_mode,'INTERPRET_UTF8_AS_UTF8MB4','');
+SELECT _utf8 x'F09F8DA3' AS result;
+ERROR HY000: Invalid utf8mb3 character string: 'F09F8D'
+EXPLAIN
+SELECT _utf8 'ß' COLLATE utf8_german2_ci = _utf8 'ss' COLLATE utf8_german2_ci;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+SELECT _utf8  x'F09F8DA3' AS result;
+result
+🍣
+EXPLAIN SELECT _utf8 x'F09F8DA3';
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+Warnings:
+Note	1003	/* select#1 */ select _utf8mb4'\xF0\x9F\x8D\xA3' AS `_utf8 x'F09F8DA3'`
+EXPLAIN SELECT _utf8 "スシ";
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+Warnings:
+Note	1003	/* select#1 */ select _utf8mb4'\xE3\x82\xB9\xE3\x82\xB7' AS `スシ`
+EXPLAIN
+SELECT _utf8 'ß' COLLATE utf8_german2_ci = _utf8 'ss' COLLATE utf8_german2_ci;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+Warnings:
+Note	1003	/* select#1 */ select ((_utf8mb4'\xC3\x9F' collate utf8mb4_german2_ci) = (_utf8mb4'ss' collate utf8mb4_german2_ci)) AS `_utf8 'ß' COLLATE utf8_german2_ci = _utf8 'ss' COLLATE utf8_german2_ci`
+
+SET @@sql_mode=default;
+################################################################
+# Verify that functional indexes respect SQL_MODE.
+################################################################
+SET @@sql_mode=REPLACE(@@sql_mode,'INTERPRET_UTF8_AS_UTF8MB4','');
+CREATE TABLE
+t1(f1 JSON, INDEX idx1 ((CAST(f1->>"$.name" AS CHAR(30)) COLLATE utf8_bin)));
+ERROR 42000: COLLATION 'utf8mb3_bin' is not valid for CHARACTER SET 'utf8mb4'
+CREATE TABLE
+t1(f1 JSON,
+INDEX idx1 ((CAST(f1->>"$.name" AS CHAR(30) CHARSET utf8) COLLATE utf8_bin)));
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` json DEFAULT NULL,
+  KEY `idx1` (((cast(json_unquote(json_extract(`f1`,_utf8mb4'$.name')) as char(30) charset utf8mb3) collate utf8mb3_bin)))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+CREATE TABLE
+t1(f1 JSON, INDEX idx1 ((CAST(f1->>"$.name" AS CHAR(30)) COLLATE utf8_bin)));
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` json DEFAULT NULL,
+  KEY `idx1` (((cast(json_unquote(json_extract(`f1`,_utf8mb4'$.name')) as char(30) charset utf8mb4) collate utf8mb4_bin)))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+CREATE TABLE
+t1(f1 JSON,
+INDEX idx1 ((CAST(f1->>"$.name" AS CHAR(30) CHARSET utf8) COLLATE utf8_bin)));
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` json DEFAULT NULL,
+  KEY `idx1` (((cast(json_unquote(json_extract(`f1`,_utf8mb4'$.name')) as char(30) charset utf8mb4) collate utf8mb4_bin)))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+SET @@sql_mode=default;
+################################################################
+# Verify that a TABLE created by a PROCEDURE will get charset/collation
+# determined by SQL_MODE when the PROCEDURE was created.
+################################################################
+SET @@sql_mode=REPLACE(@@sql_mode,'INTERPRET_UTF8_AS_UTF8MB4','');
+CREATE PROCEDURE p2()
+BEGIN
+CREATE TABLE t2(a CHAR(1)) CHARACTER SET utf8;
+END $
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+CALL p2();
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+DROP PROCEDURE p2;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` char(1) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3
+DROP TABLE t2;
+CREATE PROCEDURE p2()
+BEGIN
+CREATE TABLE t2(a CHAR(1)) CHARACTER SET utf8;
+END $
+SET @@sql_mode=REPLACE(@@sql_mode,'INTERPRET_UTF8_AS_UTF8MB4','');
+CALL p2();
+DROP PROCEDURE p2;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` char(1) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t2;
+SET @@sql_mode=default;
+################################################################
+# Verify that PROCEDURE body is stored verbatim, with no utf8 substitutions.
+################################################################
+SET @@sql_mode=REPLACE(@@sql_mode,'INTERPRET_UTF8_AS_UTF8MB4','');
+CREATE PROCEDURE p2(in a TEXT CHARSET utf8)
+BEGIN
+DECLARE str text CHARSET utf8;
+SET str := a;
+CREATE TABLE t2(a CHAR(1)) CHARACTER SET utf8;
+END $
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+CALL p2('s s s s s s');
+SHOW CREATE PROCEDURE p2;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+p2	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p2`(in a TEXT CHARSET utf8)
+BEGIN
+DECLARE str text CHARSET utf8;
+SET str := a;
+CREATE TABLE t2(a CHAR(1)) CHARACTER SET utf8;
+END	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT ROUTINE_DEFINITION FROM INFORMATION_SCHEMA.ROUTINES WHERE SPECIFIC_NAME = "p2";
+ROUTINE_DEFINITION
+BEGIN
+DECLARE str text CHARSET utf8;
+SET str := a;
+CREATE TABLE t2(a CHAR(1)) CHARACTER SET utf8;
+END
+DROP PROCEDURE p2;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` char(1) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3
+DROP TABLE t2;
+CREATE PROCEDURE p2(in a TEXT CHARSET utf8)
+BEGIN
+DECLARE str text CHARSET utf8;
+SET str := a;
+CREATE TABLE t2(a CHAR(1)) CHARACTER SET utf8;
+END $
+SET @@sql_mode=REPLACE(@@sql_mode,'INTERPRET_UTF8_AS_UTF8MB4','');
+CALL p2('s s s s s s');
+SHOW CREATE PROCEDURE p2;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+p2	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION,INTERPRET_UTF8_AS_UTF8MB4	CREATE DEFINER=`root`@`localhost` PROCEDURE `p2`(in a TEXT CHARSET utf8)
+BEGIN
+DECLARE str text CHARSET utf8;
+SET str := a;
+CREATE TABLE t2(a CHAR(1)) CHARACTER SET utf8;
+END	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT ROUTINE_DEFINITION FROM INFORMATION_SCHEMA.ROUTINES WHERE SPECIFIC_NAME = "p2";
+ROUTINE_DEFINITION
+BEGIN
+DECLARE str text CHARSET utf8;
+SET str := a;
+CREATE TABLE t2(a CHAR(1)) CHARACTER SET utf8;
+END
+DROP PROCEDURE p2;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` char(1) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t2;
+SET @@sql_mode=default;
+################################################################
+# Verify that TABLE definitions will respect SQL_MODE.
+################################################################
+SET @@sql_mode=REPLACE(@@sql_mode,'INTERPRET_UTF8_AS_UTF8MB4','');
+CREATE TABLE t1(
+a CHAR(42) CHARACTER SET UTF8,
+b CHAR(42) CHARACTER SET UTF8
+GENERATED ALWAYS AS (regexp_like(a, _UTF8'^[a-z0-9-]+$')) VIRTUAL
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(42) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
+  `b` char(42) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci GENERATED ALWAYS AS (regexp_like(`a`,_utf8mb3'^[a-z0-9-]+$')) VIRTUAL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+CREATE TABLE t1(
+a CHAR(42) CHARACTER SET utf8 collate utf8_tolower_ci,
+b CHAR(42) CHARACTER SET utf8
+GENERATED ALWAYS AS (regexp_like(a, _utf8'^[a-z0-9-]+$')) VIRTUAL
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(42) CHARACTER SET utf8mb3 COLLATE utf8mb3_tolower_ci DEFAULT NULL,
+  `b` char(42) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci GENERATED ALWAYS AS (regexp_like(`a`,_utf8mb3'^[a-z0-9-]+$')) VIRTUAL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+CREATE TABLE t1(
+a CHAR(42) CHARACTER SET utf8 collate utf8_general_mysql500_ci,
+b CHAR(42) CHARACTER SET utf8
+GENERATED ALWAYS AS (regexp_like(a, _utf8'^[a-z0-9-]+$')) VIRTUAL
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(42) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_mysql500_ci DEFAULT NULL,
+  `b` char(42) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci GENERATED ALWAYS AS (regexp_like(`a`,_utf8mb3'^[a-z0-9-]+$')) VIRTUAL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+CREATE TABLE t1(
+a CHAR(42) CHARACTER SET UTF8 DEFAULT _utf8 x'F09F8DA3'
+  );
+ERROR HY000: Invalid utf8mb3 character string: 'F09F8D'
+CREATE TABLE t1(
+a CHAR(42) CHARACTER SET UTF8 DEFAULT _utf8 '\u00DF'
+  );
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(42) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT 'u00DF'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+CREATE TABLE t1(
+a CHAR(42) CHARACTER SET UTF8,
+b CHAR(42) CHARACTER SET UTF8
+GENERATED ALWAYS AS (regexp_like(a, _UTF8'^[a-z0-9-]+$')) VIRTUAL
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
+  `b` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci GENERATED ALWAYS AS (regexp_like(`a`,_utf8mb4'^[a-z0-9-]+$')) VIRTUAL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+CREATE TABLE t1(
+a CHAR(42) CHARACTER SET UTF8 COLLATE UTF8_TOLOWER_CI,
+b CHAR(42) CHARACTER SET UTF8
+GENERATED ALWAYS AS (regexp_like(a, _UTF8'^[a-z0-9-]+$')) VIRTUAL
+);
+ERROR HY000: Unknown collation: 'UTF8_TOLOWER_CI'
+SHOW WARNINGS;
+Level	Code	Message
+Error	1273	Unknown collation: 'UTF8_TOLOWER_CI'
+Warning	1273	Collation 'UTF8_TOLOWER_CI' must be specified explicitly as 'UTF8mb3_TOLOWER_CI'.
+CREATE TABLE t1(
+a CHAR(42) CHARACTER SET utf8 collate UTF8_GENERAL_MYSQL500_CI,
+b CHAR(42) CHARACTER SET utf8
+GENERATED ALWAYS AS (regexp_like(a, _utf8'^[a-z0-9-]+$')) VIRTUAL
+);
+ERROR HY000: Unknown collation: 'UTF8_GENERAL_MYSQL500_CI'
+SHOW WARNINGS;
+Level	Code	Message
+Error	1273	Unknown collation: 'UTF8_GENERAL_MYSQL500_CI'
+Warning	1273	Collation 'UTF8_GENERAL_MYSQL500_CI' must be specified explicitly as 'UTF8mb3_GENERAL_MYSQL500_CI'.
+CREATE TABLE t1(
+a CHAR(42) CHARACTER SET UTF8 DEFAULT _utf8 x'F09F8DA3'
+  );
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT 0xF09F8DA3
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+SET @@sql_mode=default;

@@ -1,0 +1,91 @@
+# Verify that MRS stops the service once it discovers metadata
+# upgrade(0.0.0 version) in the runtime.
+
+--source include/have_router.inc
+# When test runs the version 2 and it would just update `mysql_rest_service_metadata`.`schema_version`
+# to version 3.0.5 without changing the schema (still version 2), router would try to reach to
+# non existing tables.
+--source ../include/mrs/is_mrs_schema_v3.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+## Test starts here
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc1"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic1
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/o1
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+# Check that the service is enabled
+exec $MRS_CLIENT_ARGS
+  --response-type RAW  --display REQUEST,STATUS
+  --path /svc1/basic1/o1
+  --expected-status Ok;
+
+# Mimic metadata upgrade by setting the md version to `0.0.0`
+DROP view `mysql_rest_service_metadata`.`schema_version`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY INVOKER
+VIEW `mysql_rest_service_metadata`.`schema_version`(`major`,`minor`,`patch`)
+AS select 0 AS `0`,0 AS `0`,0 AS `0`;
+
+# Check that the service is not available anymore
+# (NOTE: we need to use --wait-until-status as changing te schema_version does
+# not generate entry in the audit_log so wait_mrs_read_metadata.inc will not
+# work here)
+exec $MRS_CLIENT_ARGS
+  --response-type RAW  --display REQUEST,STATUS
+  --path /svc1/basic1/o1
+  --expected-status NotFound
+  --wait-until-status 60;
+
+# Restore the compatible version
+DROP view `mysql_rest_service_metadata`.`schema_version`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY INVOKER
+VIEW `mysql_rest_service_metadata`.`schema_version`(`major`,`minor`,`patch`)
+AS select 3 AS `3`, 0 AS `0`, 5 AS `5`;
+
+# Check that the service is enabled again
+# (NOTE: we need to use --wait-until-status as changing te schema_version does
+# not generate entry in the audit_log so wait_mrs_read_metadata.inc will not
+# work here)
+exec $MRS_CLIENT_ARGS
+  --response-type RAW  --display REQUEST,STATUS
+  --path /svc1/basic1/o1
+  --expected-status Ok
+  --wait-until-status 60;
+
+#
+# II. Do the actual upgrade now between version 3 and 4
+#
+# NOTE: This test is different as we do not do any waiting to make sure MRS sees 0.0.0 version (upgrade)
+--disable_query_log
+--source ../include/schema/mrs_metadata_schema-version3_1_to_4_0.sql
+--enable_query_log
+
+select major from `mysql_rest_service_metadata`.`msm_schema_version`;
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+exec $MRS_CLIENT_ARGS
+  --response-type RAW  --display REQUEST,STATUS
+  --path /svc1/basic1/o1
+  --expected-status Ok
+  --wait-until-status 60;
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

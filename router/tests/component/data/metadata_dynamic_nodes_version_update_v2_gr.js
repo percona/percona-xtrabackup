@@ -126,58 +126,61 @@ var nodes = function(host, port_and_state) {
   });
 };
 
-var group_replication_members_online =
-    nodes(gr_node_host, mysqld.global.gr_nodes);
-
-var metadata_version =
-    (mysqld.global.upgrade_in_progress === 1) ? [0, 0, 0] : [2, 1, 0];
-var options = {
-  metadata_schema_version: metadata_version,
-  group_replication_members: group_replication_members_online,
-  innodb_cluster_instances: gr_memberships.cluster_nodes(
-      mysqld.global.gr_node_host, mysqld.global.cluster_nodes),
-  gr_id: mysqld.global.gr_id,
-  cluster_type: "gr",
-  router_version: mysqld.global.router_version,
-  router_rw_classic_port: mysqld.global.router_rw_classic_port,
-  router_ro_classic_port: mysqld.global.router_ro_classic_port,
-  router_rw_x_port: mysqld.global.router_rw_x_port,
-  router_ro_x_port: mysqld.global.router_ro_x_port,
-  router_metadata_user: mysqld.global.router_metadata_user,
-  clusterset_present: mysqld.global.clusterset_present,
-  bootstrap_target_type: mysqld.global.bootstrap_target_type,
-};
-
-// prepare the responses for common statements
-var common_responses = common_stmts.prepare_statement_responses(
-    [
-      "router_set_session_options",
-      "router_set_gr_consistency_level",
-      "select_port",
-      "router_commit",
-      "router_rollback",
-      "router_select_schema_version",
-      "router_select_cluster_type_v2",
-      "router_check_member_state",
-      "router_select_members_count",
-      "router_select_group_membership",
-      "router_update_last_check_in_v2",
-      "router_clusterset_present",
-      "router_bootstrap_target_type",
-      "router_router_select_cs_options",
-    ],
-    options);
-
-var router_update_attributes =
-    common_stmts.get("router_update_attributes_v2", options);
-var router_select_metadata =
-    common_stmts.get("router_select_metadata_v2_gr", options);
-
-var router_start_transaction =
-    common_stmts.get("router_start_transaction", options);
-
 ({
   stmts: function(stmt) {
+    var group_replication_members_online =
+        nodes(gr_node_host, mysqld.global.gr_nodes);
+
+    var metadata_version =
+        (mysqld.global.upgrade_in_progress === 1) ? [0, 0, 0] : [2, 1, 0];
+    var options = {
+      metadata_schema_version: metadata_version,
+      group_replication_members: group_replication_members_online,
+      innodb_cluster_instances: gr_memberships.cluster_nodes(
+          mysqld.global.gr_node_host, mysqld.global.cluster_nodes),
+      gr_id: mysqld.global.gr_id,
+      cluster_type: "gr",
+      router_version: mysqld.global.router_version,
+      router_rw_classic_port: mysqld.global.router_rw_classic_port,
+      router_ro_classic_port: mysqld.global.router_ro_classic_port,
+      router_rw_split_classic_port: mysqld.global.router_rw_split_classic_port,
+      router_rw_x_port: mysqld.global.router_rw_x_port,
+      router_ro_x_port: mysqld.global.router_ro_x_port,
+      router_metadata_user: mysqld.global.router_metadata_user,
+      clusterset_present: mysqld.global.clusterset_present,
+      bootstrap_target_type: mysqld.global.bootstrap_target_type,
+    };
+
+    // prepare the responses for common statements
+    var common_responses = common_stmts.prepare_statement_responses(
+        [
+          "router_set_session_options",
+          "router_set_gr_consistency_level",
+          "select_port",
+          "router_commit",
+          "router_rollback",
+          "router_select_schema_version",
+          "router_select_cluster_type_v2",
+          "router_check_member_state",
+          "router_select_members_count",
+          "router_select_group_membership",
+          "router_update_last_check_in_v2_4",
+          "router_clusterset_present",
+          "router_bootstrap_target_type",
+          "router_router_select_cs_options",
+          "get_guidelines_router_info",
+          "get_routing_guidelines",
+        ],
+        options);
+
+    var router_update_attributes =
+        common_stmts.get("router_update_attributes_v2", options);
+    var router_select_metadata =
+        common_stmts.get("router_select_metadata_v2_gr", options);
+
+    var router_start_transaction =
+        common_stmts.get("router_start_transaction", options);
+
     // let's grab first queries for the verification
     if (mysqld.global.queries_count < 4) {
       var tmp = mysqld.global.queries;

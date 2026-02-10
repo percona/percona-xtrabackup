@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -71,23 +71,23 @@ TEST_F(XcomTransport, is_new_node_eligible_for_ipv6) {
                     {{0, nullptr}},
                     {x_1_0, x_1_0},
                     P_PROP | P_ACC | P_LEARN};
-  site_def site{null_synode,
-                null_synode,
-                VOID_NODE_NO,
-                {1, &node},
-                {nullptr},
-                {0},
-                0,
-                {0, nullptr},
-                {0, nullptr},
-                0,
-                x_1_0,
-                {null_synode},
-                0.0,
-                EVENT_HORIZON_MIN,
-                0,
-                {0, nullptr},
-                nullptr};
+  site_def const site{null_synode,
+                      null_synode,
+                      VOID_NODE_NO,
+                      {1, &node},
+                      {nullptr},
+                      {0},
+                      0,
+                      {0, nullptr},
+                      {0, nullptr},
+                      0,
+                      x_1_0,
+                      {null_synode},
+                      0.0,
+                      EVENT_HORIZON_MIN,
+                      0,
+                      {0, nullptr},
+                      nullptr};
   /* Any protocol version besides x_1_6 is okay as long as it is older than
      MY_XCOM_PROTO */
   ASSERT_EQ(1, is_new_node_eligible_for_ipv6(x_1_6, &site));
@@ -209,9 +209,9 @@ TEST_F(XcomTransport, GcsSnapshotOpCrossVersionSerialization) {
       0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,
       0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0xa,
       0x0,  0x0,  0x0,  0x0};
-  uint32_t buflen = 256;
+  uint32_t const buflen = 256;
 
-  xcom_proto proto = read_protoversion(VERS_PTR(buf));
+  xcom_proto const proto = read_protoversion(VERS_PTR(buf));
   ASSERT_EQ(proto, x_1_6);
   uint32_t msgsize = 0;
   x_msg_type x_type = x_normal;
@@ -221,7 +221,7 @@ TEST_F(XcomTransport, GcsSnapshotOpCrossVersionSerialization) {
   ASSERT_EQ(x_type, x_normal);
 
   pax_msg *p_received = pax_msg_new_0(null_synode);
-  int deserialize_ok =
+  int const deserialize_ok =
       deserialize_msg(p_received, x_1_6, (char *)buf + MSG_HDR_SIZE, msgsize);
   ASSERT_TRUE(deserialize_ok);
 

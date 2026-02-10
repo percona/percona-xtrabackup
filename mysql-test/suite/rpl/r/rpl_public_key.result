@@ -15,7 +15,7 @@ GRANT REPLICATION SLAVE ON *.* TO u27122947;
 include/rpl/sync_to_replica.inc
 [connection slave]
 include/rpl/stop_replica.inc
-CHANGE REPLICATION SOURCE TO SOURCE_USER='u27122947', SOURCE_PASSWORD='pwd', SOURCE_PUBLIC_KEY_PATH='MYSQL_TEST_DIR/std_data/rsa_public_key.pem';
+CHANGE REPLICATION SOURCE TO SOURCE_USER='u27122947', SOURCE_PASSWORD='pwd', SOURCE_PUBLIC_KEY_PATH='MYSQL_TEST_DIR/std_data/rsa_public_key.pem', SOURCE_SSL=0;
 Warnings:
 Note	###	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	###	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -39,6 +39,8 @@ Note	###	Storing MySQL user name or password information in the connection metad
 ==== Remove cached password from master ====
 [connection master]
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 INSERT INTO t1 VALUES (2);
 ==== Try START REPLICA on slave : I/O thread should throw error ====
 [connection slave]
@@ -70,7 +72,7 @@ c1
 ==== Reset and cleanup ====
 [connection slave]
 include/rpl/stop_replica.inc
-CHANGE REPLICATION SOURCE TO SOURCE_USER = 'root', SOURCE_PASSWORD = '';
+CHANGE REPLICATION SOURCE TO SOURCE_USER = 'root', SOURCE_PASSWORD = '', SOURCE_SSL=1;
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.

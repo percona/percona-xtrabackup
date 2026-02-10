@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1309,6 +1309,12 @@ static int make_field_from_frm(THD *thd, TABLE_SHARE *share,
     memset(&comment, 0, sizeof(comment));
   }
 
+  if (field_type == MYSQL_TYPE_TIME || field_type == MYSQL_TYPE_DATETIME ||
+      field_type == MYSQL_TYPE_TIMESTAMP) {
+    /* The old temporal types are no longer supported in FRM file. */
+    return 10;
+  }
+
   if (interval_nr && charset->mbminlen > 1) {
     /* Unescape UCS2 intervals from HEX notation */
     TYPELIB *interval = share->intervals + interval_nr - 1;
@@ -2584,7 +2590,12 @@ void Value_generator::print_expr(THD *thd, String *out) {
   const Sql_mode_parse_guard parse_guard(thd);
   // Printing db and table name is useless
   auto flags = enum_query_type(QT_NO_DB | QT_NO_TABLE | QT_FORCE_INTRODUCERS);
-  expr_item->print(thd, out, flags);
+  if (expr_item != nullptr) {
+    expr_item->print(thd, out, flags);
+  } else if (expr_str.str != nullptr && expr_str.length > 0) {
+    // Fall back to serialized expression if the Item tree hasn't been unpacked
+    out->append(expr_str.str, expr_str.length);
+  }
 }
 
 bool unpack_value_generator(THD *thd, TABLE *table,
@@ -2619,6 +2630,8 @@ bool unpack_value_generator(THD *thd, TABLE *table,
 
   const CHARSET_INFO *save_character_set_client =
       thd->variables.character_set_client;
+  thd->variables.character_set_client = system_charset_info;
+  thd->update_charset();
   // Subquery is not allowed in generated expression
   const bool save_allows_subquery = thd->lex->expr_allows_subquery;
   thd->lex->expr_allows_subquery = false;
@@ -2655,6 +2668,7 @@ bool unpack_value_generator(THD *thd, TABLE *table,
     thd->stmt_arena = save_stmt_arena_ptr;
     thd->swap_query_arena(save_arena, &val_generator_arena);
     thd->variables.character_set_client = save_character_set_client;
+    thd->update_charset();
     thd->want_privilege = save_old_privilege;
     thd->lex->expr_allows_subquery = save_allows_subquery;
   };
@@ -2841,8 +2855,15 @@ bool create_key_part_field_with_prefix_length(TABLE *table, MEM_ROOT *root) {
          key_part < key_part_end; key_part++) {
       Field *field = key_part->field = table->field[key_part->fieldnr - 1];
 
+      /*
+        For spatial indexes, the key parts are assigned the length (4 *
+        sizeof(double)) in prepare_key_column() and the field->key_length() is
+        set to 0. This makes it appear like a prefixed index. However, prefixed
+        indexes are not allowed on Geometric columns. Hence skipping new field
+        creation for Geometric columns.
+      */
       if (field->key_length() != key_part->length &&
-          !field->is_flag_set(BLOB_FLAG)) {
+          field->type() != MYSQL_TYPE_GEOMETRY) {
         /*
           We are using only a prefix of the column as a key:
           Create a new field for the key part that matches the index
@@ -2884,6 +2905,7 @@ bool create_key_part_field_with_prefix_length(TABLE *table, MEM_ROOT *root) {
   @retval 4    Error (see open_table_error)
   @retval 7    Table definition has changed in engine
   @retval 8    Table row format has changed in engine
+  @retval 10   Error (see open_table_error)
 */
 
 int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
@@ -3027,35 +3049,10 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
     }
   }
 
-  // Parse partition expression and create Items
-  if (share->partition_info_str_len && outparam->file &&
-      unpack_partition_info(thd, outparam, share,
-                            share->m_part_info->default_engine_type,
-                            is_create_table)) {
-    if (is_create_table) {
-      /*
-        During CREATE/ALTER TABLE it is ok to receive errors here.
-        It is not ok if it happens during the opening of an frm
-        file as part of a normal query.
-      */
-      error_reported = true;
-    }
-    goto err;
-  }
-
-  /* Check generated columns against table's storage engine. */
-  if (share->vfields && outparam->file &&
-      !(outparam->file->ha_table_flags() & HA_GENERATED_COLUMNS)) {
-    my_error(ER_UNSUPPORTED_ACTION_ON_GENERATED_COLUMN, MYF(0),
-             "Specified storage engine");
-    error_reported = true;
-    goto err;
-  }
-
   /*
-    Allocate bitmaps
-    This needs to be done prior to generated columns as they'll call
-    fix_fields and functions might want to access bitmaps.
+    Allocate bitmaps before any expression is resolved with Item::fix_fields().
+    Such expressions may be part of generated column expressions and partition
+    functions.
   */
 
   bitmap_size = share->column_bitmap_size;
@@ -3078,6 +3075,36 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
               pointer_cast<my_bitmap_map *>(bitmaps + bitmap_size * 7),
               share->fields);
   outparam->default_column_bitmaps();
+
+  // Parse partition expression and create Items
+  if (share->partition_info_str_len && outparam->file) {
+    auto *old_map = dbug_tmp_use_all_columns(outparam, outparam->write_set);
+    bool failed = unpack_partition_info(thd, outparam, share,
+                                        share->m_part_info->default_engine_type,
+                                        is_create_table);
+    dbug_tmp_restore_column_map(outparam->write_set, old_map);
+
+    if (failed) {
+      if (is_create_table) {
+        /*
+          During CREATE/ALTER TABLE it is ok to receive errors here.
+          It is not ok if it happens during the opening of an frm
+          file as part of a normal query.
+        */
+        error_reported = true;
+      }
+      goto err;
+    }
+  }
+
+  /* Check generated columns against table's storage engine. */
+  if (share->vfields && outparam->file &&
+      !(outparam->file->ha_table_flags() & HA_GENERATED_COLUMNS)) {
+    my_error(ER_UNSUPPORTED_ACTION_ON_GENERATED_COLUMN, MYF(0),
+             "Specified storage engine");
+    error_reported = true;
+    goto err;
+  }
 
   /*
     Process generated columns, if any.
@@ -3316,7 +3343,9 @@ err:
     outparam->histograms = nullptr;
   }
   if (!error_reported) open_table_error(thd, share, error, my_errno());
-  ::destroy_at(outparam->file);
+  if (outparam->file != nullptr) {
+    ::destroy_at(outparam->file);
+  }
   if (outparam->part_info) free_items(outparam->part_info->item_list);
   if (outparam->vfield) {
     for (Field **vfield = outparam->vfield; *vfield; vfield++)
@@ -3353,6 +3382,34 @@ int closefrm(TABLE *table, bool free_share) {
   if (table->db_stat) error = table->file->ha_close();
   my_free(const_cast<char *>(table->alias));
   table->alias = nullptr;
+
+  /*
+    Iterate through the Table's Key_info and free its key_part->field if the
+    field is of BLOB type.
+
+    When a prefixed key is present, a new Field object is created in
+    create_key_part_field_with_prefix_length(). These field objects get
+    destroyed when the Table's mem_root is cleared here later. In case of
+    Field_blob objects, Field_blob::value is allocated on the heap. Thus
+    Field_blob objects are freed here in order to destruct the Field_blob::value
+    object.
+  */
+  KEY *key_info = table->key_info;
+  if (key_info) {
+    KEY_PART_INFO *key_part = key_info->key_part;
+    for (KEY *key_info_end = key_info + table->s->keys; key_info < key_info_end;
+         key_info++) {
+      for (KEY_PART_INFO *key_part_end = key_part + key_info->actual_key_parts;
+           key_part < key_part_end; key_part++) {
+        if (key_part->field && key_part->field->is_flag_set(BLOB_FLAG) &&
+            key_part->field->type() != MYSQL_TYPE_GEOMETRY) {
+          ::destroy_at(key_part->field);
+          key_part->field = nullptr;
+        }
+      }
+    }
+  }
+
   if (table->field) {
     for (Field **ptr = table->field; *ptr; ptr++) {
       if ((*ptr)->gcol_info) free_items((*ptr)->gcol_info->item_list);
@@ -3480,6 +3537,12 @@ static void open_table_error(THD *thd, TABLE_SHARE *share, int error,
       ::destroy_at(file);
       break;
     }
+    case 10:
+      /*
+       * Old unsupported temporal types used. Let calling NDB code do error and
+       * logging.
+       */
+      break;
     default: /* Better wrong error than none */
     case 4:
       strxmov(buff, share->normalized_path.str, reg_ext, NullS);
@@ -3748,16 +3811,24 @@ Ident_name_check check_table_name(const char *name, size_t length) {
   return Ident_name_check::OK;
 }
 
-bool check_column_name(const char *name) {
+bool check_column_name(const Name_string &namestring) {
+  size_t valid_length = 0;
+  bool length_error = false;
+  if (validate_string(system_charset_info, namestring.ptr(),
+                      namestring.length(), &valid_length, &length_error)) {
+    return true;
+  }
+  const char *name = namestring.ptr();
   // name length in symbols
   size_t name_length = 0;
   bool last_char_is_space = true;
+  const char *name_end = name + namestring.length();
+  const bool is_multibyte = use_mb(system_charset_info);
 
   while (*name) {
     last_char_is_space = my_isspace(system_charset_info, *name);
-    if (use_mb(system_charset_info)) {
-      const int len = my_ismbchar(system_charset_info, name,
-                                  name + system_charset_info->mbmaxlen);
+    if (is_multibyte) {
+      const int len = my_ismbchar(system_charset_info, name, name_end);
       if (len) {
         name += len;
         name_length++;
@@ -4213,10 +4284,9 @@ void TABLE::reset() {
   memset(const_key_parts, 0, sizeof(key_part_map) * s->keys);
   insert_values = nullptr;
   autoinc_field_has_explicit_non_null_value = false;
-
   file->ft_handler = nullptr;
-
   pos_in_table_list = nullptr;
+  m_bytes_per_row = nullptr;
 }
 
 /**
@@ -4422,7 +4492,7 @@ bool Table_ref::merge_underlying_tables(Query_block *select) {
 */
 void Table_ref::reset() {
   // Reset connection to TABLE
-  if (is_base_table()) table = nullptr;
+  if (is_base_table() || is_mv_se_available()) table = nullptr;
 
   // Needed for I_S tables.
   schema_table_filled = false;
@@ -6521,7 +6591,8 @@ void init_mdl_requests(Table_ref *table_list) {
   technical constraints.
 */
 bool Table_ref::is_mergeable() const {
-  if (!is_view_or_derived() || algorithm == VIEW_ALGORITHM_TEMPTABLE)
+  if (!is_view_or_derived() || algorithm == VIEW_ALGORITHM_TEMPTABLE ||
+      is_mv_se_available())
     return false;
   /*
     If the table's content is non-deterministic and the query references it
@@ -6534,12 +6605,19 @@ bool Table_ref::is_mergeable() const {
   return derived->is_mergeable();
 }
 
-bool Table_ref::materializable_is_const() const {
+bool Table_ref::has_stored_program() const {
+  assert(derived != nullptr);
+  return derived->has_stored_program();
+}
+
+bool Table_ref::materializable_is_const(THD *thd) const {
   assert(uses_materialization());
   const Query_expression *unit = derived_query_expression();
+  const bool explain_mode = thd->lex->is_explain();
   return unit->query_result()->estimated_rowcount <= 1 &&
          (unit->first_query_block()->active_options() &
-          OPTION_NO_SUBQUERY_DURING_OPTIMIZATION) == 0;
+          OPTION_NO_SUBQUERY_DURING_OPTIMIZATION) == 0 &&
+         !(explain_mode && has_stored_program());
 }
 
 /**
@@ -6558,6 +6636,39 @@ uint Table_ref::leaf_tables_count() const {
 
   return count;
 }
+
+#ifndef NDEBUG
+/**
+  Generate string describing number of records per key.
+  @param table Table which has the index
+  @param nr index of key for which string will be generated
+  @return string with the description number of records per key value
+*/
+static std::string str_records_per_key(const TABLE *table, size_t nr) {
+  std::ostringstream ss;
+  ss << table->s->db << "." << table->s->table_name << " " << table->alias
+     << " ";
+  auto keyinfo = table->key_info[nr];
+  if (keyinfo.supports_records_per_key()) {
+    ss << keyinfo.name << "(";
+    std::ostringstream counts;
+    for (uint part = 0; part < keyinfo.actual_key_parts; part++) {
+      if (keyinfo.has_records_per_key(part)) {
+        if (!counts.view().empty()) {
+          ss << ",";
+          counts << ",";
+        }
+        ss << keyinfo.key_part[part].field->field_name;
+
+        rec_per_key_t rec_per_key = keyinfo.records_per_key(part);
+        counts << std::to_string(rec_per_key);
+      }
+    }
+    ss << ") = (" << counts.view() << ")";
+  }
+  return ss.str();
+}
+#endif
 
 /**
   @brief
@@ -6606,7 +6717,22 @@ int Table_ref::fetch_number_of_rows(ha_rows fallback_estimate) {
                  // Recursive reference is never a const table
                  fallback_estimate);
   } else {
-    int error = table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
+    uint flags =
+        HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK | HA_STATUS_CONST_WHEN_UPDATED;
+    DBUG_EXECUTE_IF("fetch_number_of_rows_info_const", {
+      flags |= HA_STATUS_CONST;
+      flags &= ~HA_STATUS_CONST_WHEN_UPDATED;
+    });
+    int error = table->file->info(flags);
+
+    DBUG_EXECUTE_IF("print_records_per_key", {
+      for (uint nr = 0; nr < table->s->keys; nr++) {
+        push_warning_printf(table->in_use, Sql_condition::SL_NOTE,
+                            HA_ERR_GENERIC, "print_records_per_key: %s",
+                            str_records_per_key(table, nr).c_str());
+      }
+    });
+
     DBUG_EXECUTE_IF("bug35208539_raise_error", error = HA_ERR_GENERIC;);
     if (error) {
       return error;
@@ -7557,7 +7683,9 @@ AccessPath *MaterializedPathCache::LookupPath(
     case AccessPath::REF: {
       const auto equal_ref{[&](const RefPath &existing) {
         return table_path->ref().ref->key == existing.ref->key &&
-               table_path->ref().ref->key_parts == existing.ref->key_parts;
+               table_path->ref().ref->key_parts == existing.ref->key_parts &&
+               table_path->parameter_tables ==
+                   existing.materialize_path->parameter_tables;
       }};
 
       const auto iter{
@@ -7671,6 +7799,22 @@ LEX_USER *LEX_USER::alloc(THD *thd, LEX_STRING *user_arg,
   return LEX_USER::init(ret, thd, user_arg, host_arg);
 }
 
+void warn_user_trimmed(THD *thd, LEX_STRING *user_arg, LEX_STRING *host_arg) {
+  const String user(user_arg->str, user_arg->length, system_charset_info);
+  const String host =
+      host_arg ? String(host_arg->str, host_arg->length, system_charset_info)
+               : String("%", 1, system_charset_info);
+  String account(user.length() + host.length() + sizeof("''@''"));
+
+  append_query_string(thd, system_charset_info, &user, &account);
+  account.append('@');
+  append_query_string(thd, system_charset_info, &host, &account);
+  account.append((char)0);
+  push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WARN_ACCOUNT_TRIMMED,
+                      ER_THD(thd, ER_WARN_ACCOUNT_TRIMMED), account.ptr(),
+                      account.ptr());
+}
+
 LEX_USER *LEX_USER::init(LEX_USER *ret, THD *thd [[maybe_unused]],
                          LEX_STRING *user_arg, LEX_STRING *host_arg) {
   ret->init();
@@ -7678,8 +7822,18 @@ LEX_USER *LEX_USER::init(LEX_USER *ret, THD *thd [[maybe_unused]],
     Trim whitespace as the values will go to a CHAR field
     when stored.
   */
+  auto untrimmed_len = user_arg->length;
   trim_whitespace(system_charset_info, user_arg);
-  if (host_arg) trim_whitespace(system_charset_info, host_arg);
+  bool username_trimmed{untrimmed_len > user_arg->length};
+  if (host_arg) {
+    untrimmed_len = host_arg->length;
+    trim_whitespace(system_charset_info, host_arg);
+    if (username_trimmed || untrimmed_len > host_arg->length) {
+      warn_user_trimmed(thd, user_arg, host_arg);
+    }
+  } else if (username_trimmed) {
+    warn_user_trimmed(thd, user_arg, host_arg);
+  }
 
   ret->user.str = user_arg->str;
   ret->user.length = user_arg->length;
@@ -8113,7 +8267,7 @@ const histograms::Histogram *TABLE::find_histogram(uint field_index) const {
   @retval  false  Success
 
   @retval  0      Sucess
-  @retval  -1     Error
+  @retval  >0,-1  Error
   @retval  -2     Less severe error, file can safely be ignored (used for
                   ndbinfo tables when ndbinfo storage engine is not enabled)
 */
@@ -8124,6 +8278,7 @@ static int read_frm_file(THD *thd, TABLE_SHARE *share, FRM_context *frm_context,
   uchar head[64];
   char path[FN_REFLEN + 1];
   MEM_ROOT **root_ptr, *old_root;
+  int error = -1;
 
   strxnmov(path, sizeof(path) - 1, share->normalized_path.str, reg_ext, NullS);
   const LEX_STRING pathstr = {path, strlen(path)};
@@ -8154,7 +8309,6 @@ static int read_frm_file(THD *thd, TABLE_SHARE *share, FRM_context *frm_context,
         mysql_file_close(file, MYF(MY_WME));
         return 0;
       }
-      int error;
       root_ptr = THR_MALLOC;
       old_root = *root_ptr;
       *root_ptr = &share->mem_root;
@@ -8164,6 +8318,10 @@ static int read_frm_file(THD *thd, TABLE_SHARE *share, FRM_context *frm_context,
       *root_ptr = old_root;
       if (error == 9) {
         goto ignore_file;
+      }
+      if (error == 10) {
+        // Let caller do error and logging
+        goto err;
       }
       if (error) {
         LogErr(ERROR_LEVEL, ER_CANT_READ_FRM_FILE, path);
@@ -8204,7 +8362,7 @@ static int read_frm_file(THD *thd, TABLE_SHARE *share, FRM_context *frm_context,
 
 err:
   mysql_file_close(file, MYF(MY_WME));
-  return -1;
+  return error;
 
 ignore_file:
   mysql_file_close(file, MYF(MY_WME));
@@ -8323,5 +8481,17 @@ bool assert_invalid_stats_is_locked(const TABLE *table) {
   return true;
 }
 #endif
+
+/**
+  Returns the Table_ref of the root (outermost) base table of the JDV.
+
+  @param view to get base table for
+  @return Table_ref of base table
+ */
+const Table_ref *jdv_root_base_table(const Table_ref *view) {
+  assert(view != nullptr && view->is_json_duality_view() &&
+         view->jdv_content_tree != nullptr);
+  return view->jdv_content_tree->table_ref();
+}
 
 //////////////////////////////////////////////////////////////////////////

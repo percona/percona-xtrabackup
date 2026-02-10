@@ -2,6 +2,7 @@ SET @start_global_value = @@session.gtid_next;
 SELECT @start_global_value;
 @start_global_value
 AUTOMATIC
+include/rpl/set_gtid_mode_off.inc
 select @@global.gtid_next;
 ERROR HY000: Variable 'gtid_next' is a SESSION variable
 select @@session.gtid_next;
@@ -41,7 +42,4 @@ SELECT @@SESSION.GTID_NEXT;
 @@SESSION.GTID_NEXT
 ANONYMOUS
 ROLLBACK;
-set session gtid_next = @start_global_value;
-select @@session.gtid_next;
-@@session.gtid_next
-AUTOMATIC
+include/rpl/set_gtid_mode_on.inc

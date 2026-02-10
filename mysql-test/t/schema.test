@@ -341,7 +341,7 @@ SHOW CREATE SCHEMA s;
 USE s;
 
 # ALTER SCHEMA is a meta data only operation, and succeeds.
-ALTER SCHEMA s DEFAULT COLLATE= utf8_general_ci;
+ALTER SCHEMA s DEFAULT COLLATE= utf8mb3_general_ci;
 
 # SHOW CREATE SCHEMA accesses meta data only, and succeeds.
 SHOW CREATE SCHEMA s;

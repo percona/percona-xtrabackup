@@ -1,0 +1,24 @@
+--source ../include/have_component_test_sys_var_service.inc
+call mtr.add_suppression("duplicate variable name");
+call mtr.add_suppression("Variable name 'test_component.hidden_int_sys_var' not found");
+let $MYSQLD_DATADIR= `select @@datadir`;
+
+INSTALL COMPONENT 'file://component_test_sys_var_service';
+
+--echo # Test: should return an error.
+--error ER_UNKNOWN_SYSTEM_VARIABLE
+SELECT @@test_component.hidden_int_sys_var;
+
+--let $assert_text=check for the hidden sys var's value
+--let $assert_file=$MYSQLD_DATADIR/test_component_sys_var_service.log
+--let $assert_select=^hidden_int_variable_value=42
+--let $assert_count=1
+--source include/assert_grep.inc
+
+UNINSTALL COMPONENT 'file://component_test_sys_var_service';
+remove_file $MYSQLD_DATADIR/test_component_sys_var_service.log;
+
+--error ER_UNKNOWN_SYSTEM_VARIABLE
+INSTALL COMPONENT 'file://component_test_sys_var_service' SET test_component.hidden_int_sys_var = 55;
+
+remove_file $MYSQLD_DATADIR/test_component_sys_var_service.log;

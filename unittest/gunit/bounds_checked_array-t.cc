@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -135,7 +135,7 @@ TEST_F(BoundsCheckedArray, Resize) {
   EXPECT_EQ(c_array_size - 1, static_cast<int>(int_array.size()));
 
   int count = 0;
-  while (int_array.size() > 0) {
+  while (!int_array.empty()) {
     EXPECT_EQ(count, int_array[0]);
     count++;
     int_array.pop_front();

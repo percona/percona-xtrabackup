@@ -8,6 +8,10 @@
 #       (the actual observed size is ~2.0GB for 64k and ~2.8GB for 4k pages)
 #       and without them it will be smaller than 1.6GB
 #       (the actual observerd size is ~0.7GB for 64k and ~1.2GB for 4k pages)
+#   (3) --innodb-buffer-pool-instances=1 is set to have reproducible test results.
+#       It was measured that every additional instance can add even 64MB to
+#       core size as thread arena. Assuming that number of instances 16
+#       this can add 1GB to core size and cause an unintended test fail.
 
 # madvise MADV_DONTDUMP is non-posix extension available in Linux 3.4
 --let $minimum_required_linux_version = 3.4
@@ -64,5 +68,5 @@ set global innodb_adaptive_hash_index = @old_innodb_adaptive_hash_index;
 let $wait_timeout = 120;
 --source include/wait_condition.inc
 
---let $expected_max_core_size = 1600
+--let $expected_max_core_size = 1700
 --source include/mysqld_core_dump.inc

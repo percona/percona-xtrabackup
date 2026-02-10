@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -393,8 +393,21 @@ static bool lldiv_t_to_time(lldiv_t lld, MYSQL_TIME *ltime, int *warnings) {
   */
   if ((ltime->neg |= (lld.rem < 0))) lld.rem = -lld.rem;
   ltime->second_part = static_cast<ulong>(lld.rem / 1000);
-  return time_add_nanoseconds_adjust_frac(ltime, lld.rem % 1000, warnings,
-                                          current_thd->is_fsp_truncate_mode());
+  if ((lld.quot == TIME_MAX_VALUE || lld.quot == -TIME_MAX_VALUE) &&
+      ltime->second_part != 0) {
+    *warnings |= MYSQL_TIME_WARN_OUT_OF_RANGE;
+    return true;
+  }
+  if (time_add_nanoseconds_adjust_frac(ltime, lld.rem % 1000, warnings,
+                                       current_thd->is_fsp_truncate_mode())) {
+    return true;
+  }
+  // Do not allow negative zero time
+  if (ltime->neg && ltime->hour == 0 && ltime->minute == 0 &&
+      ltime->second == 0 && ltime->second_part == 0) {
+    ltime->neg = false;
+  }
+  return false;
 }
 
 /**
@@ -418,70 +431,93 @@ bool decimal_to_time(const my_decimal *decimal, MYSQL_TIME *ltime) {
 /**
   Convert decimal number to TIME
   @param      decimal  The number to convert from.
-  @param[out] ltime          The variable to convert to.
+  @param[out] time     The variable to convert to.
 
   @return False on success, true on error.
 */
-bool my_decimal_to_time_with_warn(const my_decimal *decimal,
-                                  MYSQL_TIME *ltime) {
+bool my_decimal_to_time_with_warn(const my_decimal *decimal, Time_val *time) {
   lldiv_t lld;
   int warnings = 0;
-  bool rc;
+  MYSQL_TIME mtime;
 
-  if ((rc = my_decimal2lldiv_t(0, decimal, &lld))) {
+  int rc = my_decimal2lldiv_t(0, decimal, &lld);
+  if (rc != 0) {
     warnings |= MYSQL_TIME_WARN_TRUNCATED;
-    set_zero_time(ltime, MYSQL_TIMESTAMP_TIME);
-  } else
+    time->set_zero();
+  } else {
     rc = propagate_datetime_overflow(current_thd, &warnings,
-                                     lldiv_t_to_time(lld, ltime, &warnings));
-
-  if (warnings) {
-    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                     ErrConvString(decimal),
-                                     MYSQL_TIMESTAMP_TIME, NullS))
-      return true;
+                                     lldiv_t_to_time(lld, &mtime, &warnings));
   }
-  return rc;
+  if (warnings) {
+    (void)make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                       ErrConvString(decimal),
+                                       MYSQL_TIMESTAMP_TIME, NullS);
+    return true;
+  }
+
+  assert(mtime.time_type == MYSQL_TIMESTAMP_DATETIME ||
+         mtime.time_type == MYSQL_TIMESTAMP_TIME);
+  if (mtime.time_type == MYSQL_TIMESTAMP_TIME) {
+    *time = Time_val(mtime);
+  } else {
+    *time = Time_val::strip_date(mtime);
+  }
+  return false;
 }
 
 /**
   Convert double number to TIME
 
-  @param      nr      The number to convert from.
-  @param[out] ltime   The variable to convert to.
+  @param      nr     The number to convert from.
+  @param[out] time   The variable to convert to.
 
   @returns false on success, true if not convertible to time.
 */
-bool double_to_time(double nr, MYSQL_TIME *ltime) {
+bool double_to_time(double nr, Time_val *time) {
   lldiv_t lld;
   if (double2lldiv_t(nr, &lld) != E_DEC_OK) {
     return true;
   }
   int warnings = 0;
-  return lldiv_t_to_time(lld, ltime, &warnings);
+  MYSQL_TIME mtime;
+  bool status = lldiv_t_to_time(lld, &mtime, &warnings);
+  if (MYSQL_TIMESTAMP_DATETIME == mtime.time_type) {
+    *time = Time_val::strip_date(mtime);
+  } else {
+    *time = Time_val{mtime};
+  }
+  return status;
 }
 
 /**
   Convert double number to TIME
 
-  @param      nr      The number to convert from.
-  @param[out] ltime   The variable to convert to.
+  @param      nr     The number to convert from.
+  @param[out] time   The variable to convert to.
 
   @return False on success, true on error.
 */
-bool my_double_to_time_with_warn(double nr, MYSQL_TIME *ltime) {
+bool my_double_to_time_with_warn(double nr, Time_val *time) {
   lldiv_t lld;
   int warnings = 0;
-  bool rc;
 
-  if ((rc = (double2lldiv_t(nr, &lld) != E_DEC_OK))) {
+  bool rc = double2lldiv_t(nr, &lld) != E_DEC_OK;
+  if (rc) {
     warnings |= MYSQL_TIME_WARN_TRUNCATED;
-    set_zero_time(ltime, MYSQL_TIMESTAMP_TIME);
-  } else
+    time->set_zero();
+  } else {
+    MYSQL_TIME mtime;
     rc = propagate_datetime_overflow(current_thd, &warnings,
-                                     lldiv_t_to_time(lld, ltime, &warnings));
-
-  if (warnings) {
+                                     lldiv_t_to_time(lld, &mtime, &warnings));
+    assert(mtime.time_type == MYSQL_TIMESTAMP_DATETIME ||
+           mtime.time_type == MYSQL_TIMESTAMP_TIME);
+    if (mtime.time_type == MYSQL_TIMESTAMP_TIME) {
+      *time = Time_val{mtime};
+    } else {
+      *time = Time_val::strip_date(mtime);
+    }
+  }
+  if (warnings != 0) {
     if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
                                      ErrConvString(nr), MYSQL_TIMESTAMP_TIME,
                                      NullS))
@@ -493,19 +529,27 @@ bool my_double_to_time_with_warn(double nr, MYSQL_TIME *ltime) {
 /**
   Convert longlong number to TIME
   @param      nr     The number to convert from.
-  @param[out] ltime  The variable to convert to.
+  @param[out] time   The variable to convert to.
 
   @return False on success, true on error.
 */
-bool my_longlong_to_time_with_warn(longlong nr, MYSQL_TIME *ltime) {
+bool my_longlong_to_time_with_warn(longlong nr, Time_val *time) {
+  MYSQL_TIME mtime;
   int warnings = 0;
   bool rc = propagate_datetime_overflow(current_thd, &warnings,
-                                        number_to_time(nr, ltime, &warnings));
+                                        number_to_time(nr, &mtime, &warnings));
   if (warnings) {
     if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
                                      ErrConvString(nr), MYSQL_TIMESTAMP_TIME,
                                      NullS))
       return true;
+  }
+  assert(mtime.time_type == MYSQL_TIMESTAMP_DATETIME ||
+         mtime.time_type == MYSQL_TIMESTAMP_TIME);
+  if (mtime.time_type == MYSQL_TIMESTAMP_TIME) {
+    *time = Time_val{mtime};
+  } else {
+    *time = Time_val::strip_date(mtime);
   }
   return rc;
 }
@@ -610,6 +654,47 @@ bool datetime_to_timeval(const MYSQL_TIME *ltime, const Time_zone &tz,
 }
 
 /**
+  Convert a time string to a time value and produce a warning
+  if string was cut during conversion.
+
+  @note See str_to_time() for more info.
+
+  @return False on success, true on error.
+*/
+bool str_to_time_with_warn(String *str, Time_val *time) {
+  MYSQL_TIME_STATUS status;
+  MYSQL_TIME m_time;
+  my_time_flags_t flags = 0;
+  THD *thd = current_thd;
+
+  if (thd->is_fsp_truncate_mode()) flags = TIME_FRAC_TRUNCATE;
+
+  bool ret_val = propagate_datetime_overflow(
+      thd, &status.warnings, str_to_time(str, &m_time, flags, &status));
+  if (ret_val || status.warnings != 0) {
+    if (make_truncated_value_warning(thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(str), MYSQL_TIMESTAMP_TIME,
+                                     NullS)) {
+      return true;
+    }
+  }
+  check_deprecated_datetime_format(thd, str->charset(), status);
+  if (convert_time_zone_displacement(thd->time_zone(), &m_time)) {
+    return true;
+  }
+  if (m_time.time_type == MYSQL_TIMESTAMP_TIME) {
+    *time = Time_val{m_time};
+  } else if (m_time.time_type == MYSQL_TIMESTAMP_DATETIME) {
+    *time = Time_val::strip_date(m_time);
+  } else {
+    time->set_zero();
+    return true;
+  }
+  assert(!ret_val);
+  return ret_val;
+}
+
+/**
   Convert a time string to a MYSQL_TIME struct and produce a warning
   if string was cut during conversion.
 
@@ -638,7 +723,6 @@ bool str_to_time_with_warn(String *str, MYSQL_TIME *l_time) {
 
   return ret_val;
 }
-
 /**
   Convert time to datetime.
 
@@ -837,11 +921,10 @@ void propagate_datetime_overflow_helper(THD *thd, int *warnings) {
 my_decimal *my_decimal_from_datetime_packed(my_decimal *dec,
                                             enum enum_field_types type,
                                             longlong packed_value) {
+  assert(type != MYSQL_TYPE_TIME);
+
   MYSQL_TIME ltime;
   switch (type) {
-    case MYSQL_TYPE_TIME:
-      TIME_from_longlong_time_packed(&ltime, packed_value);
-      return time2my_decimal(&ltime, dec);
     case MYSQL_TYPE_DATE:
       TIME_from_longlong_date_packed(&ltime, packed_value);
       ulonglong2decimal(TIME_to_ulonglong_date(ltime), dec);
@@ -851,7 +934,7 @@ my_decimal *my_decimal_from_datetime_packed(my_decimal *dec,
       TIME_from_longlong_datetime_packed(&ltime, packed_value);
       return date2my_decimal(&ltime, dec);
     default:
-      assert(0);
+      assert(false);
       ulonglong2decimal(0, dec);
       return dec;
   }

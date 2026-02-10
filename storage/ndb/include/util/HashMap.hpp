@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -123,7 +123,7 @@ class HashMap {
 
   bool remove(const K &k) { return m_hash.erase(k) != 0; }
 
-  size_t entries(void) const { return m_hash.size(); }
+  size_t entries() const { return m_hash.size(); }
 
   // Forwarders to the underlying map.
 

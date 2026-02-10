@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -191,7 +191,7 @@ void Zstd_comp::move_position(
   managed_buffer_sequence.increase_position(delta);
 }
 
-[[NODISCARD]] Compress_status Zstd_comp::get_obuf(
+[[nodiscard]] Compress_status Zstd_comp::get_obuf(
     Managed_buffer_sequence_t &managed_buffer_sequence, ZSTD_outBuffer &obuf) {
   BAPI_TRACE;
   auto &write_part = managed_buffer_sequence.write_part();
@@ -223,12 +223,12 @@ Compressor::Grow_constraint_t Zstd_comp::do_get_grow_constraint_hint() const {
 }
 
 void *Zstd_comp::zstd_mem_res_alloc(void *opaque, size_t size) {
-  Memory_resource_t *mem_res = static_cast<Memory_resource_t *>(opaque);
+  auto *mem_res = static_cast<Memory_resource_t *>(opaque);
   return mem_res->allocate(size);
 }
 
 void Zstd_comp::zstd_mem_res_free(void *opaque, void *address) {
-  Memory_resource_t *mem_res = static_cast<Memory_resource_t *>(opaque);
+  auto *mem_res = static_cast<Memory_resource_t *>(opaque);
   mem_res->deallocate(address);
 }
 

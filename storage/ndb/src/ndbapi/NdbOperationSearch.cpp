@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -90,10 +90,10 @@ int NdbOperation::equal_impl(const NdbColumnImpl *tAttrInfo,
     Uint32 tAttrId = tAttrInfo->m_column_no;  // not m_attrId;
     Uint32 i = 0;
     if (tAttrInfo->m_pk) {
-      Uint32 tKeyDefined = theTupleKeyDefined[0][2];
+      bool tKeyDefined = (theTupleKeyDefined[0][2] > 0);
       Uint32 tKeyAttrId = theTupleKeyDefined[0][0];
       do {
-        if (tKeyDefined == false) {
+        if (!tKeyDefined) {
           goto keyEntryFound;
         } else {
           if (tKeyAttrId != tAttrId) {
@@ -108,12 +108,11 @@ int NdbOperation::equal_impl(const NdbColumnImpl *tAttrInfo,
              *****************************************************************/
             i++;
             tKeyAttrId = theTupleKeyDefined[i][0];
-            tKeyDefined = theTupleKeyDefined[i][2];
+            tKeyDefined = (theTupleKeyDefined[i][2] > 0);
             continue;
-          } else {
-            goto equal_error2;
-          }  // if
-        }    // if
+          }
+          goto equal_error2;
+        }  // if
       } while (i < NDB_MAX_NO_OF_ATTRIBUTES_IN_KEY);
       goto equal_error2;
     } else {
@@ -209,7 +208,7 @@ int NdbOperation::equal_impl(const NdbColumnImpl *tAttrInfo,
        * allowed to define any initial reads and interpreted program code
        * before the key column values are copied into the AttrInfo section.
        **********************************************************************/
-      if (!(theInterpretIndicator && tOpType == WriteRequest)) {
+      if (!theInterpretIndicator || tOpType != WriteRequest) {
         insertATTRINFO(ahValue);
         insertATTRINFOloop((const Uint32 *)aValue, totalSizeInWords);
       }
@@ -352,7 +351,7 @@ int NdbOperation::insertKEYINFO(const char *aValue, Uint32 aStartPosition,
   if ((tEndPos < 9)) {
     Uint32 tkeyData = *(const Uint32 *)aValue;
     // TcKeyReq* tcKeyReq = CAST_PTR(TcKeyReq, tTCREQ->getDataPtrSend());
-    const Uint32 *tDataPtr = (const Uint32 *)aValue;
+    const auto *tDataPtr = (const Uint32 *)aValue;
     tAttrPos = 1;
     Uint32 *tkeyDataPtr = theKEYINFOptr + aStartPosition - 1;
     // (Uint32*)&tcKeyReq->keyInfo[aStartPosition - 1];
@@ -367,7 +366,7 @@ int NdbOperation::insertKEYINFO(const char *aValue, Uint32 aStartPosition,
       tkeyData = *tDataPtr;
       tkeyDataPtr++;
       tAttrPos++;
-    } while (1);
+    } while (true);
     return 0;
   }  // if
   /*****************************************************************************
@@ -450,7 +449,7 @@ int NdbOperation::insertKEYINFO(const char *aValue, Uint32 aStartPosition,
     if (anAttrSizeInWords == tAttrPos) goto LastWordLabel;
     tPosition++;
     signalCounter++;
-  } while (1);
+  } while (true);
 
 LastWordLabel:
   return 0;

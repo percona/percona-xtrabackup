@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -162,6 +162,25 @@ void Commit_stage_manager::deinit() {
   mysql_mutex_destroy(&m_lock_done);
   mysql_cond_destroy(&this->m_cond_wait_for_ticket_turn);
   mysql_mutex_destroy(&this->m_lock_wait_for_ticket_turn);
+}
+
+bool Commit_stage_manager::is_ticket_on_its_turn_and_back_ticket_incremented(
+    THD *thd) const {
+  if (!thd->is_applier_thread()) {
+    assert(false);
+    return false;
+  }
+
+  auto &ticket_manager = binlog::Bgc_ticket_manager::instance();
+  auto &ticket_ctx = thd->rpl_thd_ctx.binlog_group_commit_ctx();
+  binlog::BgcTicket ticket(ticket_ctx.get_session_ticket());
+
+  if (ticket == ticket_manager.get_front_ticket() &&
+      ticket < ticket_manager.get_back_ticket()) {
+    return true;
+  }
+
+  return false;
 }
 
 void Commit_stage_manager::wait_for_ticket_turn(THD *thd,

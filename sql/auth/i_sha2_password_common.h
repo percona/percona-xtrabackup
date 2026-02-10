@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -101,7 +101,7 @@ class SHA256_digest : public Generate_digest {
 
 class Generate_scramble {
  public:
-  Generate_scramble(const std::string source, const std::string rnd,
+  Generate_scramble(const std::string &source, const std::string &rnd,
                     Digest_info digest_type = Digest_info::SHA256_DIGEST);
 
   ~Generate_scramble();

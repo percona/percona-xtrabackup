@@ -15,6 +15,4 @@
 #
 # WL#9131 Add RETRIES field to replication_applier_status_by_worker P_S table
 
---source include/have_replica_parallel_workers.inc
---let $is_mts = 1
 --source common/rpl/ps_table_worker_retry.inc

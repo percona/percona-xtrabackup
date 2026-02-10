@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -111,7 +111,7 @@ class TransporterFacade : public TransporterCallback,
    * Get/Set wait time in the send thread.
    */
   void setSendThreadInterval(Uint32 ms);
-  Uint32 getSendThreadInterval(void) const;
+  Uint32 getSendThreadInterval() const;
 
   Uint32 mapRefToIdx(Uint32 blockReference) const;
 
@@ -266,8 +266,8 @@ class TransporterFacade : public TransporterCallback,
   int get_auto_reconnect() const;
 
   /* TransporterCallback interface. */
-  bool deliver_signal(SignalHeader *const header, Uint8 prio,
-                      TransporterError &error_code, Uint32 *const signalData,
+  bool deliver_signal(SignalHeader *header, Uint8 prio,
+                      TransporterError &error_code, Uint32 *signalData,
                       LinearSectionPtr ptr[3]) override;
   void handleMissingClnt(const SignalHeader *header, const Uint32 *theData);
 
@@ -324,7 +324,7 @@ class TransporterFacade : public TransporterCallback,
    * was delivered to it by the poll_owner.
    */
   void lock_client(trp_client *);
-  bool check_if_locked(const trp_client *, const Uint32 start) const;
+  bool check_if_locked(const trp_client *, Uint32 start) const;
 
   /**
    * List if trp_clients locked by the *m_poll_owner.
@@ -355,9 +355,9 @@ class TransporterFacade : public TransporterCallback,
   int theStopWakeup;
   Uint32 sendThreadWaitMillisec;
 
-  void threadMainSend(void);
+  void threadMainSend();
   NdbThread *theSendThread;
-  void threadMainReceive(void);
+  void threadMainReceive();
   NdbThread *theReceiveThread;
 
 #define MAX_NUM_WAKEUPS 128
@@ -369,7 +369,7 @@ class TransporterFacade : public TransporterCallback,
   void check_cpu_usage(NDB_TICKS currTime);
   void calc_recv_thread_wakeup();
   void remove_trp_client_from_wakeup_list(trp_client *);
-  void threadMainWakeup(void);
+  void threadMainWakeup();
   NdbThread *theWakeupThread;
 
   NDB_TICKS m_last_cpu_usage_check;
@@ -594,7 +594,7 @@ class TransporterFacade : public TransporterCallback,
   }
   **/
 
-  void wakeup_send_thread(void);
+  void wakeup_send_thread();
   NdbMutex *m_send_thread_mutex;
   NdbCondition *m_send_thread_cond;
 
@@ -664,7 +664,7 @@ inline bool TransporterFacade::get_node_alive(NodeId n) const {
   if (theClusterMgr) {
     return theClusterMgr->getNodeInfo(n).m_alive;
   }
-  return 0;
+  return false;
 }
 
 inline void TransporterFacade::hb_received(NodeId n) {
@@ -672,17 +672,13 @@ inline void TransporterFacade::hb_received(NodeId n) {
 }
 
 inline Uint32 TransporterFacade::getMinDbNodeVersion() const {
-  if (theClusterMgr)
-    return theClusterMgr->minDbVersion;
-  else
-    return 0;
+  if (theClusterMgr) return theClusterMgr->minDbVersion;
+  return 0;
 }
 
 inline Uint32 TransporterFacade::getMinApiNodeVersion() const {
-  if (theClusterMgr)
-    return theClusterMgr->minApiVersion;
-  else
-    return 0;
+  if (theClusterMgr) return theClusterMgr->minApiVersion;
+  return 0;
 }
 
 inline const trp_node &trp_client::getNodeInfo(Uint32 nodeId) const {

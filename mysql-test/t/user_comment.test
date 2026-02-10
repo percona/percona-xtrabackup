@@ -144,3 +144,29 @@ disconnect con1;
 CREATE USER u1@localhost ATTRIBUTE "this is a string";
 SET GLOBAL partial_revokes=@org_partial_revokes;
 
+--echo #
+--echo # Bug#31067575: NULL JSON IS NOT HANDLED PROPERLY FOR BLANK KEY
+--echo #
+
+CREATE USER b31067575@localhost;
+
+# Try a null-valued attribute patch to an empty attribute
+ALTER USER b31067575@localhost ATTRIBUTE '{ "": null }';
+
+--echo # Test: should produce an empty JSON element
+SELECT ATTRIBUTE FROM INFORMATION_SCHEMA.USER_ATTRIBUTES WHERE user='b31067575';
+
+# Provide a value to the key
+ALTER USER b31067575@localhost ATTRIBUTE '{ "": "abc" }';
+--echo # Test: should produce an 1 blank key JSON element w/ value
+SELECT ATTRIBUTE FROM INFORMATION_SCHEMA.USER_ATTRIBUTES WHERE user='b31067575';
+
+# Blank key is removed
+ALTER USER b31067575@localhost ATTRIBUTE '{ "": null }';
+
+--echo # Test: should again produce an empty JSON element
+SELECT ATTRIBUTE FROM INFORMATION_SCHEMA.USER_ATTRIBUTES WHERE user='b31067575';
+
+DROP USER b31067575@localhost;
+
+--echo # End of tests

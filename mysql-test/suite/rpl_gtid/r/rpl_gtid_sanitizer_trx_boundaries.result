@@ -1,0 +1,166 @@
+include/rpl/init.inc [topology=none]
+
+#
+# STAGE: Test query : INSERT INTO t VALUES (NULL), (NULL), (NULL)
+#
+
+
+# a) On server_1: generate two transactions. Spread them between
+#    different binary log files.
+
+CREATE TABLE t (a INT);
+INSERT INTO t VALUES (NULL), (NULL), (NULL);
+FLUSH BINARY LOGS;
+INSERT INTO t VALUES (NULL), (NULL), (NULL);
+include/rpl/save_server_position.inc
+
+# b) Copy generated binlog into the server_2 data directory
+
+
+# c) Create channel to replicate from binary logs
+
+[connection server_2]
+CHANGE REPLICATION SOURCE TO RELAY_LOG_FILE='slave-relay-bin-ch.000001', RELAY_LOG_POS=4, SOURCE_HOST='dummy', SOURCE_USER='root' FOR CHANNEL 'ch';
+Warnings:
+Note	1759	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	1760	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+START REPLICA SQL_THREAD FOR CHANNEL 'ch';
+
+# d) Wait for expected gtid set on server_2
+
+include/rpl/sync_with_saved.inc
+
+# e) Clean up
+
+include/rpl/stop_replica.inc [FOR CHANNEL 'ch']
+RESET REPLICA ALL FOR CHANNEL 'ch';
+RESET BINARY LOGS AND GTIDS;
+DROP TABLE IF EXISTS t;
+[connection server_1]
+RESET BINARY LOGS AND GTIDS;
+DROP TABLE IF EXISTS t;
+
+#
+# STAGE: Test query : DROP TABLE t
+#
+
+
+# a) On server_1: generate two transactions. Spread them between
+#    different binary log files.
+
+CREATE TABLE t (a INT);
+INSERT INTO t VALUES (NULL), (NULL), (NULL);
+FLUSH BINARY LOGS;
+DROP TABLE t;
+include/rpl/save_server_position.inc
+
+# b) Copy generated binlog into the server_2 data directory
+
+
+# c) Create channel to replicate from binary logs
+
+[connection server_2]
+CHANGE REPLICATION SOURCE TO RELAY_LOG_FILE='slave-relay-bin-ch.000001', RELAY_LOG_POS=4, SOURCE_HOST='dummy', SOURCE_USER='root' FOR CHANNEL 'ch';
+Warnings:
+Note	1759	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	1760	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+START REPLICA SQL_THREAD FOR CHANNEL 'ch';
+
+# d) Wait for expected gtid set on server_2
+
+include/rpl/sync_with_saved.inc
+
+# e) Clean up
+
+include/rpl/stop_replica.inc [FOR CHANNEL 'ch']
+RESET REPLICA ALL FOR CHANNEL 'ch';
+RESET BINARY LOGS AND GTIDS;
+DROP TABLE IF EXISTS t;
+Warnings:
+Note	1051	Unknown table 'test.t'
+[connection server_1]
+RESET BINARY LOGS AND GTIDS;
+DROP TABLE IF EXISTS t;
+Warnings:
+Note	1051	Unknown table 'test.t'
+
+#
+# STAGE: Test query : BEGIN; INSERT INTO t VALUES (NULL), (NULL), (NULL); COMMIT
+#
+
+
+# a) On server_1: generate two transactions. Spread them between
+#    different binary log files.
+
+CREATE TABLE t (a INT);
+INSERT INTO t VALUES (NULL), (NULL), (NULL);
+FLUSH BINARY LOGS;
+BEGIN; INSERT INTO t VALUES (NULL), (NULL), (NULL); COMMIT;
+include/rpl/save_server_position.inc
+
+# b) Copy generated binlog into the server_2 data directory
+
+
+# c) Create channel to replicate from binary logs
+
+[connection server_2]
+CHANGE REPLICATION SOURCE TO RELAY_LOG_FILE='slave-relay-bin-ch.000001', RELAY_LOG_POS=4, SOURCE_HOST='dummy', SOURCE_USER='root' FOR CHANNEL 'ch';
+Warnings:
+Note	1759	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	1760	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+START REPLICA SQL_THREAD FOR CHANNEL 'ch';
+
+# d) Wait for expected gtid set on server_2
+
+include/rpl/sync_with_saved.inc
+
+# e) Clean up
+
+include/rpl/stop_replica.inc [FOR CHANNEL 'ch']
+RESET REPLICA ALL FOR CHANNEL 'ch';
+RESET BINARY LOGS AND GTIDS;
+DROP TABLE IF EXISTS t;
+[connection server_1]
+RESET BINARY LOGS AND GTIDS;
+DROP TABLE IF EXISTS t;
+
+#
+# STAGE: Test query : XA START 'a'; INSERT INTO t VALUES (NULL); XA END 'a'; XA PREPARE 'a'; XA COMMIT 'a';
+#
+
+
+# a) On server_1: generate two transactions. Spread them between
+#    different binary log files.
+
+CREATE TABLE t (a INT);
+INSERT INTO t VALUES (NULL), (NULL), (NULL);
+FLUSH BINARY LOGS;
+XA START 'a'; INSERT INTO t VALUES (NULL); XA END 'a'; XA PREPARE 'a'; XA COMMIT 'a';;
+include/rpl/save_server_position.inc
+
+# b) Copy generated binlog into the server_2 data directory
+
+
+# c) Create channel to replicate from binary logs
+
+[connection server_2]
+CHANGE REPLICATION SOURCE TO RELAY_LOG_FILE='slave-relay-bin-ch.000001', RELAY_LOG_POS=4, SOURCE_HOST='dummy', SOURCE_USER='root' FOR CHANNEL 'ch';
+Warnings:
+Note	1759	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	1760	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+START REPLICA SQL_THREAD FOR CHANNEL 'ch';
+
+# d) Wait for expected gtid set on server_2
+
+include/rpl/sync_with_saved.inc
+
+# e) Clean up
+
+include/rpl/stop_replica.inc [FOR CHANNEL 'ch']
+RESET REPLICA ALL FOR CHANNEL 'ch';
+RESET BINARY LOGS AND GTIDS;
+DROP TABLE IF EXISTS t;
+[connection server_1]
+RESET BINARY LOGS AND GTIDS;
+DROP TABLE IF EXISTS t;
+include/rpl/deinit.inc

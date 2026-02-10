@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -44,17 +44,17 @@ class Dbug_context {
   }
 
   bool is_sync_points_blocked(const std::string &sync_point) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> const lock(m_mutex);
     return 0 != m_waiting_sync_points.count(sync_point);
   }
 
   void block(const std::string &sync_point) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> const lock(m_mutex);
     m_waiting_sync_points.insert(sync_point);
   }
 
   void wakeup(const std::string &sync_point) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> const lock(m_mutex);
     m_waiting_sync_points.erase(sync_point);
   }
 

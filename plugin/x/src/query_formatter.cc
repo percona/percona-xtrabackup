@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -71,7 +71,8 @@ class Sql_search_tags {
         if (0 != m_escape_chars) {
           --m_escape_chars;
           return true;
-        } else if ('\\' == character) {
+        }
+        if ('\\' == character) {
           ++m_escape_chars;
           return true;
         }
@@ -125,12 +126,11 @@ class Sql_search_tags {
       return if_matching_switch_state(character, try_block_state,
                                       matching_chars, block_begin,
                                       block_begin_length);
-    } else {
-      if_matching_switch_state(character, Block_none, matching_chars, block_end,
-                               block_end_length);
-
-      return true;
     }
+    if_matching_switch_state(character, Block_none, matching_chars, block_end,
+                             block_end_length);
+
+    return true;
   }
 
   bool should_be_ignored(const char character) {
@@ -215,7 +215,7 @@ Query_formatter &Query_formatter::operator%(
 }
 
 void Query_formatter::validate_next_tag() {
-  ngs::PFS_string::iterator i = std::find_if(
+  ngs::PFS_string::iterator const i = std::find_if(
       m_query.begin() + m_last_tag_position, m_query.end(), Sql_search_tags());
 
   if (m_query.end() == i) {
@@ -230,7 +230,7 @@ void Query_formatter::put_value_and_escape(const char *value,
   const std::size_t length_maximum = 2 * length + 1 + 2;
   std::string value_escaped(length_maximum, '\0');
 
-  std::size_t length_escaped = escape_string_for_mysql(
+  std::size_t const length_escaped = escape_string_for_mysql(
       &m_charset, &value_escaped[1], length_maximum, value, length);
   value_escaped[0] = value_escaped[1 + length_escaped] = '\'';
 
@@ -248,10 +248,10 @@ void Query_formatter::put_value(const char *value, const std::size_t length) {
     m_query.resize(length_target, '\0');
   }
 
-  ngs::PFS_string::iterator tag_position =
+  ngs::PFS_string::iterator const tag_position =
       m_query.begin() + m_last_tag_position;
-  ngs::PFS_string::iterator move_to = tag_position + length;
-  ngs::PFS_string::iterator move_from = tag_position + tag_size;
+  ngs::PFS_string::iterator const move_to = tag_position + length;
+  ngs::PFS_string::iterator const move_from = tag_position + tag_size;
 
   std::copy(move_from, m_query.begin() + length_source, move_to);
   std::copy(value, value + length, tag_position);

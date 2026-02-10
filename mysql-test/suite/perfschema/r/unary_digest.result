@@ -36,6 +36,42 @@ ERROR 42S02: Table 'test.expect_full_reduce' doesn't exist
 ERROR 42S02: Table 'test.expect_full_reduce' doesn't exist
 ERROR 42S02: Table 'test.expect_full_reduce' doesn't exist
 ERROR 42S02: Table 'test.expect_unchanged' doesn't exist
+ERROR 42S02: Table 'test.expect_where_eq' doesn't exist
+ERROR 42S02: Table 'test.expect_where_eq' doesn't exist
+ERROR 42S02: Table 'test.expect_where_eq' doesn't exist
+ERROR 42S02: Table 'test.expect_where_ne' doesn't exist
+ERROR 42S02: Table 'test.expect_where_ne' doesn't exist
+ERROR 42S02: Table 'test.expect_where_ne' doesn't exist
+ERROR 42S02: Table 'test.expect_where_lt' doesn't exist
+ERROR 42S02: Table 'test.expect_where_lt' doesn't exist
+ERROR 42S02: Table 'test.expect_where_lt' doesn't exist
+ERROR 42S02: Table 'test.expect_where_gt' doesn't exist
+ERROR 42S02: Table 'test.expect_where_gt' doesn't exist
+ERROR 42S02: Table 'test.expect_where_gt' doesn't exist
+ERROR 42S02: Table 'test.expect_where_le' doesn't exist
+ERROR 42S02: Table 'test.expect_where_le' doesn't exist
+ERROR 42S02: Table 'test.expect_where_le' doesn't exist
+ERROR 42S02: Table 'test.expect_where_ge' doesn't exist
+ERROR 42S02: Table 'test.expect_where_ge' doesn't exist
+ERROR 42S02: Table 'test.expect_where_ge' doesn't exist
+ERROR 42S02: Table 'test.expect_where_spaceship' doesn't exist
+ERROR 42S02: Table 'test.expect_where_spaceship' doesn't exist
+ERROR 42S02: Table 'test.expect_where_spaceship' doesn't exist
+ERROR 42S02: Table 'test.expect_case_then' doesn't exist
+ERROR 42S02: Table 'test.expect_case_then' doesn't exist
+ERROR 42S02: Table 'test.expect_case_then' doesn't exist
+ERROR 42S02: Table 'test.expect_case_then_else1' doesn't exist
+ERROR 42S02: Table 'test.expect_case_then_else1' doesn't exist
+ERROR 42S02: Table 'test.expect_case_then_else1' doesn't exist
+ERROR 42S02: Table 'test.expect_case_else' doesn't exist
+ERROR 42S02: Table 'test.expect_case_else' doesn't exist
+ERROR 42S02: Table 'test.expect_case_else' doesn't exist
+ERROR 42S02: Table 'test.expect_case_both' doesn't exist
+ERROR 42S02: Table 'test.expect_case_both' doesn't exist
+ERROR 42S02: Table 'test.expect_case_both' doesn't exist
+ERROR 42S02: Table 'test.expect_nested_case' doesn't exist
+ERROR 42S02: Table 'test.expect_nested_case' doesn't exist
+ERROR 42S02: Table 'test.expect_nested_case' doesn't exist
 SELECT SCHEMA_NAME, DIGEST_TEXT, COUNT_STAR
 FROM performance_schema.events_statements_summary_by_digest;
 SCHEMA_NAME	DIGEST_TEXT	COUNT_STAR
@@ -45,3 +81,15 @@ test	SELECT ? + ? FROM `expect_binary`	2
 test	SELECT ? - ? FROM `expect_binary`	2
 test	INSERT INTO `expect_full_reduce` VALUES (...)	27
 test	SELECT `a` - `b` , `a` + `b` , - `a` , - `b` , + `a` , + `b` FROM `expect_unchanged`	1
+test	SELECT * FROM `expect_where_eq` WHERE `a` = ?	3
+test	SELECT * FROM `expect_where_ne` WHERE `a` != ?	3
+test	SELECT * FROM `expect_where_lt` WHERE `a` < ?	3
+test	SELECT * FROM `expect_where_gt` WHERE `a` > ?	3
+test	SELECT * FROM `expect_where_le` WHERE `a` <= ?	3
+test	SELECT * FROM `expect_where_ge` WHERE `a` >= ?	3
+test	SELECT * FROM `expect_where_spaceship` WHERE `a` <=> ?	3
+test	SELECT CASE WHEN `a` > ? THEN ? END FROM `expect_case_then`	3
+test	SELECT CASE WHEN `a` > ? THEN ? ELSE ? END FROM `expect_case_then_else1`	3
+test	SELECT CASE WHEN `a` > ? THEN ? ELSE ? END FROM `expect_case_else`	3
+test	SELECT CASE WHEN `a` > ? THEN ? ELSE ? END FROM `expect_case_both`	3
+test	SELECT CASE WHEN `a` > ? THEN CASE WHEN `b` > ? THEN ? ELSE ? END ELSE ? END FROM `expect_nested_case`	3

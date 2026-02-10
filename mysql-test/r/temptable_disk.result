@@ -1,18 +1,16 @@
 # restart
-SELECT @@global.temptable_use_mmap;
-@@global.temptable_use_mmap
-1
-SET @@session.temptable_use_mmap=false;
-ERROR HY000: Variable 'temptable_use_mmap' is a GLOBAL variable and should be set with SET GLOBAL
-SET @@global.temptable_use_mmap=NULL;
-ERROR 42000: Variable 'temptable_use_mmap' can't be set to the value of 'NULL'
-# Test with temptable_use_mmap set to false
+SELECT @@global.temptable_max_mmap;
+@@global.temptable_max_mmap
+1073741824
+SET @@session.temptable_max_mmap=1073741824;
+ERROR HY000: Variable 'temptable_max_mmap' is a GLOBAL variable and should be set with SET GLOBAL
+SET @@global.temptable_max_mmap=NONE;
+ERROR 42000: Incorrect argument type to variable 'temptable_max_mmap'
+# Test with temptable_max_mmap set to 0
 # to stop overflowing temptable to disk
-SET @@global.temptable_use_mmap=false;
-Warnings:
-Warning	1287	'temptable_use_mmap' is deprecated and will be removed in a future release.
-SELECT @@global.temptable_use_mmap;
-@@global.temptable_use_mmap
+SET @@global.temptable_max_mmap=0;
+SELECT @@global.temptable_max_mmap;
+@@global.temptable_max_mmap
 0
 SELECT count_alloc > 0
 FROM performance_schema.memory_summary_global_by_event_name
@@ -45,14 +43,12 @@ WHERE event_name = 'memory/temptable/physical_disk';
 count_alloc > 0
 0
 DROP TABLE t;
-# Test with temptable_use_mmap set to true
+# Test with temptable_max_mmap set to nonzero
 # to enable overflowing temptable to disk
-SET @@global.temptable_use_mmap = true;
-Warnings:
-Warning	1287	'temptable_use_mmap' is deprecated and will be removed in a future release.
-SELECT @@global.temptable_use_mmap;
-@@global.temptable_use_mmap
-1
+SET @@global.temptable_max_mmap = 1073741824;
+SELECT @@global.temptable_max_mmap;
+@@global.temptable_max_mmap
+1073741824
 CREATE TABLE t (c LONGBLOB);
 INSERT INTO t VALUES
 (REPEAT('a', 128)),
@@ -73,12 +69,10 @@ t AS t6
 ORDER BY 1
 LIMIT 2;
 SET GLOBAL temptable_max_ram = 1073741824;
-SET GLOBAL temptable_use_mmap = true;
-Warnings:
-Warning	1287	'temptable_use_mmap' is deprecated and will be removed in a future release.
-SELECT @@global.temptable_use_mmap;
-@@global.temptable_use_mmap
-1
+SET GLOBAL temptable_max_mmap = 0;
+SELECT @@global.temptable_max_mmap;
+@@global.temptable_max_mmap
+0
 SELECT count_alloc > 0
 FROM performance_schema.memory_summary_global_by_event_name
 WHERE event_name = 'memory/temptable/physical_disk';
@@ -118,6 +112,3 @@ sum_number_of_bytes_alloc = 4*1024*1024 + 64
 DROP TABLE t;
 SET GLOBAL temptable_max_ram = 1073741824;
 SET GLOBAL temptable_max_mmap = 1073741824;
-SET GLOBAL temptable_use_mmap = true;
-Warnings:
-Warning	1287	'temptable_use_mmap' is deprecated and will be removed in a future release.

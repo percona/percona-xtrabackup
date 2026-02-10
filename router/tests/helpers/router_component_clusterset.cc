@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -40,7 +40,7 @@ void RouterComponentClusterSetTest::create_clusterset(
        ++cluster_id) {
     ClusterData cluster_data;
     cluster_data.id = cluster_id;
-    cluster_data.primary_node_id = 0;
+    cluster_data.primary_node_id = cs_options.primary_node_id;
     // 0-based -> 1-based
     const std::string id = std::to_string(cluster_id + 1);
 
@@ -72,7 +72,8 @@ void RouterComponentClusterSetTest::create_clusterset(
     }
 
     for (unsigned node_id = 0; node_id < gr_nodes_num; ++node_id) {
-      const std::string role = node_id == 0 ? "PRIMARY" : "SECONDARY";
+      const std::string role =
+          node_id == cs_options.primary_node_id ? "PRIMARY" : "SECONDARY";
       GRNode gr_node{cluster_data.nodes[node_id].classic_port,
                      "00000000-0000-0000-0000-0000000000" +
                          std::to_string(cluster_id + 1) +
@@ -147,8 +148,6 @@ void RouterComponentClusterSetTest::add_clusterset_data_field(
     JsonValue cluster_obj(rapidjson::kObjectType);
     const auto &cluster_data = cs_topology.clusters[cluster_id];
 
-    add_json_int_field(cluster_obj, "primary_node_id",
-                       cluster_data.primary_node_id);
     add_json_str_field(cluster_obj, "uuid", cluster_data.uuid);
     add_json_str_field(cluster_obj, "name", cluster_data.name);
     add_json_str_field(cluster_obj, "role", cluster_data.role);
@@ -166,9 +165,7 @@ void RouterComponentClusterSetTest::add_clusterset_data_field(
       if (node_data.x_port > 0) {
         add_json_int_field(node_obj, "x_port", node_data.x_port);
       }
-      const std::string attributes =
-          node_data.is_read_replica ? R"({"instance_type" : "read-replica" })"
-                                    : "{}";
+      const std::string attributes = get_node_attributes_as_string(node_data);
       add_json_str_field(node_obj, "attributes", attributes);
 
       cluster_nodes_array.PushBack(node_obj, json_allocator);
@@ -188,9 +185,6 @@ void RouterComponentClusterSetTest::add_clusterset_data_field(
     }
     cluster_obj.AddMember("gr_nodes", gr_nodes_array, json_allocator);
 
-    add_json_int_field(cluster_obj, "primary_node_id",
-                       cluster_data.primary_node_id);
-
     json_array_clusters.PushBack(cluster_obj, json_allocator);
   }
 
@@ -201,19 +195,22 @@ void RouterComponentClusterSetTest::add_clusterset_data_field(
 }
 
 void RouterComponentClusterSetTest::set_mock_metadata_on_all_cs_nodes(
-    const ClusterSetOptions &cs_options) {
+    const ClusterSetOptions &cs_options,
+    const std::optional<std::string> &routing_guidelines) {
   for (const auto &cluster : cs_options.topology.clusters) {
     for (size_t node_id = 0; node_id < cluster.nodes.size(); ++node_id) {
       set_mock_clusterset_metadata(cluster.nodes[node_id].http_port,
                                    /*this_cluster_id*/ cluster.id,
-                                   /*this_node_id*/ node_id, cs_options);
+                                   /*this_node_id*/ node_id, cs_options,
+                                   routing_guidelines);
     }
   }
 }
 
 void RouterComponentClusterSetTest::set_mock_clusterset_metadata(
     uint16_t http_port, unsigned this_cluster_id, unsigned this_node_id,
-    const ClusterSetOptions &cs_options) {
+    const ClusterSetOptions &cs_options,
+    const std::optional<std::string> &routing_guidelines) {
   JsonValue json_doc(rapidjson::kObjectType);
 
   add_clusterset_data_field(json_doc, "clusterset_data", cs_options.topology,
@@ -233,8 +230,18 @@ void RouterComponentClusterSetTest::set_mock_clusterset_metadata(
   add_json_str_field(json_doc, "router_options", cs_options.router_options);
   add_json_str_field(json_doc, "router_expected_target_cluster",
                      cs_options.expected_target_cluster);
+  add_json_str_field(json_doc, "router_expected_local_cluster",
+                     cs_options.expected_local_cluster);
+
+  if (routing_guidelines) {
+    add_json_str_field(json_doc, "routing_guidelines",
+                       routing_guidelines.value());
+  }
+
   add_json_int_field(json_doc, "simulate_cluster_not_found",
                      cs_options.simulate_cluster_not_found);
+  add_json_int_field(json_doc, "simulate_router_options_no_rows",
+                     cs_options.simulate_router_options_no_rows);
   add_json_int_field(json_doc, "config_defaults_stored_is_null",
                      cs_options.simulate_config_defaults_stored_is_null);
   add_json_str_field(json_doc, "router_version", MYSQL_ROUTER_VERSION);
@@ -242,4 +249,30 @@ void RouterComponentClusterSetTest::set_mock_clusterset_metadata(
   const auto json_str = json_to_string(json_doc);
 
   EXPECT_NO_THROW(MockServerRestClient(http_port).set_globals(json_str));
+}
+
+std::string RouterComponentClusterSetTest::get_node_attributes_as_string(
+    const RouterComponentClusterSetTest::ClusterNode &node_data) const {
+  JsonValue json_val(rapidjson::kObjectType);
+  JsonAllocator allocator;
+  if (node_data.is_read_replica) {
+    json_val.AddMember("instance_type", "read-replica", allocator);
+  }
+
+  if (node_data.is_hidden || node_data.disconnect_when_hidden) {
+    JsonValue tags(rapidjson::kObjectType);
+
+    if (node_data.is_hidden) {
+      tags.AddMember("_hidden", node_data.is_hidden.value(), allocator);
+    }
+
+    if (node_data.disconnect_when_hidden) {
+      tags.AddMember("_disconnect_existing_sessions_when_hidden",
+                     node_data.disconnect_when_hidden.value(), allocator);
+    }
+
+    json_val.AddMember("tags", tags, allocator);
+  }
+
+  return json_to_string(json_val);
 }

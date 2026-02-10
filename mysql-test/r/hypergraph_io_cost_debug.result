@@ -1,0 +1,116 @@
+CREATE FUNCTION check_cost_ratio(plan1 JSON, plan2 JSON, ratio DOUBLE,
+tolerance DOUBLE)
+RETURNS BOOLEAN DETERMINISTIC
+RETURN ABS(JSON_EXTRACT(plan1, "$.query_plan.estimated_total_cost")
+/ JSON_EXTRACT(plan2, "$.query_plan.estimated_total_cost") - ratio)
+< ratio * tolerance;
+SET @old_cte_max_recursion_depth=@@cte_max_recursion_depth;
+SET SESSION cte_max_recursion_depth=1100;
+CREATE VIEW num_1e3 AS
+WITH RECURSIVE qn(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<1e3)
+SELECT n FROM qn;
+CREATE TABLE t1(
+pk INT NOT NULL PRIMARY KEY,
+a INT NOT NULL,
+b INT NOT NULL,
+fill VARCHAR(500) NOT NULL,
+KEY k1(a)
+) ENGINE=InnoDB, CHARSET=latin1;
+INSERT INTO t1
+SELECT n, FLOOR(RAND(0)*1e3), FLOOR(RAND(1)*1e3), REPEAT('A',500) FROM num_1e3;
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT * FROM t1;
+EXPLAIN
+-> Table scan on t1  (...)
+
+SET DEBUG="d,in_memory_0";
+EXPLAIN FORMAT=JSON INTO @explain0 SELECT * FROM t1;
+SET DEBUG="d,in_memory_50";
+EXPLAIN FORMAT=JSON INTO @explain50 SELECT * FROM t1;
+SELECT check_cost_ratio(@explain50, @explain0, 0.5, 0.05);
+check_cost_ratio(@explain50, @explain0, 0.5, 0.05)
+1
+EXPLAIN FORMAT=TREE SELECT pk FROM t1 WHERE a=0;
+EXPLAIN
+-> Covering index lookup on t1 using k1 (a = 0)  (...)
+
+SET DEBUG="d,in_memory_0";
+EXPLAIN FORMAT=JSON INTO @explain0 SELECT pk FROM t1 WHERE a=0;
+SET DEBUG="d,in_memory_50";
+EXPLAIN FORMAT=JSON INTO @explain50 SELECT pk FROM t1 WHERE a=0;
+SELECT check_cost_ratio(@explain50, @explain0, 0.5, 0.05);
+check_cost_ratio(@explain50, @explain0, 0.5, 0.05)
+1
+EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE a<10;
+EXPLAIN
+-> Index range scan on t1 using k1 over (a < 10)  (...)
+
+SET DEBUG="d,in_memory_0";
+EXPLAIN FORMAT=JSON INTO @explain0 SELECT * FROM t1 WHERE a<10;
+SET DEBUG="d,in_memory_50";
+EXPLAIN FORMAT=JSON INTO @explain50 SELECT * FROM t1 WHERE a<10;
+SELECT check_cost_ratio(@explain50, @explain0, 0.5, 0.05);
+check_cost_ratio(@explain50, @explain0, 0.5, 0.05)
+1
+EXPLAIN FORMAT=TREE SELECT pk FROM t1 WHERE a<10;
+EXPLAIN
+-> Covering index range scan on t1 using k1 over (a < 10)  (...)
+
+SET DEBUG="d,in_memory_0";
+EXPLAIN FORMAT=JSON INTO @explain0 SELECT pk FROM t1 WHERE a<10;
+SET DEBUG="d,in_memory_50";
+EXPLAIN FORMAT=JSON INTO @explain50 SELECT pk FROM t1 WHERE a<10;
+SELECT check_cost_ratio(@explain50, @explain0, 0.5, 0.05);
+check_cost_ratio(@explain50, @explain0, 0.5, 0.05)
+1
+SET DEBUG="d,in_memory_0";
+EXPLAIN FORMAT=JSON INTO @explain_1_row SELECT * FROM t1 WHERE a<1;
+EXPLAIN FORMAT=JSON INTO @explain_2_rows SELECT * FROM t1 WHERE a<2;
+SELECT check_cost_ratio(@explain_1_row, @explain_2_rows, 1.0, 0.01);
+check_cost_ratio(@explain_1_row, @explain_2_rows, 1.0, 0.01)
+1
+EXPLAIN FORMAT=TREE SELECT b FROM t1 WHERE a<100;
+EXPLAIN
+-> Filter: (t1.a < 100)  (...)
+    -> Table scan on t1  (...)
+
+SET DEBUG="d,in_memory_100";
+EXPLAIN FORMAT=TREE SELECT b FROM t1 WHERE a<100;
+EXPLAIN
+-> Index range scan on t1 using k1 over (a < 100)  (...)
+
+SET DEBUG="d,in_memory_0";
+EXPLAIN FORMAT=TREE SELECT pk FROM t1 WHERE a<10;
+EXPLAIN
+-> Covering index range scan on t1 using k1 over (a < 10)  (...)
+
+EXPLAIN FORMAT=TREE SELECT b FROM t1 WHERE a<10;
+EXPLAIN
+-> Index range scan on t1 using k1 over (a < 10)  (...)
+
+EXPLAIN FORMAT=JSON INTO @explain_covering SELECT pk FROM t1 WHERE a<10;
+EXPLAIN FORMAT=JSON INTO @explain_non_covering SELECT b FROM t1 WHERE a<10;
+SELECT check_cost_ratio(@explain_non_covering, @explain_covering, 13.0, 0.05);
+check_cost_ratio(@explain_non_covering, @explain_covering, 13.0, 0.05)
+1
+DROP TABLE t1;
+CREATE TABLE t2(
+pk INT NOT NULL PRIMARY KEY,
+t1 LONGTEXT
+);
+INSERT INTO t2
+SELECT n, REPEAT('A',12*1024) FROM num_1e3 WHERE n<10;
+ANALYZE TABLE t2;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @no_lob SELECT pk FROM t2;
+EXPLAIN FORMAT=JSON INTO @lob SELECT * FROM t2;
+SELECT check_cost_ratio(@lob, @no_lob, 16.0, 0.05);
+check_cost_ratio(@lob, @no_lob, 16.0, 0.05)
+1
+DROP TABLE t2;
+DROP FUNCTION  check_cost_ratio;
+SET SESSION cte_max_recursion_depth= @old_cte_max_recursion_depth;
+DROP VIEW num_1e3;

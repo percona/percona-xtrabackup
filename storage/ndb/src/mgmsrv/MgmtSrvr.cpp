@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -61,7 +61,6 @@
 #include <signaldata/NodeFailRep.hpp>
 #include <signaldata/ResumeReq.hpp>
 #include <signaldata/SchemaTrans.hpp>
-#include <signaldata/SetLogLevelOrd.hpp>
 #include <signaldata/StartOrd.hpp>
 #include <signaldata/Sync.hpp>
 #include <signaldata/TamperOrd.hpp>
@@ -145,10 +144,6 @@ void MgmtSrvr::logLevelThreadRun() {
 
         if (setEventReportingLevelImpl(node, req)) {
           failed_started_nodes.push_back(node);
-        } else {
-          SetLogLevelOrd ord;
-          ord.assign(m_nodeLogLevel[node]);
-          setNodeLogLevelImpl(node, ord);
         }
         m_started_nodes.lock();
       }
@@ -164,12 +159,6 @@ void MgmtSrvr::logLevelThreadRun() {
       if (req.blockRef == 0) {
         req.blockRef = _ownReference;
         if (setEventReportingLevelImpl(0, req)) {
-          failed_log_level_requests.push_back(req);
-        }
-      } else {
-        SetLogLevelOrd ord;
-        ord.assign(req);
-        if (setNodeLogLevelImpl(req.blockRef, ord)) {
           failed_log_level_requests.push_back(req);
         }
       }
@@ -2468,20 +2457,6 @@ int MgmtSrvr::setEventReportingLevelImpl(int nodeId_arg,
 
 //****************************************************************************
 //****************************************************************************
-int MgmtSrvr::setNodeLogLevelImpl(int nodeId, const SetLogLevelOrd &ll) {
-  INIT_SIGNAL_SENDER(ss, nodeId);
-
-  SimpleSignal ssig;
-  ssig.set(ss, TestOrd::TraceAPI, CMVMI, GSN_SET_LOGLEVELORD,
-           SetLogLevelOrd::SignalLength);
-  SetLogLevelOrd *const dst = CAST_PTR(SetLogLevelOrd, ssig.getDataPtrSend());
-  *dst = ll;
-
-  return ss.sendSignal(nodeId, &ssig) == SEND_OK ? 0 : SEND_OR_RECEIVE_FAILED;
-}
-
-//****************************************************************************
-//****************************************************************************
 
 int MgmtSrvr::insertError(int nodeId, int errorNo, Uint32 *extra) {
   BlockNumber block;
@@ -3435,9 +3410,13 @@ int MgmtSrvr::alloc_node_id_req(NodeId free_node_id,
           if (!getNodeInfo(nodeId).is_confirmed()) nodeId = 0;
           if (first_attempt && (ref->errorCode != AllocNodeIdRef::NotMaster)) {
             first_attempt = false;
+            const char *reason =
+                (ref->errorCode == AllocNodeIdRef::Busy
+                     ? "System busy with another nodeid allocation"
+                     : "Node id not yet ready for use");
             g_eventLogger->info(
-                "Alloc node id %u rejected with error code %u, will retry",
-                free_node_id, ref->errorCode);
+                "Alloc node id %u rejected due to %s (%u), will retry",
+                free_node_id, reason, ref->errorCode);
           }
           /* sleep for a while before retrying */
           ss.unlock();

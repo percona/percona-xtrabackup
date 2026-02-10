@@ -1,6 +1,7 @@
 #
 # WL#12475: Protocol Changes to specify compression configuration for connections
 #
+include/rpl/set_gtid_mode_off.inc
 CREATE USER wl12475@localhost;
 SELECT @@global.protocol_compression_algorithms;
 @@global.protocol_compression_algorithms

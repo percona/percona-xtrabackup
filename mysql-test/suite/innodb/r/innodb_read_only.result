@@ -1,3 +1,5 @@
+include/suppress_messages.inc
+# Connection 1 suppresses message <Failed to compress the gtid_executed table>.
 CREATE DATABASE WL6445;
 CREATE TABLE WL6445.t1(c1 INT, c2 INT, INDEX sec_idx(c2)) ENGINE=InnoDB;
 INSERT INTO WL6445.t1 VALUES(0,0),(1,1),(2,2);

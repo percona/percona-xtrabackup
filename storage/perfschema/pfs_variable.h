@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -176,7 +176,7 @@ class System_variable {
   bool is_null() const { return !m_initialized; }
 
  public:
-  const char *m_name;
+  char m_name_str[SHOW_VAR_MAX_NAME_LEN + 1];
   size_t m_name_length;
   char m_value_str[SHOW_VAR_FUNC_BUFF_SIZE + 1];
   size_t m_value_length;

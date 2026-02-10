@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -981,7 +981,9 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
     // Compute and output current_row.
     int64 rowno;        ///< iterates over rows in a frame
     int64 skipped = 0;  ///< RANGE: # of visited rows seen before the frame
-
+    if (!range_frame) {
+      w.set_first_rowno_in_rows_frame(lower_limit);
+    }
     for (rowno = lower_limit; rowno <= upper; rowno++) {
       if (optimizable) optimizable_primed = true;
 
@@ -1007,11 +1009,15 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
       if (bring_back_frame_row(thd, &w, rowno, reason)) return true;
 
       if (range_frame) {
-        if (w.before_frame()) {
+        const bool is_before = w.before_frame();
+        if (thd->is_error()) return true;  // under-/overflow
+        if (is_before) {
           skipped++;
           continue;
         }
-        if (w.after_frame()) {
+        const bool is_after = w.after_frame();
+        if (thd->is_error()) return true;  // under-/overflow
+        if (is_after) {
           w.set_last_rowno_in_range_frame(rowno - 1);
 
           if (!first_row_in_range_frame_seen)
@@ -1274,7 +1280,9 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
                   Window_retrieve_cached_row_reason::FIRST_IN_FRAME))
             return true;
 
-          if (w.before_frame()) {
+          const bool is_before = w.before_frame();
+          if (thd->is_error()) return true;  // under-/overflow
+          if (is_before) {
             w.set_inverse(true)
                 .
                 /*
@@ -1308,7 +1316,9 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
             w.set_is_last_row_in_peerset_within_frame(false);
             found_first = false;
           } else {
-            if (w.after_frame()) {
+            const bool is_after_frame = w.after_frame();
+            if (thd->is_error()) return true;  // under-/overflow
+            if (is_after_frame) {
               found_first = false;
             } else {
               w.set_first_rowno_in_range_frame(rowno);
@@ -1372,10 +1382,17 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
         if (rowno == first && !found_first)
           w.copy_pos(Window_retrieve_cached_row_reason::LAST_IN_FRAME,
                      Window_retrieve_cached_row_reason::FIRST_IN_FRAME);
-        if (w.before_frame()) {
+
+        const bool is_before = w.before_frame();
+        if (thd->is_error()) return true;  // under-/overflow
+        if (is_before) {
           if (!found_first) new_first_rowno_in_frame++;
           continue;
-        } else if (w.after_frame()) {
+        }
+
+        const bool is_after = w.after_frame();
+        if (thd->is_error()) return true;  // under-/overflow
+        if (is_after) {
           w.set_last_rowno_in_range_frame(rowno - 1);
           if (!found_first) {
             w.set_first_rowno_in_range_frame(rowno);
@@ -1410,7 +1427,9 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
         row_added = true;
       }
 
-      if (w.before_frame() && empty) {
+      const bool is_before = w.before_frame();
+      if (thd->is_error()) return true;  // under-/overflow
+      if (is_before && empty) {
         assert(!row_added && !found_first);
         // This row's value is too low to fit in frame. We already had an empty
         // set of frame rows when evaluating for the previous row, and the set
@@ -1525,7 +1544,7 @@ WindowIterator::WindowIterator(THD *thd,
   assert(!m_window->needs_buffering());
 }
 
-bool WindowIterator::Init() {
+bool WindowIterator::DoInit() {
   if (m_source->Init()) {
     return true;
   }
@@ -1537,7 +1556,7 @@ bool WindowIterator::Init() {
   return false;
 }
 
-int WindowIterator::Read() {
+int WindowIterator::DoRead() {
   SwitchSlice(m_join, m_input_slice);
 
   int err = m_source->Read();
@@ -1572,7 +1591,7 @@ BufferingWindowIterator::BufferingWindowIterator(
   assert(m_window->needs_buffering());
 }
 
-bool BufferingWindowIterator::Init() {
+bool BufferingWindowIterator::DoInit() {
   if (m_source->Init()) {
     return true;
   }
@@ -1588,7 +1607,7 @@ bool BufferingWindowIterator::Init() {
   return false;
 }
 
-int BufferingWindowIterator::Read() {
+int BufferingWindowIterator::DoRead() {
   SwitchSlice(m_join, m_output_slice);
 
   if (m_eof) {

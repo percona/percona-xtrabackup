@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -103,7 +103,7 @@ Event_reference_caching_channels::Event_mapping::Event_mapping() {
 bool Event_reference_caching_channels::Event_mapping::map(
     const std::string &event, std::pair<size_t, size_t> &index) {
   try {
-    size_t at = event_map_.at(event);
+    size_t const at = event_map_.at(event);
     index = channel_set_mapping[at];
     return false;
   } catch (...) {
@@ -171,7 +171,7 @@ void Event_reference_caching_channels::deinit() {
 }
 
 Event_reference_caching_channels *Event_reference_caching_channels::create() {
-  auto obj = new (std::nothrow) Event_reference_caching_channels();
+  auto *obj = new (std::nothrow) Event_reference_caching_channels();
   if (obj) obj->init();
   return obj;
 }
@@ -180,7 +180,7 @@ bool Event_reference_caching_channels::create_cache(
     Cache_vector &cache_vector) {
   if (!valid_) return true;
 
-  for (auto one_channel : channels_) {
+  for (auto *one_channel : channels_) {
     reference_caching_cache one_cache;
     if (reference_caching_cache_service_->create(one_channel, srv_registry,
                                                  &one_cache)) {
@@ -194,17 +194,30 @@ bool Event_reference_caching_channels::create_cache(
 bool Event_reference_caching_channels::service_notification(const char *service,
                                                             bool load) {
   const char *dot = strchr(service, '.');
-  std::string service_name(service, static_cast<size_t>(dot - service));
+  std::string const service_name(service, static_cast<size_t>(dot - service));
   size_t index;
   if (!map(service_name, index)) {
     if (load) {
       ++service_counters_[index];
+      /*
+        A special case is needed for event_tracking_lifecycle because it
+        combines two plugin services.
+      */
+      if (service_name == "event_tracking_lifecycle" && index > 0)
+        ++service_counters_[index - 1];
     } else {
       /*
         Following is thread safe because persistent dynamic loader takes
         a mutex as a part of each UNINSTALL COMPONENT statement.
       */
       if (service_counters_[index].load() > 0) --service_counters_[index];
+      /*
+        A special case is needed for event_tracking_lifecycle because it
+        combines two plugin services.
+      */
+      if (service_name == "event_tracking_lifecycle" && index > 0)
+        if (service_counters_[index - 1].load() > 0)
+          --service_counters_[index - 1];
     }
     return false;
   }
@@ -224,7 +237,7 @@ Event_reference_caching_cache::~Event_reference_caching_cache() { deinit(); }
 void Event_reference_caching_cache::deinit() {
   if (local_cache_vector_.empty()) return;
 
-  for (auto one_cache : local_cache_vector_) {
+  for (auto *one_cache : local_cache_vector_) {
     reference_caching_cache_service_->destroy(one_cache);
   }
   local_cache_vector_.clear();

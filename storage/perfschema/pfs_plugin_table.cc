@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -229,9 +229,6 @@
   @enduml
 */
 /* clang-format on */
-
-struct PSI_POS;
-struct PSI_RECORD;
 
 bool plugin_table_service_initialized = false;
 
@@ -1232,14 +1229,6 @@ void get_field_year_v1(PSI_field *f, PSI_year *value) {
 
   value->val = get_field_year(f_ptr);
   value->is_null = false;
-}
-
-/**************************************
- * NULL                               *
- **************************************/
-void set_field_null_v1(PSI_field *f) {
-  auto *f_ptr = reinterpret_cast<Field *>(f);
-  f_ptr->set_null();
 }
 
 unsigned int get_parts_found_v1(PSI_key_reader *reader) {

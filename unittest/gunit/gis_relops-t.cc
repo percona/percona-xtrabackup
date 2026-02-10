@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -131,7 +131,7 @@ TYPED_TEST(RelopsTest, CodeCoverage) {
   py.push_back(lr);
   gc.push_back(py);
 
-  typename TypeParam::Geometrycollection gc_empty;
+  typename TypeParam::Geometrycollection const gc_empty;
   gc.push_back(gc_empty);
 
   typename TypeParam::Geometrycollection gc_inner;

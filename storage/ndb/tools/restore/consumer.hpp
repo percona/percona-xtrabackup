@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,42 +35,44 @@ class BackupConsumer {
  public:
   BackupConsumer() {}
   virtual ~BackupConsumer() {}
-  virtual bool init(Uint32 tableCompabilityMask) { return true; }
-  virtual bool object(Uint32 tableType, const void *) { return true; }
+  virtual bool init(Uint32 /*tableCompabilityMask*/) { return true; }
+  virtual bool object(Uint32 /*tableType*/, const void *) { return true; }
   virtual bool table(const TableS &) { return true; }
-  virtual bool fk(Uint32 tableType, const void *) { return true; }
+  virtual bool fk(Uint32 /*tableType*/, const void *) { return true; }
   virtual bool endOfTables() { return true; }
   virtual bool endOfTablesFK() { return true; }
-  virtual bool tuple(const TupleS &, Uint32 fragId) { return true; }
+  virtual bool tuple(const TupleS &, Uint32 /*fragId*/) { return true; }
   virtual void tuple_free() {}
-  virtual void endOfTuples() {}
+  virtual bool endOfTuples() { return true; }
   virtual bool logEntry(const LogEntry &) { return true; }
-  virtual void endOfLogEntrys() {}
+  virtual bool endOfLogEntrys() { return true; }
   virtual bool prepare_staging(const TableS &) { return true; }
   virtual bool finalize_staging(const TableS &) { return true; }
   virtual bool finalize_table(const TableS &) { return true; }
   virtual bool rebuild_indexes(const TableS &) { return true; }
   virtual bool createSystable(const TableS &) { return true; }
-  virtual bool update_apply_status(const RestoreMetaData &metaData,
-                                   bool snapshotstart) {
+  virtual bool update_apply_status(const RestoreMetaData & /*metaData*/,
+                                   bool /*snapshotstart*/) {
     return true;
   }
   virtual bool delete_epoch_tuple() { return true; }
-  virtual bool report_started(unsigned backup_id, unsigned node_id) {
+  virtual bool report_started(unsigned /*backup_id*/, unsigned /*node_id*/) {
     return true;
   }
-  virtual bool report_meta_data(unsigned backup_id, unsigned node_id) {
+  virtual bool report_meta_data(unsigned /*backup_id*/, unsigned /*node_id*/) {
     return true;
   }
-  virtual bool report_data(unsigned backup_id, unsigned node_id) {
+  virtual bool report_data(unsigned /*backup_id*/, unsigned /*node_id*/) {
     return true;
   }
-  virtual bool report_log(unsigned backup_id, unsigned node_id) { return true; }
-  virtual bool report_completed(unsigned backup_id, unsigned node_id) {
+  virtual bool report_log(unsigned /*backup_id*/, unsigned /*node_id*/) {
+    return true;
+  }
+  virtual bool report_completed(unsigned /*backup_id*/, unsigned /*node_id*/) {
     return true;
   }
   virtual bool isMissingTable(const TableS &) { return false; }
-  virtual void log_temp_errors() { return; }
+  virtual void log_temp_errors() {}
   virtual bool table_equal(const TableS &) { return true; }
   virtual bool table_compatible_check(TableS &) { return true; }
   virtual bool check_blobs(TableS &) { return true; }
@@ -183,13 +185,13 @@ class RestoreThreadData {
       : m_part_id(part_id),
         m_result(0),
         m_restore_meta(false),
-        m_thread(NULL) {}
+        m_thread(nullptr) {}
   CyclicBarrier *m_barrier;
   RestoreThreadData(Uint32 partId, CyclicBarrier *barrier)
       : m_part_id(partId),
         m_result(0),
         m_restore_meta(false),
-        m_thread(NULL),
+        m_thread(nullptr),
         m_barrier(barrier) {}
   ~RestoreThreadData() {}
 };

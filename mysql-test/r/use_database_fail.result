@@ -1,0 +1,21 @@
+# Bug#36892499: use database doesn't work
+# Connection 1
+CREATE DATABASE testDB;
+use testDB;
+CREATE TABLE t1 (c1 INT);
+INSERT INTO t1 (c1) VALUES(1);
+INSERT INTO t1 (c1) VALUES(2);
+INSERT INTO t1 (c1) VALUES(3);
+begin;
+select * from t1;
+c1
+1
+2
+3
+# Connection 2
+use testDB;
+drop table t1;;
+# Connection 3
+use testDB;
+commit;
+drop database testDB;

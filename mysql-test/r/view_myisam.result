@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 create table t1 (a int, b char(10)) charset latin1 engine=Myisam;
 create view v1 as select * from t1 where a != 0 with check option;
 load data infile '../../std_data/loaddata3.dat' into table v1 fields terminated by '' enclosed by '' ignore 1 lines;
@@ -127,3 +128,4 @@ SELECT * FROM v2;
 b
 DROP VIEW v2;
 DROP TABLES t2, t3, t4, t5;
+include/rpl/set_gtid_mode_on.inc

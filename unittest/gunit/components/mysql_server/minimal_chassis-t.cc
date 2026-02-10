@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -94,6 +94,6 @@ int main(int argc, char **argv) {
   if (res_length > 0) basedir_buf[res_length - 1] = '\0';
   my_setwd(basedir_buf, 0);
 
-  int retval = RUN_ALL_TESTS();
+  int const retval = RUN_ALL_TESTS();
   return retval;
 }

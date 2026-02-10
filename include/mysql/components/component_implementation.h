@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -302,12 +302,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
   @param service A referenced Service name.
 */
-#define REQUIRES_SERVICE(service)                                              \
-  {                                                                            \
-#service,                                                                  \
-        static_cast < void **>                                                 \
-            (static_cast <void *>(const_cast <mysql_service_##service##_t **>( \
-                &mysql_service_##service)))                                    \
+#define REQUIRES_SERVICE(service)                               \
+  {                                                             \
+#service, reinterpret_cast < void **>                       \
+                  (const_cast <mysql_service_##service##_t **>( \
+                      &mysql_service_##service))                \
   }
 
 /**
@@ -317,12 +316,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
   @param service A referenced Service name.
   @param implementation A referenced Service implementation name.
 */
-#define REQUIRES_SERVICE_IMPLEMENTATION(service, implementation)               \
-  {                                                                            \
-#service "." #implementation,                                              \
-        static_cast < void **>                                                 \
-            (static_cast <void *>(const_cast <mysql_service_##service##_t **>( \
-                &mysql_service_##service)))                                    \
+#define REQUIRES_SERVICE_IMPLEMENTATION(service, implementation) \
+  {                                                              \
+#service "." #implementation,                                \
+        reinterpret_cast < void **>                              \
+            (const_cast <mysql_service_##service##_t **>(        \
+                &mysql_service_##service))                       \
   }
 
 /**

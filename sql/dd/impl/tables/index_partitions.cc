@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,11 +29,10 @@
 #include "sql/dd/impl/tables/dd_properties.h"  // TARGET_DD_VERSION
 #include "sql/dd/impl/types/object_table_definition_impl.h"
 
-namespace dd {
-namespace tables {
+namespace dd::tables {
 
 const Index_partitions &Index_partitions::instance() {
-  static Index_partitions *s_instance = new Index_partitions();
+  static auto *s_instance = new Index_partitions();
   return *s_instance;
 }
 
@@ -89,5 +88,4 @@ Object_key *Index_partitions::create_primary_key(Object_id partition_id,
 
 ///////////////////////////////////////////////////////////////////////////
 
-}  // namespace tables
-}  // namespace dd
+}  // namespace dd::tables

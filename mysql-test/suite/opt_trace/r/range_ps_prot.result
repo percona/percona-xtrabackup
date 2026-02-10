@@ -6102,6 +6102,7 @@ EXPLAIN SELECT v FROM t1 WHERE i1 = 1 AND pk < 3	{
                         "index": "v_idx",
                         "tree_travel_cost": 0.15,
                         "num_groups": 6,
+                        "index skip scan cost": 2.80195,
                         "rows": 5,
                         "cost": 2.80195
                       }

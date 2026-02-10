@@ -265,13 +265,9 @@ create table t1(f1 date);
 insert into t1 values('01-01-01'),('02-02-02'),('01-01-01'),('02-02-02');
 --disable_ps_protocol  # See bug #27245598.
 set @bug28261='';
---skip_if_hypergraph  # Different warnings.
 select if(@bug28261 = f1, '', @bug28261:= f1) from t1;
---skip_if_hypergraph  # Different warnings.
 select if(@bug28261 = f1, '', @bug28261:= f1) from t1;
---skip_if_hypergraph  # Different warnings.
 select if(@bug28261 = f1, '', @bug28261:= f1) from t1;
---enable_ps_protocol
 drop table t1;
 
 #
@@ -465,6 +461,7 @@ DROP TABLE t1;
 CREATE TABLE t1 (Id INT, AtTime DATETIME, KEY AtTime (AtTime));
 SET NAMES CP850;
 INSERT INTO t1 VALUES (1,'2010-04-12 22:30:12'), (2,'2010-04-12 22:30:12'), (3,'2010-04-12 22:30:12');
+ANALYZE TABLE t1;
 EXPLAIN SELECT * FROM t1 FORCE INDEX(attime) WHERE AtTime = '2010-02-22 18:40:07';
 DROP TABLE t1;
 SET NAMES latin1;
@@ -657,10 +654,6 @@ do ifnull((bin_to_uuid(uuid_to_bin(date_format('7088-02-14'
 do ucase(insert(maketime(9.565398e+307 ,'',
                          st_longfromgeohash(('4358-04-12 03:45:08.727399'))),
 			 0xdc0823,6756,release_all_locks()));
-
---error ER_DATA_OUT_OF_RANGE
-do soundex(maketime(cast((2530967061762658367) as decimal),
-   exp(repeat('1',32)),((period_add(579349005,27636))xor (sha(current_user)))));
 
 --error ER_DATA_OUT_OF_RANGE
 do st_mlinefromtext(

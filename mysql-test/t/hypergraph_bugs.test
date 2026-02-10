@@ -413,7 +413,7 @@ ANALYZE TABLE t1, t2;
 # in the hypergraph optimizer"). Then the the row estimate for GROUP BY will also depend
 # on the join order. This triggers the assert (i.e. bug#34861693).
 --replace_regex $elide_costs
-EXPLAIN FORMAT=TREE SELECT x1.a+0 k, COUNT(x1.b) FROM t1 x1
+EXPLAIN FORMAT=TREE SELECT SQL_BIG_RESULT x1.a+0 k, COUNT(x1.b) FROM t1 x1
   LEFT JOIN t2 x2 ON x1.b=x2.a
   LEFT JOIN t1 x3 ON x2.b=x3.a GROUP BY k;
 
@@ -793,12 +793,12 @@ EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE e=FLOOR(RAND(0));
 # Make estimate from second field of index. Since 'b' and 'd' are independent,
 # the estimate will be too low.
 --replace_regex $elide_costs_and_time
-EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE d=0;
+EXPLAIN ANALYZE SELECT /*+ SKIP_SCAN(t1) */ 1 FROM t1 WHERE d=0;
 
 # Make estimate from second field of index. Since 'b' in functionally dependent
 # on 'e', the estimate will be too high.
 --replace_regex $elide_costs_and_time
-EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE e=0;
+EXPLAIN ANALYZE SELECT /*+ SKIP_SCAN(t1) */ 1 FROM t1 WHERE e=0;
 
 # Make estimate from second field of indexes k3 and k4.
 --replace_regex $elide_costs_and_time
@@ -954,7 +954,7 @@ ANALYZE TABLE t1;
 # condition.
 
 --replace_regex $elide_costs_and_rows
-EXPLAIN FORMAT=TREE SELECT b FROM t1 x1
+EXPLAIN FORMAT=TREE SELECT /*+ SKIP_SCAN(x1) */ b FROM t1 x1
   WHERE c < 1 AND c = (SELECT MAX(b) FROM t1 x2);
 
 DROP TABLE t1;
@@ -1183,7 +1183,7 @@ SELECT REGEXP_SUBSTR(trace, " - \\{HASH_JOIN[^\n]*keeping",1,1,'n')
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE a=5 AND b=5;
 
-SELECT REGEXP_SUBSTR(trace, " - \\{FILTER[^\n]*keeping",1,1,'n')
+SELECT REGEXP_SUBSTR(trace, " - \\{EQ_REF[^\n]*keeping",1,1,'n')
   FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
 SET SESSION OPTIMIZER_TRACE="enabled=off";
@@ -1327,14 +1327,14 @@ ANALYZE TABLE t1;
 # is 1.
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT * FROM t1 x1, t1 x2, t1 x3
-  WHERE x1.b=x2.a AND x2.b=x3.a AND (x1.c < 5 OR x3.c=7);
+  WHERE x1.b=x2.a AND x2.b=x3.a AND (x1.c < 5 OR x3.c=7) LIMIT 1;
 
 # Do a lookup on non-unique key k1, where the row estimate should be 2.
 # 'ORDER BY' ensures that we get a nested loop join, where the lookup is
 # present.
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT * FROM t1 x1, t1 x2, t1 x3
-  WHERE x1.b=x2.d AND x2.b=x3.d AND (x1.c < 5 OR x3.c=7) ORDER BY x3.d;
+  WHERE x1.b=x2.d AND x2.b=x3.d AND (x1.c < 5 OR x3.c=7) ORDER BY x3.d LIMIT 1;
 
 # Check that we handle two identical conditions correctly.
 --replace_regex $elide_costs
@@ -1420,6 +1420,24 @@ SELECT ROW_NUMBER() OVER () FROM t WHERE x = RAND() GROUP BY x;
 DROP TABLE t;
 
 --echo #
+--echo # Bug#35989799 Discontinuity in row estimate for ROLLUP in hypergraph
+--echo #
+
+CREATE TABLE t1(x INT, y INT);
+
+INSERT INTO t1 VALUES (1,1), (2,2);
+
+ANALYZE TABLE t1;
+
+# The row estimate before aggregation is n where n < 1. The estimated
+# number of aggregated rows is then also n, and the total estimate,
+# including the two rollup rows should then be 1 + n * 2.
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE x > 0 GROUP BY x, y WITH ROLLUP;
+
+DROP TABLE t1;
+
+--echo #
 --echo # Bug#36099491: Assertion secondary_engine_cost_hook != nullptr
 --echo #               failed with hypergraph_optimizer
 --echo #
@@ -1475,6 +1493,159 @@ FROM t WHERE x IN (
 DROP TABLE t;
 
 --echo #
+--echo # Bug#37272285 Assertion `false && "Inconsistent row counts for
+--echo # different AccessPath objects."' failed.
+--echo #
+
+CREATE TABLE t1(x INT);
+CREATE TABLE t2(x INT);
+CREATE TABLE t3(id INT PRIMARY KEY);
+CREATE TABLE t4(id INT NULL UNIQUE);
+
+INSERT INTO t1 VALUES (1), (2), (3);
+INSERT INTO t2 VALUES (1), (2), (3), (4);
+INSERT INTO t3 VALUES (1), (2), (3);
+INSERT INTO t4 VALUES (1), (2), (3);
+
+ANALYZE TABLE t1, t2, t3, t4;
+
+# Check that query does not trigger assert.
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE 1 IN
+(SELECT t2.x+1 FROM t2, t3 WHERE t3.id = t1.x+t2.x);
+
+# Check that query does not trigger assert.
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT * FROM t1 LEFT JOIN LATERAL
+(SELECT t2.x+1 k FROM t2, t3 WHERE t3.id = t1.x+t2.x) d2 ON 1=k;
+
+# These two did not trigger the assert, but probably could have if we had
+# implemented NLJ for <=> before fixing Bug#37272285 (cf. Bug#36955411
+# "Hypergraph optimizer does not use index lookups for <=> predicates").
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE 1 IN
+(SELECT t2.x+1 FROM t2, t3 WHERE t3.id <=> t1.x+t2.x);
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT * FROM t1 LEFT JOIN LATERAL
+(SELECT t2.x+1 k FROM t2, t3 WHERE t3.id <=> t1.x+t2.x) d2 ON 1=k;
+
+# These two did not trigger the assert, but probably could have if we had
+# implemented REF_OR_NULL for Hypergraph.
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE 1 IN
+(SELECT t2.x+1 FROM t2, t4 WHERE t4.id = t1.x+t2.x or t4.id IS NULL);
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT * FROM t1 LEFT JOIN LATERAL
+(SELECT t2.x+1 k FROM t2, t4 WHERE t4.id = t1.x+t2.x or t4.id IS NULL) d2
+ON 1=k;
+
+DROP TABLE t1,t2,t3,t4;
+
+
+--echo #
+--echo # Bug#36955411 Hypergraph optimizer does not use index lookups
+--echo # for <=> predicates
+--echo #
+
+
+CREATE TABLE t1(
+  pk INT NOT NULL PRIMARY KEY,
+  i1 INT,
+  i2 INT,
+  i3 INT,
+  u INT,
+  KEY k1 (i1),
+  KEY k2 (i2, i3),
+  UNIQUE KEY ku(u)
+);
+
+INSERT INTO t1
+WITH RECURSIVE t(n) AS (
+    SELECT 0 AS i UNION ALL
+    SELECT n + 1 FROM t WHERE n + 1 < 50
+)
+SELECT n, n, n, n, n  FROM t;
+
+INSERT INTO t1 VALUES (-1, NULL, NULL, NULL, NULL);
+
+CREATE TABLE t2 (k INT, l INT);
+INSERT INTO t2 VALUES (NULL, NULL), (1, 1);
+
+ANALYZE TABLE t1, t2;
+
+--echo # Impossible WHERE should give ZERO_ROW path.
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE t1.u IN  (1,2,3) AND t1.u IS NULL;
+
+--echo # The following queries should map <=> and IS NULL to REF
+--echo # on the k1 index.
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT pk FROM t1 WHERE i1 IS NULL;
+SELECT pk FROM t1 WHERE i1 IS NULL;
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT pk FROM t1 WHERE i1 <=> 1;
+SELECT pk FROM t1 WHERE i1 <=> 1;
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT pk FROM t1 WHERE i1 <=> NULL;
+SELECT pk FROM t1 WHERE i1 <=> NULL;
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT COUNT(*) FROM t1, t2 WHERE t2.k <=> t1.i1;
+SELECT COUNT(*) FROM t1, t2 WHERE t2.k <=> t1.i1;
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT COUNT(*) FROM t1, t2 WHERE t1.i1 <=> t2.k+t2.l;
+SELECT COUNT(*) FROM t1, t2 WHERE t1.i1 <=> t2.k+t2.l;
+
+--echo # Prefer lookup with or without histogram on 'i'.
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON i;
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT pk FROM t1 WHERE i1 <=> NULL;
+SELECT pk FROM t1 WHERE i1 <=> NULL;
+
+--echo # The following queries should map <=> and ISNULL to EQ_REF access
+--echo # on the ku index.
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT pk FROM t1 WHERE u IS NULL;
+SELECT pk FROM t1 WHERE u IS NULL;
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT pk FROM t1 WHERE u <=> 1;
+SELECT pk FROM t1 WHERE u <=> 1;
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT pk FROM t1 WHERE u <=> NULL;
+SELECT pk FROM t1 WHERE u <=> NULL;
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT COUNT(*) FROM t1, t2 WHERE t2.k <=> t1.u;
+SELECT COUNT(*) FROM t1, t2 WHERE t2.k <=> t1.u;
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT COUNT(*) FROM t1, t2 WHERE t1.u <=> t2.k+t2.l;
+SELECT COUNT(*) FROM t1, t2 WHERE t1.u <=> t2.k+t2.l;
+
+--echo # Row estimate should utilize the k2 index for both <=> and =.
+
+EXPLAIN FORMAT=JSON INTO @plan1 SELECT * FROM t1, t2
+WHERE t2.k <=> t1.i2 AND t2.l<=>t1.i3;
+
+EXPLAIN FORMAT=JSON INTO @plan2 SELECT * FROM t1, t2
+WHERE t2.k = t1.i2 AND t2.l=t1.i3;
+
+SELECT ABS(JSON_EXTRACT(@plan1, '$.query_plan.estimated_rows') -
+JSON_EXTRACT(@plan2, '$.query_plan.estimated_rows')) < 0.05 AS ok;
+
+DROP TABLE t1,t2;
+
+--echo #
 --echo # Bug#36578613: Hypergraph result difference when querying I_S.TABLES
 --echo #
 
@@ -1495,13 +1666,48 @@ ORDER BY -t1.x;
 --eval EXPLAIN FORMAT=JSON INTO @explain $query
 query_vertical
 SELECT
-  JSON_EXTRACT(@explain, '$.access_type') AS sort_for_order_by,
-  JSON_EXTRACT(@explain, '$.inputs[0].access_type') AS sort_for_distinct,
-  JSON_EXTRACT(@explain, '$.inputs[0].inputs[0].join_algorithm') AS hash_join;
+  JSON_EXTRACT(@explain, '$.query_plan.access_type') AS sort_for_order_by,
+  JSON_EXTRACT(@explain, '$.query_plan.inputs[0].access_type') AS sort_for_distinct,
+  JSON_EXTRACT(@explain, '$.query_plan.inputs[0].inputs[0].join_algorithm') AS hash_join;
 
 --eval $query
 
 DROP TABLE t;
+
+--echo #
+--echo # Bug#36678321: Hypergraph: Sort-ahead doesn't provide row IDs to later
+--echo #               sort that needs them.
+--echo #
+
+CREATE TABLE t1(int_col1 INT, int_col2 INT);
+INSERT INTO t1 VALUES (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6);
+
+CREATE TABLE t2 (int_col_key INT, longtext_col LONGTEXT, KEY (int_col_key));
+INSERT INTO t2
+  WITH RECURSIVE src(n) AS (
+    SELECT 1 UNION ALL SELECT n + 1 FROM src WHERE n < 50
+  )
+  SELECT n, n FROM src;
+INSERT INTO t2 SELECT * FROM t2;
+INSERT INTO t2 SELECT * FROM t2;
+
+ANALYZE TABLE t1, t2;
+
+let $query =
+SELECT SQL_BIG_RESULT DISTINCT t1.int_col2
+FROM t1, t2 WHERE t1.int_col1 = t2.int_col_key
+ORDER BY ANY_VALUE(t2.longtext_col);
+
+# To reproduce the problem, we need to have a nested loop join with a
+# sort-ahead on t1.int_col2 on the left side of the join, whose
+# ordering is used for removing duplicates after the join, and a new
+# sort for the ORDER BY clause on top. The query used to return the
+# same value for all rows.
+--replace_regex $elide_costs
+--eval EXPLAIN FORMAT=TREE $query
+--eval $query
+
+DROP TABLE t1, t2;
 
 --echo #
 --echo # Bug#36715239: Assertion `found_a_plan || is_secondary_engine' failed.
@@ -1529,6 +1735,347 @@ SELECT t1.a, s.b FROM t AS t1 LEFT JOIN s ON t1.a = s.b;
 
 --sorted_result
 --eval $query
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#37079336: Assert failure in
+--echo # Item_eq_base::append_join_key_for_hash_join() with hypergraph
+--echo #
+
+CREATE TABLE small (id INT PRIMARY KEY, a INT, b TEXT);
+INSERT INTO small VALUES (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4), (5, 5, 5);
+
+CREATE TABLE big (a INT, b TEXT);
+INSERT INTO big
+  WITH RECURSIVE s(n) AS (
+    SELECT 1 UNION ALL SELECT n+1 FROM s WHERE n < 100
+  )
+  SELECT n AS a, n AS b FROM s;
+
+ANALYZE TABLE small, big;
+
+# Used to return wrong results.
+SELECT t1.b, t2.b, t3.b FROM
+big AS t1,
+LATERAL (SELECT * FROM big
+         WHERE t1.a <> 100 ORDER BY a LIMIT 2) AS t2,
+small AS t3
+WHERE t1.a = t2.a AND t2.a = t3.id
+ORDER BY t1.a;
+
+# Used to hit an assertion failure.
+SELECT t1.b, t2.b, t3.b
+FROM small AS t1,
+     LATERAL (SELECT DISTINCT * FROM big
+              WHERE t1.a <> 100
+              ORDER BY a LIMIT 2) AS t2,
+     big AS t3 WHERE t1.a = t2.a AND t2.a = t3.a
+ORDER BY t1.a;
+
+DROP TABLE small, big;
+
+--echo #
+--echo # Bug#37746132 Result mismatch seen with Old Optimizer and Hypergraph
+--echo #
+
+CREATE TABLE t1 (
+  pk INT PRIMARY KEY,
+  a INT,
+  b INT
+);
+
+INSERT INTO t1 VALUES (1,1,1), (2,2,2);
+ANALYZE TABLE t1;
+
+--echo # These two queries should give the same result.
+SELECT COUNT(*) FROM t1 x4 WHERE EXISTS
+(SELECT 1 FROM (SELECT x1.* FROM t1 x1 LEFT JOIN
+ t1 x2 ON x1.a=x2.a AND x2.b > -x4.a) d1 STRAIGHT_JOIN t1 x3 ON d1.b < x3.b);
+
+SELECT COUNT(*) FROM t1 x4 WHERE EXISTS
+(SELECT 1 FROM (SELECT x1.* FROM t1 x1 LEFT JOIN
+ t1 x2 ON x1.a=x2.a AND x2.b > -x4.a) d1 JOIN t1 x3 ON d1.b < x3.b);
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#37826935 Assertion `semijoin_group.size() ==
+--echo # CountOrderElements(path->sort().order)' failed.
+--echo #
+
+CREATE TABLE t1 (pk int NOT NULL PRIMARY KEY, i1 int);
+
+--echo # Should not trigger assert.
+SELECT x2.i1 FROM t1 AS x1 , t1 AS x2
+  WHERE ((x2.pk , x2.i1) IN
+    (SELECT y1.i1, y1.pk FROM
+      (t1 AS y1 JOIN t1 AS y2 ON y2.i1 = y1.pk AND y2.pk = y1.i1)))
+  GROUP BY x2.i1;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#36997713: Hypergraph : Result set mismatch (1 row vs empty set)
+--echo #
+
+CREATE TABLE t1 (f1 INTEGER, f2 VARCHAR(10));
+CREATE TABLE t2 (f1 INTEGER, f2 VARCHAR(10));
+INSERT INTO t1 VALUES (10, 'o');
+INSERT INTO t2 VALUES (100, 'c');
+INSERT INTO t2 VALUES (100, 'o');
+ANALYZE TABLE t1,t2;
+
+let $query =
+SELECT *
+FROM ((SELECT * FROM t1
+       WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.f2 >= t1.f2)) AS table1
+INNER JOIN t2 AS table2 ON (table2.f2 = table1.f2))
+WHERE (table2.f2 = 'x' ) OR (table1.f1 > 1);
+--replace_regex $elide_costs
+--eval EXPLAIN FORMAT=TREE $query
+--eval $query
+
+DROP TABLE t1,t2;
+
+--echo #
+--echo # Bug#37378072: `m_bitsets[i].is_inline()' in in at
+--echo #               join_optimizer/overflow_bitset.h
+--echo #
+CREATE TABLE t1 (col1 INT, col2 INT);
+CREATE TABLE t2 (pk INT PRIMARY KEY, txt TEXT, col1 INT, col2 INT, col3 INT,
+col4 INT, col5 INT, col6 INT, col7 INT, col8 INT, col9 INT, col10 INT,
+col11 INT, col12 INT, col13 INT, col14 INT, col15 INT, col16 INT, col17 INT,
+col18 INT, col19 INT, col20 INT, col21 INT, col22 INT, col23 INT, col24 INT,
+col25 INT, col26 INT, col27 INT, col28 INT, col29 INT, col30 INT, col31 INT,
+col32 INT, col33 INT, col34 INT, col35 INT, col36 INT, col37 INT, col38 INT,
+col39 INT, col40 INT, col41 INT, col42 INT, col43 INT, col44 INT, col45 INT,
+col46 INT, col47 INT, col48 INT, col49 INT, col50 INT, col51 INT, col52 INT,
+col53 INT, col54 INT, col55 INT, col56 INT, col57 INT, col58 INT, col59 INT,
+col60 INT, col61 INT, col62 INT, col63 INT, col64 INT);
+SELECT t2.pk FROM t1 JOIN t2 NATURAL JOIN t2 AS t3 ON t1.col1 = t3.col1 AND t1.col2 <> t3.col2;
+DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug#36630355: Assertion `false && "Inconsistent row counts for
+--echo #               different AccessPath objects."' failed.
+--echo #
+
+CREATE TABLE t(a INT,
+               b INT,
+               c INT,
+               d BIGINT,
+               KEY (a, d));
+
+SELECT 1
+FROM t AS t1 STRAIGHT_JOIN
+     t AS t2,
+     t AS t3,
+     t AS t4
+WHERE t1.d = t3.d AND
+      t3.a = t4.b AND
+      t3.d = t4.c;
+
+SELECT 1
+FROM t AS t2 STRAIGHT_JOIN
+     t AS t1,
+     t AS t3,
+     t AS t4
+WHERE t1.d = t3.d AND
+      t3.a = t4.b AND
+      t3.d = t4.c;
+
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#37452558 Assertion `path->num_output_rows() <=
+--echo #         path->num_output_rows_before_filter` failed.
+--echo #
+CREATE TABLE t1 (f1 int, f2 time, KEY f1 (f1), KEY f2 (f2));
+CREATE TABLE t2 (f1 int, f2 time, KEY f2 (f2));
+INSERT INTO t1 VALUES
+    (NULL,'00:20:03'),(2,'00:20:08'),(0,'00:20:01'),(NULL,'00:20:04'),
+    (0,'00:20:01'),(NULL,'00:20:01'),(2,'00:20:04'),(NULL,'00:20:01'),
+    (0,'00:20:06'),(NULL,'00:20:05'),(2,'00:20:09'),(NULL,'00:20:08'),
+    (2,'00:20:03'),(1,'00:20:03'),(1,'00:20:03'),(NULL,'00:20:00'),
+    (1,'00:20:01'),(NULL,'00:20:02'),(NULL,'00:20:06'),(0,'00:20:07'),
+    (2,'00:20:07'),(0,'00:20:07'),(2,'00:20:03');
+INSERT INTO t2 VALUES
+    (0,'05:23:30'),(0,'22:10:55'),(0,'00:20:04'),(0,'00:20:08'),
+    (0,'00:20:06'),(0,'00:20:07'),(0,'00:20:08'),(0,'00:20:06'),
+    (0,'00:20:09');
+ANALYZE TABLE t1,t2;
+SELECT DISTINCT f1 FROM t1 WHERE f1 IN
+    ( SELECT t2.f1 FROM t2 LEFT JOIN t1 USING (f2)) AND f1 IS NULL;
+DROP TABLE t1,t2;
+
+--echo #
+--echo # Bug#37412816 `path->has_group_skip_scan' in (anonymous namespace)::
+--echo #                SetGroupSkipScanCardinality
+--echo #
+CREATE TABLE t1 (f1 INTEGER, PRIMARY KEY (f1))  ;
+CREATE TABLE t2 (f1 INTEGER, f2 DATETIME, KEY (f2));
+INSERT INTO t1 VALUES (1), (2), (3), (4),(5),(6),(7),(8),(9),(10),
+                      (11),(12),(13),(14),(15),(16),(17),(18),(19),(20);
+ANALYZE TABLE t1, t2;
+SELECT f1 FROM t1 WHERE (f1,f1) IN
+    (SELECT f1,f2 FROM t2 WHERE f1 >= 1) GROUP BY f1;
+DROP TABLE t1,t2;
+
+--echo #
+--echo # Bug#37667970: Hypergraph assertion failure - 'false && Inconsistent
+--echo #               row counts for different AccessPath objects'
+--echo #
+
+CREATE TABLE t (a INT, b INT, c INT, KEY (c));
+INSERT INTO t VALUES (1, 1, 1);
+
+# An assertion failure was seen in debug builds. In release builds, a
+# join plan was chosen. Now we expect the entire join to be optimized
+# away, so that the plan is simply "Zero rows". It is known to return
+# zero rows because ON FALSE makes the join return only
+# NULL-complemented rows, and the WHERE clause rejects all the
+# NULL-complemented rows.
+EXPLAIN FORMAT=TREE
+SELECT 1
+FROM t AS t1 JOIN t AS t2 ON t1.c = t2.b AND t1.c = t2.c
+     LEFT OUTER JOIN t AS t3 ON FALSE
+WHERE t3.a = t2.a OR t2.b > t2.b;
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#37733272: Planning overhead for ordered range queries in hypergraph
+--echo #
+
+CREATE TABLE t (
+  pk INT PRIMARY KEY,
+  a INT NOT NULL,
+  b INT NOT NULL,
+  c INT NOT NULL,
+  UNIQUE KEY k1(a),
+  KEY k2(b)
+);
+INSERT INTO t VALUES (1,1,1,1), (2,2,2,2), (3,3,3,3);
+ANALYZE TABLE t;
+
+SET optimizer_trace='enabled=on';
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT a, b FROM t ORDER BY a, b;
+SET optimizer_trace='enabled=off';
+
+# We expect only a single functional dependency, namely {a}->b, which
+# helps us eliminate b from ORDER BY. Other functional dependencies
+# from the unique indexes, such as {pk}->a, {pk}->b and {b}->c, do not
+# help optimizing the query, so we don't collect them.
+SELECT REGEXP_SUBSTR(TRACE, '(?s)Functional dependencies.*?""') AS dependencies
+FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#38021487: Assertion `false && "Inconsistent row counts for
+--echo #               different AccessPath objects."' failed.
+--echo #
+
+CREATE TABLE t (pk INT PRIMARY KEY, f1 INT, f2 INT);
+INSERT INTO t VALUES (1, 1, 1), (2, 2, 2);
+SELECT 1
+FROM t AS t1
+     JOIN t AS t2 ON t1.f1 = t2.f1 AND t2.f1 = t2.f2
+     LEFT JOIN t AS t3 ON FALSE
+WHERE t3.pk = t2.pk OR t2.f1 <> t2.f1;
+DROP TABLE t;
+
+--echo #
+--echo # Bug#38418831: Hypergraph: Wrong result when sorting hash join
+--echo #               result reading from temptable
+--echo #
+
+CREATE TABLE t1 (x INT);
+INSERT INTO t1 VALUES (1), (3), (5), (7);
+
+CREATE TABLE t2 (x INT, y LONGTEXT);
+INSERT INTO t2 VALUES
+  (1, REPEAT('This is the first blob.', 4)),
+  (2, REPEAT('This is the second blob.', 4)),
+  (3, REPEAT('This is the third blob.', 4)),
+  (4, REPEAT('This is the fourth blob.', 4)),
+  (5, REPEAT('This is the fifth blob.', 4)),
+  (6, REPEAT('This is the sixth blob.', 4)),
+  (7, REPEAT('This is the seventh blob.', 4)),
+  (8, REPEAT('This is the eighth blob.', 4)),
+  (9, REPEAT('This is the ninth blob.', 4)),
+  (10, REPEAT('This is the tenth blob.', 4));
+
+# The bug is seen when the temporary table is on disk. Reduce
+# tmp_table_size to make it go to disk with a smaller test case.
+SET tmp_table_size = 1024;
+
+# Used to return 1 row instead of 4 rows.
+SELECT /*+ NO_MERGE(t2) */ t1.x, t2.y
+FROM t1 JOIN (SELECT * FROM t2) t2 ON t1.x = t2.x
+ORDER BY t1.x, t2.x;
+
+SET tmp_table_size = DEFAULT;
+DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug#38439704: SIG6 with hypergraph optimizer - assertion failure in
+--echo #               RedundantThroughSargable at join_optimizer.cc
+--echo #
+
+CREATE TABLE t(
+  pk INT PRIMARY KEY, col1 INT, col2 INT, col3 INT, col4 INT, col5 INT,
+  col6 INT, col7 INT, col8 INT, col9 INT, col10 INT, col11 INT, col12 INT,
+  col13 INT, col14 INT, col15 INT, col16 INT, col17 INT, col18 INT, col19 INT,
+  col20 INT, col21 INT, col22 INT, col23 INT, col24 INT, col25 INT, col26 INT,
+  col27 INT, col28 INT, col29 INT, col30 INT, col31 INT, col32 INT, col33 INT,
+  col34 INT, col35 INT, col36 INT, col37 INT, col38 INT, col39 INT, col40 INT,
+  col41 INT, col42 INT, col43 INT, col44 INT, col45 INT, col46 INT, col47 INT,
+  col48 INT, col49 INT, col50 INT, col51 INT, col52 INT, col53 INT, col54 INT,
+  col55 INT, col56 INT, col57 INT, col58 INT, col59 INT, col60 INT, col61 INT,
+  col62 INT, col63 INT, col64 INT
+);
+
+INSERT INTO t(pk) VALUES (1), (2);
+
+SELECT 1
+FROM t AS t1
+     NATURAL JOIN t AS t2
+     JOIN t AS t3 ON t2.pk = t3.pk
+WHERE t1.col1 <> t3.col1 AND t1.col2 <> t3.col2;
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#38440648: Assertion `false && "Inconsistent row counts for
+--echo #               different AccessPath objects."' failed.
+--echo #
+
+CREATE TABLE t1 (col_int INT);
+CREATE TABLE t2 (col_int INT, col_varchar10 VARCHAR(10));
+CREATE TABLE t3 (pk INT PRIMARY KEY, col_varchar20 VARCHAR(20));
+
+SELECT 1 FROM t1, t2, t3
+WHERE t2.col_int = t3.pk AND
+      t2.col_varchar10 = t3.col_varchar20 AND
+      t1.col_int = t3.pk AND
+      t1.col_int >= 8;
+
+DROP TABLE t1, t2, t3;
+
+--echo #
+--echo # Bug#38557567: Assertion `IsEmpty(child.delayed_predicates)'
+--echo #               failed|join_optimizer/cost_model.cc
+--echo #
+
+CREATE TABLE t(i INT PRIMARY KEY);
+
+SELECT LAG (i) OVER () FROM t AS t1
+WHERE i IN (SELECT i FROM t AS t2)
+GROUP BY i;
 
 DROP TABLE t;
 

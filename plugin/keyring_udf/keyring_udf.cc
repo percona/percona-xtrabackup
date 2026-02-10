@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,15 +21,12 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <algorithm>  // std::min
+#include <string.h>
+#include <cctype>
+#include <cstring>
+#include <new>
 #include <optional>
 
-#include <stdio.h>
-#include <sys/types.h>
-#include <memory>
-#include <new>
-
-#include <mysql/components/my_service.h>
 #include <mysql/components/services/keyring_generator.h>
 #include <mysql/components/services/keyring_reader_with_status.h>
 #include <mysql/components/services/keyring_writer.h>
@@ -45,7 +42,6 @@
 
 #define MAX_KEYRING_UDF_KEY_LENGTH 16384
 #define MAX_KEYRING_UDF_KEY_TEXT_LENGTH MAX_KEYRING_UDF_KEY_LENGTH
-constexpr size_t KEYRING_UDF_KEY_TYPE_LENGTH = 128;
 namespace {
 SERVICE_TYPE(registry) *reg_srv = nullptr;
 SERVICE_TYPE(mysql_udf_metadata) *udf_metadata_service = nullptr;
@@ -61,6 +57,24 @@ const char *type = "charset";
 #else
 #define PLUGIN_EXPORT extern "C"
 #endif
+
+static bool is_type_valid(const char *type) {
+  // all possible key type names supported by any keyring plugin/component
+  static const std::unordered_set<std::string_view> key_types{"AES", "DSA",
+                                                              "RSA", "SECRET"};
+  assert(type != nullptr);
+  std::string up_type{type};
+  std::transform(up_type.begin(), up_type.end(), up_type.begin(), ::toupper);
+  return (key_types.find(up_type) != key_types.cend());
+}
+// size of the longest type name
+constexpr size_t KEYRING_UDF_KEY_TYPE_LENGTH = sizeof("secret");
+
+static bool is_null_attribute(const char *attr) {
+  std::string up_attr{attr};
+  std::transform(up_attr.begin(), up_attr.end(), up_attr.begin(), ::toupper);
+  return up_attr == "NULL";
+}
 
 static bool is_keyring_udf_initialized = false;
 
@@ -227,46 +241,92 @@ static bool validate_compile_time(UDF_ARGS *args, uint expected_arg_count,
     return true;
   }
 
-  if (to_validate & VALIDATE_KEY_ID && args->arg_type[0] != STRING_RESULT) {
-    strcpy(message,
-           "Mismatch encountered. A string argument is expected "
-           "for key id.");
-    return true;
+  if (to_validate & VALIDATE_KEY_ID) {
+    if (args->arg_type[0] != STRING_RESULT) {
+      strcpy(message,
+             "Mismatch encountered. A string argument is expected for key id.");
+      return true;
+    }
+    if (is_null_attribute(args->attributes[0])) {
+      strcpy(message, "Key id cannot be NULL.");
+      return true;
+    }
+    if (args->args[0] != nullptr && *args->args[0] == 0) {
+      strcpy(message, "Key id cannot be empty.");
+      return true;
+    }
   }
 
-  if (to_validate & VALIDATE_KEY_TYPE && args->arg_type[1] != STRING_RESULT) {
-    strcpy(message,
-           "Mismatch encountered. A string argument is expected "
-           "for key type.");
-    return true;
+  if (to_validate & VALIDATE_KEY_TYPE) {
+    if (args->arg_type[1] != STRING_RESULT) {
+      strcpy(
+          message,
+          "Mismatch encountered. A string argument is expected for key type.");
+      return true;
+    }
+    if (is_null_attribute(args->attributes[1])) {
+      strcpy(message, "Key id cannot be NULL.");
+      return true;
+    }
+    if (args->args[0] != nullptr && !is_type_valid(args->args[1])) {
+      strcpy(message, "Invalid key type.");
+      return true;
+    }
   }
 
-  if (to_validate & VALIDATE_KEY_LENGTH && args->arg_type[2] != INT_RESULT) {
-    strcpy(message,
-           "Mismatch encountered. An integer argument is expected "
-           "for key length.");
-    return true;
+  if (to_validate & VALIDATE_KEY_LENGTH) {
+    if (args->arg_type[2] != INT_RESULT) {
+      strcpy(message,
+             "Mismatch encountered. An integer argument is expected "
+             "for key length.");
+      return true;
+    }
+    if (args->args[2] != nullptr) {
+      const long long key_length =
+          *reinterpret_cast<long long *>(args->args[2]);
+      if (key_length <= 0 || key_length > MAX_KEYRING_UDF_KEY_LENGTH) {
+        strcpy(message, "Invalid length of the key.");
+        return true;
+      }
+    }
   }
 
-  if (to_validate & VALIDATE_KEY && args->arg_type[2] != STRING_RESULT) {
-    strcpy(message,
-           "Mismatch encountered. A string argument is expected "
-           "for key.");
-    return true;
+  if (to_validate & VALIDATE_KEY) {
+    if (args->arg_type[2] != STRING_RESULT) {
+      strcpy(message,
+             "Mismatch encountered. A string argument is expected "
+             "for key.");
+      return true;
+    }
+    if (is_null_attribute(args->attributes[2])) {
+      strcpy(message, "Key cannot be NULL.");
+      return true;
+    }
+    if (args->args[2] != nullptr &&
+        (*args->args[2] == 0 ||
+         strlen(args->args[2]) > MAX_KEYRING_UDF_KEY_TEXT_LENGTH)) {
+      strcpy(message, "Invalid length of the key.");
+      return true;
+    }
   }
   return false;
 }
 
 static bool validate_run_time(UDF_ARGS *args, int to_validate) {
-  if (to_validate & VALIDATE_KEY_ID && args->args[0] == nullptr) return true;
+  if (to_validate & VALIDATE_KEY_ID &&
+      (args->args[0] == nullptr || *args->args[0] == 0))
+    return true;
 
-  if (to_validate & VALIDATE_KEY_TYPE && args->args[1] == nullptr) return true;
+  if (to_validate & VALIDATE_KEY_TYPE &&
+      (args->args[1] == nullptr || *args->args[1] == 0))
+    return true;
 
   if (to_validate & VALIDATE_KEY_LENGTH) {
     if (args->args[2] == nullptr) return true;
     const long long key_length = *reinterpret_cast<long long *>(args->args[2]);
 
-    if (key_length > MAX_KEYRING_UDF_KEY_TEXT_LENGTH) return true;
+    if (key_length <= 0 || key_length > MAX_KEYRING_UDF_KEY_TEXT_LENGTH)
+      return true;
   }
 
   if (to_validate & VALIDATE_KEY && args->args[2] == nullptr) return true;
@@ -320,11 +380,12 @@ void keyring_key_store_deinit(UDF_INIT *) {}
 /**
   Implementation of the UDF:
   INT keyring_key_store(STRING key_id, STRING key_type, STRING key)
-  @return 1 on success, NULL and error on failure
+  @return 1 on success, set NULL on failure
 */
 PLUGIN_EXPORT
-long long keyring_key_store(UDF_INIT *, UDF_ARGS *args, unsigned char *,
+long long keyring_key_store(UDF_INIT *, UDF_ARGS *args, unsigned char *is_null,
                             unsigned char *error) {
+  *error = 0;
   std::string current_user;
   const char *key_id = args->args[0];
   char *key = args->args[2];
@@ -332,52 +393,38 @@ long long keyring_key_store(UDF_INIT *, UDF_ARGS *args, unsigned char *,
 
   if (validate_run_time(args,
                         VALIDATE_KEY_ID | VALIDATE_KEY_TYPE | VALIDATE_KEY)) {
-    *error = 1;
+    *is_null = 1;
     return 0;
   }
 
   if (get_current_user(&current_user)) {
-    *error = 1;
+    *is_null = 1;
     return 0;
   }
 
   if (strlen(args->args[2]) > MAX_KEYRING_UDF_KEY_TEXT_LENGTH) {
-    my_error(ER_CLIENT_KEYRING_UDF_KEY_TOO_LONG, MYF(0), "keyring_key_store");
-    *error = 1;
+    *is_null = 1;
     return 0;
   }
 
   if (keyring_writer_service->store(key_id, current_user.c_str(),
                                     reinterpret_cast<unsigned char *>(key),
                                     strlen(key), key_type) != 0) {
-    my_error(ER_KEYRING_UDF_KEYRING_SERVICE_ERROR, MYF(0), "keyring_key_store");
-    *error = 1;
+    *is_null = 1;
     return 0;
   }
 
-  // For the UDF 1 == success, 0 == failure.
+  *is_null = 0;
   return 1;
 }
 
-static bool fetch(const char *function_name, char *key_id, char **a_key,
-                  char **a_key_type, size_t *a_key_len) {
+static bool fetch(char *key_id, char **out_key, char **out_key_type,
+                  size_t &key_len) {
   std::string current_user;
   if (get_current_user(&current_user)) return true;
 
-  /* Fetch length first */
-  size_t key_len = 0;
-  size_t fetched_key_len = 0;
-  size_t fetched_key_type_len = 0;
-  unsigned char *key = nullptr;
-  char *key_type = nullptr;
-
-  const int retval = keyring_operations_helper::read_secret(
-      keyring_reader_service, key_id, current_user.c_str(), &key, &key_len,
-      &key_type, PSI_INSTRUMENT_ME);
-  if (retval == -1) {
-    my_error(ER_KEYRING_UDF_KEYRING_SERVICE_ERROR, MYF(0), function_name);
-    return true;
-  }
+  unsigned char *key{nullptr};
+  char *key_type{nullptr};
 
   auto cleanup_guard = create_scope_guard([&] {
     if (key != nullptr) my_free(key);
@@ -386,47 +433,18 @@ static bool fetch(const char *function_name, char *key_id, char **a_key,
     key_type = nullptr;
   });
 
-  if (retval == 1) {
-    fetched_key_len = key_len;
-    fetched_key_type_len = strlen(key_type);
-  }
+  const int retval = keyring_operations_helper::read_secret(
+      keyring_reader_service, key_id, current_user.c_str(), &key, &key_len,
+      &key_type, PSI_INSTRUMENT_ME);
+  if (retval != 1) return true;
 
-  if (key == nullptr && key_len > 0) {
-    my_error(ER_CLIENT_KEYRING_UDF_KEY_INVALID, MYF(0), function_name);
-    return true;
-  }
+  // basic check if obtained values are correct
+  if (key == nullptr || key_len <= 0 || key_type == nullptr) return true;
 
-  if (key_len > MAX_KEYRING_UDF_KEY_TEXT_LENGTH) {
-    my_error(ER_CLIENT_KEYRING_UDF_KEY_TOO_LONG, MYF(0), function_name);
-    return true;
-  }
+  if (out_key != nullptr) memcpy(*out_key, key, key_len);
 
-  if (fetched_key_len != 0) {
-    if (fetched_key_type_len == 0 || key_type == nullptr) {
-      my_error(ER_CLIENT_KEYRING_UDF_KEY_TYPE_INVALID, MYF(0), function_name);
-      return true;
-    }
-    if (fetched_key_type_len >= KEYRING_UDF_KEY_TYPE_LENGTH) {
-      my_error(ER_CLIENT_KEYRING_UDF_KEY_TYPE_TOO_LONG, MYF(0), function_name);
-      return true;
-    }
-  }
-
-  if (a_key != nullptr)
-    *a_key = reinterpret_cast<char *>(key);
-  else {
-    if (key != nullptr) my_free(key);
-  }
-
-  if (a_key_type != nullptr)
-    *a_key_type = key_type;
-  else {
-    if (key_type != nullptr) my_free(key_type);
-  }
-
-  if (a_key_len != nullptr) *a_key_len = fetched_key_len;
-
-  cleanup_guard.release();
+  if (out_key_type != nullptr)
+    strncpy(*out_key_type, key_type, KEYRING_UDF_KEY_TYPE_LENGTH);
 
   return false;
 }
@@ -449,34 +467,23 @@ void keyring_key_fetch_deinit(UDF_INIT *initid) {
 /**
   Implementation of the UDF:
   STRING keyring_key_fetch(STRING key_id)
-  @return key on success, NULL if key does not exist, NULL and error on failure
+  @return key on success, set NULL if key does not exist or on failure
 */
 PLUGIN_EXPORT
 char *keyring_key_fetch(UDF_INIT *initid, UDF_ARGS *args, char *,
                         unsigned long *length, unsigned char *is_null,
                         unsigned char *error) {
-  char *key = nullptr;
+  *error = 0;
   size_t key_len = 0;
+  auto null_guard = create_scope_guard([&] { *is_null = 1; });
 
-  if (validate_run_time(args, VALIDATE_KEY_ID)) {
-    *error = 1;
-    return nullptr;
-  }
+  if (validate_run_time(args, VALIDATE_KEY_ID)) return nullptr;
 
-  if (fetch("keyring_key_fetch", args->args[0], &key, nullptr, &key_len)) {
-    if (key != nullptr) my_free(key);
-    *error = 1;
-    return nullptr;
-  }
-
-  if (key != nullptr) {
-    memcpy(initid->ptr, key, key_len);
-    my_free(key);
-  } else
-    *is_null = 1;
+  if (fetch(args->args[0], &initid->ptr, nullptr, key_len)) return nullptr;
 
   *length = key_len;
-  *error = 0;
+  null_guard.release();
+  *is_null = key_len > 0 ? 0 : 1;
   return initid->ptr;
 }
 
@@ -501,37 +508,26 @@ void keyring_key_type_fetch_deinit(UDF_INIT *initid) {
 /**
   Implementation of the UDF:
   STRING keyring_key_type_fetch(STRING key_id)
-  @return key's type on success, NULL if key does not exist, NULL and error on
-  failure
+  @return key's type on success, set NULL if key does not exist or on failure
 */
 PLUGIN_EXPORT
 char *keyring_key_type_fetch(UDF_INIT *initid, UDF_ARGS *args, char *,
                              unsigned long *length, unsigned char *is_null,
                              unsigned char *error) {
-  if (validate_run_time(args, VALIDATE_KEY_ID)) {
-    *error = 1;
-    return nullptr;
-  }
-
-  char *key_type = nullptr;
-  if (fetch("keyring_key_type_fetch", args->args[0], nullptr, &key_type,
-            nullptr)) {
-    if (key_type != nullptr) my_free(key_type);
-    *error = 1;
-    return nullptr;
-  }
-
-  if (key_type != nullptr) {
-    memcpy(initid->ptr, key_type,
-           std::min(strlen(key_type), KEYRING_UDF_KEY_TYPE_LENGTH));
-    *length = std::min(strlen(key_type), KEYRING_UDF_KEY_TYPE_LENGTH);
-    my_free(key_type);
-  } else {
-    *is_null = 1;
-    *length = 0;
-  }
-
   *error = 0;
+  auto null_guard = create_scope_guard([&] { *is_null = 1; });
+
+  if (validate_run_time(args, VALIDATE_KEY_ID)) return nullptr;
+
+  size_t key_size;
+  if (fetch(args->args[0], nullptr, &initid->ptr, key_size)) {
+    *length = 0;
+    return nullptr;
+  }
+
+  *length = strlen(initid->ptr);
+  null_guard.release();
+  *is_null = 0;
   return initid->ptr;
 }
 
@@ -553,30 +549,23 @@ void keyring_key_length_fetch_deinit(UDF_INIT *initid) {
 /**
   Implementation of the UDF:
   INT keyring_key_length_fetch(STRING key_id)
-  @return key's length on success, NULL if key does not exist, NULL and error on
-  failure
+  @return key's length on success, set NULL if key does not exist or on failure.
 */
 PLUGIN_EXPORT
 long long keyring_key_length_fetch(UDF_INIT *, UDF_ARGS *args,
                                    unsigned char *is_null,
                                    unsigned char *error) {
+  *error = 0;
   size_t key_len = 0;
-  char *key = nullptr;
+  auto null_guard = create_scope_guard([&] { *is_null = 1; });
 
-  if (validate_run_time(args, VALIDATE_KEY_ID)) {
-    *error = 1;
-    return 0;
-  }
+  if (validate_run_time(args, VALIDATE_KEY_ID)) return 0;
 
-  *error =
-      fetch("keyring_key_length_fetch", args->args[0], &key, nullptr, &key_len);
+  if (fetch(args->args[0], nullptr, nullptr, key_len)) return 0;
 
-  if (*error == 0 && key == nullptr) *is_null = 1;
-
-  if (key != nullptr) my_free(key);
-
-  // For the UDF 0 == failure.
-  return (*error) ? 0 : key_len;
+  null_guard.release();
+  *is_null = 0;
+  return key_len;
 }
 
 PLUGIN_EXPORT
@@ -590,30 +579,23 @@ void keyring_key_remove_deinit(UDF_INIT *) {}
 /**
   Implementation of the UDF:
   INT keyring_key_remove(STRING key_id)
-  @return 1 on success, NULL on failure
+  @return 1 on success, set NULL on failure
 */
 PLUGIN_EXPORT
-long long keyring_key_remove(UDF_INIT *, UDF_ARGS *args, unsigned char *,
+long long keyring_key_remove(UDF_INIT *, UDF_ARGS *args, unsigned char *is_null,
                              unsigned char *error) {
-  if (validate_run_time(args, VALIDATE_KEY_ID)) {
-    *error = 1;
-    return 0;
-  }
+  *error = 0;
+  auto null_guard = create_scope_guard([&] { *is_null = 1; });
+  if (validate_run_time(args, VALIDATE_KEY_ID)) return 0;
 
   std::string current_user;
-  if (get_current_user(&current_user)) {
-    *error = 1;
-    return 0;
-  }
+  if (get_current_user(&current_user)) return 0;
   const char *key_id = args->args[0];
-  if (keyring_writer_service->remove(key_id, current_user.c_str()) != 0) {
-    //  if (my_key_remove(args->args[0], current_user.c_str())) {
-    my_error(ER_KEYRING_UDF_KEYRING_SERVICE_ERROR, MYF(0),
-             "keyring_key_remove");
-    *error = 1;
+  if (keyring_writer_service->remove(key_id, current_user.c_str()) != 0)
     return 0;
-  }
-  *error = 0;
+
+  null_guard.release();
+  *is_null = 0;
   return 1;
 }
 
@@ -630,18 +612,17 @@ void keyring_key_generate_deinit(UDF_INIT *) {}
 
 /**
   Implementation of the UDF:
-  STRING keyring_key_generate(STRING key_id, STRING key_type, INTEGER
-  key_length)
-  @return 1 on success, NULL and error on failure
+  INT keyring_key_generate(STRING key_id, STRING key_type, INT key_length)
+  @return 1 on success, set NULL on failure
 */
 PLUGIN_EXPORT
-long long keyring_key_generate(UDF_INIT *, UDF_ARGS *args, unsigned char *,
-                               unsigned char *error) {
+long long keyring_key_generate(UDF_INIT *, UDF_ARGS *args,
+                               unsigned char *is_null, unsigned char *error) {
+  *error = 0;
+  auto null_guard = create_scope_guard([&] { *is_null = 1; });
   if (validate_run_time(
-          args, VALIDATE_KEY_ID | VALIDATE_KEY_TYPE | VALIDATE_KEY_LENGTH)) {
-    *error = 1;
+          args, VALIDATE_KEY_ID | VALIDATE_KEY_TYPE | VALIDATE_KEY_LENGTH))
     return 0;
-  }
 
   std::string current_user;
   if (get_current_user(&current_user)) return 0;
@@ -651,12 +632,10 @@ long long keyring_key_generate(UDF_INIT *, UDF_ARGS *args, unsigned char *,
   const long long key_length = *reinterpret_cast<long long *>(args->args[2]);
 
   if (keyring_generator_service->generate(key_id, current_user.c_str(),
-                                          key_type, key_length) != 0) {
-    my_error(ER_KEYRING_UDF_KEYRING_SERVICE_ERROR, MYF(0),
-             "keyring_key_generate");
-    *error = 1;
-    // For the UDF 1 == success, 0 == failure.
+                                          key_type, key_length) != 0)
     return 0;
-  }
+
+  null_guard.release();
+  *is_null = 0;
   return 1;
 }

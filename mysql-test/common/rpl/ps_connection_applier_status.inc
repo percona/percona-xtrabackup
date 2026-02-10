@@ -18,8 +18,6 @@
 #  3) The applier thread applies the transaction
 #     (table: performance_schema.replication_applier_status_by_worker)
 #
-# param: $is_mts        [0,1] 1 if MTS test
-
 
 --let $current_gtid= ANONYMOUS
 
@@ -115,16 +113,9 @@ DROP TABLE t;
 --source include/assert.inc
 --source include/rpl/start_replica.inc
 --let $last_applied_gtid= query_get_value(select LAST_APPLIED_TRANSACTION from performance_schema.replication_applier_status_by_worker, LAST_APPLIED_TRANSACTION, 1)
-if ( $is_mts )
-{
-  --let $assert_text= Assert that the gtid is clear because the slave was stopped and started
-  --let $assert_cond= "$last_applied_gtid" = ""
-}
-if ( !$is_mts)
-{
-  --let $assert_text= Assert that the gtid is kept after the slave was stopped and started
-  --let $assert_cond= "$last_applied_gtid" = "$last_applied_gtid_before_stop"
-}
+--let $assert_text= Assert that the gtid is clear because the slave was stopped and started
+--let $assert_cond= "$last_applied_gtid" = ""
+
 --source include/assert.inc
 
 

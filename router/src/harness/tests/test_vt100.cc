@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -56,7 +56,7 @@ TEST_P(Vt100Test, ensure_generates) {
  * @test Vt100Filter(..., false) doesn't filter out Vt100 sequences.
  */
 TEST_P(Vt100Test, ensure_filter_ignores) {
-  std::ostringstream out_stream;
+  std::ostringstream const out_stream;
   Vt100Filter filtered_streambuf(out_stream.rdbuf(), false);
   std::ostream filtered_stream(&filtered_streambuf);
 
@@ -70,7 +70,7 @@ TEST_P(Vt100Test, ensure_filter_ignores) {
  * @test Vt100Filter(..., true) removes Vt100 sequences.
  */
 TEST_P(Vt100Test, ensure_filter_filters) {
-  std::ostringstream out_stream;
+  std::ostringstream const out_stream;
   Vt100Filter filtered_streambuf(out_stream.rdbuf(), true);
   std::ostream filtered_stream(&filtered_streambuf);
 
@@ -128,10 +128,10 @@ const Vt100Param vt100_params[]{
                Vt100::background(Vt100::Color::BrightBlue),
                {ESC "[104m"}},
     Vt100Param{"format_foreground_rgb_red",
-               Vt100::foreground(Vt100::Rgb{255u, 0u, 0u}),
+               Vt100::foreground(Vt100::Rgb{255U, 0U, 0U}),
                {ESC "[38;2;255;0;0m"}},
     Vt100Param{"format_background_rgb_blue",
-               Vt100::background(Vt100::Rgb{0u, 0u, 255u}),
+               Vt100::background(Vt100::Rgb{0U, 0U, 255U}),
                {ESC "[48;2;0;0;255m"}},
     Vt100Param{
         "format_foreground_index_red", Vt100::foreground(1), {ESC "[38;5;1m"}},

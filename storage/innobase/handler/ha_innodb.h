@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -35,6 +35,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "create_field.h"
 #include "field.h"
 #include "handler.h"
+#include "mysql/components/services/bulk_data_service.h"
 #include "mysql/components/services/clone_protocol_service.h"
 
 #include "row0pread-adapter.h"
@@ -474,6 +475,42 @@ class ha_innobase : public handler {
   @return true iff bulk load can be done on the table. */
   bool bulk_load_check(THD *thd) const override;
 
+  /** Used during bulk load on a non-empty table, called after the CSV file
+  input is exhausted and we need to copy any existing data from the original
+  table to the duplicated one.
+  @param[in]  load_ctx      SE load context
+  @param[in]  thread_idx    loader thread index
+  @param[in]  wait_cbk      stat callbacks.
+  @return 0 if successful, HA_ERR_GENERIC otherwise. */
+  int bulk_load_copy_existing_data(
+      void *load_ctx, size_t thread_idx,
+      Bulk_load::Stat_callbacks &wait_cbk) const override;
+
+  /** Sets the source table data (table name and key range boundaries) for all
+  loaders.
+  @param[in,out]  load_ctx                SE load context
+  @param[in]      source_table_data  vector containing the source table data
+  @return true if successful, false otherwise. */
+  bool bulk_load_set_source_table_data(
+      void *load_ctx,
+      const std::vector<Bulk_load::Source_table_data> &source_table_data)
+      const override;
+
+  /** Generates a temporary table name to be used for table duplication during
+  bulk load.
+  @return a temporary table name. */
+  std::string bulk_load_generate_temporary_table_name() const override;
+
+  /** Get the row ID range of the table that we're bulk loading into. Only used
+  when the table has a generated clustered index and is not empty.
+  @param[out] min Minimum ROW_ID in table
+  @param[out] max Maximum ROW_ID in table
+  @return true if successful, false otherwise. */
+  bool bulk_load_get_row_id_range(size_t &min, size_t &max) const override;
+
+  /** Check whether the table is empty */
+  bool is_table_empty() const override;
+
   /** Get the total memory available for bulk load in innodb buffer pool.
   @param[in] thd user session
   @return available memory for bulk load */
@@ -481,11 +518,12 @@ class ha_innobase : public handler {
 
   /** Begin parallel bulk data load to the table.
   @param[in] thd       user session
+  @param[in] keynr     key number to identify the index.
   @param[in] data_size total data size in bytes
   @param[in] memory buffer pool memory to be used
   @param[in] num_threads Number of concurrent threads used for load.
   @return bulk load context or nullptr if unsuccessful. */
-  void *bulk_load_begin(THD *thd, size_t data_size, size_t memory,
+  void *bulk_load_begin(THD *thd, size_t keynr, size_t data_size, size_t memory,
                         size_t num_threads) override;
 
   /** Execute bulk load operation. To be called by each of the concurrent
@@ -642,6 +680,13 @@ class ha_innobase : public handler {
   /** Returns statistics information of the table to the MySQL interpreter, in
   various fields of the handle object.
   @param[in]    flag            what information is requested
+                                HA_STATUS_NO_LOCK is supported only for:
+                                ha_statistics::delete_length
+                                it is not supported for others like:
+                                ha_statistics::records
+                                But it will not lock for the duration of stats
+                                calculation. Only during copy to make sure
+                                stats are consistent.
   @param[in]    is_analyze      True if called from "::analyze()".
   @return HA_ERR_* error code or 0 */
   virtual int info_low(uint flag, bool is_analyze);
@@ -753,6 +798,21 @@ class ha_innobase : public handler {
 
   /** If mysql has locked with external_lock() */
   bool m_mysql_has_locked;
+
+  /** Get the table stats.
+  @param[in]  flag       flag indicating which statistics to return
+  @param[in]  ib_table   table
+  @param[out] n_rows     estimated number of rows
+  @param[out] stat_clustered_index_size      size of the clustered index
+  @param[out] stat_sum_of_other_index_sizes  total size of all indexes */
+  void info_low_table_stats(uint flag, const dict_table_t *ib_table,
+                            uint64_t &n_rows, ulint &stat_clustered_index_size,
+                            ulint &stat_sum_of_other_index_sizes) const;
+
+  /** Get number of records per key. Save them into array ib_table->key_info.
+  @param[in]      flag      flag indicating which statistics to return
+  @param[in,out]  ib_table  table */
+  void info_low_key(uint flag, const dict_table_t *ib_table);
 };
 
 struct trx_t;

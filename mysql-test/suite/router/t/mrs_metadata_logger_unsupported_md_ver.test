@@ -1,0 +1,43 @@
+# Verify that the metadata logging is not enabled if the metadata version is less than minimal supported (4.0.2)
+#
+--source include/have_router.inc
+# mrs metadata logging is only enabled when md version is >= 4.0.2
+--source ../include/mrs/is_mrs_schema_v2_or_v3.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+
+--echo *******************************************************
+--echo # Create an example service "svc"
+--echo *******************************************************
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t1
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic/t1/1 --wait-until-status 60
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic/t1 --response-type RAW --expected-status 200
+
+--echo Verify there are no log entries even though the metadata logging is configured and the configured log level is DEBUG
+--assert(`select count(*) = 0 from mysql_rest_service_metadata.router_general_log`)
+
+--echo Verify that a relevant warning was logged to the logfile
+--let $grep_pattern = .*WARNING .* Logging to mysql_rest_service_metadata metadata was configured but MRS metadata version .* does not support metadata logging.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,14 +33,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-namespace rpl {
-namespace unittests {
+namespace rpl::unittests {
 
 class Rpl_commit_order_queue_test : public ::testing::Test {
  protected:
   Rpl_commit_order_queue_test() = default;
-  virtual void SetUp() {}
-  virtual void TearDown() {}
+  void SetUp() override {}
+  void TearDown() override {}
 
   std::atomic<bool> m_go{false};
   std::atomic<size_t> m_count{0};
@@ -51,12 +50,12 @@ TEST_F(Rpl_commit_order_queue_test, Simulate_mts) {
   constexpr size_t total_transactions{25000};
   cs::apply::Commit_order_queue scheduled{total_workers};
   cs::apply::Commit_order_queue free{total_workers};
-  std::array<std::atomic_flag, total_workers> context;
+  std::array<std::atomic<bool>, total_workers> context;
   std::atomic<cs::apply::Commit_order_queue::value_type> transactions{
       total_transactions};
 
   for (auto n_wrk = 0; n_wrk != total_workers; ++n_wrk) {
-    context[n_wrk].test_and_set();
+    context[n_wrk].store(true);
     free.push(n_wrk);
   }
 
@@ -72,9 +71,9 @@ TEST_F(Rpl_commit_order_queue_test, Simulate_mts) {
               scheduled[worker_id].m_stage =
                   cs::apply::Commit_order_queue::enum_worker_stage::REGISTERED;
 
-              for (; context[worker_id]
-                         .test_and_set();) {  // Wait for coordinator to
-                                              // schedule the worker in
+              for (; context[worker_id].exchange(
+                       true);) {  // Wait for coordinator to
+                                  // schedule the worker in
                 std::this_thread::yield();
               }
               if (transactions <= 0) break;
@@ -91,18 +90,15 @@ TEST_F(Rpl_commit_order_queue_test, Simulate_mts) {
                   cs::apply::Commit_order_queue::enum_worker_stage::WAITED;
 
               auto this_worker{cs::apply::Commit_order_queue::NO_WORKER};
-              auto this_seq_nr{0};
-              std::tie(this_worker, this_seq_nr) =
-                  scheduled.pop();                 // Pops the head of the
-                                                   // queue and gets own
-                                                   // commit sequence
-                                                   // number
-              auto next_seq_nr = this_seq_nr + 1;  // Calculates which is
-                                                   // the next sequence
-                                                   // number
+              auto next_seq_nr{0};
+              std::tie(this_worker, next_seq_nr) =
+                  scheduled.pop();  // Pops the head of the
+                                    // queue and gets the
+                                    // the next sequence
+                                    // number
               EXPECT_EQ(worker_id, this_worker);
-              EXPECT_NE(this_seq_nr, 0);  // NO_SEQUENCE_NR
-              EXPECT_NE(this_seq_nr, 1);  // SEQUENCE_NR_FROZEN
+              EXPECT_NE(next_seq_nr, 0);  // NO_SEQUENCE_NR
+              EXPECT_NE(next_seq_nr, 1);  // SEQUENCE_NR_FROZEN
 
               auto next_worker =
                   scheduled.front();  // Gets the next worker and checks if it
@@ -116,7 +112,7 @@ TEST_F(Rpl_commit_order_queue_test, Simulate_mts) {
                            REQUESTED_GRANT) &&
                   scheduled[next_worker].freeze_commit_sequence_nr(
                       next_seq_nr)) {
-                context[next_worker].clear();  // Releases the next worker
+                context[next_worker].store(false);  // Releases the next worker
                 scheduled[next_worker].unfreeze_commit_sequence_nr(next_seq_nr);
               }
 
@@ -124,7 +120,7 @@ TEST_F(Rpl_commit_order_queue_test, Simulate_mts) {
 
               scheduled[worker_id].m_stage =
                   cs::apply::Commit_order_queue::enum_worker_stage::FINISHED;
-              context[worker_id].test_and_set();
+              context[worker_id].store(true);
               free.push(worker_id);  // Finishes the work and pushes itself
                                      // into the free worker queue
 
@@ -133,7 +129,7 @@ TEST_F(Rpl_commit_order_queue_test, Simulate_mts) {
                   cs::apply::Commit_order_queue::enum_worker_stage::
                       REQUESTED_GRANT;  // Starts the commit order wait
 
-              for (; context[worker_id].test_and_set();) {  // Wait for previous
+              for (; context[worker_id].exchange(true);) {  // Wait for previous
                                                             // worker to release
                 std::this_thread::yield();
               }
@@ -141,7 +137,7 @@ TEST_F(Rpl_commit_order_queue_test, Simulate_mts) {
           }
           for (cs::apply::Commit_order_queue::value_type sib = 0;
                sib != total_workers; ++sib) {  // Work is finished
-            context[sib].clear();              // Release all waiting workers
+            context[sib].store(false);         // Release all waiting workers
           }
         },
         total_workers - n_wrk - 1);
@@ -155,8 +151,8 @@ TEST_F(Rpl_commit_order_queue_test, Simulate_mts) {
            std::tie(w, std::ignore) =
                free.pop())  // Get a free worker to schedule
         std::this_thread::yield();
-      scheduled.push(w);   // Schedule the worker
-      context[w].clear();  // Signal the worker
+      scheduled.push(w);        // Schedule the worker
+      context[w].store(false);  // Signal the worker
     }
   }};
 
@@ -215,7 +211,7 @@ TEST_F(Rpl_commit_order_queue_test, Pushing_while_poping_test) {
   std::map<cs::apply::Commit_order_queue::value_type,
            cs::apply::Commit_order_queue::value_type>
       dup;
-  for (auto v : f) {
+  for (auto *v : f) {
     if (v == nullptr) continue;
     bool inserted{false};
     std::tie(std::ignore, inserted) =
@@ -298,7 +294,7 @@ TEST_F(Rpl_commit_order_queue_test, Pushing_then_poping_test) {
   std::map<cs::apply::Commit_order_queue::value_type,
            cs::apply::Commit_order_queue::value_type>
       dup;
-  for (auto v : f) {
+  for (auto *v : f) {
     if (v == nullptr) continue;
     bool inserted{false};
     std::tie(std::ignore, inserted) =
@@ -312,5 +308,99 @@ TEST_F(Rpl_commit_order_queue_test, Pushing_then_poping_test) {
   EXPECT_EQ(f.is_empty(), true);
 }
 
-}  // namespace unittests
-}  // namespace rpl
+TEST_F(Rpl_commit_order_queue_test, Remove) {
+  constexpr cs::apply::Commit_order_queue::value_type total_workers{4};
+  cs::apply::Commit_order_queue queue{total_workers};
+  auto this_worker{cs::apply::Commit_order_queue::NO_WORKER};
+  auto next_seq_nr{0};
+
+  queue.push(0);
+  queue.push(1);
+  queue.push(2);
+  queue.push(3);
+  /*
+    +----------------------+----+----+----+----+
+    | worker               |  0 |  1 |  2 |  3 |
+    | sequence number      |  2 |  3 |  4 |  5 |
+    | next sequence number |  3 |  4 |  5 |  6 |
+    +----------------------+----+----+----+----+
+  */
+  EXPECT_EQ(queue.to_string(), "0, 1, 2, 3, EOF");
+
+  std::tie(this_worker, next_seq_nr) = queue.remove(0);
+  /*
+    +----------------------+----+----+----+
+    | worker               |  1 |  2 |  3 |
+    | sequence number      |  3 |  4 |  5 |
+    | next sequence number |  4 |  5 |  6 |
+    +----------------------+----+----+----+
+  */
+  EXPECT_EQ(this_worker, 0);
+  EXPECT_EQ(next_seq_nr, 3);
+  EXPECT_EQ(queue.to_string(), "1, 2, 3, EOF");
+
+  std::tie(this_worker, next_seq_nr) = queue.remove(3);
+  /*
+    +----------------------+----+----+
+    | worker               |  1 |  2 |
+    | sequence number      |  3 |  4 |
+    | next sequence number |  4 |  6 |
+    +----------------------+----+----+
+  */
+  EXPECT_EQ(this_worker, 3);
+  EXPECT_EQ(next_seq_nr, 0);  // NO_SEQUENCE_NR
+  EXPECT_EQ(queue.to_string(), "1, 2, EOF");
+
+  queue.push(0);
+  /*
+    +----------------------+----+----+----+
+    | worker               |  1 |  2 |  0 |
+    | sequence number      |  3 |  4 |  6 |
+    | next sequence number |  4 |  6 |  7 |
+    +----------------------+----+----+----+
+  */
+  EXPECT_EQ(queue.to_string(), "1, 2, 0, EOF");
+
+  std::tie(this_worker, next_seq_nr) = queue.remove(2);
+  /*
+    +----------------------+----+----+
+    | worker               |  1 |  0 |
+    | sequence number      |  3 |  6 |
+    | next sequence number |  6 |  7 |
+    +----------------------+----+----+
+  */
+  EXPECT_EQ(this_worker, 2);
+  EXPECT_EQ(next_seq_nr, 0);  // NO_SEQUENCE_NR
+  EXPECT_EQ(queue.to_string(), "1, 0, EOF");
+
+  std::tie(this_worker, next_seq_nr) = queue.pop();
+  /*
+    +----------------------+----+
+    | worker               |  0 |
+    | sequence number      |  6 |
+    | next sequence number |  7 |
+    +----------------------+----+
+  */
+  EXPECT_EQ(this_worker, 1);
+  EXPECT_EQ(next_seq_nr, 6);
+  EXPECT_EQ(queue.to_string(), "0, EOF");
+
+  std::tie(this_worker, next_seq_nr) = queue.pop();
+  /*
+    +----------------------+
+    | worker               |
+    | sequence number      |
+    | next sequence number |
+    +----------------------+
+  */
+  EXPECT_EQ(this_worker, 0);
+  EXPECT_EQ(next_seq_nr, 7);
+  EXPECT_EQ(queue.to_string(), "EOF");
+
+  std::tie(this_worker, next_seq_nr) = queue.remove(50);
+  EXPECT_EQ(this_worker, -1);  // NO_WORKER
+  EXPECT_EQ(next_seq_nr, 0);   // NO_SEQUENCE_NR
+  EXPECT_EQ(queue.to_string(), "EOF");
+}
+
+}  // namespace rpl::unittests

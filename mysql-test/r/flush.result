@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 drop table if exists t1,t2;
 drop database if exists mysqltest;
 create temporary table t1(n int not null primary key);
@@ -438,3 +439,4 @@ UNLOCK TABLES;
 # Switching to connection 'default'.
 COMMIT;
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc

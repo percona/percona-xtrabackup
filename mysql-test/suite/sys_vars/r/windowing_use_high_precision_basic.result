@@ -19,6 +19,7 @@ Got one of the listed errors
 CREATE TABLE td(d DOUBLE);
 INSERT INTO td VALUES (1.7976931348623157E+307);
 INSERT INTO td VALUES (1);
+SET explain_json_format_version = 1;
 SELECT d, SUM(d) OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) FROM td;
 d	SUM(d) OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING)
 1.7976931348623158e307	1.7976931348623158e307
@@ -115,4 +116,5 @@ EXPLAIN
 Warnings:
 Note	1003	/* select#1 */ select `test`.`td`.`d` AS `d`,sum(`test`.`td`.`d`) OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING)  AS `SUM(d) OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING)` from `test`.`td`
 SET SESSION windowing_use_high_precision=TRUE;
+SET explain_json_format_version = DEFAULT;
 DROP TABLE td;

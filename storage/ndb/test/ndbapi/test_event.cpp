@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+ Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -35,9 +35,15 @@
 #include <NdbRestarts.hpp>
 #include <TestNdbEventOperation.hpp>
 #include <UtilTransactions.hpp>
+#include <cstdio>
 #include <signaldata/DumpStateOrd.hpp>
 #include "../src/kernel/ndbd.hpp"
+#include "NDBT_Output.hpp"
+#include "NdbDictionary.hpp"
 #include "NdbMgmd.hpp"
+#include "NdbOut.hpp"
+#include "my_inttypes.h"
+#include "storage/ndb/plugin/ndb_schema_dist.h"
 #include "util/require.h"
 
 #define CHK(b, e)                                                         \
@@ -46,6 +52,56 @@
           << endl;                                                        \
     return NDBT_FAILED;                                                   \
   }
+
+/**
+ * Reads a config variable id and value from the test context
+ * change the config and restarts the data nodes.
+ */
+
+int runChangeDataNodeConfig(NDBT_Context *ctx, NDBT_Step *step) {
+  int num_config_vars = ctx->getProperty("NumConfigVars", Uint32(0));
+
+  g_info << "#conf vars " << num_config_vars << endl;
+
+  for (int c = 1; c <= num_config_vars; c++) {
+    BaseString varId;
+    BaseString varVal;
+    varId.assfmt("ConfigVarId%u", c);
+    varVal.assfmt("ConfigValue%u", c);
+
+    int config_var_id = ctx->getProperty(varId.c_str(), (Uint32)NULL);
+
+    Uint32 new_config_value = ctx->getProperty(varVal.c_str(), (Uint32)0);
+
+    g_err << "Setting config var_id " << config_var_id
+          << " with new_config_val " << new_config_value << endl;
+
+    // Override the config
+    NdbMgmd mgmd;
+    mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
+    Uint32 old_config_value = 0;
+    CHK(mgmd.change_config32(new_config_value, &old_config_value,
+                             CFG_SECTION_NODE, config_var_id),
+        "Change config failed");
+
+    g_err << "Changing config succeded, old value : " << old_config_value
+          << " new value " << new_config_value << endl;
+
+    // Save the old_value in the test property 'config_var%u'.
+    ctx->setProperty(varVal.c_str(), old_config_value);
+  }
+
+  g_err << "Restarting nodes with new config." << endl;
+
+  // Restart cluster to get the new config value
+  NdbRestarter restarter;
+  CHK(restarter.restartAll() == 0, "Restart all failed");
+
+  CHK(restarter.waitClusterStarted() == 0, "Cluster has not started");
+  CHK_NDB_READY(GETNDB(step));
+  g_err << "Nodes restarted with new config." << endl;
+  return NDBT_OK;
+}
 
 static void inline generateEventName(char *eventName, const char *tabName,
                                      uint eventId) {
@@ -303,15 +359,36 @@ struct receivedEvent {
 };
 
 static int eventOperation(Ndb *pNdb, const NdbDictionary::Table &tab,
-                          void *pstats, int records) {
+                          void *pstats, int records, void *params = nullptr) {
   const char function[] = "HugoTransactions::eventOperation: ";
+  const EventOperationConfig *config = (EventOperationConfig *)params;
+  EventOperationStats &stats = *(EventOperationStats *)pstats;
+
+  uint32 slice_count = 1;
+  uint32 slice_id = 0;
+  uint32 expected_slice_ev_lo = 0;
+  uint32 expected_slice_ev_hi = 0;
+  if (config != nullptr) {
+    if (config->slice_count > 1) {
+      slice_count = config->slice_count;
+      slice_id = config->slice_id;
+    }
+    if (config->slice_records > 0) {
+      records = config->slice_records;
+      g_info << function << "using " << records << " records" << endl;
+    }
+    // leeway of 1%, used to get out of pollEvents loop
+    expected_slice_ev_lo = (records * 99) / 100;
+    expected_slice_ev_hi = (records * 101) / 100;
+    g_info << function << " expecting events in range (" << expected_slice_ev_lo
+           << ", " << expected_slice_ev_hi << ")" << endl;
+  }
+
   struct receivedEvent *recInsertEvent;
   NdbAutoObjArrayPtr<struct receivedEvent> p00(
       recInsertEvent = new struct receivedEvent[3 * records]);
   struct receivedEvent *recUpdateEvent = &recInsertEvent[records];
   struct receivedEvent *recDeleteEvent = &recInsertEvent[2 * records];
-
-  EventOperationStats &stats = *(EventOperationStats *)pstats;
 
   stats.n_inserts = 0;
   stats.n_deletes = 0;
@@ -355,6 +432,12 @@ static int eventOperation(Ndb *pNdb, const NdbDictionary::Table &tab,
     return NDBT_FAILED;
   }
 
+  if (slice_count > 1) {
+    pOp->setFilterRowSlice(config->slice_count, config->slice_id);
+    g_info << function << "filtering events " << config->slice_id << "/"
+           << config->slice_count << "\n";
+  }
+
   g_info << function << "get values\n";
   NdbRecAttr *recAttr[1024];
   NdbRecAttr *recAttrPre[1024];
@@ -380,7 +463,8 @@ static int eventOperation(Ndb *pNdb, const NdbDictionary::Table &tab,
   int count = 0;
   Uint64 last_inconsitant_gci = (Uint64)-1;
 
-  while (r < records) {
+  bool done = r >= records;
+  while (!done) {
     // printf("now waiting for event...\n");
     int res = pNdb->pollEvents(1000);  // wait for event or 1000 ms
 
@@ -464,7 +548,22 @@ static int eventOperation(Ndb *pNdb, const NdbDictionary::Table &tab,
         g_info << endl;
       }
     } else {
+      g_info << " timed out" << endl;
+      g_info << " status = { inserts = " << stats.n_inserts
+             << ", updates = " << stats.n_updates
+             << ", deletes = " << stats.n_deletes << "}" << endl;
       ;  // printf("timed out\n");
+    }
+
+    if (slice_count > 1) {
+      // If using slices, it may have no more events to process at
+      // all, therefore we compare if we've reached all operations expected.
+      bool slice_done =
+          (uint32)r > expected_slice_ev_lo && (uint32)r < expected_slice_ev_hi;
+      done = slice_done && (stats.n_inserts == stats.n_updates &&
+                            stats.n_updates == stats.n_deletes);
+    } else {
+      done = r >= records;
     }
   }
 
@@ -490,7 +589,9 @@ static int eventOperation(Ndb *pNdb, const NdbDictionary::Table &tab,
   for (int i = 0; i < (int)records / 3; i++) {
     if (recInsertEvent[i].pk != Uint32(i)) {
       stats.n_consecutive++;
-      ndbout << "missing insert pk " << i << endl;
+      if (slice_count < 2) {
+        ndbout << "missing insert pk " << i << endl;
+      }
     } else if (recInsertEvent[i].count > 1) {
       ndbout << "duplicates insert pk " << i << " count "
              << recInsertEvent[i].count << endl;
@@ -498,7 +599,9 @@ static int eventOperation(Ndb *pNdb, const NdbDictionary::Table &tab,
     }
     if (recUpdateEvent[i].pk != Uint32(i)) {
       stats.n_consecutive++;
-      ndbout << "missing update pk " << i << endl;
+      if (slice_count < 2) {
+        ndbout << "missing update pk " << i << endl;
+      }
     } else if (recUpdateEvent[i].count > 1) {
       ndbout << "duplicates update pk " << i << " count "
              << recUpdateEvent[i].count << endl;
@@ -506,7 +609,9 @@ static int eventOperation(Ndb *pNdb, const NdbDictionary::Table &tab,
     }
     if (recDeleteEvent[i].pk != Uint32(i)) {
       stats.n_consecutive++;
-      ndbout << "missing delete pk " << i << endl;
+      if (slice_count < 2) {
+        ndbout << "missing delete pk " << i << endl;
+      }
     } else if (recDeleteEvent[i].count > 1) {
       ndbout << "duplicates delete pk " << i << " count "
              << recDeleteEvent[i].count << endl;
@@ -743,6 +848,219 @@ int runEventOperation(NDBT_Context *ctx, NDBT_Step *step) {
   return ret;
 }
 
+int runFilteredEventOperation(NDBT_Context *ctx, NDBT_Step *step) {
+  uint records =
+      static_cast<uint>(ctx->getNumRecords() / step->getStepTypeCount());
+
+  ndbout_c("step %u", step->getStepTypeNo());
+  uint8 slice_id = step->getStepTypeNo();
+  /* 3 set of records are needed for I/U/D respectively. Number of
+   * records is first divided into 2, then each slice is attributed to
+   * each (two) subscriber op. */
+  EventOperationConfig config{
+      .slice_count = 2, .slice_id = slice_id, .slice_records = 3 * records};
+  EventOperationStats stats;
+
+  if (eventOperation(GETNDB(step), *ctx->getTab(), (void *)&stats,
+                     0 /* unused */, &config) != 0) {
+    return NDBT_FAILED;
+  }
+
+  ndbout_c("n_inserts =           %d (%d)", stats.n_inserts, records);
+  ndbout_c("n_deletes =           %d (%d)", stats.n_deletes, records);
+  ndbout_c("n_updates =           %d (%d)", stats.n_updates, records);
+  ndbout_c("n_duplicates =        %d (%d)", stats.n_duplicates, 0);
+  ndbout_c("n_inconsistent_gcis = %d (%d)", stats.n_inconsistent_gcis, 0);
+
+  if (!(stats.n_inserts == stats.n_updates &&
+        stats.n_updates == stats.n_deletes)) {
+    return NDBT_FAILED;
+  }
+  return NDBT_OK;
+}
+
+int runFilteredEventOperationNF(NDBT_Context *ctx, NDBT_Step *step) {
+  Ndb *pNdb = GETNDB(step);
+  int records = ctx->getNumRecords();
+  const NdbDictionary::Table *tab = ctx->getTab();
+  // stop first NDB node
+  NdbRestarter restarter;
+  int node_id = restarter.getDbNodeId(0);
+  int nodes[] = {node_id};
+  uint8 slice_id = step->getStepTypeNo();
+  uint16 slice_count = step->getStepTypeCount();
+
+  // temp
+  ndbout_c("step %u", step->getStepTypeNo());
+
+  typedef struct {
+    Uint32 pk;
+    Uint32 inserts;
+    Uint32 deletes;
+    Uint32 updates;
+  } event;
+  event *recEvents;
+  NdbAutoObjArrayPtr<event> arr(recEvents = new event[records]);
+  for (int i = 0; i < records; i++) {
+    recEvents[i].pk = 0xFFFFFFFF;
+    recEvents[i].inserts = 0;
+    recEvents[i].updates = 0;
+    recEvents[i].deletes = 0;
+  }
+
+  EventOperationStats stats;
+  NdbEventOperation *op;
+  char eventName[64];
+  generateEventName(eventName, ctx->getTableName(0), 0);
+
+  op = pNdb->createEventOperation(eventName);
+  if (op->setFilterRowSlice(slice_count, slice_id)) {
+    g_err << "Invalid row slice parameters: count=" << slice_count
+          << " id=" << slice_id << endl;
+    return NDBT_FAILED;
+  }
+
+  NdbRecAttr *recAttr[1024];
+  NdbRecAttr *recAttrPre[1024];
+  const int noEventColumnName = tab->getNoOfColumns();
+  for (int i = 0; i < noEventColumnName; i++) {
+    recAttr[i] = op->getValue(tab->getColumn(i)->getName());
+    recAttrPre[i] = op->getPreValue(tab->getColumn(i)->getName());
+  }
+
+  // insert error
+  restarter.insertErrorInNode(node_id, 13063);
+
+  // Wait for error insertion to take effect
+  NdbSleep_SecSleep(2);
+
+  if (op->execute()) {
+    g_err << " operation execution failed: \n";
+    g_err << op->getNdbError().code << " " << op->getNdbError().message << endl;
+    return NDBT_FAILED;
+  }
+
+  int expected = 3 * ((records / step->getStepTypeCount()) * 99 / 100);
+  g_info << " expect at least " << expected << " records" << endl;
+  char substr[24];
+  if (sprintf(substr, "subscriber %d ", slice_id) < 0) {
+    g_err << "failed allocating subscriber id string" << endl;
+    return NDBT_FAILED;
+  }
+
+  int r = 0;
+  int stops = 0;
+  bool restart = false;
+  bool done = false;
+  while (!done) {
+    {
+      // restarting block
+      if (step->getStepNo() == 1) {
+        if (restart) {
+          restart = false;
+          if (restarter.waitNodesNoStart(nodes, 1) == NDBT_OK) {
+            if (restarter.startNodes(nodes, 1) != NDBT_OK) {
+              return NDBT_FAILED;
+            }
+            restarter.insertErrorInNode(node_id, 13063);
+          } else {
+            return NDBT_FAILED;
+          }
+        }
+
+        if (r > (expected * (1 + stops)) / 3.0) {
+          stops++;
+          restart = true;
+          int res = restarter.restartOneDbNode(node_id,
+                                               /** initial */ false,
+                                               /** nostart */ true,
+                                               /** abort */ true);
+          if (res != NDBT_OK) {
+            return NDBT_FAILED;
+          }
+        }
+      }
+    }
+
+    int res = pNdb->pollEvents2(1000);
+
+    if (res > 0) {
+      NdbEventOperation *tmp;
+      while ((tmp = pNdb->nextEvent2())) {
+        r++;
+        Uint64 gci = op->getGCI();
+        Uint32 pk = recAttr[0]->u_32_value();
+        g_debug << substr << " gci: " << gci << ", pk: " << pk << endl;
+        recEvents[pk].pk = pk;
+        switch (op->getEventType()) {
+          case NdbDictionary::Event::TE_INSERT:
+            g_debug << substr << " INSERT: ";
+            stats.n_inserts++;
+            recEvents[pk].inserts++;
+            break;
+          case NdbDictionary::Event::TE_UPDATE:
+            g_debug << substr << " UPDATE: ";
+            stats.n_updates++;
+            recEvents[pk].updates++;
+            break;
+          case NdbDictionary::Event::TE_DELETE:
+            g_debug << substr << " DELETE: ";
+            stats.n_deletes++;
+            recEvents[pk].deletes++;
+            break;
+          default:
+            g_info << substr << " IGN: " << pk << endl;
+            continue;
+        }
+      }
+    } else {
+      g_info << " timed out. " << r << "/" << expected << endl;
+    }
+    g_info << r << endl;
+    done = r > expected || stops >= 2;
+  }
+
+  if (step->getStepNo() == 1) {
+    ctx->stopTest();
+  }
+
+  restarter.insertErrorInNode(node_id, 0);
+  restarter.startNodes(nodes, 1);
+  restarter.waitNodesStarted(nodes, 1);
+
+  {
+    g_info << "dropping event operation " << op << endl;
+    int res = pNdb->dropEventOperation(op);
+    if (res != 0) {
+      g_err << "operation execution failed\n";
+      return NDBT_FAILED;
+    }
+  }
+
+  int filtered = 0;
+  for (int i = 0; i < records; i++) {
+    if (recEvents[i].pk != 0xFFFFFFFF) {
+      g_info << "row(" << recEvents[i].pk << "): i=" << recEvents[i].inserts
+             << ", u=" << recEvents[i].updates << ", d=" << recEvents[i].deletes
+             << endl;
+    } else {
+      filtered++;
+    }
+  }
+
+  ndbout_c("subscriber =          %d (%d)", slice_id, slice_count);
+  ndbout_c("n_inserts =           %d (%d)", stats.n_inserts, expected);
+  ndbout_c("n_deletes =           %d (%d)", stats.n_deletes, expected);
+  ndbout_c("n_updates =           %d (%d)", stats.n_updates, expected);
+  ndbout_c("filtered =            %d (%d)", filtered, records);
+
+  if (abs(filtered - expected) > expected) {
+    return NDBT_FAILED;
+  }
+
+  return NDBT_OK;
+}
+
 int runEventLoad(NDBT_Context *ctx, NDBT_Step *step) {
   int loops = ctx->getNumLoops();
   int records = ctx->getNumRecords();
@@ -766,6 +1084,21 @@ int runEventLoad(NDBT_Context *ctx, NDBT_Step *step) {
   }
   if (hugoTrans.pkDelRecords(GETNDB(step), records, 1, true, loops) != 0) {
     return NDBT_FAILED;
+  }
+  return NDBT_OK;
+}
+
+int runEventLoadTilStopped(NDBT_Context *ctx, NDBT_Step *step) {
+  const int loops = ctx->getNumLoops();
+  const int records = ctx->getNumRecords();
+  const int batch = ctx->getProperty("BatchSize", Uint32(48));
+  HugoTransactions hugoTrans(*ctx->getTab());
+
+  while (!ctx->isTestStopped()) {
+    NdbSleep_SecSleep(1);
+    hugoTrans.loadTable(GETNDB(step), records, batch, true, loops);
+    hugoTrans.pkUpdateRecords(GETNDB(step), records, batch, loops);
+    hugoTrans.pkDelRecords(GETNDB(step), records, batch, true, loops);
   }
   return NDBT_OK;
 }
@@ -1564,6 +1897,21 @@ int runEventConsumer(NDBT_Context *ctx, NDBT_Step *step) {
           << endl;
     result = NDBT_FAILED;
     goto end;
+  }
+
+  /**
+   * Let's wait for event's start epoch before signallying changes
+   * to start flowing.
+   * Otherwise the event may not capture all of the injected changes
+   */
+  {
+    Ndb *ndb = GETNDB(step);
+    bool ready = false;
+    while (!ctx->isTestStopped() && !ready) {
+      Uint64 latestEpoch;
+      ndb->pollEvents(100, &latestEpoch);
+      ready = (latestEpoch >= pOp->getStartEpoch());
+    }
   }
 
   ctx->setProperty("LastGCI_hi", ~(Uint32)0);
@@ -2847,7 +3195,6 @@ int errorInjectStalling(NDBT_Context *ctx, NDBT_Step *step) {
 
   if (res > 0) {
     NdbEventOperation *tmp;
-    int count = 0;
     while (connected && (tmp = ndb->nextEvent())) {
       if (tmp != pOp) {
         printf("Found stray NdbEventOperation\n");
@@ -2860,7 +3207,6 @@ int errorInjectStalling(NDBT_Context *ctx, NDBT_Step *step) {
           connected = false;
           break;
         default:
-          count++;
           break;
       }
     }
@@ -5674,8 +6020,7 @@ int runTardyEventListener(NDBT_Context *ctx, NDBT_Step *step) {
 
   char buf[1024];
   sprintf(buf, "%s_EVENT", table->getName());
-  NdbEventOperation *pOp, *pCreate = 0;
-  pCreate = pOp = ndb->createEventOperation(buf);
+  NdbEventOperation *pOp = ndb->createEventOperation(buf);
   CHK(pOp != NULL, "Event operation creation failed");
   CHK(pOp->execute() == 0, "Execute operation execution failed");
 
@@ -6521,6 +6866,245 @@ int runRestartRandomNodeStartWithError(NDBT_Context *ctx, NDBT_Step *step) {
   return result;
 }
 
+int startNode() {
+  NdbRestarter restarter;
+
+  g_err << "Clean up error insertion" << endl;
+  restarter.insertErrorInAllNodes(0);
+
+  // Start the node crashed by errorInsert()
+  g_err << "Starting node" << endl;
+  CHK(restarter.startAll() == 0, "Starting nodes failed");
+
+  g_err << "startNode: Waiting for the cluster to start" << endl;
+  CHK(restarter.waitClusterStarted(180) == 0, "Cluster failed to start");
+
+  return NDBT_OK;
+}
+
+static uint no_of_err_ins = 0;
+int errorInsert(NDBT_Context *ctx, uint round) {
+  int error[] = {13052,   // Discard execSUB_GCP_COMPLETE_ACK from subscribers
+                          // SUMA out_of_buffer at start_resend
+                 13060,   // SUMA out_of_buffer during resend after a number
+                          // of continueBs indicated in the error_extra
+                 13061};  // SUMA out_of_buffer after takeover is done,
+                          // but resending has not completed yet
+
+  int error_extra[] = {0, 5, 0};
+  no_of_err_ins = sizeof(error) / sizeof(int);
+
+  NdbRestarter restarter;
+  int err_ins_node = 0;
+  int victim = 0;
+
+  if (round >= no_of_err_ins) {
+    g_err << "Round " << round << ": stopping test" << endl;
+    ctx->stopTest();
+    return NDBT_OK;
+  }
+
+  err_ins_node = restarter.getDbNodeId(rand() % restarter.getNumDbNodes());
+  victim = restarter.getRandomNodeSameNodeGroup(err_ins_node, rand());
+
+  g_err << "Round " << round << endl;
+  g_err << "errorInsert round " << round << " inserting err " << error[round]
+        << ", extra " << error_extra[round] << " into node " << err_ins_node
+        << endl;
+
+  restarter.insertError2InNode(err_ins_node, error[round], error_extra[round]);
+
+  // Wait for error insertion to take effect and
+  // event data to accumulate in SUMA buffers
+  NdbSleep_SecSleep(15);
+
+  if (error[round] == 13061) {
+    /**
+     * Crash a node before sending GCP_COMPLETE_REP of an epoch to
+     * event-API. When event API flushes epochs < the one with MISSING_DATA,
+     * this epoch (not GCP-COMPLETE_REP'd) should also be flushed.
+     * Check manually in the test printouts.
+     */
+    restarter.insertErrorInNode(victim, 13062);
+    g_err << "runErrInsRestartNode: inserting " << 13062 << " into " << victim
+          << endl;
+  } else {
+    g_err << "runErrInsRestartNode: Restarting node " << victim
+          << " from same nodegroup as node " << err_ins_node << endl;
+    // abort=true to avoid 'graceful failure' path, and require resends
+    CHK(restarter.restartOneDbNode(victim,
+                                   /** initial */ false,
+                                   /** nostart */ true,
+                                   /** abort   */ true) == 0,
+        "Restart node failed");
+
+    g_err << "runErrInsert: Waiting for the node to stop" << endl;
+    CHK(restarter.waitNodesNoStart(&victim, 1) == 0,
+        "Failed to wait node to reach no start state");
+  }
+  return NDBT_OK;
+}
+
+int runConsumeEpochs(NDBT_Context *ctx, NDBT_Step *step) {
+  NdbRestarter restarter;
+  const Uint32 repl_count = restarter.getNumReplicas();
+
+  if (repl_count < 2) {
+    g_err << "[SKIPPED] Test skipped. Requires at least 2 nodes" << endl;
+    ctx->stopTest();
+    return NDBT_SKIPPED;
+  }
+
+  Ndb *ndb = GETNDB(step);
+  Uint32 inconsis_epochs = 0;
+  Uint32 node_failures = 0;
+  Uint32 unknown_ops = 0;
+  Uint32 result = NDBT_OK;
+
+  // Epochs to wait before error insert
+  // With default TimeBetweenEpochs this will be ~20s
+  const Uint32 epochs_to_wait = 200;
+
+  // Max epochs to wait before receiving INCONSISTENT epoch.
+  // If no INCONSISTENT epoch received within this limit, test will fail.
+  // With default TimeBetweenEpochs, this will be ~100s
+  const Uint32 epochs_to_incons = 1000;
+
+  const NdbDictionary::Table *table = ctx->getTab();
+  char buf[1024];
+  sprintf(buf, "%s_EVENT", table->getName());
+
+  NdbEventOperation *pCreate, *pOp = NULL;
+  pCreate = pOp = ndb->createEventOperation(buf);
+  CHK(pOp != NULL, "Event operation creation failed");
+  //  Start the events to flow
+  CHK(pOp->execute() == 0, "execute operation execution failed");
+
+  Uint32 consumed_epochs = 0;
+  Uint32 round = 0;
+  Uint64 op_gci = 0, curr_gci = 0;
+  Uint32 epochOps = 0;  // #regular ops received per epoch
+  Uint32 inconsis_ops = 0;
+  bool err_inserted = false;
+
+  Uint64 poll_gci = 0;
+  int res = 0;
+  g_err << "Starting to consume epochs" << endl;
+
+  while (!ctx->isTestStopped()) {
+    res = ndb->pollEvents2(1000, &poll_gci);
+    if (res <= 0) {
+      continue;
+    }
+
+    while (!ctx->isTestStopped() && (pOp = ndb->nextEvent2()) != nullptr) {
+      op_gci = pOp->getGCI();
+      Uint32 op_gci_hi = (Uint32)(op_gci >> 32);
+      Uint32 op_gci_lo = (Uint32)(op_gci);
+      g_info << "Retrieved epoch " << op_gci_hi << "/" << op_gci_lo << endl;
+
+      if (op_gci > curr_gci) {
+        // New epoch. Start counting regular ops.
+        epochOps = 0;
+      }
+
+      Uint32 event_type = pOp->getEventType2();
+      switch (event_type) {
+        case NdbDictionary::Event::TE_INSERT:
+        case NdbDictionary::Event::TE_UPDATE:
+        case NdbDictionary::Event::TE_DELETE:
+          g_info << "Regular op " << op_gci_hi << "/" << op_gci_lo << endl;
+          epochOps++;
+          break;
+        case NdbDictionary::Event::TE_INCONSISTENT:
+          g_err << "Inconsistent epoch received at " << op_gci_hi << "/"
+                << op_gci_lo << endl;
+          g_err << "reg ops " << epochOps << endl;
+          inconsis_ops++;
+          break;
+        case NdbDictionary::Event::TE_NODE_FAILURE:
+          g_err << "Node failure received at " << op_gci_hi << "/" << op_gci_lo
+                << endl;
+          node_failures++;
+          break;
+        default:
+          g_err << "Received unexpected event type " << event_type << endl;
+          unknown_ops++;
+          break;
+      }
+
+      if (op_gci > curr_gci) {
+        // epoch boundary
+        consumed_epochs++;
+        curr_gci = op_gci;
+
+        if (consumed_epochs > epochs_to_wait && !err_inserted) {
+          g_err << "Insert-err round " << round << endl;
+          CHK((errorInsert(ctx, round) == NDBT_OK),
+              "Error insert and restart node failed");
+          err_inserted = true;
+        } else if (consumed_epochs > epochs_to_incons && inconsis_epochs == 0) {
+          g_err << "Test failed: No inconsistent epoch received within "
+                << epochs_to_incons << endl
+                << ". Ending test at " << op_gci_hi << "/" << op_gci_lo << endl;
+          result = NDBT_FAILED;
+          goto end_test;
+        }
+
+        if (inconsis_ops > 0) {
+          g_err << "Inconsistent op received" << endl;
+          if (epochOps > 0) {
+            g_err << " but containing regular ops " << epochOps << endl;
+            result = NDBT_FAILED;
+            goto end_test;
+          }
+          inconsis_epochs++;
+          // Inconsistent epoch received. We start next round
+          g_err << "Consumed epochs in this round " << consumed_epochs << endl;
+          CHK((startNode() == NDBT_OK), "startNode failed");
+
+          round++;
+          g_err << "Starting round " << round << endl;
+          err_inserted = false;
+          inconsis_ops = 0;
+          consumed_epochs = 0;
+        }
+      }  //  end epoch boundary
+    }    //  while (.. && (pOp = ndb->nextEvent2()))
+  }      // while (.. && pollEvents..)
+
+end_test:
+  // Print summary/statistics
+
+  g_err << "Inconsistent epochs  " << inconsis_epochs << endl;
+  if (inconsis_epochs < round) {
+    g_err << "Insufficient inconsistent epochs received" << endl;
+  }
+
+  if (unknown_ops > 0) {
+    g_err << "NOTE: Unknown ops " << unknown_ops << endl;
+  }
+
+  if (node_failures > 0) {
+    g_err << "NOTE: Node failures " << node_failures << endl;
+  }
+
+  if (round < no_of_err_ins) {
+    g_err << "runConsumeEpochs: Not all " << no_of_err_ins
+          << " error-insert rounds complete. Completed " << round << endl;
+    result = NDBT_FAILED;
+  }
+
+  g_err << "runConsumeEpochs: cleaning up " << endl;
+  if (pCreate != nullptr) {
+    CHK(ndb->dropEventOperation(pCreate) == 0, "dropEventOperation failed");
+  }
+
+  ctx->stopTest();
+  g_err << "runConsumeEpochs returning " << result << endl << endl;
+  return result;
+}
+
 NDBT_TESTSUITE(test_event);
 TESTCASE("BasicEventOperation",
          "Verify that we can listen to Events"
@@ -6976,6 +7560,24 @@ TESTCASE("SubscribeEventsNRAF",
   STEPS(runSubscriptionCheckerOtherConn, 2);
   FINALIZER(runDropEvent);
 }
+TESTCASE(
+    "SubscriberRowFilter",
+    "Check that subscribers configured for different row slices, receive a "
+    "disjoint set of events") {
+  INITIALIZER(runCreateEvent);
+  STEPS(runFilteredEventOperation, 2);
+  STEP(runEventLoad);
+  FINALIZER(runDropEvent);
+}
+TESTCASE(
+    "SubscriberRowFilterNF",
+    "Check that on node failure, with SUMA takeover, subscribers configured "
+    "for different row slices will conjointly receive the all data events") {
+  INITIALIZER(runCreateEvent);
+  STEPS(runFilteredEventOperationNF, 2);
+  STEP(runEventLoadTilStopped);
+  FINALIZER(runDropEvent);
+}
 TESTCASE("DelayedEventDrop",
          "Create and Drop events with load, having multiple events droppable"
          "at once") {
@@ -7009,6 +7611,18 @@ TESTCASE("ExhaustedPreparedPoolsInternalOps",
   STEP(runCreateDropIndex);
   FINALIZER(runDropTable);
   FINALIZER(runDropEvent);
+}
+TESTCASE("SumaOutOfBuffer", "") {
+  TC_PROPERTY("NumConfigVars", Uint32(1));
+  TC_PROPERTY("ConfigVarId1", Uint32(CFG_DB_MAX_BUFFERED_EPOCHS));
+  TC_PROPERTY("ConfigValue1", Uint32(5000));
+  TC_PROPERTY("Batchsize", 48);
+  INITIALIZER(runChangeDataNodeConfig);
+  INITIALIZER(runCreateEvent);
+  STEP(runEventLoadTilStopped);
+  STEP(runConsumeEpochs);
+  FINALIZER(runDropEvent);
+  FINALIZER(runChangeDataNodeConfig);
 }
 
 #if 0

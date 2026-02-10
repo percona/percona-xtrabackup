@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,12 +21,13 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
 #include <elf.h>
 #include <link.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <string.h>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 
 /*
   Assuming we link with: -Wl,--build-id=sha1
@@ -78,12 +79,12 @@ static int build_id_callback(dl_phdr_info *info, size_t, void *data_) {
     return 0;
   }
 
-  callback_data *data = reinterpret_cast<callback_data *>(data_);
+  auto *data = reinterpret_cast<callback_data *>(data_);
 
   for (unsigned i = 0; i < info->dlpi_phnum; i++) {
     if (info->dlpi_phdr[i].p_type != PT_NOTE) continue;
 
-    elf_note *note = reinterpret_cast<elf_note *>(
+    auto *note = reinterpret_cast<elf_note *>(
         reinterpret_cast<void *>(info->dlpi_addr + info->dlpi_phdr[i].p_vaddr));
     ptrdiff_t segment_size = info->dlpi_phdr[i].p_filesz;
 
@@ -98,9 +99,9 @@ static int build_id_callback(dl_phdr_info *info, size_t, void *data_) {
         return 1;
       }
       // Skip to the next note:
-      size_t offset = sizeof(elf_note_struct) +
-                      NOTE_ALIGN(note->nhdr.n_namesz) +
-                      NOTE_ALIGN(note->nhdr.n_descsz);
+      size_t const offset = sizeof(elf_note_struct) +
+                            NOTE_ALIGN(note->nhdr.n_namesz) +
+                            NOTE_ALIGN(note->nhdr.n_descsz);
       note = reinterpret_cast<elf_note *>(
           reinterpret_cast<unsigned char *>(note) + offset);
       segment_size -= offset;

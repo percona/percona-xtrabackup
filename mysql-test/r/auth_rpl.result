@@ -9,6 +9,8 @@ include/rpl/stop_replica.inc
 CREATE USER 'plug_user' IDENTIFIED WITH 'test_plugin_server' AS 'plug_user';
 GRANT REPLICATION SLAVE ON *.* TO plug_user;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 [connection slave]
 CHANGE REPLICATION SOURCE TO 
 SOURCE_USER=     'plug_user',

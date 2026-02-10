@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -97,7 +97,7 @@ void Kerberos::set_user_and_password(const char *user, const char *password) {
 
 bool Kerberos::open_default_cache() {
   if (m_krb_credentials_cache != nullptr) return true;
-  krb5_error_code res_kerberos =
+  krb5_error_code const res_kerberos =
       krb5.krb5_cc_default()(m_context, &m_krb_credentials_cache);
   if (res_kerberos) {
     log_error("Failed to open default Kerberos credentials cache.");
@@ -111,7 +111,7 @@ bool Kerberos::open_default_cache() {
 
 void Kerberos::close_default_cache() {
   if (!m_krb_credentials_cache) return;
-  krb5_error_code res_kerberos =
+  krb5_error_code const res_kerberos =
       krb5.krb5_cc_close()(m_context, m_krb_credentials_cache);
   if (res_kerberos) {
     log_error("Failed to close Kerberos credentials cache.");
@@ -336,17 +336,16 @@ bool Kerberos::get_kerberos_config() {
 
   /* IPV6 */
   if (m_ldap_server_host[0] == '[') {
-    auto pos = m_ldap_server_host.find("]");
-    if (pos != m_ldap_server_host.npos &&
-        (m_ldap_server_host.length() > (pos + 1)) &&
+    auto pos = m_ldap_server_host.find(']');
+    if (pos != std::string::npos && (m_ldap_server_host.length() > (pos + 1)) &&
         (m_ldap_server_host[pos + 1] == ':')) {
       m_ldap_server_host = m_ldap_server_host.substr(1, pos - 1);
     }
   }
   /* IPV4 */
   else {
-    auto pos = m_ldap_server_host.find(":");
-    if (pos != m_ldap_server_host.npos) {
+    auto pos = m_ldap_server_host.find(':');
+    if (pos != std::string::npos) {
       m_ldap_server_host.erase(pos);
     }
   }
@@ -449,7 +448,7 @@ EXIT:
 void Kerberos::destroy_credentials() {
   if (!open_default_cache())
     log_error("Failed to destroy Kerberos TGT, cannot open credentials cache.");
-  krb5_error_code res_kerberos = krb5.krb5_cc_remove_cred()(
+  krb5_error_code const res_kerberos = krb5.krb5_cc_remove_cred()(
       m_context, m_krb_credentials_cache, 0, &m_credentials);
   if (res_kerberos) {
     log_error("Failed to destroy Kerberos TGT.");
@@ -503,9 +502,8 @@ EXIT:
   if (res_kerberos) {
     log(res_kerberos);
     return false;
-  } else {
-    return true;
   }
+  return true;
 }
 
 void Kerberos::log(int error_code) {
@@ -517,6 +515,5 @@ void Kerberos::log(int error_code) {
     log_info("Kerberos message: ", err_message);
     krb5.krb5_free_error_message()(m_context, err_message);
   }
-  return;
 }
 }  // namespace auth_ldap_sasl_client

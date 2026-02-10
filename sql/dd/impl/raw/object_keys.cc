@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "sql/dd/impl/raw/object_keys.h"
 
-#include <assert.h>
+#include <cassert>
 #include <new>
 #include <sstream>
 
@@ -66,7 +66,7 @@ Raw_key *Primary_id_key::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + ID_INDEX_NO;
 
-  Raw_key *k = new (std::nothrow)
+  auto *k = new (std::nothrow)
       Raw_key(ID_INDEX_NO, key_info->key_length, HA_WHOLE_KEY);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
@@ -98,7 +98,7 @@ Raw_key *Parent_id_range_key::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + m_id_index_no;
 
-  Raw_key *k = new (std::nothrow)
+  auto *k = new (std::nothrow)
       Raw_key(m_id_index_no, key_info->key_length, 1 /* Use 1st column */);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
@@ -143,7 +143,7 @@ Raw_key *Global_name_key::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + NAME_INDEX_NO;
 
-  Raw_key *k = new (std::nothrow)
+  auto *k = new (std::nothrow)
       Raw_key(NAME_INDEX_NO, key_info->key_length, HA_WHOLE_KEY);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
@@ -179,7 +179,7 @@ Raw_key *Item_name_key::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + NAME_INDEX_NO;
 
-  Raw_key *k = new (std::nothrow)
+  auto *k = new (std::nothrow)
       Raw_key(NAME_INDEX_NO, key_info->key_length, HA_WHOLE_KEY);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
@@ -217,7 +217,7 @@ Raw_key *Se_private_id_key::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + m_index_no;
 
-  Raw_key *k =
+  auto *k =
       new (std::nothrow) Raw_key(m_index_no, key_info->key_length, keypart_map);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
@@ -248,7 +248,7 @@ Raw_key *Composite_pk::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + m_index_no;
 
-  Raw_key *k = new (std::nothrow)
+  auto *k = new (std::nothrow)
       Raw_key(m_index_no, key_info->key_length, HA_WHOLE_KEY);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
@@ -284,7 +284,7 @@ Raw_key *Routine_name_key::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + m_index_no;
 
-  Raw_key *k = new (std::nothrow)
+  auto *k = new (std::nothrow)
       Raw_key(m_index_no, key_info->key_length, HA_WHOLE_KEY);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
@@ -332,7 +332,7 @@ Raw_key *Composite_char_key::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + m_index_no;
 
-  Raw_key *k = new Raw_key(m_index_no, key_info->key_length, HA_WHOLE_KEY);
+  auto *k = new Raw_key(m_index_no, key_info->key_length, HA_WHOLE_KEY);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
 
@@ -370,7 +370,7 @@ Raw_key *Composite_4char_key::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + m_index_no;
 
-  Raw_key *k = new Raw_key(m_index_no, key_info->key_length, HA_WHOLE_KEY);
+  auto *k = new Raw_key(m_index_no, key_info->key_length, HA_WHOLE_KEY);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
 
@@ -409,7 +409,7 @@ Raw_key *Composite_obj_id_3char_key::create_access_key(
 
   KEY *key_info = t->key_info + m_index_no;
 
-  Raw_key *k = new Raw_key(m_index_no, key_info->key_length, HA_WHOLE_KEY);
+  auto *k = new Raw_key(m_index_no, key_info->key_length, HA_WHOLE_KEY);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
 
@@ -440,7 +440,7 @@ Raw_key *Index_stat_range_key::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + m_index_no;
 
-  Raw_key *k = new (std::nothrow)
+  auto *k = new (std::nothrow)
       Raw_key(m_index_no, key_info->key_length, 3 /* Use first two column */);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
@@ -476,7 +476,7 @@ Raw_key *Table_reference_range_key::create_access_key(
 
   KEY *key_info = t->key_info + m_index_no;
 
-  Raw_key *k = new (std::nothrow) Raw_key(m_index_no, key_info->key_length, 7);
+  auto *k = new (std::nothrow) Raw_key(m_index_no, key_info->key_length, 7);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
 
@@ -515,7 +515,7 @@ Raw_key *Sub_partition_range_key::create_access_key(Raw_table *db_table) const {
 
   KEY *key_info = t->key_info + m_index_no;
 
-  Raw_key *k = new (std::nothrow)
+  auto *k = new (std::nothrow)
       Raw_key(m_index_no, key_info->key_length, 3 /* Use first two column */);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
@@ -550,7 +550,7 @@ Raw_key *Definer_reference_range_key::create_access_key(
 
   // Use one column of the key.
   // TODO: Investigate why HA_WHOLE_KEY does not give the expected result.
-  Raw_key *k = new (std::nothrow) Raw_key(m_index_no, key_info->key_length, 1);
+  auto *k = new (std::nothrow) Raw_key(m_index_no, key_info->key_length, 1);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
 
@@ -580,7 +580,7 @@ Raw_key *View_definer_reference_range_key::create_access_key(
 
   // Use two columns of the key.
   // TODO: Investigate why HA_WHOLE_KEY does not give the expected result.
-  Raw_key *k = new (std::nothrow) Raw_key(m_index_no, key_info->key_length, 3);
+  auto *k = new (std::nothrow) Raw_key(m_index_no, key_info->key_length, 3);
 
   key_copy(k->key, t->record[0], key_info, k->key_len);
 

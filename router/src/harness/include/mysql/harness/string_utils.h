@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,10 @@
 
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
+
+#include "mysql/harness/stdx/expected.h"
 
 namespace mysql_harness {
 
@@ -75,6 +78,14 @@ HARNESS_EXPORT
 void trim(std::string &str);
 
 /**
+ * Compares two string values for equality (case insensitive).
+ *
+ * @param a string value to be compared
+ * @param b string value to be compared
+ */
+HARNESS_EXPORT bool ieq(const std::string_view &a, const std::string_view &b);
+
+/**
  * Returns the input string with number of lines reduced to selected value.
  *
  * @param str input string
@@ -89,6 +100,47 @@ void trim(std::string &str);
 HARNESS_EXPORT
 std::string limit_lines(const std::string &str, const size_t limit,
                         const std::string &replace_with = "");
+
+/** Returns a boolean value parsed from a string.
+ *
+ * @param str input string
+ *
+ * @return true if input string contains 'true' and false for 'false' (case
+ * insensitive). Returns error code otherwise.
+ */
+HARNESS_EXPORT
+stdx::expected<bool, std::error_code> bool_from_string(std::string str);
+
+/**
+ * upper-case a string.
+ */
+HARNESS_EXPORT
+void upper(std::string &s);
+
+/**
+ * upper-case a string.
+ */
+HARNESS_EXPORT
+std::string make_upper(std::string s);
+
+/**
+ * lower-case a string.
+ */
+HARNESS_EXPORT
+void lower(std::string &s);
+
+/**
+ * lower-case a string.
+ */
+HARNESS_EXPORT
+std::string make_lower(std::string s);
+
+/**
+ * Replace string
+ */
+HARNESS_EXPORT
+std::string replace(std::string_view s, std::string_view from,
+                    std::string_view to);
 
 }  // namespace mysql_harness
 

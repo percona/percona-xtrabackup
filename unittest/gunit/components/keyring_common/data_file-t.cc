@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,24 +38,24 @@ using keyring_common::data_file::File_reader;
 using keyring_common::data_file::File_writer;
 
 TEST_F(File_test, FileWriteReadTest) {
-  std::string data("Quick Brown Fox jumped over the lazy dog.");
-  File_writer file_writer("file_writer_test", data);
+  std::string const data("Quick Brown Fox jumped over the lazy dog.");
+  File_writer const file_writer("file_writer_test", data);
   ASSERT_TRUE(file_writer.valid());
   std::string read_data;
-  File_reader file_reader("file_writer_test", false, read_data);
+  File_reader const file_reader("file_writer_test", false, read_data);
   ASSERT_TRUE(file_reader.valid());
   ASSERT_TRUE(data == read_data);
   ASSERT_TRUE(std::remove("file_writer_test") == 0);
 }
 
 TEST_F(File_test, FileBackupReadTest) {
-  std::string data("Quick Brown Fox jumped over the lazy dog.");
+  std::string const data("Quick Brown Fox jumped over the lazy dog.");
   std::ofstream writer("file_reader_test.backup");
   writer.write(data.c_str(), data.length());
   writer.close();
 
   std::string read_data;
-  File_reader file_reader("file_reader_test", false, read_data);
+  File_reader const file_reader("file_reader_test", false, read_data);
   ASSERT_TRUE(file_reader.valid());
   ASSERT_TRUE(data == read_data);
   ASSERT_TRUE(std::remove("file_reader_test") == 0);

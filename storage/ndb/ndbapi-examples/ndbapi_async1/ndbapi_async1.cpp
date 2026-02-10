@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -39,7 +39,7 @@
 #include <mysqld_error.h>
 #include <NdbApi.hpp>
 
-#include <stdlib.h>
+#include <cstdlib>
 // Used for cout
 #include <iostream>
 
@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
   const char *connectstring = argv[2];
   ndb_init();
 
-  Ndb_cluster_connection *cluster_connection = new Ndb_cluster_connection(
+  auto *cluster_connection = new Ndb_cluster_connection(
       connectstring);  // Object representing the cluster
 
   int r = cluster_connection->connect(5 /* retries               */,
@@ -126,13 +126,13 @@ int main(int argc, char **argv) {
    ******************************************************/
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_async1");
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
   for (int i = 0; i < 2; i++) {
     myNdbTransaction[i] = myNdb->startTransaction();
-    if (myNdbTransaction[i] == NULL) APIERROR(myNdb->getNdbError());
+    if (myNdbTransaction[i] == nullptr) APIERROR(myNdb->getNdbError());
 
     myNdbOperation = myNdbTransaction[i]->getNdbOperation(myTable);
-    if (myNdbOperation == NULL) APIERROR(myNdbTransaction[i]->getNdbError());
+    if (myNdbOperation == nullptr) APIERROR(myNdbTransaction[i]->getNdbError());
 
     myNdbOperation->insertTuple();
     myNdbOperation->equal("ATTR1", 20 + i);
@@ -140,7 +140,7 @@ int main(int argc, char **argv) {
 
     // Prepare transaction (the transaction is NOT yet sent to NDB)
     myNdbTransaction[i]->executeAsynchPrepare(NdbTransaction::Commit, &callback,
-                                              NULL);
+                                              nullptr);
   }
 
   // Send all transactions to NDB
@@ -196,7 +196,7 @@ static void drop_table(MYSQL &mysql) {
  *   - A pointer to an arbitrary object.)
  */
 
-static void callback(int result, NdbTransaction *myTrans, void *aObject) {
+static void callback(int result, NdbTransaction *myTrans, void * /*aObject*/) {
   if (result == -1) {
     std::cout << "Poll error: " << std::endl;
     APIERROR(myTrans->getNdbError());

@@ -1,0 +1,35 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+--source ../include/schema/pk_types_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+--source ../include/test/test_openapi_object_structure.inc
+
+UPDATE `mysql_rest_service_metadata`.`service` SET comments="A comment" WHERE url_context_root="/svc";
+
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify open-api-catalog for MRS service
+--echo #
+--echo # 1. Show that GET /<service>/open-api-catalog works and lists OpenAPI
+--echo      description for all REST Objects from all REST Schemas that belong
+--echo      to the given service.
+--echo #
+--echo #
+
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--let $mrs_client_arg_exclude_json_pointer=/components/schemas/basic_schema_table3/properties/ctimestamp/example,components/schemas/basic_schema_table3/properties/cdatetime/example,/components/schemas/basic_schema_table2/properties/date/example,/components/schemas/basic_schema_view1/properties/date/example,components/schemas/pk_types_schema_t_timestamp/properties/id/example
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

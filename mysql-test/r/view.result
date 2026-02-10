@@ -6846,3 +6846,35 @@ c1	c2
 1	á
 DROP VIEW v1;
 DROP TABLE t1;
+#
+# BUG#33200087: DROP VIEW IF EXISTS results in error when having a table
+#               with the same name
+#
+CREATE TABLE foo1 (a BOOL);
+# Without the patch, the following query reports an error.
+DROP VIEW IF EXISTS foo1;
+Warnings:
+Note	1347	'test.foo1' is not VIEW
+CREATE TABLE foo2 (b BOOL);
+CREATE VIEW v1 AS SELECT * FROM foo2;
+# Without the patch, the following query reports an error while trying to
+# drop `foo1`. Thus the view v1 is not dropped even though it exists.
+DROP VIEW IF EXISTS foo1, v1;
+Warnings:
+Note	1347	'test.foo1' is not VIEW
+include/assert.inc [View v1 should not exist]
+DROP TABLE foo2, foo1;
+#
+# Bug#38138412 CREATE VIEW causes Assertion `(tlen % 2) == 0'
+#              in strings/ctype-ucs2.cc
+#
+CREATE TABLE t1 (
+id INT,
+c5 VARCHAR(5) CHARACTER SET utf16
+);
+INSERT INTO t1 VALUES(42, "hello");
+CREATE VIEW v1 AS SELECT * FROM t1 WHERE c5 BETWEEN '' AND '4';
+SELECT * FROM v1;
+id	c5
+DROP VIEW v1;
+DROP TABLE t1;

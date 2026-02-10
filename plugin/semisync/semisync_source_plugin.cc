@@ -1,5 +1,5 @@
 /* Copyright (C) 2007 Google Inc.
-   Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,26 +41,7 @@
 #include "sql/sql_lex.h"      // thd->lex
 #include "typelib.h"
 
-#ifdef USE_OLD_SEMI_SYNC_TERMINOLOGY
-#define SOURCE_NAME "master"
-#define REPLICA_NAME "slave"
-#define SEMI_SYNC_PLUGIN_NAME "rpl_semi_sync_master"
-#define OTHER_SEMI_SYNC_PLUGIN_NAME "rpl_semi_sync_source"
-#define WAIT_NO_REPLICA_NAME wait_no_slave
-#define WAIT_FOR_REPLICA_COUNT_NAME wait_for_slave_count
-#define STATUS_VAR_PREFIX "Rpl_semi_sync_master_"
-#define DEPRECATED_SEMISYNC_LIBRARY
-#else
-#define SOURCE_NAME "source"
-#define REPLICA_NAME "replica"
-#define SEMI_SYNC_PLUGIN_NAME "rpl_semi_sync_source"
-#define OTHER_SEMI_SYNC_PLUGIN_NAME "rpl_semi_sync_master"
-#define WAIT_NO_REPLICA_NAME wait_no_replica
-#define WAIT_FOR_REPLICA_COUNT_NAME wait_for_replica_count
-#define STATUS_VAR_PREFIX "Rpl_semi_sync_source_"
-#endif
-
-ReplSemiSyncMaster *repl_semisync = nullptr;
+ReplSemiSyncSource *repl_semisync = nullptr;
 Ack_receiver *ack_receiver = nullptr;
 
 /* The places at where semisync waits for binlog ACKs. */
@@ -81,11 +62,11 @@ static int repl_semi_report_binlog_update(Binlog_storage_param *,
                                           my_off_t log_pos) {
   int error = 0;
 
-  if (repl_semisync->getMasterEnabled()) {
+  if (repl_semisync->getSourceEnabled()) {
     /*
       Let us store the binlog file name and the position, so that
       we know how long to wait for the binlog to the replicated to
-      the slave in synchronous replication.
+      the replica in synchronous replication.
     */
     error = repl_semisync->writeTranxInBinlog(log_file, log_pos);
   }
@@ -126,36 +107,32 @@ static int repl_semi_report_begin(Trans_param *, int &) { return 0; }
 
 static int repl_semi_binlog_dump_start(Binlog_transmit_param *param,
                                        const char *log_file, my_off_t log_pos) {
-  long long semi_sync_slave = 0;
+  long long semi_sync_replica = 0;
 
   /*
     Check if the replica has identified itself as a semisync replica
-    by setting a user variable.  The old library sets the user
-    variable rpl_semi_sync_slave on the session, and the new library
-    sets rpl_semi_sync_replica.  The value returned through the
-    argument will be whatever the replica has set it to in the
-    session, or 0 if the replica has not set it.
+    by setting a user variable. The library sets the user variable
+    rpl_semi_sync_replica on the session. The value returned through the
+    argument will be whatever the replica has set it to in the session, or 0 if
+    the replica has not set it.
   */
-  get_user_var_int("rpl_semi_sync_replica", &semi_sync_slave, nullptr);
-  if (semi_sync_slave == 0)
-    get_user_var_int("rpl_semi_sync_slave", &semi_sync_slave, nullptr);
-
-  if (semi_sync_slave != 0) {
-    if (ack_receiver->add_slave(current_thd)) {
+  get_user_var_int("rpl_semi_sync_replica", &semi_sync_replica, nullptr);
+  if (semi_sync_replica != 0) {
+    if (ack_receiver->add_replica(current_thd)) {
       LogErr(ERROR_LEVEL, ER_SEMISYNC_FAILED_REGISTER_REPLICA_TO_RECEIVER);
       return -1;
     }
 
     THR_RPL_SEMI_SYNC_DUMP = true;
 
-    /* One more semi-sync slave */
-    repl_semisync->add_slave();
+    /* One more semi-sync replica */
+    repl_semisync->add_replica();
 
     /* Tell server it will observe the transmission.*/
     param->set_observe_flag();
 
     /*
-      Let's assume this semi-sync slave has already received all
+      Let's assume this semi-sync replica has already received all
       binlog events before the filename and position it requests.
     */
     repl_semisync->handleAck(param->server_id, log_file, log_pos);
@@ -163,21 +140,21 @@ static int repl_semi_binlog_dump_start(Binlog_transmit_param *param,
     param->set_dont_observe_flag();
 
   LogErr(INFORMATION_LEVEL, ER_SEMISYNC_START_BINLOG_DUMP_TO_REPLICA,
-         semi_sync_slave != 0 ? "semi-sync" : "asynchronous", param->server_id,
-         log_file, (unsigned long)log_pos);
+         semi_sync_replica != 0 ? "semi-sync" : "asynchronous",
+         param->server_id, log_file, (unsigned long)log_pos);
   return 0;
 }
 
 static int repl_semi_binlog_dump_end(Binlog_transmit_param *param) {
-  bool semi_sync_slave = is_semi_sync_dump();
+  bool semi_sync_replica = is_semi_sync_dump();
 
   LogErr(INFORMATION_LEVEL, ER_SEMISYNC_STOP_BINLOG_DUMP_TO_REPLICA,
-         semi_sync_slave ? "semi-sync" : "asynchronous", param->server_id);
+         semi_sync_replica ? "semi-sync" : "asynchronous", param->server_id);
 
-  if (semi_sync_slave) {
-    ack_receiver->remove_slave(current_thd);
-    /* One less semi-sync slave */
-    repl_semisync->remove_slave();
+  if (semi_sync_replica) {
+    ack_receiver->remove_replica(current_thd);
+    /* One less semi-sync replica */
+    repl_semisync->remove_replica();
     THR_RPL_SEMI_SYNC_DUMP = false;
   }
   return 0;
@@ -206,16 +183,16 @@ static int repl_semi_after_send_event(Binlog_transmit_param *param,
                                       my_off_t skipped_log_pos) {
   if (is_semi_sync_dump()) {
     if (skipped_log_pos > 0)
-      repl_semisync->skipSlaveReply(event_buf, param->server_id,
-                                    skipped_log_file, skipped_log_pos);
+      repl_semisync->skipReplicaReply(event_buf, param->server_id,
+                                      skipped_log_file, skipped_log_pos);
     else {
       THD *thd = current_thd;
       /*
-        Possible errors in reading slave reply are ignored deliberately
+        Possible errors in reading replica reply are ignored deliberately
         because we do not want dump thread to quit on this. Error
         messages are already reported.
       */
-      (void)repl_semisync->readSlaveReply(
+      (void)repl_semisync->readReplicaReply(
           thd->get_protocol_classic()->get_net(), event_buf);
       thd->clear_error();
     }
@@ -223,8 +200,8 @@ static int repl_semi_after_send_event(Binlog_transmit_param *param,
   return 0;
 }
 
-static int repl_semi_reset_master(Binlog_transmit_param *) {
-  if (repl_semisync->resetMaster()) return 1;
+static int repl_semi_reset_source(Binlog_transmit_param *) {
+  if (repl_semisync->resetSource()) return 1;
   return 0;
 }
 
@@ -260,35 +237,25 @@ static MYSQL_SYSVAR_ULONG(
     timeout, rpl_semi_sync_source_timeout, PLUGIN_VAR_OPCMDARG,
     "The timeout value (in milliseconds) for semi-synchronous replication on "
     "the source. If less than "
-    "rpl_semi_sync_" SOURCE_NAME "_wait_for_" REPLICA_NAME
-    "_count "
+    "rpl_semi_sync_source_wait_for_replica_count "
     "replicas have replied after this amount of time, switch to asynchronous "
     "replication.",
     nullptr,                           // check
     fix_rpl_semi_sync_source_timeout,  // update
     10000, 0, ~0UL, 1);
 
-#define DEFINE_WAIT_NO_REPLICA(NAME)                                           \
-  static MYSQL_SYSVAR_BOOL(                                                    \
-      NAME, rpl_semi_sync_source_wait_no_replica, PLUGIN_VAR_OPCMDARG,         \
-      "If enabled, revert to asynchronous replication only if less "           \
-      "than "                                                                  \
-      "rpl_semi_sync_" SOURCE_NAME "_wait_for_" REPLICA_NAME                   \
-      "_count "                                                                \
-      "replicas have replied when "                                            \
-      "rpl_semi_sync_" SOURCE_NAME                                             \
-      "_timeout "                                                              \
-      "seconds have passed. If disabled, revert to asynchronous "              \
-      "replication also as soon as the number of connected replicas "          \
-      "drops below "                                                           \
-      "rpl_semi_sync_" SOURCE_NAME "_wait_for_" REPLICA_NAME "_count.",        \
-      nullptr /*check*/, &fix_rpl_semi_sync_source_wait_no_replica /*update*/, \
-      1);
-#ifdef USE_OLD_SEMI_SYNC_TERMINOLOGY
-DEFINE_WAIT_NO_REPLICA(wait_no_slave)
-#else
-DEFINE_WAIT_NO_REPLICA(wait_no_replica)
-#endif
+static MYSQL_SYSVAR_BOOL(
+    wait_no_replica, rpl_semi_sync_source_wait_no_replica, PLUGIN_VAR_OPCMDARG,
+    "If enabled, revert to asynchronous replication only if less "
+    "than "
+    "rpl_semi_sync_source_wait_for_replica_count "
+    "replicas have replied when "
+    "rpl_semi_sync_source_timeout "
+    "seconds have passed. If disabled, revert to asynchronous "
+    "replication also as soon as the number of connected replicas "
+    "drops below "
+    "rpl_semi_sync_source_wait_for_replica_count.",
+    nullptr /*check*/, &fix_rpl_semi_sync_source_wait_no_replica /*update*/, 1);
 
 static MYSQL_SYSVAR_ULONG(trace_level, rpl_semi_sync_source_trace_level,
                           PLUGIN_VAR_OPCMDARG,
@@ -325,30 +292,24 @@ static MYSQL_SYSVAR_ENUM(
     &wait_point_typelib /* typelib  */
 );
 
-#define DEFINE_WAIT_FOR_REPLICA_COUNT(NAME)                             \
-  static MYSQL_SYSVAR_UINT(                                             \
-      NAME,                                        /* name  */          \
-      rpl_semi_sync_source_wait_for_replica_count, /* var   */          \
-      PLUGIN_VAR_OPCMDARG,                         /* flags */          \
-      "The number of replicas that need to acknowledge that they have " \
-      "received a transaction, before the transaction can complete on " \
-      "the source.",                                                    \
-      nullptr /* check */,                                              \
-      &fix_rpl_semi_sync_source_wait_for_replica_count, /* update */    \
-      1, 1, 65535, 1);
-#ifdef USE_OLD_SEMI_SYNC_TERMINOLOGY
-DEFINE_WAIT_FOR_REPLICA_COUNT(wait_for_slave_count)
-#else
-DEFINE_WAIT_FOR_REPLICA_COUNT(wait_for_replica_count)
-#endif
+static MYSQL_SYSVAR_UINT(
+    wait_for_replica_count,                      /* name  */
+    rpl_semi_sync_source_wait_for_replica_count, /* var   */
+    PLUGIN_VAR_OPCMDARG,                         /* flags */
+    "The number of replicas that need to acknowledge that they have "
+    "received a transaction, before the transaction can complete on "
+    "the source.",
+    nullptr /* check */,
+    &fix_rpl_semi_sync_source_wait_for_replica_count, /* update */
+    1, 1, 65535, 1);
 
-static SYS_VAR *semi_sync_master_system_vars[] = {
+static SYS_VAR *semi_sync_source_system_vars[] = {
     MYSQL_SYSVAR(enabled),
     MYSQL_SYSVAR(timeout),
-    MYSQL_SYSVAR(WAIT_NO_REPLICA_NAME),
+    MYSQL_SYSVAR(wait_no_replica),
     MYSQL_SYSVAR(trace_level),
     MYSQL_SYSVAR(wait_point),
-    MYSQL_SYSVAR(WAIT_FOR_REPLICA_COUNT_NAME),
+    MYSQL_SYSVAR(wait_for_replica_count),
     nullptr,
 };
 static void fix_rpl_semi_sync_source_timeout(MYSQL_THD, SYS_VAR *, void *ptr,
@@ -370,14 +331,14 @@ static void fix_rpl_semi_sync_source_enabled(MYSQL_THD, SYS_VAR *, void *ptr,
                                              const void *val) {
   *static_cast<bool *>(ptr) = *static_cast<const bool *>(val);
   if (rpl_semi_sync_source_enabled) {
-    if (repl_semisync->enableMaster() != 0)
+    if (repl_semisync->enableSource() != 0)
       rpl_semi_sync_source_enabled = false;
     else if (ack_receiver->start()) {
-      repl_semisync->disableMaster();
+      repl_semisync->disableSource();
       rpl_semi_sync_source_enabled = false;
     }
   } else {
-    if (repl_semisync->disableMaster() != 0)
+    if (repl_semisync->disableSource() != 0)
       rpl_semi_sync_source_enabled = true;
     ack_receiver->stop();
   }
@@ -388,7 +349,7 @@ static void fix_rpl_semi_sync_source_enabled(MYSQL_THD, SYS_VAR *, void *ptr,
 static void fix_rpl_semi_sync_source_wait_for_replica_count(MYSQL_THD,
                                                             SYS_VAR *, void *,
                                                             const void *val) {
-  (void)repl_semisync->setWaitSlaveCount(
+  (void)repl_semisync->setWaitReplicaCount(
       *static_cast<const unsigned int *>(val));
 }
 
@@ -427,7 +388,7 @@ Binlog_transmit_observer transmit_observer = {
     repl_semi_reserve_header,     // reserve_header
     repl_semi_before_send_event,  // before_send_event
     repl_semi_after_send_event,   // after_send_event
-    repl_semi_reset_master,       // reset
+    repl_semi_reset_source,       // reset
 };
 
 #define SHOW_FNAME(name) rpl_semi_sync_source_show_##name
@@ -451,36 +412,38 @@ DEF_SHOW_FUNC(avg_net_wait_time, SHOW_LONG)
 DEF_SHOW_FUNC(avg_trx_wait_time, SHOW_LONG)
 
 /* plugin status variables */
-static SHOW_VAR semi_sync_master_status_vars[] = {
-    {STATUS_VAR_PREFIX "status", (char *)&SHOW_FNAME(status), SHOW_FUNC,
+static SHOW_VAR semi_sync_source_status_vars[] = {
+    {"Rpl_semi_sync_source_status", (char *)&SHOW_FNAME(status), SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "clients", (char *)&SHOW_FNAME(clients), SHOW_FUNC,
+    {"Rpl_semi_sync_source_clients", (char *)&SHOW_FNAME(clients), SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "yes_tx", (char *)&rpl_semi_sync_source_yes_transactions,
-     SHOW_LONG, SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "no_tx", (char *)&rpl_semi_sync_source_no_transactions,
-     SHOW_LONG, SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "wait_sessions", (char *)&SHOW_FNAME(wait_sessions),
+    {"Rpl_semi_sync_source_yes_tx",
+     (char *)&rpl_semi_sync_source_yes_transactions, SHOW_LONG,
+     SHOW_SCOPE_GLOBAL},
+    {"Rpl_semi_sync_source_no_tx",
+     (char *)&rpl_semi_sync_source_no_transactions, SHOW_LONG,
+     SHOW_SCOPE_GLOBAL},
+    {"Rpl_semi_sync_source_wait_sessions", (char *)&SHOW_FNAME(wait_sessions),
      SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "no_times", (char *)&rpl_semi_sync_source_off_times,
+    {"Rpl_semi_sync_source_no_times", (char *)&rpl_semi_sync_source_off_times,
      SHOW_LONG, SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "timefunc_failures",
+    {"Rpl_semi_sync_source_timefunc_failures",
      (char *)&rpl_semi_sync_source_timefunc_fails, SHOW_LONG,
      SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "wait_pos_backtraverse",
+    {"Rpl_semi_sync_source_wait_pos_backtraverse",
      (char *)&rpl_semi_sync_source_wait_pos_backtraverse, SHOW_LONG,
      SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "tx_wait_time", (char *)&SHOW_FNAME(trx_wait_time),
+    {"Rpl_semi_sync_source_tx_wait_time", (char *)&SHOW_FNAME(trx_wait_time),
      SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "tx_waits", (char *)&SHOW_FNAME(trx_wait_num), SHOW_FUNC,
-     SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "tx_avg_wait_time",
+    {"Rpl_semi_sync_source_tx_waits", (char *)&SHOW_FNAME(trx_wait_num),
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Rpl_semi_sync_source_tx_avg_wait_time",
      (char *)&SHOW_FNAME(avg_trx_wait_time), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "net_wait_time", (char *)&SHOW_FNAME(net_wait_time),
+    {"Rpl_semi_sync_source_net_wait_time", (char *)&SHOW_FNAME(net_wait_time),
      SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "net_waits", (char *)&SHOW_FNAME(net_wait_num),
+    {"Rpl_semi_sync_source_net_waits", (char *)&SHOW_FNAME(net_wait_num),
      SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {STATUS_VAR_PREFIX "net_avg_wait_time",
+    {"Rpl_semi_sync_source_net_avg_wait_time",
      (char *)&SHOW_FNAME(avg_net_wait_time), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
     {nullptr, nullptr, SHOW_LONG, SHOW_SCOPE_GLOBAL},
 };
@@ -511,16 +474,6 @@ static PSI_thread_info all_semisync_threads[] = {
      PSI_FLAG_SINGLETON | PSI_FLAG_THREAD_SYSTEM, 0, PSI_DOCUMENT_ME}};
 #endif /* HAVE_PSI_INTERFACE */
 
-#ifdef USE_OLD_SEMI_SYNC_TERMINOLOGY
-PSI_stage_info stage_waiting_for_semi_sync_ack_from_replica = {
-    0, "Waiting for semi-sync ACK from slave", 0, PSI_DOCUMENT_ME};
-
-PSI_stage_info stage_waiting_for_semi_sync_replica = {
-    0, "Waiting for semi-sync slave connection", 0, PSI_DOCUMENT_ME};
-
-PSI_stage_info stage_reading_semi_sync_ack = {
-    0, "Reading semi-sync ACK from slave", 0, PSI_DOCUMENT_ME};
-#else
 PSI_stage_info stage_waiting_for_semi_sync_ack_from_replica = {
     0, "Waiting for semi-sync ACK from replica", 0, PSI_DOCUMENT_ME};
 
@@ -529,7 +482,6 @@ PSI_stage_info stage_waiting_for_semi_sync_replica = {
 
 PSI_stage_info stage_reading_semi_sync_ack = {
     0, "Reading semi-sync ACK from replica", 0, PSI_DOCUMENT_ME};
-#endif
 
 /* Always defined. */
 PSI_memory_key key_ss_memory_TranxNodeAllocator_block;
@@ -564,21 +516,7 @@ static void init_semisync_psi_keys(void) {
 }
 #endif /* HAVE_PSI_INTERFACE */
 
-/**
-  Return true if this is the new library and the old library is installed, or
-  vice versa.
-
-  @retval true This is semisync_master, and semisync_source is
-  installed already, or this is semisync_source, and semisync_master
-  is installed already.
-
-  @retval false Otherwise
-*/
-static bool is_other_semi_sync_source_plugin_installed() {
-  return is_sysvar_defined(OTHER_SEMI_SYNC_PLUGIN_NAME "_enabled");
-}
-
-static int semi_sync_master_plugin_init(void *p) {
+static int semi_sync_source_plugin_init(void *p) {
   // Initialize error logging service.
   if (init_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs)) return 1;
   // Auto-deinitialize the error logging service if this function fails.
@@ -587,49 +525,8 @@ static int semi_sync_master_plugin_init(void *p) {
     if (!success) deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
   }};
 
-  // Check for duplicate libraries.
-  bool is_client =
-      current_thd && current_thd->lex->sql_command == SQLCOM_INSTALL_PLUGIN;
-  if (is_other_semi_sync_source_plugin_installed()) {
-    /*
-      Unfortunately, two semisync libraries don't make one sync library. :-)
-      If user installs both the old-named library and the new-named
-      library, we generate an error, since the two would interfere with
-      each other.
-    */
-    if (is_client)
-      my_error(ER_INSTALL_PLUGIN_CONFLICT_CLIENT, MYF(0), SEMI_SYNC_PLUGIN_NAME,
-               OTHER_SEMI_SYNC_PLUGIN_NAME);
-    else
-      LogErr(ERROR_LEVEL, ER_INSTALL_PLUGIN_CONFLICT_LOG, SEMI_SYNC_PLUGIN_NAME,
-             OTHER_SEMI_SYNC_PLUGIN_NAME);
-    return 1;
-  }
-
 #ifdef HAVE_PSI_INTERFACE
   init_semisync_psi_keys();
-#endif
-
-#ifdef DEPRECATED_SEMISYNC_LIBRARY
-  /*
-    This function can be invoked in two contexts: either from the SQL
-    statement INSTALL PLUGIN executed by a client, or during server
-    startup, for example, in case --plugin-load is used.
-
-    For INSTALL PLUGIN, return a warning to the client, so the person
-    that issued INSTALL PLUGIN gets notified.
-
-    In both cases, write a warning to the log, because the
-    administrator needs to know that we are using an old library and
-    make the new library available if it is not.
-  */
-  if (is_client)
-    push_warning_printf(current_thd, Sql_condition::SL_NOTE,
-                        ER_WARN_DEPRECATED_SYNTAX,
-                        ER_THD(current_thd, ER_WARN_DEPRECATED_SYNTAX),
-                        "rpl_semi_sync_master", "rpl_semi_sync_source");
-  LogErr(WARNING_LEVEL, ER_DEPRECATE_MSG_WITH_REPLACEMENT,
-         "rpl_semi_sync_master", "rpl_semi_sync_source");
 #endif
 
   THR_RPL_SEMI_SYNC_DUMP = false;
@@ -643,7 +540,7 @@ static int semi_sync_master_plugin_init(void *p) {
   rpl_semi_sync_source_no_transactions = 0;
   rpl_semi_sync_source_yes_transactions = 0;
 
-  repl_semisync = new ReplSemiSyncMaster();
+  repl_semisync = new ReplSemiSyncSource();
   ack_receiver = new Ack_receiver();
 
   if (repl_semisync->initObject()) return 1;
@@ -659,13 +556,13 @@ static int semi_sync_master_plugin_init(void *p) {
 static int semi_sync_source_plugin_check_uninstall(void *) {
   int ret = rpl_semi_sync_source_clients ? 1 : 0;
   if (ret) {
-    my_error(ER_PLUGIN_CANNOT_BE_UNINSTALLED, MYF(0), SEMI_SYNC_PLUGIN_NAME,
+    my_error(ER_PLUGIN_CANNOT_BE_UNINSTALLED, MYF(0), "rpl_semi_sync_source",
              "Stop any active semisynchronous replicas of this source first.");
   }
   return ret;
 }
 
-static int semi_sync_master_plugin_deinit(void *p) {
+static int semi_sync_source_plugin_deinit(void *p) {
   // the plugin was not initialized, there is nothing to do here
   if (ack_receiver == nullptr || repl_semisync == nullptr) return 0;
 
@@ -696,26 +593,26 @@ static int semi_sync_master_plugin_deinit(void *p) {
   return 0;
 }
 
-struct Mysql_replication semi_sync_master_plugin = {
+struct Mysql_replication semi_sync_source_plugin = {
     MYSQL_REPLICATION_INTERFACE_VERSION};
 
 /*
   Plugin library descriptor
 */
 
-mysql_declare_plugin(semi_sync_master){
+mysql_declare_plugin(semi_sync_source){
     MYSQL_REPLICATION_PLUGIN,
-    &semi_sync_master_plugin,
-    SEMI_SYNC_PLUGIN_NAME,
+    &semi_sync_source_plugin,
+    "rpl_semi_sync_source",
     PLUGIN_AUTHOR_ORACLE,
     "Source-side semi-synchronous replication.",
     PLUGIN_LICENSE_GPL,
-    semi_sync_master_plugin_init,            /* Plugin Init */
+    semi_sync_source_plugin_init,            /* Plugin Init */
     semi_sync_source_plugin_check_uninstall, /* Plugin Check uninstall */
-    semi_sync_master_plugin_deinit,          /* Plugin Deinit */
+    semi_sync_source_plugin_deinit,          /* Plugin Deinit */
     0x0100 /* 1.0 */,
-    semi_sync_master_status_vars, /* status variables */
-    semi_sync_master_system_vars, /* system variables */
+    semi_sync_source_status_vars, /* status variables */
+    semi_sync_source_system_vars, /* system variables */
     nullptr,                      /* config options */
     0,                            /* flags */
 } mysql_declare_plugin_end;

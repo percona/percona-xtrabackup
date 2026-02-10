@@ -372,4 +372,6 @@ FLUSH PRIVILEGES;
 ERROR HY000: Table 'user' was not locked with LOCK TABLES
 UNLOCK TABLES;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 DROP TABLE t1;

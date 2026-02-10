@@ -282,7 +282,8 @@ EXPLAIN
 
 EXPLAIN ANALYZE SELECT 1 FROM t1 GROUP BY c,d,a;
 EXPLAIN
--> Covering index skip scan for deduplication on t1 using ix1  (rows=385) (actual rows=385 loops=1)
+-> Group (no aggregates)  (rows=385) (actual rows=385 loops=1)
+    -> Covering index scan on t1 using ix1  (rows=1000) (actual rows=1000 loops=1)
 
 EXPLAIN ANALYZE SELECT 1 FROM t1 GROUP BY d,a,c WITH ROLLUP;
 EXPLAIN
@@ -352,8 +353,8 @@ EXPLAIN
 
 EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE b>95 GROUP BY e,f;
 EXPLAIN
--> Table scan on <temporary>  (rows=27.7) (actual rows=40 loops=1)
-    -> Temporary table with deduplication  (rows=27.7) (actual rows=40 loops=1)
+-> Group (no aggregates)  (rows=27.7) (actual rows=40 loops=1)
+    -> Sort: t1.e, t1.f  (rows=40) (actual rows=40 loops=1)
         -> Filter: (t1.b > 95)  (rows=40) (actual rows=40 loops=1)
             -> Table scan on t1  (rows=1000) (actual rows=1000 loops=1)
 
@@ -365,8 +366,8 @@ EXPLAIN
 
 EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE b>95 GROUP BY c+0,e+0;
 EXPLAIN
--> Table scan on <temporary>  (rows=11.7) (actual rows=40 loops=1)
-    -> Temporary table with deduplication  (rows=11.7) (actual rows=40 loops=1)
+-> Group (no aggregates)  (rows=11.7) (actual rows=40 loops=1)
+    -> Sort: (t1.c + 0), (t1.e + 0)  (rows=40) (actual rows=40 loops=1)
         -> Filter: (t1.b > 95)  (rows=40) (actual rows=40 loops=1)
             -> Table scan on t1  (rows=1000) (actual rows=1000 loops=1)
 
@@ -396,7 +397,7 @@ EXPLAIN
         -> Inner hash join (no condition)  (rows=10000) (actual rows=10000 loops=1)
             -> Covering index scan on t1 using ix1  (rows=1000) (actual rows=1000 loops=1)
             -> Hash
-                -> Table scan on t2  (rows=10) (actual rows=10 loops=1)
+                -> Covering index scan on t2 using PRIMARY  (rows=10) (actual rows=10 loops=1)
 
 EXPLAIN ANALYZE SELECT 1 FROM t1,t2 GROUP BY c2;
 EXPLAIN
@@ -794,9 +795,10 @@ avg(id2*2)  over()	id2
 EXPLAIN FORMAT=TREE select avg(id2*2)  over(), id2 from tb1 group by id2;
 EXPLAIN
 -> Window aggregate with buffering: avg(`(tb1.id2 * 2)`) OVER ()   (rows=3.46)
-    -> Table scan on <temporary>  (rows=3.46)
-        -> Temporary table with deduplication  (rows=3.46)
-            -> Table scan on tb1  (rows=12)
+    -> Stream results  (rows=3.46)
+        -> Group (no aggregates)  (rows=3.46)
+            -> Sort: tb1.id2  (rows=12)
+                -> Table scan on tb1  (rows=12)
 
 EXPLAIN FORMAT=TREE select sql_small_result avg(id), JSON_ARRAYAGG(id) from tb1 t1 group by id2 ;
 EXPLAIN
@@ -831,4 +833,20 @@ EXPLAIN
     -> Aggregate using temporary table  (rows=1)
         -> Table scan on t1  (rows=1)
 
+#
+# Bug#3767052: mysqld crash at Field::is_nullable while querying...
+#
+create table t1(id int, id2 int);
+insert into t1 values (1, 10), (2, 11), (3, 12), (4, 10), (5, 11), (6, 12);
+SELECT sql_small_result 1 col1 FROM t1 GROUP BY @a := id LIMIT 1;
+col1
+1
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
+SELECT * FROM (SELECT sql_small_result 1 col1 FROM t1 GROUP BY @a := id) s LIMIT 1;
+col1
+1
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
+drop table t1;
 drop table tb1;

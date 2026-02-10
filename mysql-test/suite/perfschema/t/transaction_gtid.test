@@ -57,6 +57,10 @@
 --let $rpl_server_count= 1
 --source include/rpl/init.inc
 
+# To verify all the test scenarios start with gtid_mode=off
+--let $rpl_gtid_mode= OFF
+--source include/rpl/set_gtid_mode.inc
+
 --echo ==== Configure ====
 
 --connection default
@@ -74,7 +78,6 @@ CREATE TABLE t1 (a INT);
 --let $auxiliary_connection= server_1
 --let $auxiliary_file= suite/perfschema/include/show_transaction_gtid.inc
 --let $quiet= 1
-
 --echo ==== Test ====
 
 --let $n= 1
@@ -192,14 +195,9 @@ while ($n <= 6) {
 
 --echo ==== Clean up ====
 
-# Will allow changing mode to off
 SET SESSION GTID_NEXT = 'AUTOMATIC';
 
 DROP TABLE t1;
 # DROP TABLE t_1, t_2, t_3, t_4;
-
---let $rpl_gtid_mode= OFF
---source include/rpl/set_gtid_mode.inc
-SET GLOBAL ENFORCE_GTID_CONSISTENCY = OFF;
 
 --source include/rpl/deinit.inc

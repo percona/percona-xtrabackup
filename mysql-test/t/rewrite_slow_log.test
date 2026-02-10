@@ -6,6 +6,10 @@
 
 --source include/not_windows.inc
 
+# This test uses IGNORE_SERVER_IDS option in CHANGE REPLICATION SOURCE
+# and that is not supported with gtid_mode=ON
+--source include/rpl/set_gtid_mode_off.inc
+
 # For Bug#16467055 and friends:
 
 # make sure we start with a clean slate. log_tables.test says this is OK.
@@ -138,3 +142,6 @@ SET GLOBAL  slow_query_log=     @old_slow_query_log;
 SET GLOBAL  log_output=         @old_log_output;
 TRUNCATE TABLE mysql.slow_log;
 TRUNCATE TABLE mysql.general_log;
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

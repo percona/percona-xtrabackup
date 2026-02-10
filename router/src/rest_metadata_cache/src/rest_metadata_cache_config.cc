@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -42,22 +42,12 @@ static rapidjson::Value json_value_from_string(const std::string &s,
 }
 
 bool handle_params(http::base::Request &req) {
-  auto md_api = metadata_cache::MetadataCacheAPI::instance();
-
   if (!req.get_uri().get_query().empty()) {
-    const auto q = req.get_uri().get_query();
-    if (q == "fetchWholeTopology=1") {
-      md_api->fetch_whole_topology(true);
-    } else if (q == "fetchWholeTopology=0") {
-      md_api->fetch_whole_topology(false);
-    } else {
-      send_rfc7807_error(req, HttpStatusCode::BadRequest,
-                         {
-                             {"title", "validation error"},
-                             {"detail", "unsupported parameter"},
-                         });
-    }
-    return true;
+    send_rfc7807_error(req, HttpStatusCode::BadRequest,
+                       {
+                           {"title", "validation error"},
+                           {"detail", "unsupported parameter"},
+                       });
   }
 
   return true;
@@ -80,22 +70,66 @@ bool RestMetadataCacheConfig::on_handle_request(
   rapidjson::Document json_doc;
   {
     rapidjson::Document::AllocatorType &allocator = json_doc.GetAllocator();
-
     auto md_api = metadata_cache::MetadataCacheAPI::instance();
-    auto group_members = md_api->get_cluster_nodes();
 
     rapidjson::Value members(rapidjson::kArrayType);
+    auto clusterset_topology = md_api->get_cluster_topology();
+    const auto &clusterset_name = clusterset_topology.name;
+    for (const auto &cluster : clusterset_topology.clusters_data) {
+      const std::string cluster_role =
+          cluster.is_primary ? "PRIMARY" : "REPLICA";
+      for (const auto &cluster_member : cluster.members) {
+        std::string tags_str;
+        for (const auto &tag : cluster_member.tags) {
+          tags_str += "\n\t\t" + tag.first + ": " + tag.second;
+        }
 
-    for (auto &member : group_members) {
-      members.PushBack(
-          rapidjson::Value(rapidjson::kObjectType)
-              .AddMember("hostname",
-                         json_value_from_string(member.host, allocator),
-                         allocator)
-              .AddMember("port", member.port, allocator)
-          //
-          ,
-          allocator);
+        std::string member_role;
+        if (cluster_member.mode == metadata_cache::ServerMode::ReadWrite) {
+          member_role = "PRIMARY";
+        } else {
+          member_role =
+              cluster_member.type == mysqlrouter::InstanceType::ReadReplica
+                  ? "READ_REPLICA"
+                  : "SECONDARY";
+        }
+        const auto label_port = cluster_member.port == 0 ? cluster_member.xport
+                                                         : cluster_member.port;
+        const std::string &label =
+            cluster_member.host + ":" + std::to_string(label_port);
+
+        members.PushBack(
+            rapidjson::Value(rapidjson::kObjectType)
+                .AddMember(
+                    "hostname",
+                    json_value_from_string(cluster_member.host, allocator),
+                    allocator)
+                .AddMember("port", cluster_member.port, allocator)
+                .AddMember("X_port", cluster_member.xport, allocator)
+                .AddMember("UUID",
+                           json_value_from_string(
+                               cluster_member.mysql_server_uuid, allocator),
+                           allocator)
+                .AddMember("Cluster_name",
+                           json_value_from_string(cluster.name, allocator),
+                           allocator)
+                .AddMember("member_role",
+                           json_value_from_string(member_role, allocator),
+                           allocator)
+                .AddMember("ClusterSet_name",
+                           json_value_from_string(clusterset_name, allocator),
+                           allocator)
+                .AddMember("Cluster_role",
+                           json_value_from_string(cluster_role, allocator),
+                           allocator)
+                .AddMember("label", json_value_from_string(label, allocator),
+                           allocator)
+                .AddMember("tags", json_value_from_string(tags_str, allocator),
+                           allocator)
+            //
+            ,
+            allocator);
+      }
     }
 
     const std::string cluster_name =

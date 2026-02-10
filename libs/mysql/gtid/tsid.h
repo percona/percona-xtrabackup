@@ -1,4 +1,4 @@
-// Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -82,7 +82,7 @@ class Tsid {
   /// @param[in] text Encoded TSID representation terminated with null sign,
   /// GTID separator or UUID set separator if part of the GTID set encoding
   /// @return The number of bytes read, or 0 on error
-  [[NODISCARD]] std::size_t from_cstring(const char *text);
+  [[nodiscard]] std::size_t from_cstring(const char *text);
 
   /// @brief Default TSID separator
   static constexpr auto tsid_separator = ":";
@@ -165,7 +165,7 @@ class Tsid {
   /// @return The number of bytes read or 0. 0 means that an error occurred
   /// (e.g. not enough bytes in the buffer to read the
   /// tsid - corrupted bytes in the buffer).
-  [[NODISCARD]] std::size_t decode_tsid(const unsigned char *stream,
+  [[nodiscard]] std::size_t decode_tsid(const unsigned char *stream,
                                         std::size_t stream_len,
                                         const Gtid_format &gtid_format);
 

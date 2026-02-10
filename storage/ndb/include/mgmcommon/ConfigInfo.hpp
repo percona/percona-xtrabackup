@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -203,8 +203,8 @@ class ConfigInfo {
    */
   static Uint32 getSectionType(const ParamInfo &p) {
     assert(p._type == CI_SECTION);
-    const UintPtr v = reinterpret_cast<UintPtr>(p._default);
-    const Uint32 t = static_cast<Uint32>(v);
+    const auto v = reinterpret_cast<UintPtr>(p._default);
+    const auto t = static_cast<Uint32>(v);
     assert(v == t);
     return t;
   }
@@ -226,7 +226,7 @@ class ConfigInfo {
     ParamInfoIter(const ConfigInfo &info, Uint32 section,
                   Uint32 section_type = ~0);
 
-    const ParamInfo *next(void);
+    const ParamInfo *next();
   };
 
   struct AliasPair {

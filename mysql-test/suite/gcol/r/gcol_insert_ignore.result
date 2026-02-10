@@ -521,7 +521,7 @@ t	CREATE TABLE `t` (
 INSERT IGNORE INTO t (a) VALUES ("2000000000000000000000000000000000000");
 SELECT * FROM t;
 a	b
-2000000000000000000000000000000000000	1.9999999999999998e36
+2000000000000000000000000000000000000	2e36
 DELETE FROM t;
 DELETE IGNORE FROM t;
 CHECK TABLE t;
@@ -11023,20 +11023,20 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ("{}");
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1264	Out of range value for column 'b' at row 1
 SELECT * FROM t;
 a	b
 {}	0000-00-00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect date value: '0000-00-00 00:00:00' for column 'b' at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect date value: '0000-00-00 00:00:00' for column 'b' at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect date value: '0000-00-00 00:00:00' for column 'b' at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
@@ -11052,20 +11052,20 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ('["hello beautiful world"]');
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1264	Out of range value for column 'b' at row 1
 SELECT * FROM t;
 a	b
 ["hello beautiful world"]	0000-00-00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect date value: '0000-00-00 00:00:00' for column 'b' at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect date value: '0000-00-00 00:00:00' for column 'b' at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect date value: '0000-00-00 00:00:00' for column 'b' at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
@@ -11081,20 +11081,20 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ("-1");
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1264	Out of range value for column 'b' at row 1
 SELECT * FROM t;
 a	b
 -1	0000-00-00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect date value: '0000-00-00 00:00:00' for column 'b' at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect date value: '0000-00-00 00:00:00' for column 'b' at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect date value: '0000-00-00 00:00:00' for column 'b' at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
@@ -12031,17 +12031,17 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ("{}");
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
 SELECT * FROM t;
 a	b
 {}	00:00:00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
 test.t	check	status	OK
@@ -12056,17 +12056,17 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ('["hello beautiful world"]');
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
 SELECT * FROM t;
 a	b
 ["hello beautiful world"]	00:00:00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
 test.t	check	status	OK
@@ -12081,17 +12081,17 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ("-1");
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
 SELECT * FROM t;
 a	b
 -1	00:00:00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
+Warning	3156	Invalid JSON value for CAST to TIME from column a at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
 test.t	check	status	OK
@@ -12936,20 +12936,20 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ("{}");
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1264	Out of range value for column 'b' at row 1
 SELECT * FROM t;
 a	b
 {}	0000-00-00 00:00:00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
@@ -12965,20 +12965,20 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ('["hello beautiful world"]');
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1264	Out of range value for column 'b' at row 1
 SELECT * FROM t;
 a	b
 ["hello beautiful world"]	0000-00-00 00:00:00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
@@ -12994,20 +12994,20 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ("-1");
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1264	Out of range value for column 'b' at row 1
 SELECT * FROM t;
 a	b
 -1	0000-00-00 00:00:00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
@@ -13923,20 +13923,20 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ("{}");
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1264	Out of range value for column 'b' at row 1
 SELECT * FROM t;
 a	b
 {}	0000-00-00 00:00:00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
@@ -13952,20 +13952,20 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ('["hello beautiful world"]');
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1264	Out of range value for column 'b' at row 1
 SELECT * FROM t;
 a	b
 ["hello beautiful world"]	0000-00-00 00:00:00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text
@@ -13981,20 +13981,20 @@ t	CREATE TABLE `t` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT IGNORE INTO t (a) VALUES ("-1");
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1264	Out of range value for column 'b' at row 1
 SELECT * FROM t;
 a	b
 -1	0000-00-00 00:00:00
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 DELETE FROM t;
 DELETE IGNORE FROM t;
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column a at row 1
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column a at row 1
 Warning	1292	Incorrect datetime value: '0000-00-00 00:00:00' for column 'b' at row 1
 CHECK TABLE t;
 Table	Op	Msg_type	Msg_text

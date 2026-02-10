@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -62,19 +62,19 @@ size_t webauthn_assertion::calculate_client_response_length() {
         4. Length encoded signature
     5. Length of encoded client data JSON
   */
-  size_t packet_identifier_length = 1;
-  size_t num_assertions = get_num_assertions();
-  size_t total_num_assertions_len = net_length_size(num_assertions);
+  size_t const packet_identifier_length = 1;
+  size_t const num_assertions = get_num_assertions();
+  size_t const total_num_assertions_len = net_length_size(num_assertions);
   size_t total_authdata_len = 0;
   size_t total_signature_len = 0;
   for (size_t num = 0; num < num_assertions; ++num) {
-    size_t authdata_len = get_authdata_len(num);
+    size_t const authdata_len = get_authdata_len(num);
     total_authdata_len += net_length_size(authdata_len) + authdata_len;
-    size_t signature_len = get_signature_len(num);
+    size_t const signature_len = get_signature_len(num);
     total_signature_len += net_length_size(signature_len) + signature_len;
   }
-  size_t client_data_json_len = get_client_data_json_len();
-  size_t total_client_data_json_len =
+  size_t const client_data_json_len = get_client_data_json_len();
+  size_t const total_client_data_json_len =
       net_length_size(client_data_json_len) + client_data_json_len;
   return packet_identifier_length + total_num_assertions_len +
          total_authdata_len + total_signature_len + total_client_data_json_len;
@@ -107,7 +107,7 @@ bool webauthn_assertion::get_signed_challenge(unsigned char **challenge_res,
   pos++;
 
   /* Length encoded num_assertions */
-  size_t num_assertions = get_num_assertions();
+  size_t const num_assertions = get_num_assertions();
   pos = net_store_length(pos, static_cast<unsigned long long>(num_assertions));
 
   /*
@@ -116,18 +116,18 @@ bool webauthn_assertion::get_signed_challenge(unsigned char **challenge_res,
     - Length encoded signature
   */
   for (size_t num = 0; num < num_assertions; ++num) {
-    size_t authdata_len = get_authdata_len(num);
+    size_t const authdata_len = get_authdata_len(num);
     pos = net_store_length(pos, static_cast<unsigned long long>(authdata_len));
     memcpy(pos, get_authdata_ptr(num), authdata_len);
     pos += authdata_len;
-    size_t sig_len = get_signature_len(num);
+    size_t const sig_len = get_signature_len(num);
     pos = net_store_length(pos, static_cast<unsigned long long>(sig_len));
     memcpy(pos, get_signature_ptr(num), sig_len);
     pos += sig_len;
   }
 
   /* Length encoded client data JSON */
-  size_t client_data_json_len = get_client_data_json_len();
+  size_t const client_data_json_len = get_client_data_json_len();
   pos = net_store_length(
       pos, +static_cast<unsigned long long>(client_data_json_len));
   memcpy(pos, get_client_data_json().c_str(), client_data_json_len);
@@ -160,7 +160,7 @@ bool webauthn_assertion::sign_challenge() {
             << fido_dev_info_product_string(curr) << "] Manufacturer=["
             << fido_dev_info_manufacturer_string(curr) << "]\n";
     get_plugin_messages(message.str(), message_type::INFO);
-    std::string s(
+    std::string const s(
         "Please insert FIDO device and perform gesture action for"
         " authentication to complete.");
     get_plugin_messages(s, message_type::INFO);
@@ -206,7 +206,7 @@ void webauthn_assertion::set_client_data(const unsigned char *salt,
                         base64_salt);
 
   /* construct client data JSON object */
-  size_t client_data_len = snprintf(
+  size_t const client_data_len = snprintf(
       reinterpret_cast<char *>(client_data_buf), sizeof(client_data_buf),
       "{\"type\":\"webauthn.get\",\"challenge\":"
       "\"%s\",\"origin\":\"https://%s\",\"crossOrigin\":false}",
@@ -230,7 +230,7 @@ void webauthn_assertion::set_client_data(const unsigned char *salt,
 bool webauthn_assertion::parse_challenge(const unsigned char *challenge) {
   char rp[RELYING_PARTY_ID_LENGTH + 1] = {0};
   unsigned char salt[CHALLENGE_LENGTH + 1] = {0};
-  unsigned char *to = const_cast<unsigned char *>(challenge);
+  auto *to = const_cast<unsigned char *>(challenge);
   if (!to) return true;
   /* skip reading capability flag */
   to++;

@@ -2,14 +2,7 @@
 #
 # ==== Usage ====
 #
-# [--let $use_old_semisync_plugin_names = 1]
 # --source include/rpl/install_semisync_replica.inc
-#
-# Parameters:
-#
-#   $use_old_semisync_plugin_names
-#     By default uses the new-named plugin, semisync_replica.  If this is
-#     set to 1, uses the old-named plugin, semisync_slave.
 
 --let $include_filename= rpl/install_semisync_replica.inc
 --source include/begin_include_file.inc
@@ -22,10 +15,6 @@
 
 --let $_isr_replica = replica
 --let $_isr_library = $SEMISYNC_REPLICA_PLUGIN
-if ($use_old_semisync_plugin_names) {
-  --let $_isr_replica = slave
-  --let $_isr_library = $SEMISYNC_SLAVE_PLUGIN
-}
 
 --source include/rpl/stop_receiver.inc
 

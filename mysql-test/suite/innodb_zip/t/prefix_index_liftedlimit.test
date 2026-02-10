@@ -15,6 +15,7 @@
 
 --disable_query_log
 call mtr.add_suppression(".InnoDB. Compare_key: table=.*, index=.*");
+call mtr.add_suppression("Cannot alter the table .* because the record size will exceed the maximum allowed size for a record .*");
 --enable_query_log
 
 # Save innodb variables

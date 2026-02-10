@@ -2,8 +2,13 @@
 # default value
 
 RESET BINARY LOGS AND GTIDS;
+
 SET @start_global_value = @@global.enforce_gtid_consistency;
 SELECT @start_global_value;
+
+# To verify all the values of enforce_gtid_consistency start with
+# gtid_mode=off and enforce_gtid_consistency=off
+--source include/rpl/set_gtid_mode_off.inc
 
 #
 # exists as global only
@@ -142,6 +147,8 @@ DROP TABLE t1;
 
 set global enforce_gtid_consistency= @start_global_value;
 
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc
 #
 # See binlog_enforce_gtid_consistency.test for a comprehensive test case.
 #

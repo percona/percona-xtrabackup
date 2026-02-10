@@ -1,4 +1,4 @@
-# Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -183,6 +183,7 @@ SET(SYS_SCHEMA_SOURCES
   procedures/ps_setup_show_enabled_consumers.sql
   procedures/ps_setup_show_enabled_instruments.sql
   procedures/ps_truncate_all_tables.sql
+  procedures/revoke_schema_privileges_from_all_accounts_except.sql
   procedures/statement_performance_analyzer.sql
   procedures/table_exists.sql
 

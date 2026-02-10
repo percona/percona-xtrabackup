@@ -5,6 +5,9 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 
+# This test doesn't support GTID as it uses MyISAM
+--source include/rpl/set_gtid_mode_off.inc
+
 # We need InnoDB tables for some of the tests.
 
 # Save the initial number of concurrent sessions.
@@ -6130,3 +6133,5 @@ DROP TABLE t2;
 # Check that all connections opened by test cases in this file are really
 # gone so execution of other tests won't be affected by their presence.
 --source include/wait_until_count_sessions.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

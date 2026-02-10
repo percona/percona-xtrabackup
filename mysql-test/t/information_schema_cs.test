@@ -91,7 +91,7 @@ analyze table t2, t3, t5;
 show table status;
 show full columns from t3 like "a%";
 show full columns from mysql.db like "Insert%";
---replace_result utf8mb3_tolower_ci utf8_bin
+--replace_result utf8mb3_tolower_ci utf8mb3_bin
 show full columns from v1;
 select * from information_schema.COLUMNS where table_name="t1"
 and column_name= "a" order by table_name;
@@ -2276,7 +2276,6 @@ DROP TABLE t1;
 --echo # Bug#18925: subqueries with MIN/MAX functions on INFORMARTION_SCHEMA 
 --echo #
 
---skip_if_hypergraph  # Chooses an extremely slow plan due to lack of indexes, causing the test to time out.
 SELECT t.table_name, c1.column_name
   FROM information_schema.tables t
        INNER JOIN
@@ -2295,7 +2294,7 @@ SELECT t.table_name, c1.column_name
   AND t.table_name NOT LIKE 'INNODB%'
   ORDER BY t.table_name COLLATE utf8mb3_general_ci,
            c1.column_name COLLATE utf8mb3_general_ci;
---skip_if_hypergraph  # Chooses an extremely slow plan due to lack of indexes, causing the test to time out.
+
 SELECT t.table_name, c1.column_name
   FROM information_schema.tables t
        INNER JOIN

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,6 +44,7 @@ class View;
 class Event;
 class Function;
 class Procedure;
+class Library;
 class Void_key;
 class Time_zone;
 class Properties;
@@ -144,6 +145,8 @@ class Schema : virtual public Entity_object {
   virtual Function *create_function(THD *thd) const = 0;
 
   virtual Procedure *create_procedure(THD *thd) const = 0;
+
+  virtual Library *create_library(THD *thd) const = 0;
 
   virtual Table *create_table(THD *thd) const = 0;
 

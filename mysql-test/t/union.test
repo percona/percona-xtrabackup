@@ -495,24 +495,18 @@ insert t1 select a+1, a+b from t1;
 insert t1 select a+1, a+b from t1;
 insert t1 select a+1, a+b from t1;
 FLUSH STATUS;
---skip_if_hypergraph  # Depends on the query plan; all queries use table scans.
 show status like 'Slow_queries';
 select count(*) from t1 where a=7;
---skip_if_hypergraph  # Depends on the query plan; all queries use table scans.
 show status like 'Slow_queries';
 select count(*) from t1 where b=13;
---skip_if_hypergraph  # Depends on the query plan; all queries use table scans.
 show status like 'Slow_queries';
 select count(*) from t1 where b=13 union select count(*) from t1 where a=7;
---skip_if_hypergraph  # Depends on the query plan; all queries use table scans.
 show status like 'Slow_queries';
 select count(*) from t1 where a=7 union select count(*) from t1 where b=13;
---skip_if_hypergraph  # Depends on the query plan; all queries use table scans.
 show status like 'Slow_queries';
 # additional test for examined rows
 flush status;
 select a from t1 where b not in (1,2,3) union select a from t1 where b not in (4,5,6);
---skip_if_hypergraph  # Depends on the query plan; all queries use table scans.
 show status like 'Slow_queries';
 drop table t1;
 
@@ -1450,10 +1444,10 @@ let $query=
 SELECT (SELECT 1 AS foo
         UNION
         SELECT 2
-        ORDER BY COUNT(a)) AS x
+        ORDER BY COUNT(a)
+        LIMIT 1) AS x
 FROM t1;
 
---error ER_AGGREGATE_ORDER_FOR_UNION
 eval $query;
 
 --echo # Subquery, ORDER BY contains set function with outer reference
@@ -2216,15 +2210,12 @@ INSERT INTO t1 SELECT a+1 FROM t1;
 SELECT COUNT(*) FROM t1;
 FLUSH STATUS;
 SELECT * FROM t1 LIMIT 1;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE "HANDLER_READ%";
 FLUSH STATUS;
 SELECT * FROM t1 UNION ALL SELECT * FROM t1 LIMIT 1;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE "HANDLER_READ%";
 FLUSH STATUS;
 SELECT * FROM t1 UNION DISTINCT SELECT * FROM t1 LIMIT 1;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE "HANDLER_READ%";
 
 let $query=
@@ -2234,7 +2225,6 @@ let $query=
 eval EXPLAIN FORMAT=TREE $query;
 FLUSH STATUS;
 eval $query;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE "HANDLER_READ%";
 
 DROP TABLE t1;
@@ -2833,7 +2823,6 @@ CREATE TABLE t1 (
 INSERT INTO t1 VALUES (0,0), (1,1), (2,2);
 ANALYZE TABLE t1;
 
---skip_if_hypergraph  # Other costs with Hypergraph.
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE (SELECT b FROM t1 UNION SELECT b FROM t1)
 UNION ALL SELECT b FROM t1;

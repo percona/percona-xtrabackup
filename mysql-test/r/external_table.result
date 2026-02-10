@@ -1,0 +1,94 @@
+# Test basic CREATE EXTERNAL TABLE syntax
+CREATE EXTERNAL TABLE t1 (id INT);
+ERROR HY000: External storage engine is not specified
+# Test with explicit ENGINE
+CREATE EXTERNAL TABLE t1 (id INT) ENGINE=InnoDB;
+ERROR HY000: The 'InnoDB' storage engine does not support external tables
+# Test with explicit SECONDARY_ENGINE
+CREATE EXTERNAL TABLE t1 (id INT) SECONDARY_ENGINE=NULL;
+ERROR HY000: External storage engine is not specified
+# Test with both engines explicitly set
+CREATE EXTERNAL TABLE t1 (id INT) ENGINE=InnoDB SECONDARY_ENGINE=NULL;
+ERROR HY000: The 'InnoDB' storage engine does not support external tables
+# Test with other table options
+CREATE EXTERNAL TABLE t1 (id INT)
+COMMENT='External table test'
+  AUTO_INCREMENT=100
+ENGINE=InnoDB;
+ERROR HY000: The 'InnoDB' storage engine does not support external tables
+# Test CREATE EXTERNAL TABLE IF NOT EXISTS
+CREATE EXTERNAL TABLE IF NOT EXISTS t1 (id INT);
+ERROR HY000: External storage engine is not specified
+# Test CREATE TEMPORARY EXTERNAL TABLE
+CREATE TEMPORARY EXTERNAL TABLE t1 (id INT);
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'EXTERNAL TABLE t1 (id INT)' at line 1
+# Test CREATE EXTERNAL TABLE LIKE
+CREATE TABLE t_src (id INT, name VARCHAR(50));
+CREATE EXTERNAL TABLE t1 LIKE t_src;
+ERROR HY000: External storage engine is not specified
+DROP TABLE t_src;
+# Test CREATE EXTERNAL TABLE with complex column definitions
+CREATE EXTERNAL TABLE t1 (
+id INT AUTO_INCREMENT PRIMARY KEY,
+name VARCHAR(100) NOT NULL,
+created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+status ENUM('active', 'inactive', 'pending') DEFAULT 'pending',
+data JSON,
+INDEX idx_name (name),
+FULLTEXT idx_data (data)
+);
+ERROR HY000: External storage engine is not specified
+# Test variable overrides prior to syntax testing
+SET SESSION external_table_storage_engine = 'InnoDB';
+ERROR HY000: The 'InnoDB' storage engine does not support external tables
+SET SESSION external_table_secondary_storage_engine = NULL;
+CREATE EXTERNAL TABLE t1 (id INT);
+ERROR HY000: External storage engine is not specified
+# Reset variables
+SET SESSION external_table_storage_engine = DEFAULT;
+SET SESSION external_table_secondary_storage_engine = DEFAULT;
+# Test setting and getting session system variables
+SET SESSION external_table_storage_engine = 'MyISAM';
+ERROR HY000: The 'MyISAM' storage engine does not support external tables
+SET SESSION external_table_secondary_storage_engine = 'MEMORY';
+SELECT @@session.external_table_storage_engine, @@session.external_table_secondary_storage_engine;
+@@session.external_table_storage_engine	@@session.external_table_secondary_storage_engine
+NULL	MEMORY
+# Test error with unknown engine
+SET SESSION external_table_storage_engine = 'NONEXISTENT_ENGINE';
+ERROR 42000: Unknown storage engine 'NONEXISTENT_ENGINE'
+# Test setting to NULL
+SET SESSION external_table_secondary_storage_engine = NULL;
+SELECT @@session.external_table_secondary_storage_engine;
+@@session.external_table_secondary_storage_engine
+NULL
+# Reset session variables to defaults
+SET SESSION external_table_storage_engine = DEFAULT;
+SET SESSION external_table_secondary_storage_engine = DEFAULT;
+SELECT @@session.external_table_storage_engine, @@session.external_table_secondary_storage_engine;
+@@session.external_table_storage_engine	@@session.external_table_secondary_storage_engine
+NULL	NULL
+# Test setting and getting global system variables
+SET GLOBAL external_table_storage_engine = 'MyISAM';
+ERROR HY000: The 'MyISAM' storage engine does not support external tables
+SET GLOBAL external_table_secondary_storage_engine = 'MEMORY';
+SELECT @@global.external_table_storage_engine, @@global.external_table_secondary_storage_engine;
+@@global.external_table_storage_engine	@@global.external_table_secondary_storage_engine
+NULL	MEMORY
+# Test global vs session variables
+SELECT @@global.external_table_storage_engine, @@session.external_table_storage_engine, 
+@@global.external_table_secondary_storage_engine, @@session.external_table_secondary_storage_engine;
+@@global.external_table_storage_engine	@@session.external_table_storage_engine	@@global.external_table_secondary_storage_engine	@@session.external_table_secondary_storage_engine
+NULL	NULL	MEMORY	NULL
+# Reset global variables to defaults
+SET GLOBAL external_table_storage_engine = DEFAULT;
+SET GLOBAL external_table_secondary_storage_engine = DEFAULT;
+# Test command line initialization with valid values
+# restart: --external-table-storage-engine= --external-table-secondary-storage-engine=
+# Check that variables were set correctly from command line
+SELECT @@global.external_table_storage_engine, @@global.external_table_secondary_storage_engine;
+@@global.external_table_storage_engine	@@global.external_table_secondary_storage_engine
+	
+# Final cleanup
+SET GLOBAL external_table_storage_engine = DEFAULT;
+SET GLOBAL external_table_secondary_storage_engine = DEFAULT;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,18 +21,12 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#ifndef MOCK_FIELD_TIMESTAMP_H
-#define MOCK_FIELD_TIMESTAMP_H
+#ifndef MOCK_FIELD_TIMESTAMPF_H
+#define MOCK_FIELD_TIMESTAMPF_H
 
 #include "sql/field.h"
 #include "unittest/gunit/fake_table.h"
 
-/*
-  Strictly speaking not a mock class. Does not expect to be used in a
-  certain way.
-
-  Beware that the class creates manages its own TABLE instance.
-*/
 class Mock_field_timestamp : public Field_timestamp {
   void initialize() {
     table = new Fake_TABLE(this);
@@ -42,22 +36,15 @@ class Mock_field_timestamp : public Field_timestamp {
   }
 
  public:
-  bool store_timestamp_called;
-
-  Mock_field_timestamp(uchar auto_flags_arg)
-      : Field_timestamp(nullptr,         // ptr_arg
-                        0,               // len_arg
-                        nullptr,         // null_ptr_arg
-                        '\0',            // null_bit_arg
-                        auto_flags_arg,  // auto_flags_arg
-                        ""),             // field_name_arg
-        store_timestamp_called(false) {
-    initialize();
-  }
-
-  Mock_field_timestamp()
-      : Field_timestamp(nullptr, 0, nullptr, '\0', NONE, ""),
-        store_timestamp_called(false) {
+  bool store_timestamp_internal_called;
+  Mock_field_timestamp(uchar auto_flags_arg, int scale)
+      : Field_timestamp(nullptr,                     // ptr_arg
+                        nullptr,                     // null_ptr_arg
+                        '\0',                        // null_bit_arg
+                        auto_flags_arg,              // auto_flags_arg
+                        "",                          // field_name_arg
+                        static_cast<uint8>(scale)),  // dec_arg a.k.a. scale.
+        store_timestamp_internal_called(false) {
     initialize();
   }
 
@@ -71,15 +58,13 @@ class Mock_field_timestamp : public Field_timestamp {
 
   /* Averts ASSERT_COLUMN_MARKED_FOR_WRITE assertion. */
   void make_writable() { bitmap_set_bit(table->write_set, field_index()); }
-  void make_readable() { bitmap_set_bit(table->read_set, field_index()); }
 
-  void store_timestamp(const my_timeval *tm) override {
-    make_writable();
-    Field_temporal_with_date_and_time::store_timestamp(tm);
-    store_timestamp_called = true;
+  void store_timestamp_internal(const my_timeval *tm) override {
+    store_timestamp_internal_called = true;
+    return Field_timestamp::store_timestamp_internal(tm);
   }
 
   ~Mock_field_timestamp() override { delete static_cast<Fake_TABLE *>(table); }
 };
 
-#endif  // MOCK_FIELD_TIMESTAMP_H
+#endif  // MOCK_FIELD_TIMESTAMPF_H

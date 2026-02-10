@@ -1,0 +1,73 @@
+#
+# WL#16597: Remove the deprecated host wildcard match behavior of schema and object level grants
+#
+SET @saved_activate_mandatory_roles = @@global.activate_mandatory_roles;
+SET @saved_activate_all_roles_on_login = @@global.activate_all_roles_on_login;
+SET @saved_mandatory_roles = @@global.mandatory_roles;
+SET GLOBAL activate_mandatory_roles = 0;
+SET GLOBAL activate_all_roles_on_login = 0;
+SET GLOBAL mandatory_roles = '';
+CREATE ROLE wl16597_mandatory_role;
+CREATE ROLE wl16597_default_role;
+CREATE ROLE wl16597_ordinary_role;
+CREATE USER wl16597_user@localhost;
+CREATE DATABASE wl16597_db;
+CREATE TABLE wl16597_db.mandatory_role(a INT);
+CREATE TABLE wl16597_db.default_role(a INT);
+CREATE TABLE wl16597_db.ordinary_role(a INT);
+GRANT ALL PRIVILEGES ON wl16597_db.mandatory_role TO wl16597_mandatory_role;
+GRANT ALL PRIVILEGES ON wl16597_db.default_role TO wl16597_default_role;
+GRANT ALL PRIVILEGES ON wl16597_db.ordinary_role TO wl16597_ordinary_role;
+GRANT wl16597_ordinary_role TO wl16597_user@localhost;
+GRANT wl16597_default_role TO wl16597_user@localhost;
+SET DEFAULT ROLE wl16597_default_role TO wl16597_user@localhost;
+SET GLOBAL mandatory_roles = wl16597_mandatory_role;
+# FR1.7: Should not work: mandatory role set, but not enabled
+SELECT * FROM wl16597_db.mandatory_role;
+ERROR 42000: SELECT command denied to user 'wl16597_user'@'localhost' for table 'mandatory_role'
+SET GLOBAL activate_mandatory_roles = 1;
+# FR1.8: Should not work: activate_mandatory_roles only works on new sessions
+SELECT * FROM wl16597_db.mandatory_role;
+ERROR 42000: SELECT command denied to user 'wl16597_user'@'localhost' for table 'mandatory_role'
+# reconnect
+# FR1.6: Should work: activate_mandatory_roles activates wl16597_mandatory_role
+SELECT * FROM wl16597_db.mandatory_role;
+a
+# FR1.6: Should work: activate_mandatory_roles doesn't affect wl16597_default_role
+SELECT * FROM wl16597_db.default_role;
+a
+# FR1.6: Should not work: activate_mandatory_roles doesn't affect wl16597_ordinary_role
+SELECT * FROM wl16597_db.ordinary_role;
+ERROR 42000: SELECT command denied to user 'wl16597_user'@'localhost' for table 'ordinary_role'
+SET GLOBAL activate_all_roles_on_login = 1;
+SET GLOBAL activate_mandatory_roles = 1;
+# FR1.5: Should work: activate_mandatory_roles not relevant with all_roles ON
+SELECT * FROM wl16597_db.mandatory_role;
+a
+# FR1.5: Should work: activate_mandatory_roles not relevant with all_roles ON
+SELECT * FROM wl16597_db.default_role;
+a
+# FR1.6: Should work: activate_mandatory_roles not relevalt with all_roles ON
+SELECT * FROM wl16597_db.ordinary_role;
+a
+SET GLOBAL activate_all_roles_on_login = 1;
+SET GLOBAL activate_mandatory_roles = 0;
+# FR1.5: Should work: activate_mandatory_roles not relevant with all_roles ON
+SELECT * FROM wl16597_db.mandatory_role;
+a
+# FR1.5: Should work: activate_mandatory_roles not relevant with all_roles ON
+SELECT * FROM wl16597_db.default_role;
+a
+# FR1.6: Should work: activate_mandatory_roles not relevalt with all_roles ON
+SELECT * FROM wl16597_db.ordinary_role;
+a
+# Cleanup
+SET GLOBAL activate_mandatory_roles = @saved_activate_mandatory_roles;
+SET GLOBAL activate_all_roles_on_login = @saved_activate_all_roles_on_login;
+SET GLOBAL mandatory_roles = @saved_mandatory_roles;
+DROP USER wl16597_user@localhost;
+DROP ROLE wl16597_mandatory_role;
+DROP ROLE wl16597_default_role;
+DROP ROLE wl16597_ordinary_role;
+DROP DATABASE wl16597_db;
+# End of tests

@@ -39,6 +39,8 @@ ERROR HY000: Set number in debug_set_operations_secondary_overflow_at too high: 
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='0 0 1';
 CREATE TABLE t_0_0_1 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_0_0_1) derived;
 COUNT(*)
@@ -51,6 +53,8 @@ DROP TABLE t_0_0_1;
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='0 0 200';
 CREATE TABLE t_0_0_200 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_0_0_200) derived;
 COUNT(*)
@@ -63,6 +67,8 @@ DROP TABLE t_0_0_200;
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='0 50 20';
 CREATE TABLE t_0_50_20 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_0_50_20) derived;
 COUNT(*)
@@ -79,6 +85,8 @@ ERROR HY: Row number in debug_set_operations_secondary_overflow_at too high: sho
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='0 127 200';
 CREATE TABLE t_0_127_200 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_0_127_200) derived;
 COUNT(*)
@@ -91,6 +99,8 @@ DROP TABLE t_0_127_200;
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='1 0 1';
 CREATE TABLE t_1_0_1 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_1_0_1) derived;
 COUNT(*)
@@ -103,6 +113,8 @@ DROP TABLE t_1_0_1;
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='1 50 20';
 CREATE TABLE t_1_50_20 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_1_50_20) derived;
 COUNT(*)
@@ -120,6 +132,8 @@ ERROR HY: Row number in debug_set_operations_secondary_overflow_at too high: sho
 # Row in last chunk
 SET SESSION debug_set_operations_secondary_overflow_at='1 127 200';
 CREATE TABLE t_1_127_200 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_1_127_200) derived;
 COUNT(*)
@@ -161,6 +175,8 @@ i	d	c
 17	2022-04-30	rabarbra
 18	2022-04-30	abracadabra
 19	2022-04-30	rabarbra
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SELECT JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
 FROM information_schema.optimizer_trace;
 JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
@@ -195,7 +211,7 @@ JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
                     }
                   },
                   {
-                    "spill handling overflow, reverting to index": {
+                    "hash spill handling overflow, reverting to slower method of indexed tmp table. To avoid, try setting set_operations_buffer_size to 524288 or more. To avoid spill to disk, further increase it with a factor of 64 or 128.": {
                       "steps": [
                         {
                           "creating_tmp_table": {
@@ -328,6 +344,8 @@ ERROR HY000: Set number in debug_set_operations_secondary_overflow_at too high: 
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='0 0 1';
 CREATE TABLE t_0_0_1 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_0_0_1) derived;
 COUNT(*)
@@ -340,6 +358,8 @@ DROP TABLE t_0_0_1;
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='0 0 200';
 CREATE TABLE t_0_0_200 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_0_0_200) derived;
 COUNT(*)
@@ -352,6 +372,8 @@ DROP TABLE t_0_0_200;
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='0 50 20';
 CREATE TABLE t_0_50_20 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_0_50_20) derived;
 COUNT(*)
@@ -368,6 +390,8 @@ ERROR HY: Row number in debug_set_operations_secondary_overflow_at too high: sho
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='0 127 200';
 CREATE TABLE t_0_127_200 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_0_127_200) derived;
 COUNT(*)
@@ -380,6 +404,8 @@ DROP TABLE t_0_127_200;
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='1 0 1';
 CREATE TABLE t_1_0_1 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_1_0_1) derived;
 COUNT(*)
@@ -392,6 +418,8 @@ DROP TABLE t_1_0_1;
 # Compare old approach (no hashing) with hashing w/spill and secondary overflow
 SET SESSION debug_set_operations_secondary_overflow_at='1 50 20';
 CREATE TABLE t_1_50_20 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_1_50_20) derived;
 COUNT(*)
@@ -409,6 +437,8 @@ ERROR HY: Row number in debug_set_operations_secondary_overflow_at too high: sho
 # Row in last chunk
 SET SESSION debug_set_operations_secondary_overflow_at='1 127 200';
 CREATE TABLE t_1_127_200 AS SELECT * FROM t INTERSECT SELECT * FROM t;
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SET SESSION optimizer_switch = 'hash_set_operations=off';
 SELECT COUNT(*) FROM (SELECT * FROM no_hashing EXCEPT ALL SELECT * FROM t_1_127_200) derived;
 COUNT(*)
@@ -450,6 +480,8 @@ i	d	c
 17	2022-04-30	rabarbra
 18	2022-04-30	abracadabra
 19	2022-04-30	rabarbra
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SELECT JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
 FROM information_schema.optimizer_trace;
 JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
@@ -484,7 +516,7 @@ JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
                     }
                   },
                   {
-                    "spill handling overflow, reverting to index": {
+                    "hash spill handling overflow, reverting to slower method of indexed tmp table. To avoid, try setting set_operations_buffer_size to 524288 or more. To avoid spill to disk, further increase it with a factor of 64 or 128.": {
                       "steps": [
                         {
                           "creating_tmp_table": {

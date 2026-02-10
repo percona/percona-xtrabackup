@@ -106,7 +106,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t2)
-binlog.000001	#	Update_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Update_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Query	#	#	COMMIT
 delete from t1;
 delete from t2;
@@ -119,7 +119,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t2)
-binlog.000001	#	Update_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Update_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Query	#	#	COMMIT
 drop table t1, t2;
 set @@session.binlog_format= @sav_binlog_format;

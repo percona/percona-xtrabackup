@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -130,6 +130,10 @@ void dict_hdr_get_new_id(table_id_t *table_id, space_index_t *index_id,
   if (index_id) {
     id = mach_read_from_8(dict_hdr + DICT_HDR_INDEX_ID);
     id++;
+    DBUG_EXECUTE_IF(
+        "simulate_index_id_exceed_uint32",
+        constexpr ib_id_t max_uint32 = 0xFFFFFFFF;
+        if (id < max_uint32) { id = max_uint32; });
     mlog_write_ull(dict_hdr + DICT_HDR_INDEX_ID, id, &mtr);
     *index_id = id;
   }
@@ -148,14 +152,14 @@ void dict_hdr_get_new_id(table_id_t *table_id, space_index_t *index_id,
 
 /** Writes the current value of the row id counter to the dictionary header file
  page. */
-void dict_hdr_flush_row_id(void) {
+void dict_sys_t::dict_hdr_flush_row_id() {
   dict_hdr_t *dict_hdr;
   row_id_t id;
   mtr_t mtr;
 
   ut_ad(dict_sys_mutex_own());
 
-  id = dict_sys->row_id;
+  id = dict_sys->row_id.load();
 
   mtr_start(&mtr);
 
@@ -202,7 +206,7 @@ static bool dict_hdr_create(mtr_t *mtr) /*!< in: mtr */
 /** Initializes the data dictionary memory structures when the database is
  started. This function is also called when the data dictionary is created.
  @return DB_SUCCESS or error code. */
-dberr_t dict_boot(void) {
+dberr_t dict_boot() {
   dict_hdr_t *dict_hdr;
   mtr_t mtr;
   dberr_t err = DB_SUCCESS;
@@ -225,197 +229,10 @@ dberr_t dict_boot(void) {
   ..._MARGIN, it will immediately be updated to the disk-based
   header. */
 
-  dict_sys->row_id =
+  dict_sys->row_id.store(
       DICT_HDR_ROW_ID_WRITE_MARGIN +
       ut_uint64_align_up(mach_read_from_8(dict_hdr + DICT_HDR_ROW_ID),
-                         DICT_HDR_ROW_ID_WRITE_MARGIN);
-
-  /* For upgrading, we need to load the old InnoDB internal SYS_*
-  tables. */
-  if (srv_is_upgrade_mode) {
-    dict_table_t *table;
-    dict_index_t *index;
-    mem_heap_t *heap;
-
-    /* Be sure these constants do not ever change.  To avoid bloat,
-    only check the *NUM_FIELDS* in each table */
-    static_assert(DICT_NUM_COLS__SYS_TABLES == 8);
-    static_assert(DICT_NUM_FIELDS__SYS_TABLES == 10);
-    static_assert(DICT_NUM_FIELDS__SYS_TABLE_IDS == 2);
-    static_assert(DICT_NUM_COLS__SYS_COLUMNS == 7);
-    static_assert(DICT_NUM_FIELDS__SYS_COLUMNS == 9);
-    static_assert(DICT_NUM_COLS__SYS_INDEXES == 8);
-    static_assert(DICT_NUM_FIELDS__SYS_INDEXES == 10);
-    static_assert(DICT_NUM_COLS__SYS_FIELDS == 3);
-    static_assert(DICT_NUM_FIELDS__SYS_FIELDS == 5);
-    static_assert(DICT_NUM_COLS__SYS_FOREIGN == 4);
-    static_assert(DICT_NUM_FIELDS__SYS_FOREIGN == 6);
-    static_assert(DICT_NUM_FIELDS__SYS_FOREIGN_FOR_NAME == 2);
-    static_assert(DICT_NUM_COLS__SYS_FOREIGN_COLS == 4);
-    static_assert(DICT_NUM_FIELDS__SYS_FOREIGN_COLS == 6);
-
-    heap = mem_heap_create(450, UT_LOCATION_HERE);
-
-    /* Insert into the dictionary cache the descriptions of the basic
-    system tables */
-    table = dict_mem_table_create("SYS_TABLES", DICT_HDR_SPACE, 8, 0, 0, 0, 0);
-
-    dict_mem_table_add_col(table, heap, "NAME", DATA_BINARY, 0,
-                           MAX_FULL_NAME_LEN, true);
-    dict_mem_table_add_col(table, heap, "ID", DATA_BINARY, 0, 8, true);
-    /* ROW_FORMAT = (N_COLS >> 31) ? COMPACT : REDUNDANT */
-    dict_mem_table_add_col(table, heap, "N_COLS", DATA_INT, 0, 4, true);
-    /* The low order bit of TYPE is always set to 1.  If ROW_FORMAT
-    is not REDUNDANT or COMPACT, this field matches table->flags. */
-    dict_mem_table_add_col(table, heap, "TYPE", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "MIX_ID", DATA_BINARY, 0, 0, true);
-    /* MIX_LEN may contain additional table flags when
-    ROW_FORMAT!=REDUNDANT.  Currently, these flags include
-    DICT_TF2_TEMPORARY. */
-    dict_mem_table_add_col(table, heap, "MIX_LEN", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "CLUSTER_NAME", DATA_BINARY, 0, 0,
-                           true);
-    dict_mem_table_add_col(table, heap, "SPACE", DATA_INT, 0, 4, true);
-
-    table->id = DICT_TABLES_ID;
-
-    dict_table_add_system_columns(table, heap);
-    dict_sys_mutex_enter();
-    dict_table_add_to_cache(table, false);
-    dict_sys_mutex_exit();
-    dict_sys->sys_tables = table;
-    mem_heap_empty(heap);
-
-    index = dict_mem_index_create("SYS_TABLES", "CLUST_IND", DICT_HDR_SPACE,
-                                  DICT_UNIQUE | DICT_CLUSTERED, 1);
-
-    index->add_field("NAME", 0, true);
-
-    index->id = DICT_TABLES_ID;
-
-    err = dict_index_add_to_cache(
-        table, index,
-        mtr_read_ulint(dict_hdr + DICT_HDR_TABLES, MLOG_4BYTES, &mtr), false);
-    ut_a(err == DB_SUCCESS);
-
-    /*-------------------------*/
-    index = dict_mem_index_create("SYS_TABLES", "ID_IND", DICT_HDR_SPACE,
-                                  DICT_UNIQUE, 1);
-    index->add_field("ID", 0, true);
-
-    index->id = DICT_TABLE_IDS_ID;
-
-    err = dict_index_add_to_cache(
-        table, index,
-        mtr_read_ulint(dict_hdr + DICT_HDR_TABLE_IDS, MLOG_4BYTES, &mtr),
-        false);
-    ut_a(err == DB_SUCCESS);
-
-    /*-------------------------*/
-    table = dict_mem_table_create("SYS_COLUMNS", DICT_HDR_SPACE, 7, 0, 0, 0, 0);
-
-    dict_mem_table_add_col(table, heap, "TABLE_ID", DATA_BINARY, 0, 8, true);
-    dict_mem_table_add_col(table, heap, "POS", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "NAME", DATA_BINARY, 0, 0, true);
-    dict_mem_table_add_col(table, heap, "MTYPE", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "PRTYPE", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "LEN", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "PREC", DATA_INT, 0, 4, true);
-
-    table->id = DICT_COLUMNS_ID;
-
-    dict_table_add_system_columns(table, heap);
-    dict_sys_mutex_enter();
-    dict_table_add_to_cache(table, false);
-    dict_sys_mutex_exit();
-    dict_sys->sys_columns = table;
-    mem_heap_empty(heap);
-
-    index = dict_mem_index_create("SYS_COLUMNS", "CLUST_IND", DICT_HDR_SPACE,
-                                  DICT_UNIQUE | DICT_CLUSTERED, 2);
-
-    index->add_field("TABLE_ID", 0, true);
-    index->add_field("POS", 0, true);
-
-    index->id = DICT_COLUMNS_ID;
-
-    err = dict_index_add_to_cache(
-        table, index,
-        mtr_read_ulint(dict_hdr + DICT_HDR_COLUMNS, MLOG_4BYTES, &mtr), false);
-    ut_a(err == DB_SUCCESS);
-
-    /*-------------------------*/
-    table = dict_mem_table_create("SYS_INDEXES", DICT_HDR_SPACE,
-                                  DICT_NUM_COLS__SYS_INDEXES, 0, 0, 0, 0);
-
-    dict_mem_table_add_col(table, heap, "TABLE_ID", DATA_BINARY, 0, 8, true);
-    dict_mem_table_add_col(table, heap, "ID", DATA_BINARY, 0, 8, true);
-    dict_mem_table_add_col(table, heap, "NAME", DATA_BINARY, 0, 0, true);
-    dict_mem_table_add_col(table, heap, "N_FIELDS", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "TYPE", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "SPACE", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "PAGE_NO", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "MERGE_THRESHOLD", DATA_INT, 0, 4,
-                           true);
-
-    table->id = DICT_INDEXES_ID;
-
-    dict_table_add_system_columns(table, heap);
-    dict_sys_mutex_enter();
-    dict_table_add_to_cache(table, false);
-    dict_sys_mutex_exit();
-    dict_sys->sys_indexes = table;
-    mem_heap_empty(heap);
-
-    index = dict_mem_index_create("SYS_INDEXES", "CLUST_IND", DICT_HDR_SPACE,
-                                  DICT_UNIQUE | DICT_CLUSTERED, 2);
-
-    index->add_field("TABLE_ID", 0, true);
-    index->add_field("ID", 0, true);
-
-    index->id = DICT_INDEXES_ID;
-
-    err = dict_index_add_to_cache(
-        table, index,
-        mtr_read_ulint(dict_hdr + DICT_HDR_INDEXES, MLOG_4BYTES, &mtr), false);
-    ut_a(err == DB_SUCCESS);
-
-    /*-------------------------*/
-    table = dict_mem_table_create("SYS_FIELDS", DICT_HDR_SPACE, 3, 0, 0, 0, 0);
-
-    dict_mem_table_add_col(table, heap, "INDEX_ID", DATA_BINARY, 0, 8, true);
-    dict_mem_table_add_col(table, heap, "POS", DATA_INT, 0, 4, true);
-    dict_mem_table_add_col(table, heap, "COL_NAME", DATA_BINARY, 0, 0, true);
-
-    table->id = DICT_FIELDS_ID;
-
-    dict_table_add_system_columns(table, heap);
-    dict_sys_mutex_enter();
-    dict_table_add_to_cache(table, false);
-    dict_sys_mutex_exit();
-    dict_sys->sys_fields = table;
-    mem_heap_free(heap);
-
-    index = dict_mem_index_create("SYS_FIELDS", "CLUST_IND", DICT_HDR_SPACE,
-                                  DICT_UNIQUE | DICT_CLUSTERED, 2);
-
-    index->add_field("INDEX_ID", 0, true);
-    index->add_field("POS", 0, true);
-
-    index->id = DICT_FIELDS_ID;
-
-    err = dict_index_add_to_cache(
-        table, index,
-        mtr_read_ulint(dict_hdr + DICT_HDR_FIELDS, MLOG_4BYTES, &mtr), false);
-    ut_a(err == DB_SUCCESS);
-
-    dict_sys_mutex_enter();
-    dict_load_sys_table(dict_sys->sys_tables);
-    dict_load_sys_table(dict_sys->sys_columns);
-    dict_load_sys_table(dict_sys->sys_indexes);
-    dict_load_sys_table(dict_sys->sys_fields);
-    dict_sys_mutex_exit();
-  }
+                         DICT_HDR_ROW_ID_WRITE_MARGIN));
 
   mtr_commit(&mtr);
 
@@ -438,7 +255,7 @@ dberr_t dict_boot(void) {
 
 /** Creates and initializes the data dictionary at the server bootstrap.
  @return DB_SUCCESS or error code. */
-dberr_t dict_create(void) {
+dberr_t dict_create() {
   mtr_t mtr;
 
   mtr_start(&mtr);

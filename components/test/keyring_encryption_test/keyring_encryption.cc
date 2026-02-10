@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -65,13 +65,13 @@ class Keyring_encryption_test_setup {
 
 int main(int argc, char **argv) {
   /* Initialization */
-  Keyring_encryption_test_setup keyring_encryption_test_setup(argv[0]);
+  Keyring_encryption_test_setup const keyring_encryption_test_setup(argv[0]);
   DBUG_TRACE;
   DBUG_PROCESS(argv[0]);
   constexpr int exit_status = EXIT_FAILURE;
 
   int exit_code;
-  if (process_options(&argc, &argv, exit_code) == false) {
+  if (!process_options(&argc, &argv, exit_code)) {
     std::cerr << "Error processing options" << std::endl;
     return exit_status;
   }

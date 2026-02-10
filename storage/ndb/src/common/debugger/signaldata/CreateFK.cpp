@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ bool printCREATE_FK_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const CreateFKReq *sig = (const CreateFKReq *)theData;
+  const auto *sig = (const CreateFKReq *)theData;
   fprintf(output, " clientData: %u", sig->clientData);
   fprintf(output, " clientRef: 0x%x", sig->clientRef);
   fprintf(output, " requestInfo: %x", sig->requestInfo);
@@ -50,7 +50,7 @@ bool printCREATE_FK_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const CreateFKRef *sig = (const CreateFKRef *)theData;
+  const auto *sig = (const CreateFKRef *)theData;
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " transId: 0x%x", sig->transId);
@@ -70,7 +70,7 @@ bool printCREATE_FK_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const CreateFKConf *sig = (const CreateFKConf *)theData;
+  const auto *sig = (const CreateFKConf *)theData;
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " transId: 0x%x", sig->transId);

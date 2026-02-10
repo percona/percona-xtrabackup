@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -54,14 +54,14 @@ class TransporterReceiveHandleKernel : public TransporterReceiveHandle {
 
   void assign_trpman(void *trpman) { m_trpman = trpman; }
   /* TransporterCallback interface. */
-  bool deliver_signal(SignalHeader *const header, Uint8 prio,
-                      TransporterError &error_code, Uint32 *const signalData,
+  bool deliver_signal(SignalHeader *header, Uint8 prio,
+                      TransporterError &error_code, Uint32 *signalData,
                       LinearSectionPtr ptr[3]) override;
   void reportReceiveLen(NodeId nodeId, Uint32 count, Uint64 bytes) override;
   void reportConnect(NodeId nodeId) override;
   void reportDisconnect(NodeId nodeId, Uint32 errNo) override;
   void reportError(NodeId nodeId, TransporterError errorCode,
-                   const char *info = 0) override;
+                   const char *info = nullptr) override;
   void transporter_recv_from(NodeId node) override;
   int checkJobBuffer() override;
   ~TransporterReceiveHandleKernel() override {}

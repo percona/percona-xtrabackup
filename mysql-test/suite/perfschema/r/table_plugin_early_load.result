@@ -9,6 +9,10 @@ Pattern "Plugin pfs_example_plugin_employee reported: 'Error returned from add_t
 Pattern "Plugin 'pfs_example_plugin_employee' init function returned error." found
 # Install pfs_example_plugin_employee plugin after server is started.
 INSTALL PLUGIN pfs_example_plugin_employee SONAME 'pfs_example_plugin_employee.xxx';
+#
+# WL#16574: Deprecate the keyring plugin API
+#
+include/assert_grep.inc [FR1: Test for --early-plugin-load deprecation]
 ###########
 # CLEANUP #
 ###########

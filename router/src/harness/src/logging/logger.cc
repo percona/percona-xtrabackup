@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,9 @@
 */
 
 #include "mysql/harness/logging/logger.h"
+
+#include <mutex>
+
 #include "dim.h"
 #include "mysql/harness/logging/handler.h"
 #include "mysql/harness/logging/registry.h"
@@ -101,7 +104,11 @@ void Logger::lazy_handle(LogLevel record_level,
 }
 
 bool DomainLogger::init_logger() const {
-  if (logger_) return true;
+  if (logger_ready_.load()) return true;
+
+  std::lock_guard lck(logger_mtx_);
+
+  if (logger_ready_.load()) return true;
 
   // if there is no DIM, don't log anything.
   auto &dim = mysql_harness::DIM::instance();
@@ -110,6 +117,7 @@ bool DomainLogger::init_logger() const {
   mysql_harness::logging::Registry &registry = dim.get_LoggingRegistry();
 
   logger_ = registry.get_logger_or_default(domain_);
+  logger_ready_.store(true);
 
   return true;
 }

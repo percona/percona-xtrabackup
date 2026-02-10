@@ -3,6 +3,9 @@
 # is just a view over INFORMATION_SCHEMA.APPLICABLE_ROLES listing only roles
 # with IS_GRANTABLE='Yes'.
 
+SET @save_activate_mandatory_roles = @@global.activate_mandatory_roles;
+SET GLOBAL activate_mandatory_roles = 0;
+
 --echo # SETUP SCHEMA
 --source suite/information_schema/include/roles_schema.inc
 
@@ -164,3 +167,5 @@ DROP ROLE r1;
 
 --echo # Cleanup
 --source suite/information_schema/include/roles_schema_clean.inc
+
+SET global activate_mandatory_roles = @save_activate_mandatory_roles;

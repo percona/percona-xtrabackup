@@ -1,0 +1,43 @@
+--source include/have_ndb.inc
+--source include/have_log_bin.inc
+--source include/have_ndb_debug.inc
+
+# Run standard _lsu test, but with error injection
+# to test protocol upgrade code.
+
+--echo Error insert to simulate subscription setup
+--echo upgrade
+
+--exec $NDB_MGM -c$NDB_CONNECTSTRING_SLAVE -e 'ALL ERROR 6228'
+
+--echo Cause Replica MySQLDs to reconnect
+--exec $NDB_MGM -c$NDB_CONNECTSTRING_SLAVE -e 'ALL DUMP 900 49'
+--exec $NDB_MGM -c$NDB_CONNECTSTRING_SLAVE -e 'ALL DUMP 900 16'
+--exec $NDB_MGM -c$NDB_CONNECTSTRING_SLAVE -e 'ALL DUMP 900 32'
+
+#--echo Dump Subscription states to cluster log
+#--sleep 10
+#--exec $NDB_MGM -c$NDB_CONNECTSTRING_SLAVE -e 'ALL DUMP 8012'
+
+--echo Run log-replica-updates test
+--source suite/ndb_rpl/t/ndb_rpl_slave_lsu.test
+
+--echo Cleanup
+--exec $NDB_MGM -c$NDB_CONNECTSTRING_SLAVE -e 'ALL ERROR 0'
+--exec $NDB_MGM -c$NDB_CONNECTSTRING_SLAVE -e 'ALL DUMP 900 49'
+--exec $NDB_MGM -c$NDB_CONNECTSTRING_SLAVE -e 'ALL DUMP 900 16'
+--exec $NDB_MGM -c$NDB_CONNECTSTRING_SLAVE -e 'ALL DUMP 900 32'
+
+--echo Get MTR to ignore disconnect warnings
+--connect srv_slave
+--source include/ndb_not_readonly.inc
+call mtr.add_suppression("cluster disconnect An incident event has been written");
+--connect srv_slave1
+--source include/ndb_not_readonly.inc
+call mtr.add_suppression("cluster disconnect An incident event has been written");
+--connect srv_slave2
+--source include/ndb_not_readonly.inc
+call mtr.add_suppression("cluster disconnect An incident event has been written");
+
+--echo Done
+

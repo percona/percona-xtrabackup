@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,7 @@ bool printRESTORE_LCP_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     assert(false);
     return false;
   }
-  const RestoreLcpReq *const sig = (const RestoreLcpReq *)theData;
+  const auto *const sig = (const RestoreLcpReq *)theData;
   fprintf(output, "senderData: H'%.8x, senderRef: H'%.8x, lcpNo: %u\n",
           sig->senderData, sig->senderRef, sig->lcpNo);
   fprintf(output,
@@ -43,7 +43,7 @@ bool printRESTORE_LCP_REQ(FILE *output, const Uint32 *theData, Uint32 len,
 
 bool printRESTORE_LCP_REF(FILE *output, const Uint32 *theData, Uint32 len,
                           Uint16 /*receiverBlockNo*/) {
-  const RestoreLcpRef *const sig = (const RestoreLcpRef *)theData;
+  const auto *const sig = (const RestoreLcpRef *)theData;
   fprintf(output, "senderData: H'%.8x, senderRef: H'%.8x, errorCode: %u\n",
           sig->senderData, sig->senderRef, sig->errorCode);
   for (Uint32 i = 3; i < len; i++) {
@@ -59,7 +59,7 @@ bool printRESTORE_LCP_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     assert(false);
     return false;
   }
-  const RestoreLcpConf *const sig = (const RestoreLcpConf *)theData;
+  const auto *const sig = (const RestoreLcpConf *)theData;
   fprintf(output, "senderData: H'%.8x, senderRef: H'%.8x, restoredLcpId: %u",
           sig->senderData, sig->senderRef, sig->restoredLcpId);
   fprintf(output, ", restoredLocalLcpId: %u\n", sig->restoredLocalLcpId);

@@ -1,0 +1,7 @@
+#
+# Bug#37162611: mysqld crashes during upgrade when adding an event to sys schema
+#
+# Running mysql_upgrade with debug flag to induce EVENT statement when
+# upgrading sys schema
+# restart:--upgrade=FORCE --debug=+d,try_event_in_fix_sys_schema
+# restart:

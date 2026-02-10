@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2024, Oracle and/or its affiliates.
+   Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,8 +26,8 @@
 package testsuite.clusterj;
 
 /*
-  The purpose of the ClearSmokeTest is to ensure that the SessionFactory
-  will be closed at the conclusion of the test suite, so that the NDB API
+  The purpose of the ClearSmokeTest is to ensure that all SessionFactories
+  are closed at the conclusion of the test suite, so that the NDB API
   can shut down cleanly.
 */
 
@@ -36,16 +36,13 @@ public class ClearSmokeTest extends AbstractClusterJTest {
   public void test() {
   }
 
-  public void localSetUp() {
-    createSessionFactory();
-    session = sessionFactory.getSession();
-  }
-
   @Override
   public void localTearDown() {
-    session.close();
-    session = null;
-    sessionFactory.close();
+    if(session != null) {
+        session.close();
+        session = null;
+    }
+    closeAllExistingSessionFactories();
   }
 }
 

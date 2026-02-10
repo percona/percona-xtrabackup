@@ -487,26 +487,26 @@ insert into t1 (a,b,c,d,t) values ('a',1110,'a',1,@v1);
 insert into t1 (a,b,c,d,t) values ('b',1110,'a',2,@v2);
 insert into t1 (a,b,c,d,t) values ('a',1110,'b',3,@v3);
 insert into t1 (a,b,c,d,t) values ('b',1110,'b',4,@v4);
-select a,b,c,d,sha1(t) from t1 order by c,a;
+select a,b,c,d,sha2(t,256) from t1 order by c,a;
 
-select a,b,c,d,sha1(t) from t1 where a='a' and b=1110 and c='a';
-select a,b,c,d,sha1(t) from t1 where a='a' and b=1110 and c='b';
+select a,b,c,d,sha2(t,256) from t1 where a='a' and b=1110 and c='a';
+select a,b,c,d,sha2(t,256) from t1 where a='a' and b=1110 and c='b';
 
 update t1 set t=@v4 where a='b' and b=1110 and c='a';
 update t1 set t=@v2 where a='b' and b=1110 and c='b';
-select a,b,c,d,sha1(t) from t1 order by c,a;
+select a,b,c,d,sha2(t,256) from t1 order by c,a;
 
 update t1 set t=@v2 where d=2;
 update t1 set t=@v4 where d=4;
-select a,b,c,d,sha1(t) from t1 order by c,a;
+select a,b,c,d,sha2(t,256) from t1 order by c,a;
 
 update t1 set t=@v4 where a='b' and c='a';
 update t1 set t=@v2 where a='b' and c='b';
-select a,b,c,d,sha1(t) from t1 order by c,a;
+select a,b,c,d,sha2(t,256) from t1 order by c,a;
 
 update t1 set t=@v2 where b+d=1112;
 update t1 set t=@v4 where b+d=1114;
-select a,b,c,d,sha1(t) from t1 order by c,a;
+select a,b,c,d,sha2(t,256) from t1 order by c,a;
 
 delete from t1 where a='a' and b=1110 and c='a';
 delete from t1 where a='b' and c='a';
@@ -584,8 +584,8 @@ set @stuff = '1234567890';
 insert into t1 values (0, repeat(@stuff, 2000));
 
 # Check that we get the same data back that we put in
-select sha1(repeat(@stuff, 2000));
-select sha1(giga) from t1;
+select sha2(repeat(@stuff, 2000),256);
+select sha2(giga,256) from t1;
 select (giga = repeat(@stuff, 2000)) from t1 where a=0;
 
 drop table t1;
@@ -727,6 +727,21 @@ explain update `t1` set `a`=1 where `a`!= 1;
 update `t1` set `a`=1 where `a`!= 1;
 select * from t1;
 
+drop table t1;
+
+# Bug#37201818
+
+let $n=256;
+let $i=1;
+let $columns=pk INT PRIMARY KEY;
+while ($i <= $n) {
+  let $columns=$columns, blob$i BLOB COMMENT "NDB_COLUMN=BLOB_INLINE_SIZE=100";
+  inc $i;
+}
+echo create table t1(256 blobs) engine=ndbcluster;
+disable_query_log;
+eval create table t1($columns) engine=ndbcluster;
+enable_query_log;
 drop table t1;
 
 --echo End of 5.6 tests

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,6 @@
 #include "mysql/containers/buffers/grow_calculator.h"     // Grow_calculator
 #include "mysql/containers/buffers/grow_status.h"         // Grow_status
 #include "mysql/containers/buffers/rw_buffer_sequence.h"  // Rw_buffer_sequence
-#include "mysql/utils/nodiscard.h"                        // NODISCARD
 
 #include "mysql/binlog/event/wrapper_functions.h"  // BAPI_TRACE
 
@@ -179,7 +178,7 @@ class Managed_buffer_sequence
   /// @retval out_of_memory The request could only be fulfilled by
   /// allocating more memory, but memory allocation failed.  The
   /// object is unchanged.
-  [[NODISCARD]] Grow_status reserve_write_size(Size_t requested_write_size) {
+  [[nodiscard]] Grow_status reserve_write_size(Size_t requested_write_size) {
     auto read_size = this->read_part().size();
     if (requested_write_size > std::numeric_limits<Size_t>::max() - read_size)
       return Grow_status::exceeds_max_size;
@@ -210,7 +209,7 @@ class Managed_buffer_sequence
   /// @retval out_of_memory The request could only be fulfilled by
   /// allocating more memory, but memory allocation failed.  The
   /// object is unchanged.
-  [[NODISCARD]] Grow_status reserve_total_size(Size_t requested_total_size) {
+  [[nodiscard]] Grow_status reserve_total_size(Size_t requested_total_size) {
     auto work = [&] {
       auto capacity = this->capacity();
       auto [error, new_capacity] =
@@ -317,7 +316,7 @@ class Managed_buffer_sequence
   /// @retval exceeds_max_size The required size would exceed the
   /// maximum specified by the Grow_calculator.  This object is
   /// unchanged.
-  [[NODISCARD]] Grow_status write(const Char_t *data, Size_t size) {
+  [[nodiscard]] Grow_status write(const Char_t *data, Size_t size) {
     auto grow_status = this->reserve_write_size(size);
     if (grow_status != Grow_status::success) return grow_status;
     const auto *remaining_data = data;
@@ -416,7 +415,7 @@ class Managed_buffer_sequence
   ///
   /// @retval false The operation succeeded, and the object now has at
   /// least the requested size.
-  [[NODISCARD]] bool allocate_and_add_buffer(Size_t size) {
+  [[nodiscard]] bool allocate_and_add_buffer(Size_t size) {
     // Allocate the data.
     auto data = m_char_allocator.allocate(size);
     if (data == nullptr) {
@@ -444,7 +443,7 @@ class Managed_buffer_sequence
   ///
   /// @retval true An out of memory error occurred when growing the
   /// container.
-  [[NODISCARD]] bool add_buffer(Char_t *buffer_data, Size_t buffer_size) {
+  [[nodiscard]] bool add_buffer(Char_t *buffer_data, Size_t buffer_size) {
     BAPI_TRACE;
     auto [write_begin, write_end, write_size] =
         this->get_boundaries(this->write_part());

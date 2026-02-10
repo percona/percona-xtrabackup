@@ -6,7 +6,7 @@
 
 --source include/not_group_replication_plugin.inc
 --source include/no_valgrind_without_big.inc
---source include/not_replica_parallel_workers.inc
+--source include/have_nodebug.inc
 --source include/rpl/init_source_replica.inc
 --connection slave
 --source include/rpl/stop_replica.inc
@@ -34,7 +34,8 @@ call mtr.add_suppression("Failed to create or recover replication info repositor
 call mtr.add_suppression("An unexpected event sequence was detected by the IO thread");
 call mtr.add_suppression("GTID_LOG_EVENT.* is not expected in an event stream");
 call mtr.add_suppression("Failed to initialize the connection metadata structure for channel ''");
-
+call mtr.add_suppression("Replica SQL.*Relay log read failure: Could not parse relay log event entry.*");
+call mtr.add_suppression("Replica SQL.*The replica coordinator and worker threads are stopped.*");
 ###############################################################################
 #           Checking if replication can fail safely (SQL Thread)
 ###############################################################################
@@ -60,8 +61,8 @@ ALTER TABLE mysql.slave_relay_log_info DROP COLUMN Number_of_workers;
 --connection master
 INSERT INTO t_innodb VALUES (1), (2), (3);
 --connection slave
-# ER_COL_COUNT_DOESNT_MATCH_CORRUPTED_V2 1805
---let $slave_sql_errno= 1805
+# ER_REPLICA_RELAY_LOG_READ_FAILURE 13121
+--let $slave_sql_errno= 13121
 --let $show_slave_sql_error= 1
 --source include/rpl/wait_for_applier_error.inc
 --source include/rpl/stop_receiver.inc
@@ -100,8 +101,8 @@ ALTER TABLE mysql.slave_relay_log_info DROP COLUMN Number_of_workers;
 --connection master
 INSERT INTO t_innodb VALUES (1), (2), (3);
 --connection slave
-# ER_COL_COUNT_DOESNT_MATCH_CORRUPTED_V2 1805
---let $slave_sql_errno= 1805
+# ER_REPLICA_RELAY_LOG_READ_FAILURE 13121
+--let $slave_sql_errno= 13121
 --let $show_slave_sql_error= 1
 --source include/rpl/wait_for_applier_error.inc
 --source include/rpl/stop_receiver.inc
@@ -156,7 +157,9 @@ INSERT INTO t_innodb VALUES (1), (2), (3);
 --let $slave_io_errno= 13117
 --let $show_slave_io_error= 1
 --source include/rpl/wait_for_receiver_error.inc
+--let $slave_sql_errno= 1756
 --source include/rpl/stop_applier.inc
+
 
 #
 #  2 - Shows that it is possible to restart the server although replication

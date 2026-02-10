@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,9 +32,13 @@
 
 #include "my_config.h"
 
-#include <errno.h>
-#include <stddef.h>
 #include <sys/types.h>
+
+#include <algorithm>  // IWYU pragma: keep std::min
+#include <cerrno>
+#include <cstdint>
+#include <cstdlib>  // IWYU pragma: keep rand
+#include <cstring>  // IWYU pragma: keep strstr
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -42,15 +46,12 @@
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_io.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
 #include "mysys_err.h"
 #if defined(_WIN32)
 #include "mysys/mysys_priv.h"
 #endif
-
-#include <algorithm>
 
 extern PSI_stage_info stage_waiting_for_disk_space;
 
@@ -165,8 +166,9 @@ size_t my_write(File Filedes, const uchar *Buffer, size_t Count, myf MyFlags) {
       continue; /* Retry if something written */
 
     if (my_errno() == EINTR) {
-      continue;                                /* Interrupted, retry */
-    } else if (writtenbytes == 0 && !errors++) /* Retry once */
+      continue; /* Interrupted, retry */
+    }
+    if (writtenbytes == 0 && !errors++) /* Retry once */
     {
       /* We may come here if the file quota is exeeded */
       continue;

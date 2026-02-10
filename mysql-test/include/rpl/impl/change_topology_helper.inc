@@ -104,7 +104,6 @@ if (!$_rpl_change_topology_helper_skip)
     --source include/rpl/assert_gtid_mode_on.inc
     --let $use_gtids= 1
     --source include/have_binlog_format_row.inc
-    --source include/have_replica_parallel_workers.inc
   }
 
 

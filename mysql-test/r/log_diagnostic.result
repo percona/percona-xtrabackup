@@ -1,0 +1,9 @@
+# Disable diagnostics.
+# restart: --log-error-verbosity=3 --log-error=MYSQLD_ERROR_LOG --log-diagnostic-enable=0 --log-diagnostic=MYSQLD_DIAGNOSTIC_LOG --debug=+d,emit_diagnostic_message_upon_start
+include/assert_grep.inc [No diagnostic output to the error log]
+include/assert_grep.inc [Output to stdout goes to the error log]
+# The diagnostic log file should not exist.
+# Enable diagnostics.
+# restart: --log-error-verbosity=3 --log-error=MYSQLD_ERROR_LOG --log-diagnostic-enable=1 --log-diagnostic=MYSQLD_DIAGNOSTIC_LOG --debug=+d,emit_diagnostic_message_upon_start
+include/assert_grep.inc [Diagnostic output goes to the diagnostic log.]
+include/assert_grep.inc [Output to stdout goes to the diagnostic log.]

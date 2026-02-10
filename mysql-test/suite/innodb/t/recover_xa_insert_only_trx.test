@@ -1,0 +1,37 @@
+--source include/add_mtr_suppression_for_innodb_readonly.inc
+CALL mtr.add_suppression("Found 1 prepared XA transactions");
+CALL mtr.add_suppression("Error persisting GTIDs to table");
+CALL mtr.add_suppression("innodb_force_recovery is on");
+CALL mtr.add_suppression("Failed to compress the gtid_executed table");
+
+let $force=0;
+while($force < 4){
+    CREATE TABLE t1 (id INT PRIMARY KEY);
+    INSERT INTO t1 VALUES (1);
+
+    XA BEGIN 'trx1';
+    INSERT INTO t1 VALUES (2);
+
+    XA END 'trx1';
+    XA PREPARE 'trx1';
+
+    let $restart_parameters = restart: --innodb-force-recovery=$force;
+    --source include/restart_mysqld.inc
+
+    XA RECOVER;
+    SELECT @@innodb_force_recovery;
+    SELECT * FROM t1 ORDER BY id;
+
+    let $restart_parameters = restart;
+    --source include/restart_mysqld.inc
+
+    XA RECOVER;
+    SELECT @@innodb_force_recovery;
+    SELECT * FROM t1 ORDER BY id;
+
+    XA COMMIT 'trx1';
+    SELECT * FROM t1 ORDER BY id;
+    DROP TABLE t1;
+
+    inc $force;
+}

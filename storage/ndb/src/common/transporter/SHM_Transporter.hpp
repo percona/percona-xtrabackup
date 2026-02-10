@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -196,7 +196,7 @@ class SHM_Transporter : public Transporter {
   /**
    * @return - True if the reader has data to read on its segment.
    */
-  bool hasDataToRead() const { return reader->empty() == false; }
+  bool hasDataToRead() const { return !reader->empty(); }
 
   void make_error_info(char info[], int sz);
 

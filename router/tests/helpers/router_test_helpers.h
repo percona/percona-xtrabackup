@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -31,6 +31,7 @@
 #include <map>
 #include <stdexcept>
 #include <typeinfo>
+#include <vector>
 
 #include "mysql/harness/net_ts/internet.h"
 #include "mysql/harness/stdx/attribute.h"
@@ -207,18 +208,25 @@ void init_windows_sockets();
     const uint16_t port,
     std::chrono::milliseconds timeout = std::chrono::seconds(10));
 
+struct KeyringEntry {
+  std::string uid;
+  std::string attribute;
+  std::string value;
+};
+
+using KeyringEntries = std::vector<KeyringEntry>;
+
 /** @brief Initializes keyring and adds keyring-related config items to
  * [DEFAULT] section
  *
  * @param default_section [DEFAULT] section
  * @param keyring_dir directory inside of which keyring files will be created
- * @param user Router user
- * @param password Router user password
+ * @param keyring_entries collection of entries to store in the keyring
  */
 void init_keyring(std::map<std::string, std::string> &default_section,
                   const std::string &keyring_dir,
-                  const std::string &user = "mysql_router1_user",
-                  const std::string &password = "root");
+                  const KeyringEntries &keyring_entries = {
+                      {"mysql_router1_user", "password", "root"}});
 
 /** @brief returns true if the selected file contains a string
  *          that is true for a given predicate
@@ -279,5 +287,14 @@ get_log_timestamp(
     const std::string &log_file, const std::string &log_regex,
     const unsigned occurence = 1,
     const std::chrono::milliseconds timeout = std::chrono::seconds(1));
+
+/**
+ * Escape special regexp characters with '\'.
+ *
+ * @param input Input string.
+ *
+ * @returns input string with special regexp characters escaped with '\'
+ */
+std::string escape_regexp(std::string input);
 
 #endif  // ROUTER_TESTS_TEST_HELPERS_INCLUDED

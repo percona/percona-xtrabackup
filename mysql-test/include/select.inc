@@ -3870,7 +3870,7 @@ INSERT INTO t2 VALUES (1, 1), (1, 2), (1, 3), (1, 4), (1, 5),
                       (2, 1), (2, 2), (2, 3), (2, 4), (2, 5),
                       (3, 1), (3, 2), (3, 3), (3, 4), (3, 5),
                       (4, 1), (4, 2), (4, 3), (4, 4), (4, 5);
-
+ANALYZE TABLE t1, t2;
 FLUSH STATUS;
 SELECT DISTINCT b FROM t1 LEFT JOIN t2 USING(a) WHERE c <= 3;
 --skip_if_hypergraph  # Depends on the query plan.

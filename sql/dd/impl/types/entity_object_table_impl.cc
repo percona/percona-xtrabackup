@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "sql/dd/impl/types/entity_object_table_impl.h"
 
-#include <stddef.h>
+#include <cstddef>
 #include <memory>
 
 #include "my_dbug.h"

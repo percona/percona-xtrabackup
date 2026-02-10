@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -164,6 +164,7 @@ int group_replication_trans_before_commit(Trans_param *param) {
   int error = 0;
   const int pre_wait_error = 1;
   const int post_wait_error = 2;
+  int64 last_committed = 0;
   int64 sequence_number = 1;
 
   DBUG_EXECUTE_IF("group_replication_force_error_on_before_commit_listener",
@@ -386,6 +387,15 @@ int group_replication_trans_before_commit(Trans_param *param) {
         comment at binlog_cache_data::may_have_sbr_stmts().
       */
       may_have_sbr_stmts = true;
+
+      /*
+        Empty transactions, despite not having write-set, can be
+        applied in parallel with any other transaction, as such we
+        flag those transactions with `last_committed = -1`.
+      */
+      if (is_gtid_specified && !param->is_create_table_as_query_block) {
+        last_committed = -1;
+      }
     }
 
     DBUG_EXECUTE_IF("group_replication_after_add_write_set", {
@@ -441,8 +451,8 @@ int group_replication_trans_before_commit(Trans_param *param) {
 
   // Notice the GTID of atomic DDL is written to the trans cache as well.
   gle = new Gtid_log_event(
-      param->server_id, is_dml || param->is_atomic_ddl, 0, sequence_number,
-      may_have_sbr_stmts, *(param->original_commit_timestamp),
+      param->server_id, is_dml || param->is_atomic_ddl, last_committed,
+      sequence_number, may_have_sbr_stmts, *(param->original_commit_timestamp),
       immediate_commit_timestamp, gtid_specification,
       *(param->original_server_version), *(param->immediate_server_version));
   /*

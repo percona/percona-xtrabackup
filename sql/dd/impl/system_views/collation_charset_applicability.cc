@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,13 +23,11 @@
 
 #include "sql/dd/impl/system_views/collation_charset_applicability.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Collation_charset_applicability &
 Collation_charset_applicability::instance() {
-  static Collation_charset_applicability *s_instance =
-      new Collation_charset_applicability();
+  static auto *s_instance = new Collation_charset_applicability();
   return *s_instance;
 }
 
@@ -46,5 +44,4 @@ Collation_charset_applicability::Collation_charset_applicability() {
       "cs.id = col.character_set_id ");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

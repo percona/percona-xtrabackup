@@ -1,5 +1,7 @@
 # Test clone command
+RESET BINARY LOGS AND GTIDS;
 
+--source include/not_asan_mac.inc
 --source include/have_example_plugin.inc
 --source include/have_log_bin.inc
 --source ../include/clone_connection_begin.inc
@@ -207,13 +209,16 @@ UNINSTALL PLUGIN clone;
 
 --echo # Test case set up.
 SET @gtid_next_saved = @@SESSION.GTID_NEXT;
-SET @gtid_mode_saved = @@GLOBAL.GTID_MODE;
-SET @enforce_gtid_consistency_saved = @@GLOBAL.ENFORCE_GTID_CONSISTENCY;
-
-SET @@GLOBAL.ENFORCE_GTID_CONSISTENCY=ON;
-SET @@GLOBAL.GTID_MODE=OFF_PERMISSIVE;
-SET @@GLOBAL.GTID_MODE=ON_PERMISSIVE;
-SET @@GLOBAL.GTID_MODE=ON;
+# The gtid_mode and enforce_gtid_consistency might be already ON if the
+# mysqld was restarted in the above test block, if not we do it now
+--let $gtid_mode_value = `SELECT @@GLOBAL.GTID_MODE = "OFF"`
+if ($gtid_mode_value == 1)
+{
+  SET @@GLOBAL.ENFORCE_GTID_CONSISTENCY=ON;
+  SET @@GLOBAL.GTID_MODE=OFF_PERMISSIVE;
+  SET @@GLOBAL.GTID_MODE=ON_PERMISSIVE;
+  SET @@GLOBAL.GTID_MODE=ON;
+}
 
 delimiter //;
 CREATE PROCEDURE p1()
@@ -231,10 +236,6 @@ CALL p1();
 
 --echo # Restore GTID settings.
 SET @@SESSION.GTID_NEXT= @gtid_next_saved;
-SET @@GLOBAL.GTID_MODE=ON_PERMISSIVE;
-SET @@GLOBAL.GTID_MODE=OFF_PERMISSIVE;
-SET @@GLOBAL.GTID_MODE= @gtid_mode_saved;
-SET @@GLOBAL.ENFORCE_GTID_CONSISTENCY=@enforce_gtid_consistency_saved;
 
 --echo # Clone database.
 --source ../include/clone_command_send.inc

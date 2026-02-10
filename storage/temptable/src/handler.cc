@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -30,8 +30,10 @@ TempTable public handler API implementation. */
 
 #include "my_base.h"
 #include "my_dbug.h"
+#include "mysql/components/services/log_builtins.h"
 #include "mysql/plugin.h"
 #include "sql/mysqld.h"
+#include "sql/sql_class.h"
 #include "sql/sql_thd_internal_api.h"
 #include "sql/system_variables.h"
 #include "storage/temptable/include/temptable/row.h"
@@ -41,25 +43,64 @@ TempTable public handler API implementation. */
 namespace temptable {
 
 /** Key-value store containing all tables for all existing connections.
- * See `Sharded_key_value_store` documentation for more details.
- * */
+ * See `Sharded_key_value_store` documentation for more details. */
 static Sharded_key_value_store<KV_STORE_SHARDS_COUNT> kv_store_shard;
 
 /* Pool of shared-blocks, an external state to the custom `TempTable` memory
  * allocator. See `Lock_free_shared_block_pool` documentation for more details.
- * */
+ */
 static Lock_free_shared_block_pool<SHARED_BLOCK_POOL_SIZE> shared_block_pool;
 
 /** Small helper function which debug-prints the miscellaneous statistics which
- * key-value store has collected.
- * */
-void kv_store_shards_debug_dump() { kv_store_shard.dbug_print(); }
+ * key-value store has collected. */
+static void kv_store_shards_debug_dump() { kv_store_shard.dbug_print(); }
+
+/** Helper function that calls the logging API to log errors. */
+static void log_event(const std::string &msg, loglevel lvl) {
+  LogEvent()
+      .type(LOG_TYPE_ERROR)
+      .prio(lvl)
+      .errcode(ER_TEMPTABLE_ENGINE_ERROR)
+      .subsys("Temptable")
+      .verbatim(msg.c_str());
+}
+
+/** Function that erases leaked temptables by accessing the appropriate shard
+ * for the THD involved and iterating through the shard to find all temptables
+ * owned by this THD. This should only be called during close_connection if
+ * there is a leaked temptable in the optimizer layer, so any time this is
+ * called it indicates a bug. It logs an error to the server logs. */
+static void erase_owned_temptables(THD *thd) {
+  const auto id = thd_thread_id(thd);
+  const std::vector<std::string> tables = kv_store_shard[id].find_all(id);
+
+  for (const auto &t : tables) {
+    kv_store_shard[id].erase(t);
+    thd->decrement_temptable_count();
+    std::stringstream msg;
+    msg << "Detected leaked temptable used internally for query execution: "
+        << t
+        << ". The leak has been cleaned up but we shouldn't end up here "
+           "during normal operation. Please report a bug.";
+    log_event(msg.str(), ERROR_LEVEL);
+  }
+}
 
 /** Small helper function which releases the slot (and memory occupied by the
- * Block) in shared-block pool.
- * */
-void shared_block_pool_release(THD *thd) {
+ * Block) in shared-block pool. */
+static void shared_block_pool_release(THD *thd) {
   shared_block_pool.try_release(thd_thread_id(thd));
+}
+
+/** Helper function that performs the temptable related cleanup. Called from
+ * plugin->close_connection. */
+void close_connection(THD *thd) {
+  if (thd->get_temptable_count() > 0) {
+    temptable::erase_owned_temptables(thd);
+  }
+  assert(thd->get_temptable_count() == 0);
+  temptable::kv_store_shards_debug_dump();
+  temptable::shared_block_pool_release(thd);
 }
 
 #if defined(HAVE_WINNUMA)
@@ -149,7 +190,9 @@ int Handler::create(const char *table_name, TABLE *mysql_table,
                               all_columns_are_fixed_size, per_table_limit));
 
     ret = insert_result.second ? Result::OK : Result::TABLE_EXIST;
-
+    if (insert_result.second) {
+      ha_thd()->increment_temptable_count();
+    }
   } catch (Result ex) {
     ret = ex;
   } catch (...) {
@@ -160,6 +203,7 @@ int Handler::create(const char *table_name, TABLE *mysql_table,
 }
 
 int Handler::delete_table(const char *table_name, const dd::Table *) {
+  DBUG_EXECUTE_IF("temptable_leak_all", { DBUG_RET(Result::OK); });
   DBUG_TRACE;
 
   assert(table_name != nullptr);
@@ -173,6 +217,7 @@ int Handler::delete_table(const char *table_name, const dd::Table *) {
       if (m_opened_table != table) {
         kv_store.erase(table_name);
         ret = Result::OK;
+        ha_thd()->decrement_temptable_count();
       } else {
         /* Attempt to delete the currently opened table. */
         ret = Result::UNSUPPORTED;

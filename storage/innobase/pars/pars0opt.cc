@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2024, Oracle and/or its affiliates.
+Copyright (c) 1997, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -955,13 +955,6 @@ static void opt_clust_access(sel_node_t *sel_node, /*!< in: select node */
 
     /* We optimize here only queries to InnoDB's internal system
     tables, and they should not contain column prefix indexes. */
-
-    if (dict_is_old_sys_table(index->table->id) &&
-        (index->get_field(pos)->prefix_len != 0 ||
-         clust_index->get_field(i)->prefix_len != 0)) {
-      ib::error(ER_IB_MSG_916) << "Error in pars0opt.cc: table "
-                               << index->table->name << " has prefix_len != 0";
-    }
 
     *(plan->clust_map + i) = pos;
 

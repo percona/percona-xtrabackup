@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,8 +44,8 @@ NdbImport::~NdbImport() {
 
 NdbImport::OptCsv::OptCsv() {
   m_fields_terminated_by = "\\t";
-  m_fields_enclosed_by = 0;
-  m_fields_optionally_enclosed_by = 0;
+  m_fields_enclosed_by = nullptr;
+  m_fields_optionally_enclosed_by = nullptr;
   m_fields_escaped_by = "\\\\";
 #ifndef _WIN32
   m_lines_terminated_by = "\\n";
@@ -58,24 +58,24 @@ NdbImport::OptCsv::OptCsv() {
 
 NdbImport::Opt::Opt() {
   m_connections = 1;
-  m_database = 0;
+  m_database = nullptr;
   m_state_dir = ".";
   m_keep_state = false;
   m_stats = false;
-  m_table = 0;
+  m_table = nullptr;
   m_input_type = "csv";
-  m_input_file = 0;
+  m_input_file = nullptr;
   m_input_workers = 4;
   m_output_type = "ndb";
   m_output_workers = 2;
   m_db_workers = 4;
   m_ignore_lines = 0;
   m_max_rows = 0;
-  m_result_file = 0;
-  m_reject_file = 0;
-  m_rowmap_file = 0;
-  m_stopt_file = 0;
-  m_stats_file = 0;
+  m_result_file = nullptr;
+  m_reject_file = nullptr;
+  m_rowmap_file = nullptr;
+  m_stopt_file = nullptr;
+  m_stats_file = nullptr;
   m_continue = false;
   m_resume = false;
   m_monitor = 2;
@@ -103,13 +103,13 @@ NdbImport::Opt::Opt() {
   m_missing_ai_col = false;
   // character set
   m_charset_name = "binary";
-  m_charset = 0;
+  m_charset = nullptr;
   // csv options
-  m_csvopt = 0;
+  m_csvopt = nullptr;
   // debug options
   m_log_level = 0;
   m_abort_on_error = false;
-  m_errins_type = 0;
+  m_errins_type = nullptr;
   m_errins_delay = 1000;
 }
 
@@ -117,11 +117,11 @@ int NdbImport::set_opt(Opt &opt) {
   NdbImportUtil &util = m_impl.m_util;
   NdbImportCsv &csv = m_impl.m_csv;
   // XXX clean this up (map strings to enums)
-  if (opt.m_input_type != 0) {
-    const char *valid[] = {"csv", "random", 0};
+  if (opt.m_input_type != nullptr) {
+    const char *valid[] = {"csv", "random", nullptr};
     const char **p = valid;
-    while (*p != 0 && strcmp(*p, opt.m_input_type) != 0) p++;
-    if (*p == 0) {
+    while (*p != nullptr && strcmp(*p, opt.m_input_type) != 0) p++;
+    if (*p == nullptr) {
       util.set_error_usage(util.c_error, __LINE__, "invalid input-type %s",
                            opt.m_input_type);
       return -1;
@@ -142,11 +142,11 @@ int NdbImport::set_opt(Opt &opt) {
       return -1;
     }
   }
-  if (opt.m_output_type != 0) {
-    const char *valid[] = {"ndb", "null", 0};
+  if (opt.m_output_type != nullptr) {
+    const char *valid[] = {"ndb", "null", nullptr};
     const char **p = valid;
-    while (*p != 0 && strcmp(*p, opt.m_output_type) != 0) p++;
-    if (*p == 0) {
+    while (*p != nullptr && strcmp(*p, opt.m_output_type) != 0) p++;
+    if (*p == nullptr) {
       util.set_error_usage(util.c_error, __LINE__, "invalid output-type %s",
                            opt.m_output_type);
       return -1;
@@ -187,9 +187,9 @@ int NdbImport::set_opt(Opt &opt) {
     return -1;
   }
   // character set
-  require(opt.m_charset_name != 0);
+  require(opt.m_charset_name != nullptr);
   opt.m_charset = get_charset_by_name(opt.m_charset_name, MYF(0));
-  if (opt.m_charset == 0) {
+  if (opt.m_charset == nullptr) {
     util.set_error_usage(util.c_error, __LINE__, "unknown character set: %s",
                          opt.m_charset_name);
     return -1;
@@ -242,11 +242,11 @@ NdbImport::Job::Job(NdbImport &imp) : m_imp(imp) {
   m_status = JobStatus::Status_null;
   m_str_status = g_str_status(m_status);
   m_teamcnt = 0;
-  m_teams = 0;
+  m_teams = nullptr;
 }
 
 NdbImport::Job::~Job() {
-  if (m_teams != 0) {
+  if (m_teams != nullptr) {
     for (uint i = 0; i < m_teamcnt; i++) delete m_teams[i];
     delete[] m_teams;
   }
@@ -406,7 +406,7 @@ const NdbImport::Error &NdbImport::Team::get_error() const {
 }
 
 const char *NdbImport::g_str_status(JobStatus::Status status) {
-  const char *str = 0;
+  const char *str = nullptr;
   switch (status) {
     case JobStatus::Status_null:
       str = "null";
@@ -430,18 +430,18 @@ const char *NdbImport::g_str_status(JobStatus::Status status) {
       str = "fatal";
       break;
   }
-  require(str != 0);
+  require(str != nullptr);
   return str;
 }
 
 const char *NdbImport::g_str_status(TeamStatus::Status status) {
-  const char *str = 0;
+  const char *str = nullptr;
   switch (status) {
     case TeamStatus::Status_null:
       str = "null";
       break;
   }
-  require(str != 0);
+  require(str != nullptr);
   return str;
 }
 

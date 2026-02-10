@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -64,7 +64,7 @@
    Implications :
      Reserved codes can use values between
      0x80000000 and 0x8000007f inclusive
-     (256 values).
+     (128 values).
      0x8000007f was always the 'nologging'
      code, so the others have started
      'counting' down from there
@@ -86,7 +86,7 @@
         reserved code.
 */
 
-#include <assert.h>
+#include <cassert>
 
 #include "my_inttypes.h"
 

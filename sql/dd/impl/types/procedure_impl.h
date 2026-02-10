@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -176,6 +176,14 @@ class Procedure_impl : public Routine_impl, public Procedure {
   }
   bool update_name_key(Name_key *key) const override {
     return Routine::update_name_key(key);
+  }
+  const Properties &options() const override { return Routine_impl::options(); }
+  Properties &options() override { return Routine_impl::options(); }
+  bool set_options(const Properties &options) override {
+    return Routine_impl::set_options(options);
+  }
+  bool set_options(const String_type &options_raw) override {
+    return Routine_impl::set_options(options_raw);
   }
 
  private:

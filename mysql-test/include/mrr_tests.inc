@@ -613,7 +613,9 @@ SET @save_explain_json_format_version = @@explain_json_format_version;
 SELECT @@optimizer_switch LIKE "%mrr=on%";
 
 CREATE TABLE t(x INT, y INT, z INT, KEY(x));
-INSERT INTO t(x) VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
+INSERT INTO t(x) WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<99)
+SELECT n FROM qn;
 ANALYZE TABLE t;
 
 # Should show "Using MRR" in Extra

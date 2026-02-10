@@ -1,0 +1,999 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `proc_schema` - created
+
+
+## I. Verify error messages while providing faulty configuration to rest procedure
+#
+# 1. POST request is not supported by object/procedures
+# 2. DELETE request is not supported by object/procedures
+# 3. PUT request is rejected when there is not payload proveided
+# 4. PUT request is rejected when the payload is not JSON object
+# 5. PUT request is rejected when the payloads, JSON object field
+#    doesn't match registred input parameters.
+# 6. GET request is rejected when the URL parameter name doesn'
+#    match registred input parameters.
+#
+#
+## II. Verify generated resultsets when procedure returns a resultset
+##     or output parameters.
+#
+# 1. Procedure with GET request returns empty "items" field when there is not resultset
+# 2. Procedure with GET request returns numeric resultset in "items" field
+# 3. Procedure with GET request returns numeric resultset in "itemsOut" field
+# 4. Procedure with GET request returns string resultset in "items" field
+# 5. Procedure with GET request returns string resultset in "itemsOut" field
+# 6. Procedure with POST request returns empty "items" field when there is not resultset
+# 7. Procedure with POST request returns numeric resultset in "items" field
+# 8. Procedure with POST request returns numeric resultset in "itemsOut" field
+# 9. Procedure with POST request returns string resultset in "items" field
+# 10. Procedure with POST request returns string resultset in "itemsOut" field
+# 11. Procedure with POST request receives strings and returns string resultset in "items" field
+# 12. Procedure with POST request receives strings and returns string resultset in "itemsOut" field
+#
+#
+## III. Verify handling of different MYSQL types as input and output of
+##      stored procedures, when they are transfered in GET requests
+#
+# 1. Verify if input varchar value is the same at output of stored procedure
+# 2. Verify if input DATE value is the same at output of stored procedure
+# 3. Verify if input YEAR value is the same at output of stored procedure
+# 4. Verify if input TIME value is the same at output of stored procedure
+# 5. Verify if input BIT(1) value is the same at output of stored procedure
+# 6. Verify if input TINYINT(1) value is the same at output of stored procedure
+# 7. Verify if input TINYINT(8) value is the same at output of stored procedure
+# 8. Verify if input DECIMAL value is the same at output of stored procedure
+# 9. Verify if input FLOAT value is the same at output of stored procedure
+# 10. Verify if input DOUBLE value is the same at output of stored procedure
+# 11. Verify if input VECTOR value is the same at output of stored procedure
+#
+#
+## IV. Verify handling of different MYSQL types as input and output of
+##      stored procedures, when they are transfered in PUT requests
+#
+# 1. Verify if input varchar value is the same at output of stored procedure
+# 2. Verify if input DATE value is the same at output of stored procedure
+# 3. Verify if input YEAR value is the same at output of stored procedure
+# 4. Verify if input TIME value is the same at output of stored procedure
+# 5. Verify if input BIT(1) value is the same at output of stored procedure
+# 6. Verify if input TINYINT(1) value is the same at output of stored procedure
+# 7. Verify if input TINYINT(8) value is the same at output of stored procedure
+# 8. Verify if input DECIMAL value is the same at output of stored procedure
+# 9. Verify if input FLOAT value is the same at output of stored procedure
+# 10. Verify if input DOUBLE value is the same at output of stored procedure
+# 11. Verify if input VECTOR value is the same at output of stored procedure
+# 12. Verify if input GEOMETRY (GeoJSON) value is the same at output of stored procedure
+# 12.1. Verify if input GEOMETRY (WKT) value is the same at output of stored procedure
+# 13. Verify if input BLOB value is the same at output of stored procedure
+# 14. Verify if input TIMESTAMP value is the same at output of stored procedure
+# 15. Verify if input JSON value is the same at output of stored procedure
+#
+#
+## V. Verify handling of different MYSQL types and NULL value as input and
+##    output of stored procedures, when they are transfered in GET requests
+#
+# 1. Verify if NULL is used for not present varchar parameter and it is the same at output of stored procedure
+# 2. Verify if NULL is used for not present DATE parameter and it is the same at output of stored procedure
+# 3. Verify if NULL is used for not present YEAR parameter and it is the same at output of stored procedure
+# 4. Verify if NULL is used for not present TIME parameter and it is the same at output of stored procedure
+# 5. Verify if NULL is used for not present BIT(1) parameter and it is the same at output of stored procedure
+# 6. Verify if NULL is used for not present TINYINT(1) parameter and it is the same at output of stored procedure
+# 7. Verify if NULL is used for not present TINYINT(8) parameter and itis the same at output of stored procedure
+# 8. Verify if NULL is used for not present DECIMAL parameter and it is the same at output of stored procedure
+# 9. Verify if NULL is used for not present FLOAT parameter and it is the same at output of stored procedure
+# 10. Verify if NULL is used for not present DOUBLE parameter and it is the same at output of stored procedure
+# 11. Verify if NULL is used for not present VECTOR parameter and it is the same at output of stored procedure
+#
+#
+## VI. Verify handling of different MYSQL types and NULL value as input and
+##    output of stored procedures, when they are transfered in PUT requests
+#
+# 1. Verify if NULL is used for not present varchar parameter and it is the same at output of stored procedure
+# 2. Verify if NULL is used for not present DATE parameter and it is the same at output of stored procedure
+# 3. Verify if NULL is used for not present YEAR parameter and it is the same at output of stored procedure
+# 4. Verify if NULL is used for not present TIME parameter and it is the same at output of stored procedure
+# 5. Verify if NULL is used for not present BIT(1) parameter and it is the same at output of stored procedure
+# 6. Verify if NULL is used for not present TINYINT(1) parameter and it is the same at output of stored procedure
+# 7. Verify if NULL is used for not present TINYINT(8) parameter and itis the same at output of stored procedure
+# 8. Verify if NULL is used for not present DECIMAL parameter and it is the same at output of stored procedure
+# 9. Verify if NULL is used for not present FLOAT parameter and it is the same at output of stored procedure
+# 10. Verify if NULL is used for not present DOUBLE parameter and it is the same at output of stored procedure
+# 11. Verify if NULL is used for not present VECTOR parameter and it is the same at output of stored procedure
+# 12. Verify if NULL is used for not present GEOMETRY parameter and it is the same at output of stored procedure
+# 13. Verify if NULL is used for not present BLOB parameter and it is the same at output of stored procedure
+# 14. Verify if NULL is used for not present TIMESTAMP parameter and it is the same at output of stored procedure
+# 15. Verify if NULL is used for not present JSON parameter and it is the same at output of stored procedure
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/proc
+# Registred DB_OBJECT at path: /svc/proc/sum
+# Registred DB_OBJECT at path: /svc/proc/sum_out
+# Registred DB_OBJECT at path: /svc/proc/concat
+# Registred DB_OBJECT at path: /svc/proc/concat_out
+# Registred DB_OBJECT at path: /svc/proc/move_char
+# Registred DB_OBJECT at path: /svc/proc/move_date
+# Registred DB_OBJECT at path: /svc/proc/move_year
+# Registred DB_OBJECT at path: /svc/proc/move_time
+# Registred DB_OBJECT at path: /svc/proc/move_bit
+# Registred DB_OBJECT at path: /svc/proc/move_tinyint1
+# Registred DB_OBJECT at path: /svc/proc/move_tinyint8
+# Registred DB_OBJECT at path: /svc/proc/move_decimal
+# Registred DB_OBJECT at path: /svc/proc/move_float
+# Registred DB_OBJECT at path: /svc/proc/move_double
+# Registred DB_OBJECT at path: /svc/proc/move_vector
+# Registred DB_OBJECT at path: /svc/proc/move_geometry
+# Registred DB_OBJECT at path: /svc/proc/move_blob
+# Registred DB_OBJECT at path: /svc/proc/move_timestamp
+# Registred DB_OBJECT at path: /svc/proc/move_json
+# Registred DB_OBJECT at path: /svc/proc/resultset_vector
+# Registred DB_OBJECT at path: /svc/proc/nothing
+GET /svc/proc/nothing
+{
+    "resultSets": []
+}
+OK
+
+#
+# I.1
+POST /svc/proc/nothing
+{
+    "message": "Bad Request",
+    "status": 400
+}
+OK
+
+#
+# I.2
+DELETE /svc/proc/nothing
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+
+#
+# I.3
+PUT /svc/proc/nothing
+{
+    "message": "Bad Request",
+    "status": 400
+}
+OK
+
+#
+# I.4
+PUT /svc/proc/nothing (payload-size:2)
+{
+    "message": "Bad Request",
+    "status": 400
+}
+OK
+
+#
+# I.5
+PUT /svc/proc/nothing (payload-size:25)
+{
+    "message": "Not allowed parameter:not-existing-param",
+    "status": 400
+}
+OK
+
+#
+# I.6
+GET /svc/proc/nothing?not-existing-param=10
+{
+    "message": "Not allowed parameter:not-existing-param",
+    "status": 400
+}
+OK
+
+#
+# II.1
+GET /svc/proc/nothing
+{
+    "resultSets": []
+}
+OK
+
+#
+# II.2
+GET /svc/proc/sum?a=10&b=20
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "result": 30
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "result",
+                        "type": "BIGINT"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# II.3
+GET /svc/proc/sum_out?a=10&b=20
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 30
+    }
+}
+OK
+
+#
+# II.4
+GET /svc/proc/concat?a=10&b=20
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "result": "1020"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "result",
+                        "type": "MEDIUMTEXT"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# II.5
+GET /svc/proc/concat_out?a=10&b=20
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "1020"
+    }
+}
+OK
+
+#
+# II.6
+PUT /svc/proc/nothing (payload-size:2)
+{
+    "resultSets": []
+}
+OK
+
+#
+# II.7
+PUT /svc/proc/sum (payload-size:15)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "result": 30
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "result",
+                        "type": "BIGINT"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# II.8
+PUT /svc/proc/sum_out (payload-size:16)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 30
+    }
+}
+OK
+
+#
+# II.9
+PUT /svc/proc/concat (payload-size:15)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "result": "1020"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "result",
+                        "type": "MEDIUMTEXT"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# II.10
+PUT /svc/proc/concat_out (payload-size:15)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "1020"
+    }
+}
+OK
+
+#
+# II.11
+PUT /svc/proc/concat (payload-size:19)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "result": "1020"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "result",
+                        "type": "MEDIUMTEXT"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# II.12
+PUT /svc/proc/concat_out (payload-size:19)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "1020"
+    }
+}
+OK
+
+#
+# III.1
+GET /svc/proc/move_char?a=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "10 appended"
+    }
+}
+OK
+
+#
+# III.2
+GET /svc/proc/move_date?a=1920-12-11
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "1920-12-11"
+    }
+}
+OK
+
+#
+# III.3
+GET /svc/proc/move_year?a=1920
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "1920"
+    }
+}
+OK
+
+#
+# III.4
+GET /svc/proc/move_time?a=12:34:12
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "12:34:12"
+    }
+}
+OK
+
+#
+# III.5
+GET /svc/proc/move_bit?a=1
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+
+#
+# III.6
+GET /svc/proc/move_tinyint1?a=1
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 2
+    }
+}
+OK
+
+#
+# III.7
+GET /svc/proc/move_tinyint8?a=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# III.8
+GET /svc/proc/move_decimal?a=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# III.9
+GET /svc/proc/move_float?a=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# III.10
+GET /svc/proc/move_double?a=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# III.11
+GET /svc/proc/move_vector?a=%5B0,1,4%5D
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": [
+            0.0,
+            1.0,
+            4.0
+        ]
+    }
+}
+OK
+GET /svc/proc/resultset_vector?a=%5B0,1,4%5D
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "a": [
+                        0.0,
+                        1.0,
+                        4.0
+                    ]
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "a",
+                        "type": "VECTOR"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# IV.1
+PUT /svc/proc/move_char (payload-size:8)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "10 appended"
+    }
+}
+OK
+
+#
+# IV.2
+DISABLED
+
+#
+# IV.3
+DISABLED
+
+#
+# IV.4
+DISABLED
+
+#
+# IV.5
+PUT /svc/proc/move_bit (payload-size:7)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+
+#
+# IV.6
+PUT /svc/proc/move_tinyint1 (payload-size:7)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 2
+    }
+}
+OK
+
+#
+# IV.7
+PUT /svc/proc/move_tinyint8 (payload-size:8)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# IV.8
+PUT /svc/proc/move_decimal (payload-size:8)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# IV.9
+PUT /svc/proc/move_float (payload-size:8)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# IV.10
+PUT /svc/proc/move_double (payload-size:8)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# IV.11
+PUT /svc/proc/move_vector (payload-size:14)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": [
+            0.0,
+            2.0,
+            10.0
+        ]
+    }
+}
+OK
+
+#
+# IV.12
+PUT /svc/proc/move_geometry (payload-size:45)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "5hAAAAEBAAAAAAAAAAAAWUAAAAAAAAAAAA=="
+    }
+}
+OK
+
+#
+# IV.12.1
+PUT /svc/proc/move_geometry (payload-size:20)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "AAAAAAEBAAAAAAAAAAAANEAAAAAAAAA+QA=="
+    }
+}
+OK
+
+#
+# IV.13
+PUT /svc/proc/move_blob (payload-size:24)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "SGVsbG8gV29ybGQ="
+    }
+}
+OK
+
+#
+# IV.14
+PUT /svc/proc/move_timestamp (payload-size:27)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "2025-04-11 14:09:00"
+    }
+}
+OK
+
+#
+# IV.15
+PUT /svc/proc/move_json (payload-size:19)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": {
+            "foo": "bar"
+        }
+    }
+}
+OK
+
+#
+# V.1
+GET /svc/proc/move_char
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.2
+GET /svc/proc/move_date
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.3
+GET /svc/proc/move_year
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.4
+GET /svc/proc/move_time
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.5
+GET /svc/proc/move_bit
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.6
+GET /svc/proc/move_tinyint1
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.7
+GET /svc/proc/move_tinyint8
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.8
+GET /svc/proc/move_decimal
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.9
+GET /svc/proc/move_float
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.10
+GET /svc/proc/move_double
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.11
+GET /svc/proc/move_vector
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.1
+PUT /svc/proc/move_char (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.2
+PUT /svc/proc/move_date (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.3
+PUT /svc/proc/move_year (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.4
+PUT /svc/proc/move_time (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.5
+PUT /svc/proc/move_bit (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.6
+PUT /svc/proc/move_tinyint1 (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.7
+PUT /svc/proc/move_tinyint8 (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.8
+PUT /svc/proc/move_decimal (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.9
+PUT /svc/proc/move_float (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.10
+PUT /svc/proc/move_double (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.11
+PUT /svc/proc/move_vector (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.12
+PUT /svc/proc/move_geometry (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.13
+PUT /svc/proc/move_blob (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.14
+PUT /svc/proc/move_timestamp (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.15
+PUT /svc/proc/move_json (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VII.1
+PUT /svc/proc/move_char (payload-size:10)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+DROP SCHEMA proc_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

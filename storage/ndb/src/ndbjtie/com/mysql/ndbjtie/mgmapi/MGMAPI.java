@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -287,7 +287,6 @@ import com.mysql.jtie.Wrapper;
     static public native NdbMgmHandle/*_ndb_mgm_handle *_*/ ndb_mgm_create_handle();
     static public native void ndb_mgm_destroy_handle(NdbMgmHandle[]/*_ndb_mgm_handle * *_*/ handle);
     static public native void ndb_mgm_set_name(NdbMgmHandle/*_ndb_mgm_handle *_*/ handle, String/*_const char *_*/ name);
-    static public native int ndb_mgm_set_ignore_sigpipe(NdbMgmHandle/*_ndb_mgm_handle *_*/ handle, int val);
     static public native int ndb_mgm_set_connectstring(NdbMgmHandle/*_ndb_mgm_handle *_*/ handle, String/*_const char *_*/ connect_string);
     static public native int ndb_mgm_number_of_mgmd_in_connect_string(NdbMgmHandle/*_ndb_mgm_handle *_*/ handle);
     static public native int ndb_mgm_set_configuration_nodeid(NdbMgmHandle/*_ndb_mgm_handle *_*/ handle, int nodeid);

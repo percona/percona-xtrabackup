@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -72,6 +72,8 @@ class RouterComponentClusterSetTest : public RestApiComponentTest {
 
     ProcessWrapper *process{nullptr};
     bool is_read_replica{false};
+    std::optional<bool> is_hidden;
+    std::optional<bool> disconnect_when_hidden;
   };
 
   struct ClusterData {
@@ -139,16 +141,19 @@ class RouterComponentClusterSetTest : public RestApiComponentTest {
     uint64_t view_id{0};
     int target_cluster_id{0};
     int primary_cluster_id{0};
+    unsigned int primary_node_id{0};
     std::string tracefile;
     std::string router_options{""};
     std::string expected_target_cluster{".*"};
+    std::string expected_local_cluster{".*"};
     bool simulate_cluster_not_found{false};
     bool simulate_config_defaults_stored_is_null{false};
+    bool simulate_router_options_no_rows{false};
     bool use_gr_notifications{false};
     std::vector<size_t> gr_nodes_number{3, 3, 3};
     std::vector<size_t> read_replicas_number{};
     mysqlrouter::MetadataSchemaVersion metadata_version{
-        mysqlrouter::MetadataSchemaVersion{2, 2, 0}};
+        mysqlrouter::MetadataSchemaVersion{2, 4, 0}};
     ClusterSetTopology topology;
   };
 
@@ -168,12 +173,17 @@ class RouterComponentClusterSetTest : public RestApiComponentTest {
                                  const unsigned this_cluster_id,
                                  const unsigned this_node_id);
 
-  void set_mock_clusterset_metadata(uint16_t http_port,
-                                    unsigned this_cluster_id,
-                                    unsigned this_node_id,
-                                    const ClusterSetOptions &cs_options);
+  void set_mock_clusterset_metadata(
+      uint16_t http_port, unsigned this_cluster_id, unsigned this_node_id,
+      const ClusterSetOptions &cs_options,
+      const std::optional<std::string> &routing_guidelines = std::nullopt);
 
-  void set_mock_metadata_on_all_cs_nodes(const ClusterSetOptions &cs_options);
+  void set_mock_metadata_on_all_cs_nodes(
+      const ClusterSetOptions &cs_options,
+      const std::optional<std::string> &routing_guidelines = std::nullopt);
+
+  std::string get_node_attributes_as_string(
+      const RouterComponentClusterSetTest::ClusterNode &node_data) const;
 
   JsonAllocator json_allocator;
 };

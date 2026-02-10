@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -250,8 +250,6 @@ void start_T3(Ndb *pNDB, ThreadData *td, int async) {
     NdbSleep_MilliSleep(10);
   }
 
-  const NdbOperation *op;
-
   if (td->ndbRecordSharedData) {
     char *rowPtr = (char *)&td->transactionData;
     const NdbRecord *record = td->ndbRecordSharedData->subscriberTableNdbRecord;
@@ -264,11 +262,10 @@ void start_T3(Ndb *pNDB, ThreadData *td, int async) {
     SET_MASK(mask, IND_SUBSCRIBER_GROUP);
     SET_MASK(mask, IND_SUBSCRIBER_SESSIONS);
 
-    op = pCON->readTuple(record, rowPtr, record, rowPtr, NdbOperation::LM_Read,
-                         mask);
+    pCON->readTuple(record, rowPtr, record, rowPtr, NdbOperation::LM_Read,
+                    mask);
   } else {
     NdbOperation *MyOp = pCON->getNdbOperation(SUBSCRIBER_TABLE);
-    op = MyOp;
     CHECK_NULL(MyOp, "T3-1: getNdbOperation", td, pCON->getNdbError());
 
     MyOp->readTuple();
@@ -305,8 +302,6 @@ void T3_Callback_1(int result, NdbConnection *pCON, void *threadData) {
     return;
   }  // if
 
-  const NdbOperation *op = NULL;
-
   if (td->ndbRecordSharedData) {
     char *rowPtr = (char *)&td->transactionData;
     const NdbRecord *record =
@@ -316,11 +311,10 @@ void T3_Callback_1(int result, NdbConnection *pCON, void *threadData) {
 
     SET_MASK(mask, IND_GROUP_ALLOW_READ);
 
-    op = pCON->readTuple(record, rowPtr, record, rowPtr, NdbOperation::LM_Read,
-                         mask);
+    pCON->readTuple(record, rowPtr, record, rowPtr, NdbOperation::LM_Read,
+                    mask);
   } else {
     NdbOperation *MyOp = pCON->getNdbOperation(GROUP_TABLE);
-    op = MyOp;
     CHECK_NULL(MyOp, "T3-2: getNdbOperation", td, pCON->getNdbError());
 
     MyOp->readTuple();

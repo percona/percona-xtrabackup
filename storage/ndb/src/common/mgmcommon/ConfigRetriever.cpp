@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -131,22 +131,21 @@ int ConfigRetriever::do_connect(int no_retries, int retry_delay_in_seconds,
   if (ndb_mgm_connect_tls(m_handle, no_retries, retry_delay_in_seconds, verbose,
                           m_tls_req_level) == 0) {
     return 0;
-  } else {
-    const int err = ndb_mgm_get_latest_error(m_handle);
-    if (err == NDB_MGM_ILLEGAL_CONNECT_STRING) {
-      BaseString tmp(ndb_mgm_get_latest_error_msg(m_handle));
-      tmp.append(" : ");
-      tmp.append(ndb_mgm_get_latest_error_desc(m_handle));
-      setError(CR_ERROR, tmp.c_str());
-      return -2;
-    }
-    return -1;
   }
+  const int err = ndb_mgm_get_latest_error(m_handle);
+  if (err == NDB_MGM_ILLEGAL_CONNECT_STRING) {
+    BaseString tmp(ndb_mgm_get_latest_error_msg(m_handle));
+    tmp.append(" : ");
+    tmp.append(ndb_mgm_get_latest_error_desc(m_handle));
+    setError(CR_ERROR, tmp.c_str());
+    return -2;
+  }
+  return -1;
 }
 
 int ConfigRetriever::disconnect() { return ndb_mgm_disconnect(m_handle); }
 
-bool ConfigRetriever::is_connected(void) {
+bool ConfigRetriever::is_connected() {
   return (ndb_mgm_is_connected(m_handle) != 0);
 }
 
@@ -235,7 +234,7 @@ void ConfigRetriever::setError(ErrorType et, const char *s) {
                       errorString.c_str()));
 }
 
-void ConfigRetriever::setError(ErrorType et, BaseString err) {
+void ConfigRetriever::setError(ErrorType et, const BaseString &err) {
   setError(et, err.c_str());
 }
 
@@ -367,7 +366,7 @@ bool ConfigRetriever::verifyConfig(const ndb_mgm_configuration *conf,
     Uint32 conn_preferred_ip_version = 4;
 
     iter.get(CFG_CONNECTION_PREFER_IP_VER, &conn_preferred_ip_version);
-    if (!(conn_preferred_ip_version == 6 || conn_preferred_ip_version == 4)) {
+    if (conn_preferred_ip_version != 6 && conn_preferred_ip_version != 4) {
       tmp.assfmt("Invalid IP version: %d", conn_preferred_ip_version);
       setError(CR_ERROR, tmp);
       return false;
@@ -419,7 +418,7 @@ Uint32 ConfigRetriever::allocNodeId(int no_retries, int retry_delay_in_seconds,
     return 0;  // Error
   }
 
-  while (1) {
+  while (true) {
     if (ndb_mgm_is_connected(m_handle) == 1 ||
         ndb_mgm_connect_tls(m_handle, 0, 0, verbose, m_tls_req_level) == 0) {
       int res = ndb_mgm_alloc_nodeid(m_handle, m_version, m_node_type,

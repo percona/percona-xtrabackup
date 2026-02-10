@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -43,7 +43,7 @@ class Bug22104451 : public ::testing::Test {
 
 TEST_F(Bug22104451, ReadLongValues) {
   std::stringstream c;
-  std::string long_destinations =
+  std::string const long_destinations =
       "localhost:13005,localhost:13003,"
       "localhost:13004,localhost:17001,localhost:17001,localhost:17001,"
       "localhost:17001,localhost:17001,localhost:17001,localhost:17001,"

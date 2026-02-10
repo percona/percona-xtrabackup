@@ -613,5 +613,13 @@ ERROR at line 1: 'system' command received, but the --system-command option is o
 ERROR at line 1: 'system' command received, but the --system-command option is off. Skipping.
 # Test "system": Must pass
 Hello World
+#
+# Bug#37510263: Contribution: Report third decimal place for milliseconds
+#
+include/assert_grep.inc [Find 3 digits post-decimal]
+#
+# Bug#37765445:  Mysql client confused if an extra semicolon is used with "use database;;" 
+#
+# Test: should not produce an error
 
 End of tests

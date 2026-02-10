@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,9 @@ import com.mysql.clusterj.ClusterJDatastoreException;
 import com.mysql.clusterj.ClusterJDatastoreException.Classification;
 import com.mysql.clusterj.ClusterJException;
 import com.mysql.clusterj.ClusterJFatalInternalException;
+import com.mysql.clusterj.ClusterJTableException;
 import com.mysql.clusterj.ClusterJUserException;
+import com.mysql.clusterj.Connection;
 import com.mysql.clusterj.DynamicObject;
 import com.mysql.clusterj.DynamicObjectDelegate;
 import com.mysql.clusterj.LockMode;
@@ -89,7 +91,7 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
     static final Logger logger = LoggerFactoryService.getFactory().getInstance(SessionImpl.class);
 
     /** My Factory. */
-    protected SessionFactoryImpl factory;
+    protected final SessionFactoryImpl factory;
 
     /** Db: one per session. */
     protected Db db;
@@ -109,13 +111,10 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
     /** The underlying ClusterTransaction */
     protected ClusterTransaction clusterTransaction;
 
-    /** The properties for this session */
-    protected Map properties;
-
     /** Flags for iterating a scan */
-    protected final int RESULT_READY = 0;
-    protected final int SCAN_FINISHED = 1;
-    protected final int CACHE_EMPTY = 2;
+    protected final static int RESULT_READY = 0;
+    protected final static int SCAN_FINISHED = 1;
+    protected final static int CACHE_EMPTY = 2;
 
     /** The list of objects changed since the last flush */
     protected List<StateManager> changeList = new ArrayList<StateManager>();
@@ -134,22 +133,25 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
     /** Nested auto transaction counter. */
     protected int nestedAutoTransactionCounter = 0;
 
-    /** Number of retries for retriable exceptions */
-    // TODO get this from properties
-    protected int numberOfRetries = 5;
-
     /** The lock mode for read operations */
     private LockMode lockmode = LockMode.READ_COMMITTED;
 
-    /** Create a SessionImpl with factory, properties, Db, and dictionary
+    /** Index of the underlying connection in the SesssionFactory's pool */
+    private final int connPoolIndex;
+
+    /** Create a SessionImpl with factory, connection number, and Db
      */
-    SessionImpl(SessionFactoryImpl factory, Map properties, Db db, Dictionary dictionary) {
+    SessionImpl(SessionFactoryImpl factory, int idx, Db db) {
         this.factory = factory;
         this.db = db;
-        this.dictionary = dictionary;
-        this.properties = properties;
+        this.dictionary = db.getDictionary();
+        this.connPoolIndex = idx;
         transactionImpl = new TransactionImpl(this);
         transactionState = transactionStateNotActive;
+    }
+
+    public Connection getConnection() {
+        return factory.getConnectionHandle(connPoolIndex);
     }
 
     /** Create a query from a query definition.
@@ -236,19 +238,22 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
             throw ex;
             }
         }
+        /* Below here is currently somewhat dead code. The keyHandler is
+           *always* a SmartValueHandler unless the JVM has been started
+           with option -Dcom.mysql.clusterj.UseSmartValueHandler=false,
+           but with that option some tests do not pass (e.g. BlobTest).
+        */
         try {
             ResultData rs = selectUnique(domainTypeHandler, keyHandler, null);
             if (rs.next()) {
                 // we have a result; initialize the instance
+                if (instance == null) {
+                    if (logger.isDetailEnabled()) logger.detail("Creating instance for class " + domainTypeHandler.getName() + " table: " + domainTypeHandler.getTableName() + keyHandler.pkToString(domainTypeHandler));
+                    instance = domainTypeHandler.newInstance(db);
+                }
                 if (instanceHandler == null) {
                     if (logger.isDetailEnabled()) logger.detail("Creating instanceHandler for class " + domainTypeHandler.getName() + " table: " + domainTypeHandler.getTableName() + keyHandler.pkToString(domainTypeHandler));
-                    // we need both a new instance and its handler
-                    instance = domainTypeHandler.newInstance(db);
                     instanceHandler = domainTypeHandler.getValueHandler(instance);
-                } else if (instance == null) {
-                if (logger.isDetailEnabled()) logger.detail("Creating instance for class " + domainTypeHandler.getName() + " table: " + domainTypeHandler.getTableName() + keyHandler.pkToString(domainTypeHandler));
-                    // we have a handler but no instance
-                    instance = domainTypeHandler.getInstance(instanceHandler);
                 }
                 // found the instance in the datastore
                 instanceHandler.found(Boolean.TRUE);
@@ -300,7 +305,8 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
      */
     public <T> T newInstance(Class<T> cls) {
         assertNotClosed();
-        return factory.newInstance(cls, dictionary, db);
+        DomainTypeHandler<T> domainTypeHandler = getDomainTypeHandler(cls);
+        return domainTypeHandler.newInstance(db);
     }
 
     /** Create an instance of a class to be persisted and set the primary key.
@@ -312,7 +318,7 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
     public <T> T newInstance(Class<T> cls, Object key) {
         assertNotClosed();
         DomainTypeHandler<T> domainTypeHandler = getDomainTypeHandler(cls);
-        T instance = factory.newInstance(cls, dictionary, db);
+        T instance = domainTypeHandler.newInstance(db);
         domainTypeHandler.objectSetKeys(key, instance);
         return instance;
     }
@@ -459,11 +465,11 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
             setPartitionKey(domainTypeHandler, valueHandler);
             if (valueHandler instanceof SmartValueHandler) {
                 try {
-                SmartValueHandler smartValueHandler = (SmartValueHandler)valueHandler;
-                Operation result = smartValueHandler.insert(clusterTransaction);
-                valueHandler.resetModified();
-                endAutoTransaction();
-                return result;
+                    SmartValueHandler smartValueHandler = (SmartValueHandler)valueHandler;
+                    Operation result = smartValueHandler.insert(clusterTransaction);
+                    valueHandler.resetModified();
+                    endAutoTransaction();
+                    return result;
                 } catch (ClusterJException cjex) {
                     failAutoTransaction();
                     throw cjex;
@@ -554,10 +560,10 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
             setPartitionKey(domainTypeHandler, valueHandler);
             if (valueHandler instanceof SmartValueHandler) {
                 try {
-                SmartValueHandler smartValueHandler = (SmartValueHandler)valueHandler;
-                Operation result = smartValueHandler.delete(clusterTransaction);
-                endAutoTransaction();
-                return result;
+                    SmartValueHandler smartValueHandler = (SmartValueHandler)valueHandler;
+                    Operation result = smartValueHandler.delete(clusterTransaction);
+                    endAutoTransaction();
+                    return result;
                 } catch (ClusterJException cjex) {
                     failAutoTransaction();
                     throw cjex;
@@ -723,10 +729,10 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
             setPartitionKey(domainTypeHandler, valueHandler);
             if (valueHandler instanceof SmartValueHandler) {
                 try {
-                SmartValueHandler smartValueHandler = (SmartValueHandler)valueHandler;
-                Operation result = smartValueHandler.update(clusterTransaction);
-                endAutoTransaction();
-                return result;
+                    SmartValueHandler smartValueHandler = (SmartValueHandler)valueHandler;
+                    Operation result = smartValueHandler.update(clusterTransaction);
+                    endAutoTransaction();
+                    return result;
                 } catch (ClusterJException cjex) {
                     failAutoTransaction();
                     throw cjex;
@@ -784,11 +790,11 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
             }
             if (valueHandler instanceof SmartValueHandler) {
                 try {
-                SmartValueHandler smartValueHandler = (SmartValueHandler)valueHandler;
-                smartValueHandler.write(clusterTransaction);
-                valueHandler.resetModified();
-                endAutoTransaction();
-                return instance;
+                    SmartValueHandler smartValueHandler = (SmartValueHandler)valueHandler;
+                    smartValueHandler.write(clusterTransaction);
+                    valueHandler.resetModified();
+                    endAutoTransaction();
+                    return instance;
                 } catch (ClusterJException cjex) {
                     failAutoTransaction();
                     throw cjex;
@@ -1200,10 +1206,8 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
      * @param object the instance for which to get the domain type handler
      * @return the domain type handler
      */
-    protected synchronized <T> DomainTypeHandler<T> getDomainTypeHandler(T object) {
-        DomainTypeHandler<T> domainTypeHandler =
-                factory.getDomainTypeHandler(object, dictionary);
-        return domainTypeHandler;
+    protected <T> DomainTypeHandler<T> getDomainTypeHandler(T object) {
+        return factory.getDomainTypeHandler(object, dictionary);
     }
 
     /** Get the domain type handler for a class.
@@ -1211,10 +1215,8 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
      * @param cls the class
      * @return the domain type handler
      */
-    public synchronized <T> DomainTypeHandler<T> getDomainTypeHandler(Class<T> cls) {
-        DomainTypeHandler<T> domainTypeHandler =
-                factory.getDomainTypeHandler(cls, dictionary);
-        return domainTypeHandler;
+    public <T> DomainTypeHandler<T> getDomainTypeHandler(Class<T> cls) {
+        return factory.getDomainTypeHandler(cls, dictionary);
     }
 
     public Dictionary getDictionary() {
@@ -1593,7 +1595,15 @@ public class SessionImpl implements SessionSPI, CacheManager, StoreManager {
      */
     public String unloadSchema(Class<?> cls) {
         assertNotClosed();
-        return factory.unloadSchema(cls, dictionary);
+        String tableName = factory.unloadSchema(cls, dictionary);
+        if(tableName == null) {
+            try {
+                var instance = newInstance(cls);
+                tableName = factory.unloadSchema(cls, dictionary);
+            } catch (ClusterJTableException tableNotFound) {
+            }
+        }
+        return tableName;
     }
 
     /** Release resources associated with an instance. The instance must be a domain object obtained via

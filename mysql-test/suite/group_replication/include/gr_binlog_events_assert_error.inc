@@ -146,7 +146,7 @@ if ($rpl_mysqlbinlog)
 
   --let $_rpl_server_connection_args= --user=root --host=127.0.0.1 --port=$rpl_server_port
   --error 1
-  --exec $MYSQL $_rpl_server_connection_args -e "source $rpl_out_binlog"
+  --exec $MYSQL $_rpl_server_connection_args --commands -e "source $rpl_out_binlog"
 }
 
 # assert primary key error message in error log

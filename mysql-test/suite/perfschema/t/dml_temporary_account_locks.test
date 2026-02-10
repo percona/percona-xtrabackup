@@ -1,0 +1,40 @@
+# Tests for PERFORMANCE_SCHEMA
+
+--disable_result_log
+select * from performance_schema.temporary_account_locks
+  where `USER` like '%' limit 1;
+
+select * from performance_schema.temporary_account_locks
+  where `HOST`='localhost';
+--enable_result_log
+
+--error ER_TABLEACCESS_DENIED_ERROR
+insert into performance_schema.temporary_account_locks
+  set `USER`='FOO', FAILED_LOGIN_ATTEMPTS=1, REMAINING_LOGIN_ATTEMPTS=2;
+
+--error ER_TABLEACCESS_DENIED_ERROR
+update performance_schema.temporary_account_locks
+  set REMAINING_LOGIN_ATTEMPTS=12;
+
+--error ER_TABLEACCESS_DENIED_ERROR
+update performance_schema.temporary_account_locks
+  set REMAINING_LOGIN_ATTEMPTS=12 where `HOST`='127.0.0.1';
+
+select `USER` from performance_schema.temporary_account_locks
+  where `HOST`='::1';
+
+--error ER_TABLEACCESS_DENIED_ERROR
+delete from performance_schema.temporary_account_locks
+  where `HOST`='::1';
+
+--error ER_TABLEACCESS_DENIED_ERROR
+delete from performance_schema.temporary_account_locks;
+
+--error ER_TABLEACCESS_DENIED_ERROR
+LOCK TABLES performance_schema.temporary_account_locks READ;
+UNLOCK TABLES;
+
+--error ER_TABLEACCESS_DENIED_ERROR
+LOCK TABLES performance_schema.temporary_account_locks WRITE;
+UNLOCK TABLES;
+

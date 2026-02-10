@@ -2899,3 +2899,173 @@ SELECT * FROM t WHERE a = CURRENT_DATE;
 a
 SET timestamp = DEFAULT;
 DROP TABLE t;
+#
+# Bug#37907697: Assertion `mtime.time_type == MYSQL_TIMESTAMP_TIME'
+#
+SELECT CAST(70503052756 AS TIME);
+CAST(70503052756 AS TIME)
+05:27:56
+SELECT CAST(70503052756 AS TIME(6));
+CAST(70503052756 AS TIME(6))
+05:27:56.000000
+SELECT CAST(20250101 AS TIME);
+CAST(20250101 AS TIME)
+NULL
+Warnings:
+Warning	1292	Truncated incorrect time value: '20250101'
+SELECT CAST(20250101 AS TIME(6));
+CAST(20250101 AS TIME(6))
+NULL
+Warnings:
+Warning	1292	Truncated incorrect time value: '20250101'
+SELECT CAST(70503052756.0 AS TIME);
+CAST(70503052756.0 AS TIME)
+05:27:56
+SELECT CAST(70503052756.123456 AS TIME(6));
+CAST(70503052756.123456 AS TIME(6))
+05:27:56.123456
+SELECT CAST(20250101.0 AS TIME);
+CAST(20250101.0 AS TIME)
+NULL
+Warnings:
+Warning	1292	Truncated incorrect time value: '20250101.0'
+SELECT CAST(20250101.123456 AS TIME(6));
+CAST(20250101.123456 AS TIME(6))
+NULL
+Warnings:
+Warning	1292	Truncated incorrect time value: '20250101.123456'
+SELECT CAST(70503052756.0E0 AS TIME);
+CAST(70503052756.0E0 AS TIME)
+05:27:56
+SELECT CAST(70503052756.123456E0 AS TIME(6));
+CAST(70503052756.123456E0 AS TIME(6))
+05:27:56.123459
+SELECT CAST(20250101.0E0 AS TIME);
+CAST(20250101.0E0 AS TIME)
+NULL
+Warnings:
+Warning	1292	Truncated incorrect time value: '20250101'
+SELECT CAST(20250101.123456E0 AS TIME(6));
+CAST(20250101.123456E0 AS TIME(6))
+NULL
+Warnings:
+Warning	1292	Truncated incorrect time value: '20250101.123456'
+#
+# Bug#36065557: using preparation statement to query the time type
+#               some data not found.
+#
+CREATE TABLE t1(
+id_col INTEGER,
+time_6 TIME(6) DEFAULT '01:01:01.000000',
+time_0 TIME
+);
+INSERT INTO t1(id_col, time_6, time_0) VALUES
+(31,'07:59:59.000000', '07:59:59'),
+(32,'07:59:59.000000', '07:59:59'),
+(51,'00:00:00.000000', '00:00:00'),
+(52,'00:00:00.000000', '00:00:00'),
+(71,'06:06:06.000000', '06:06:06'),
+(72,'06:06:06.000000', '06:06:06');
+prepare stmt from
+"SELECT id_col, time_6, time_0
+ FROM t1
+ WHERE time_6 IN (?, '06:06:06.000000','00:00:00');";
+set @time_val='07:59:59';
+execute stmt USING @time_val;
+id_col	time_6	time_0
+31	07:59:59.000000	07:59:59
+32	07:59:59.000000	07:59:59
+51	00:00:00.000000	00:00:00
+52	00:00:00.000000	00:00:00
+71	06:06:06.000000	06:06:06
+72	06:06:06.000000	06:06:06
+DROP TABLE t1;
+#
+# Bug#35500028: Incorrect result when select time col use
+#               WHERE IN (NULL, 'xx:xx:xx.xxxxxx')
+#
+CREATE TABLE t1 (
+id INTEGER NOT NULL,
+tm TIME(6) DEFAULT NULL,
+PRIMARY KEY (id)
+);
+INSERT INTO t1(id) VALUES (1), (2);
+INSERT INTO t1 VALUES (3, '00:00:00.000000'), (4, '00:00:00.000000');
+SELECT COUNT(*) FROM t1 WHERE tm IN ('00:00:00.000000', NULL) ORDER BY 1;
+COUNT(*)
+2
+SELECT COUNT(*) FROM t1 WHERE tm IN ('00:00:00.000000') ORDER BY 1;
+COUNT(*)
+2
+SELECT COUNT(*) FROM t1 WHERE tm IN ('00:00:00.000000', NULL);
+COUNT(*)
+2
+SELECT COUNT(*) FROM t1 WHERE tm IN ('00:00:00.000000');
+COUNT(*)
+2
+DROP TABLE t1;
+#
+# Bug#34188599: IN() does not work correctly for TIME columns
+#
+CREATE TABLE t (a TIME);
+INSERT INTO t VALUES ('08:00:00');
+SELECT * FROM t WHERE a IN ('08:00:00', NULL);
+a
+08:00:00
+SELECT * FROM t WHERE a IN ('08:00:00', '');
+a
+08:00:00
+SELECT * FROM t WHERE a IN ('08:00:00', '07:59:59');
+a
+08:00:00
+DROP TABLE t;
+#
+# Bug#38095630: Assertion `hour != 0 || minute |= 0 || second != 0'
+#
+CREATE TABLE t1(t TIME PRIMARY KEY);
+SELECT table1.t
+FROM t1 AS table1,
+(WITH RECURSIVE cte1 AS
+(SELECT * FROM t1 WHERE t <> TAN(-1677610521))
+SELECT * FROM cte1
+) AS table2;
+t
+INSERT INTO t1 VALUES(TIME'-00:00:00.000001');
+SELECT * FROM t1;
+t
+00:00:00
+DROP TABLE t1;
+#
+# Bug#38111130: mysqld crash - Assertion `is_valid() && tv.is_valid()'
+#               fails in my_temporal.cc
+#
+SELECT CAST(-0.971042 AS TIME);
+CAST(-0.971042 AS TIME)
+-00:00:01
+#
+# Bug#38159825: Assertion failure in my_double_to_time_with_warn
+#
+SELECT CAST('21:07:58' / -1345980785 AS TIME) AS f;
+f
+00:00:00
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '21:07:58'
+SELECT CAST('21:07:58' / -1345980785 AS TIME(6)) AS f;
+f
+00:00:00.000000
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '21:07:58'
+SELECT CAST(9 / '-1317798799' AS TIME) AS f;
+f
+00:00:00
+SELECT CAST(9 / '-1317798799' AS TIME(6)) AS f;
+f
+00:00:00.000000
+#
+# Bug#38537045: Assertion failed: (*right)->data_type() ==
+#     MYSQL_TYPE_TIME || (*right)->data_type() == MYSQL_TYPE_NULL
+#
+CREATE TABLE t(c TIME);
+SELECT 1 FROM t WHERE DEFAULT(c) > c AND @f = c;
+1
+DROP TABLE t;

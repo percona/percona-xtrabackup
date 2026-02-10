@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -88,16 +88,16 @@ int ndb_mgm_configuration_iterator::get(int param, unsigned *value) const {
     ConfigValues::ConstIterator::get().
   */
   assert(sizeof *value == sizeof(Uint32));
-  return m_config.get(param, value) != true;
+  return !m_config.get(param, value);
 }
 
 int ndb_mgm_configuration_iterator::get(int param,
                                         unsigned long long *value) const {
-  return m_config.get(param, value) != true;
+  return !m_config.get(param, value);
 }
 
 int ndb_mgm_configuration_iterator::get(int param, const char **value) const {
-  return m_config.get(param, value) != true;
+  return !m_config.get(param, value);
 }
 
 /**

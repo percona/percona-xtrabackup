@@ -1,0 +1,180 @@
+SET @old_histogram_generation_max_mem_size=@@histogram_generation_max_mem_size;
+SET @old_join_buffer_size=@@join_buffer_size;
+SET @old_cte_max_recursion_depth=@@cte_max_recursion_depth;
+CREATE FUNCTION root_cost(expl JSON) RETURNS DOUBLE DETERMINISTIC
+BEGIN
+RETURN JSON_EXTRACT(expl, "$.query_plan.estimated_total_cost") -
+(SELECT SUM(cost) FROM
+JSON_TABLE(expl, "$.query_plan.inputs[*]"
+               COLUMNS (cost DOUBLE PATH '$.estimated_total_cost')) t);
+END
+//
+CREATE TABLE t1(
+i1 INT NOT NULL,
+i2 INT NOT NULL,
+i3 INT NOT NULL,
+v1 VARCHAR(255),
+KEY k1 (i2)
+) ENGINE=InnoDB, CHARSET=latin1, STATS_SAMPLE_PAGES=1000;
+SET @t1_rows=10000;
+SET cte_max_recursion_depth=@t1_rows;
+SET histogram_generation_max_mem_size=@t1_rows*512;
+INSERT INTO t1
+WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<@t1_rows-1)
+SELECT n, CEIL(RAND(0) * @t1_rows / 2), n DIV 10, REPEAT('X', 255) FROM qn;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON i1,i3;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'i1'.
+test.t1	histogram	status	Histogram statistics created for column 'i3'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SET @@join_buffer_size=4*1024*1024;
+EXPLAIN FORMAT=TREE SELECT * FROM t1 build STRAIGHT_JOIN t1 probe ON build.i1=probe.i2;
+EXPLAIN
+-> Inner hash join (build.i1 = probe.i2)  (...)
+    -> Table scan on probe  (...)
+    -> Hash
+        -> Table scan on build  (...)
+
+EXPLAIN FORMAT=JSON INTO @json SELECT * FROM t1 build STRAIGHT_JOIN t1 probe ON build.i1=probe.i2;
+SELECT root_cost(@json);
+root_cost(@json)
+6619.889311482828
+SET @@join_buffer_size=256*1024;
+EXPLAIN FORMAT=TREE SELECT * FROM t1 build STRAIGHT_JOIN t1 probe ON build.i1=probe.i2;
+EXPLAIN
+-> Inner hash join (build.i1 = probe.i2)  (...)
+    -> Table scan on probe  (...)
+    -> Hash
+        -> Table scan on build  (...)
+
+EXPLAIN FORMAT=JSON INTO @json SELECT * FROM t1 build STRAIGHT_JOIN t1 probe ON build.i1=probe.i2;
+SELECT root_cost(@json);
+root_cost(@json)
+7766.659990553901
+# NLJ should be cheaper than hash join.
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1 LEFT JOIN t1 x2
+ON x1.i1=x2.i2 WHERE x1.i3<150;
+EXPLAIN
+-> Nested loop left join  (...)
+    -> Filter: (x1.i3 < 150)  (...)
+        -> Table scan on x1  (...)
+    -> Index lookup on x2 using k1 (i2 = x1.i1)  (...)
+
+# But hash join is cheaper if the projection of the build table is smaller.
+EXPLAIN FORMAT=TREE SELECT x2.i3 FROM t1 x1 LEFT JOIN t1 x2
+ON x1.i1=x2.i2 WHERE x1.i3<150;
+EXPLAIN
+-> Left hash join (x1.i1 = x2.i2)  (...)
+    -> Filter: (x1.i3 < 150)  (...)
+        -> Table scan on x1  (...)
+    -> Hash
+        -> Table scan on x2  (...)
+
+SET @@join_buffer_size=1024*1024;
+# NLJ should be cheaper than hash join.
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1 LEFT JOIN t1 x2
+ON x1.i1=x2.i2 WHERE x1.i3<150;
+EXPLAIN
+-> Nested loop left join  (...)
+    -> Filter: (x1.i3 < 150)  (...)
+        -> Table scan on x1  (...)
+    -> Index lookup on x2 using k1 (i2 = x1.i1)  (...)
+
+SET @@join_buffer_size=4*1024*1024;
+# Hash join should be cheaper than NLJ, as there is no spill-to-disk.
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1 LEFT JOIN t1 x2
+ON x1.i1=x2.i2 WHERE x1.i3<150;
+EXPLAIN
+-> Left hash join (x1.i1 = x2.i2)  (...)
+    -> Filter: (x1.i3 < 150)  (...)
+        -> Table scan on x1  (...)
+    -> Hash
+        -> Table scan on x2  (...)
+
+DROP TABLE t1;
+CREATE TABLE t1(
+x INT NOT NULL PRIMARY KEY
+);
+CREATE TABLE t2(
+x INT NOT NULL
+);
+INSERT INTO t1
+WITH RECURSIVE qn(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<99)
+SELECT n FROM qn;
+INSERT INTO t2 select * from t1 WHERE t1.x<10;
+ANALYZE TABLE t1,t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @buffered DELETE t1 FROM t1, t2 WHERE t1.x=t2.x;
+EXPLAIN FORMAT=JSON INTO @direct DELETE t2 FROM t1, t2 WHERE t1.x=t2.x;
+SELECT JSON_EXTRACT(@buffered, "$.query_plan.operation") buffered,
+JSON_EXTRACT(@direct, "$.query_plan.operation") direct;
+buffered	direct
+"Delete from t1 (buffered)"	"Delete from t2 (immediate)"
+# Direct delete should be cheaper than buffered.
+SELECT root_cost(@direct) < 0.5 * root_cost(@buffered);
+root_cost(@direct) < 0.5 * root_cost(@buffered)
+1
+EXPLAIN FORMAT=JSON INTO @buffered
+UPDATE t1, t2 SET t1.x = t1.x + 1 WHERE t1.x = t2.x;
+EXPLAIN FORMAT=JSON INTO @direct
+UPDATE t1, t2 SET t2.x = t2.x + 1 WHERE t1.x = t2.x;
+SELECT JSON_EXTRACT(@buffered, "$.query_plan.operation") buffered,
+JSON_EXTRACT(@direct, "$.query_plan.operation") direct;
+buffered	direct
+"Update t1 (buffered)"	"Update t2 (immediate)"
+# Direct update should be cheaper than buffered.
+SELECT root_cost(@direct) < 0.5 * root_cost(@buffered);
+root_cost(@direct) < 0.5 * root_cost(@buffered)
+1
+DROP TABLE t1,t2;
+DROP FUNCTION root_cost;
+CREATE VIEW num_1e4 AS
+WITH RECURSIVE qn(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<9999) SELECT n FROM qn;
+CREATE TABLE t1 (
+pk INT PRIMARY KEY,
+a INT,
+KEY ka(a)
+);
+CREATE TABLE t2 (
+pk INT PRIMARY KEY,
+a INT
+);
+INSERT INTO t1 SELECT n, n%10 FROM  num_1e4 LIMIT 400;
+INSERT INTO t2 SELECT n, n%10 FROM  num_1e4 LIMIT 100;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON a;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'a'.
+ANALYZE TABLE t2 UPDATE HISTOGRAM ON a;
+Table	Op	Msg_type	Msg_text
+test.t2	histogram	status	Histogram statistics created for column 'a'.
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+# Rewrite to inner join with deduplicated t1.
+EXPLAIN FORMAT=TREE SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Inner hash join (LooseScan) (t2.a = t1.a)  (...)
+    -> Remove duplicates from input grouped on t1.a  (...)
+        -> Covering index scan on t1 using ka  (...)
+    -> Hash
+        -> Table scan on t2  (...)
+
+# No rewrite to inner join.
+EXPLAIN FORMAT=TREE SELECT * FROM t2 WHERE a IN (SELECT a FROM t2);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t2.a = t2.a)  (...)
+    -> Table scan on t2  (...)
+    -> Hash
+        -> Table scan on t2  (...)
+
+DROP TABLE t1, t2;
+DROP VIEW num_1e4;
+SET @@join_buffer_size=@old_join_buffer_size;
+SET @@cte_max_recursion_depth=@old_cte_max_recursion_depth;
+SET @@histogram_generation_max_mem_size=@old_histogram_generation_max_mem_size;

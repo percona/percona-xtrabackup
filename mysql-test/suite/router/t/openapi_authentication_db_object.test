@@ -1,0 +1,358 @@
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+--source ../include/schema/pk_types_schema.sql
+
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+CREATE USER user2@'%' IDENTIFIED BY 'secretpass2';
+CREATE USER user3@'%' IDENTIFIED BY 'secretpass3';
+
+--source ../include/mrs/start_object_definition.inc
+
+--source ../include/test/test_openapi_object_structure.inc
+
+# Roles
+--let $mrs_add_role_caption=NoRead
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=Partial
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,UPDATE
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=AllPriv
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,CREATE,UPDATE,DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+# Auth
+--let $mrs_add_auth_app=default authentication
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+# Users
+--let $mrs_add_user_ext_uid='user1@%'
+--let $mrs_add_user_name='user1'
+--let $mrs_add_user_role=NoRead
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid='user2@%'
+--let $mrs_add_user_name='user2'
+--let $mrs_add_user_role=AllPriv
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid='user3@%'
+--let $mrs_add_user_name='user3'
+--let $mrs_add_user_role=Partial
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+# DB Object that needs auth
+--let $mrs_sql_id_variable=@db_object_id_all_types
+--let $mrs_db_object_requires_auth=1
+--source ../include/mrs/db_object/modify_auth.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## Verify open-api-catalog for MRS Object with authentication
+--echo #
+--echo ## I. DB Object requires authentication, user is not authenticated
+--echo #
+--echo # 1. OpenAPI does not contain description for the DB Object on a service level.
+--echo # 2. OpenAPI does not contain description for the DB Object on a schema level.
+--echo # 3. Could not access OpenAPI specifcation on DB Object level.
+--echo #
+--echo #
+--echo ## II. DB Object requires authentication, user is authenticated but has no READ privilege
+--echo #
+--echo # 1. OpenAPI does not contain description for the DB Object on a service level.
+--echo # 2. OpenAPI does not contain description for the DB Object on a schema level.
+--echo # 3. Could not access OpenAPI specifcation on DB Object level.
+--echo #
+--echo #
+--echo ## III. DB Object requires authentication, user is authenticated -> OpenAPI
+--echo ##      contains description for the DB Object.
+--echo #
+--echo # 1. At service level
+--echo # 1. At schema level
+--echo # 1. At db object level
+--echo #
+--echo #
+--echo ## IV. DB Object requires authentication, user is authenticated and has READ and UPDATE
+--echo ##      privileges, check that DB Object description contain only PUT and GET methods
+--echo ##      descriptions.
+--echo #
+--echo # 1. At service level
+--echo # 1. At schema level
+--echo # 1. At db object level
+--echo #
+--echo #
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+# Explicity checking if "all_types" DB Object doesn't exist in OpenAPI description
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"not":{"required":["/svc/different_types/all_types"]}}
+  }
+}';
+--let $mrs_client_arg_exclude_json_pointer=/components/schemas/basic_schema_table2/properties/date/example,/components/schemas/pk_types_schema_t_timestamp/properties/id/example,/components/schemas/basic_schema_view1/properties/date/example,/components/schemas/basic_schema_table3/properties/cdatetime/example,/components/schemas/basic_schema_table3/properties/ctimestamp/example
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_arg_path='/svc/different_types/open-api-catalog/'
+# Explicity checking if "all_types" DB Object doesn't exist in OpenAPI description
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"not":{"required":["/svc/different_types/all_types"]}}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.3
+exec $MRS_CLIENT_ARGS
+  -t GET
+  --path /svc/different_types/open-api-catalog/all_types
+  --expected-status 401;
+
+--echo
+--echo #
+--echo # II.1
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"not":{"required":["/svc/different_types/all_types"]}}
+  }
+}';
+--let $mrs_client_arg_exclude_json_pointer=/components/schemas/basic_schema_table2/properties/date/example,/components/schemas/pk_types_schema_t_timestamp/properties/id/example,/components/schemas/basic_schema_view1/properties/date/example,/components/schemas/basic_schema_table3/properties/cdatetime/example,/components/schemas/basic_schema_table3/properties/ctimestamp/example
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # II.2
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_path='/svc/different_types/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"not":{"required":["/svc/different_types/all_types"]}}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # II.3
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -t GET
+  --path /svc/different_types/open-api-catalog/all_types
+  --expected-status 401;
+
+
+--echo
+--echo #
+--echo # III.1
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user2
+  -p secretpass2
+  --session-file $MYSQL_TMP_DIR/user_session2.dat;
+
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session2.dat
+# Explicity checking if "all_types" DB Object exists in OpenAPI description
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/different_types/all_types"]}
+  }
+}';
+--let $mrs_client_arg_exclude_json_pointer=/components/schemas/basic_schema_table2/properties/date/example,/components/schemas/basic_schema_table3/properties/cdatetime/example,/components/schemas/basic_schema_table3/properties/ctimestamp/example,/components/schemas/pk_types_schema_t_timestamp/properties/id/example,/components/schemas/basic_schema_view1/properties/date/example
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # III.2
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user2
+  -p secretpass2
+  --session-file $MYSQL_TMP_DIR/user_session2.dat;
+
+--let $mrs_client_arg_path='/svc/different_types/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session2.dat
+# Explicity checking if "all_types" DB Object exists in OpenAPI description
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/different_types/all_types"]}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # III.3
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user2
+  -p secretpass2
+  --session-file $MYSQL_TMP_DIR/user_session2.dat;
+
+--let $mrs_client_arg_path='/svc/different_types/open-api-catalog/all_types'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session2.dat
+# Explicity checking if "all_types" DB Object exists in OpenAPI description
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/different_types/all_types"]}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # IV.1
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user3
+  -p secretpass3
+  --session-file $MYSQL_TMP_DIR/user_session3.dat;
+
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session3.dat
+# Explicity checking if "all_types" DB Object exists in OpenAPI description
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/different_types/all_types"]}
+  }
+}';
+--let $mrs_client_arg_exclude_json_pointer=/components/schemas/basic_schema_table2/properties/date/example,/components/schemas/basic_schema_table3/properties/cdatetime/example,/components/schemas/basic_schema_table3/properties/ctimestamp/example,/components/schemas/pk_types_schema_t_timestamp/properties/id/example,/components/schemas/basic_schema_view1/properties/date/example
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # IV.2
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user3
+  -p secretpass3
+  --session-file $MYSQL_TMP_DIR/user_session3.dat;
+
+--let $mrs_client_arg_path='/svc/different_types/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session3.dat
+# Explicity checking if "all_types" DB Object exists in OpenAPI description
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/different_types/all_types"]}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # IV.3
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user3
+  -p secretpass3
+  --session-file $MYSQL_TMP_DIR/user_session3.dat;
+
+--let $mrs_client_arg_path='/svc/different_types/open-api-catalog/all_types'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session3.dat
+# Explicity checking if "all_types" DB Object exists in OpenAPI description
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/different_types/all_types"]}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+remove_file $MYSQL_TMP_DIR/user_session.dat;
+remove_file $MYSQL_TMP_DIR/user_session2.dat;
+remove_file $MYSQL_TMP_DIR/user_session3.dat;
+drop user user1@'%';
+drop user user2@'%';
+drop user user3@'%';
+--source ../include/mrs/cleanup.inc

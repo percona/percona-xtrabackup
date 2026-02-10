@@ -1,0 +1,154 @@
+######################################################
+# WL#15413 Subscriber row hash filter (Big)
+######################################################
+#
+# #######################################################################
+# First scenario:
+#
+# In this test, there are two split groups of binlogged rows: group 0
+# logged by mysqld.1 and mysqld.2, and group 1 logged by mysqld.3 and
+# mysqld.4. (mysqld.1 == mysqld.3 && mysqld.2 == mysqld.4)
+# In the end, the binlogged rows must match what has been written.
+
+# restart:--ndb-log-row-slice-count=2 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=2 --ndb-log-row-slice-id=1
+# restart:--ndb-log-row-slice-count=2 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=2 --ndb-log-row-slice-id=1
+CREATE TABLE t1 (k INT PRIMARY KEY, a VARCHAR(1024), b VARBINARY(2048)) ENGINE = NDB;
+CALL do_insert('t1', 1024, 0);
+CALL do_insert('t1', 1024, 1024);
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+DELETE FROM t1;
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# Should be close to 2048/2
+SET @data_volume = FLOOR(2048/2);
+SET @ceil = 3*SQRT(2048*1/2*1/2) # 3 sigma confidence interval;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -@ceil AND +@ceil, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t1;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Must have imported the total
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+2048
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+# #######################################################################
+# Second scenario:
+#
+# In this test, there are three split groups of binlogged rows: group 0
+# logged by mysqld.1, group 1 logged by mysqld.2 and group 2 logged by
+# both mysqld.3 and mysqld.4. (mysqld.3 == mysqld.4)
+# The restored data must matched what was written.
+#
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=1
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=2
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=2
+CREATE TABLE t2 (k INT PRIMARY KEY, a VARCHAR(2048), b VARBINARY(4096)) ENGINE = NDB;
+CALL do_insert('t2', 1024, 0);
+CALL do_insert('t2', 1024, 1024);
+CALL do_insert('t2', 1024, 2048);
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+DELETE FROM t2;
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# Should be close to 3072/3
+SET @data_volume = FLOOR(3072/3);
+SET @ceil = 3*SQRT(3072*1/3*2/3) # 3 sigma confidence interval;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -@ceil AND +@ceil, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t2;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Should be close to 2*(3072/3)
+SET @data_volume = FLOOR(2*(3072/3));
+SET @ceil = 3*SQRT(3072*2/3*1/3) # 3 sigma confidence interval;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -@ceil AND +@ceil, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t2;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Must have imported the total
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+3072
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+# #######################################################################
+# Third scenario:
+#
+# In this test, there are four split groups of binlogged rows: group 0
+# logged by mysqld.1, group 1 logged by mysqld.2, group 2 logged by
+# mysqld.3 and group 3 logged by mysqld.4.
+# (mysqld.1 != mysqld.2 != mysqld.3 != mysqld.4)
+# The restored data must matched what was written.
+#
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=1
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=2
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=3
+CREATE TABLE t3 (k INT PRIMARY KEY, a VARCHAR(4096), b VARBINARY(8192)) ENGINE = NDB;
+CALL do_insert('t3', 2048, 0);
+CALL do_insert('t3', 2048, 2048);
+CALL do_insert('t3', 2048, 4096);
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+DELETE FROM t3;
+SELECT COUNT(*) FROM t3;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# Should be close to 6144/4
+SET @data_volume = FLOOR(6144/4);
+SET @ceil = 3*SQRT(6144*1/4*3/4) # 3 sigma confidence interval;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -@ceil AND +@ceil, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t3;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Should be close to 2*(6144/4)
+SET @data_volume = FLOOR(2*(6144/4));
+SET @ceil = 3*SQRT(6144*2/4*2/4) # 3 sigma confidence interval;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -@ceil AND +@ceil, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t3;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Should be close to 3*(6144/4)
+SET @data_volume = FLOOR(3*(6144/4));
+SET @ceil = 3*SQRT(6144*3/4*1/4) # 3 sigma confidence interval;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -@ceil AND +@ceil, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t3;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Must have imported the total
+SELECT COUNT(*) FROM t3;
+COUNT(*)
+6144
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+# Cleanup
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t3;
+DROP PROCEDURE do_insert;
+# restart:
+# restart:
+# restart:
+# restart:

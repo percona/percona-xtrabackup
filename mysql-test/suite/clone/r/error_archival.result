@@ -1,6 +1,5 @@
 set sort_buffer_size=1048576;
-call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Log writer is waiting for redo-archiver to catch up .*");
-call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* Log writer waited too long for redo-archiver to advance .*");
+call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* The redo log archiver is aborted as it was lagging behind at LSN = .*");
 INSTALL PLUGIN clone SONAME 'CLONE_PLUGIN';
 CREATE TABLE t1(col1 INT PRIMARY KEY, col2 int, col3 varchar(64), col4 BLOB);
 CREATE TABLE t2(col1 INT PRIMARY KEY, col2 int, col3 varchar(64), col4 BLOB)

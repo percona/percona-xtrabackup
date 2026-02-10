@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -728,7 +728,9 @@ public class NdbDictionary extends Wrapper
         public final native int listObjects(List/*_List &_*/ list, int/*_Object.Type_*/ type /*_= Object.TypeUndefined_*/) /*_const_*/;
         public final native NdbErrorConst/*_const NdbError &_*/ getNdbError() /*_const_*/;
         public final native TableConst/*_const Table *_*/ getTable(String/*_const char *_*/ name) /*_const_*/;
+        public final native TableConst/*_const Table *_*/ getTableGlobal(String/*_const char *_*/ name) /*_const_*/;
         public final native IndexConst/*_const Index *_*/ getIndex(String/*_const char *_*/ indexName, String/*_const char *_*/ tableName) /*_const_*/;
+        public final native IndexConst/*_const Index *_*/ getIndexGlobal(String/*_const char *_*/ indexName, String/*_const char *_*/ tableName) /*_const_*/;
         public final native int listIndexes(List/*_List &_*/ list, String/*_const char *_*/ tableName) /*_const_*/;
         public final native int listEvents(List/*_List &_*/ list) /*_const_*/;
         public final native int createEvent(EventConst/*_const Event &_*/ event);

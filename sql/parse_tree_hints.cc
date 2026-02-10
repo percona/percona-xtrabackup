@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -137,7 +137,7 @@ static Opt_hints_qb *find_qb_hints(Parse_context *pc,
     }
   }
 
-  if (qb == nullptr)
+  if (qb == nullptr && hint != nullptr)
     hint->print_warn(pc->thd, ER_WARN_UNKNOWN_QB_NAME, qb_name, nullptr,
                      nullptr, nullptr);
 
@@ -336,7 +336,12 @@ void PT_qb_level_hint::append_args(const THD *thd, String *str) const {
 }
 
 bool PT_hint_list::do_contextualize(Parse_context *pc) {
-  if (super::do_contextualize(pc)) return true;
+  if (!pc->thd->lex->opt_hints_global)
+    pc->thd->lex->opt_hints_global =
+        new (pc->thd->mem_root) Opt_hints_global(pc->thd->mem_root);
+  if (pc->thd->lex->opt_hints_global->deferred_hints_flag != true) {
+    if (super::do_contextualize(pc)) return true;
+  }
 
   if (!get_qb_hints(pc, pc->select)) return true;
 
@@ -345,7 +350,11 @@ bool PT_hint_list::do_contextualize(Parse_context *pc) {
       if (pc->thd->lex->sql_command == SQLCOM_CREATE_VIEW &&
           !(*h)->supports_view())
         continue;
-      if ((*h)->contextualize(pc)) return true;
+      if ((*h)->contextualize(pc)) {
+        if (pc->thd->lex->opt_hints_global->deferred_hints_flag != true) {
+          pc->thd->lex->opt_hints_global->deferred_hints->push_back(*h);
+        }
+      }
     }
   }
   return false;
@@ -404,10 +413,22 @@ void PT_key_level_hint::append_args(const THD *thd, String *str) const {
 }
 
 bool PT_key_level_hint::do_contextualize(Parse_context *pc) {
+  Opt_hints_qb *qb = find_qb_hints(pc, &table_name.opt_query_block, nullptr);
+  if (qb == nullptr &&
+      pc->thd->lex->opt_hints_global->deferred_hints_flag == true) {
+    this->print_warn(pc->thd, ER_WARN_UNKNOWN_QB_NAME,
+                     &table_name.opt_query_block, nullptr, nullptr, nullptr);
+    if (super::do_contextualize(pc)) return true;
+    return false;
+  }
+  if (qb == nullptr && this->type() != INDEX_HINT_ENUM) {
+    this->print_warn(pc->thd, ER_WARN_UNKNOWN_QB_NAME,
+                     &table_name.opt_query_block, nullptr, nullptr, nullptr);
+    if (super::do_contextualize(pc)) return true;
+    return false;
+  }
+  if (qb == nullptr) return true;
   if (super::do_contextualize(pc)) return true;
-
-  Opt_hints_qb *qb = find_qb_hints(pc, &table_name.opt_query_block, this);
-  if (qb == nullptr) return false;
 
   Opt_hints_table *tab = get_table_hints(pc, &table_name, qb);
   if (!tab) return true;

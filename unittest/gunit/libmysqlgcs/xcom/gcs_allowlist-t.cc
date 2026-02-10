@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -59,7 +59,7 @@ TEST_F(GcsAllowlist, InvalidConfiguration) {
 
 TEST_F(GcsAllowlist, ValidListIPv6) {
   Gcs_ip_allowlist wl;
-  std::string list =
+  std::string const list =
       "::1/128,192.168.1.1/24,fe80::2ab2:bdff:fe16:8d07/67, "
       "2606:b400:8b0:40:4308:1306:ad4a:6e51";
   wl.configure(list);
@@ -134,7 +134,7 @@ TEST_F(GcsAllowlist, AbsentList) {
   ASSERT_EQ(err, GCS_OK);
 
   // verify that a allowlist was provided by default
-  Gcs_xcom_interface *xcs = static_cast<Gcs_xcom_interface *>(gcs);
+  auto *xcs = static_cast<Gcs_xcom_interface *>(gcs);
   MYSQL_GCS_LOG_INFO("Allowlist as string with collected IP addresses: "
                      << xcs->get_ip_allowlist().to_string());
   ASSERT_FALSE(xcs->get_ip_allowlist().get_configured_ip_allowlist().empty());
@@ -145,7 +145,7 @@ TEST_F(GcsAllowlist, AbsentList) {
   err = gcs->finalize();
 
   // claim interface memory back
-  xcs->cleanup();
+  Gcs_xcom_interface::cleanup();
 
   // initialization failed, and thus so will finalization
   ASSERT_EQ(err, GCS_OK);
@@ -167,14 +167,14 @@ TEST_F(GcsAllowlist, ListWithHostname) {
   assembled_allowlist << machine_hostname.data();
   assembled_allowlist << "/16,";
   assembled_allowlist << "localhost/32";
-  params.add_parameter("ip_allowlist", assembled_allowlist.str().c_str());
+  params.add_parameter("ip_allowlist", assembled_allowlist.str());
 
   Gcs_interface *gcs = Gcs_xcom_interface::get_interface();
   enum_gcs_error err = gcs->initialize(params);
   ASSERT_EQ(err, GCS_OK);
 
   // verify that a allowlist was provided by default
-  Gcs_xcom_interface *xcs = static_cast<Gcs_xcom_interface *>(gcs);
+  auto *xcs = static_cast<Gcs_xcom_interface *>(gcs);
   MYSQL_GCS_LOG_INFO("Allowlist as string with collected IP addresses: "
                      << xcs->get_ip_allowlist().to_string());
   ASSERT_FALSE(xcs->get_ip_allowlist().get_configured_ip_allowlist().empty());
@@ -188,7 +188,7 @@ TEST_F(GcsAllowlist, ListWithHostname) {
                    [](std::pair<sa_family_t, std::string> const &ip_entry) {
                      return ip_entry.first == AF_INET;
                    });
-  bool has_v4_addresses = has_v4_addresses_it != ips.end();
+  bool const has_v4_addresses = has_v4_addresses_it != ips.end();
 
   // This should not block to whatever address localhost resolves
   for (auto &ip : ips) {
@@ -203,7 +203,7 @@ TEST_F(GcsAllowlist, ListWithHostname) {
   err = gcs->finalize();
 
   // claim interface memory back
-  xcs->cleanup();
+  Gcs_xcom_interface::cleanup();
 
   ASSERT_EQ(err, GCS_OK);
 }
@@ -225,14 +225,14 @@ TEST_F(GcsAllowlist, ListWithUnresolvableHostname) {
   assembled_allowlist << "/16,";
   assembled_allowlist << "unresolvablehostname/32,";
   assembled_allowlist << "localhost/32";
-  params.add_parameter("ip_allowlist", assembled_allowlist.str().c_str());
+  params.add_parameter("ip_allowlist", assembled_allowlist.str());
 
   Gcs_interface *gcs = Gcs_xcom_interface::get_interface();
   enum_gcs_error err = gcs->initialize(params);
   ASSERT_EQ(err, GCS_OK);
 
   // verify that a allowlist was provided by default
-  Gcs_xcom_interface *xcs = static_cast<Gcs_xcom_interface *>(gcs);
+  auto *xcs = static_cast<Gcs_xcom_interface *>(gcs);
   MYSQL_GCS_LOG_INFO("Allowlist as string with collected IP addresses: "
                      << xcs->get_ip_allowlist().to_string());
   ASSERT_FALSE(xcs->get_ip_allowlist().get_configured_ip_allowlist().empty());
@@ -247,7 +247,7 @@ TEST_F(GcsAllowlist, ListWithUnresolvableHostname) {
   err = gcs->finalize();
 
   // claim interface memory back
-  xcs->cleanup();
+  Gcs_xcom_interface::cleanup();
 
   ASSERT_EQ(err, GCS_OK);
 }

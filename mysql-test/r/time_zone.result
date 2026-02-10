@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS t1;
 show variables like "system_time_zone";
 Variable_name	Value
-system_time_zone	MET
+system_time_zone	CET
 select @a:=FROM_UNIXTIME(1);
 @a:=FROM_UNIXTIME(1)
 1970-01-01 01:00:01
@@ -358,7 +358,7 @@ SET time_zone = DEFAULT;
 # Second argument shouldn't have datetime + timezone info.
 SELECT ADDTIME( '2001-01-01 00:00:00+02:00', '2001-01-01 00:00:00+02:00' );
 ADDTIME( '2001-01-01 00:00:00+02:00', '2001-01-01 00:00:00+02:00' )
-NULL
+2001-01-01 22:00:00
 SET time_zone = '+05:30';
 SELECT CAST( '2001-01-01 00:00:00+02:00' AS DATETIME );
 CAST( '2001-01-01 00:00:00+02:00' AS DATETIME )
@@ -389,7 +389,6 @@ TIMEDIFF( '2000:01:01 00:00:00+02:00',
 '2000:01:01 00:00:00.000001+01:00' )
 -01:00:00.000001
 Warnings:
-Warning	4095	Delimiter ':' in position 4 in datetime value '2000:01:01 00:00:00+02:00' at row 1 is deprecated. Prefer the standard '-'.
 Warning	4095	Delimiter ':' in position 4 in datetime value '2000:01:01 00:00:00.000001+01:00' at row 1 is deprecated. Prefer the standard '-'.
 SELECT DATE_ADD( '2000-12-31 23:59:59+02:00', INTERVAL 1 SECOND );
 DATE_ADD( '2000-12-31 23:59:59+02:00', INTERVAL 1 SECOND )
@@ -455,7 +454,6 @@ TIMEDIFF( '2000:01:01 00:00:00+02:00',
 '2000:01:01 00:00:00.000001+01:00' )
 -01:00:00.000001
 Warnings:
-Warning	4095	Delimiter ':' in position 4 in datetime value '2000:01:01 00:00:00+02:00' at row 1 is deprecated. Prefer the standard '-'.
 Warning	4095	Delimiter ':' in position 4 in datetime value '2000:01:01 00:00:00.000001+01:00' at row 1 is deprecated. Prefer the standard '-'.
 SELECT DATE_ADD( '2000-12-31 23:59:59+02:00', INTERVAL 1 SECOND);
 DATE_ADD( '2000-12-31 23:59:59+02:00', INTERVAL 1 SECOND)

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -182,19 +182,19 @@ using Donor_Callback = std::function<bool(std::string &, uint32_t)>;
 @param[in]	callback	callback function
 @return true, if scan is successful or match is found. */
 static bool scan_donor_list(const std::string &donor_list,
-                            Donor_Callback callback) {
+                            const Donor_Callback &callback) {
   size_t comma_pos = 0;
   size_t begin_pos = 0;
 
   try {
     /* Don't allow space in donor list. */
-    auto space_pos = donor_list.find(" ");
+    auto space_pos = donor_list.find(' ');
     if (space_pos != std::string::npos) {
       return (false);
     }
     /* Scan through all entries. */
     while (comma_pos != std::string::npos) {
-      comma_pos = donor_list.find(",", begin_pos);
+      comma_pos = donor_list.find(',', begin_pos);
       auto entry_len = comma_pos;
 
       if (entry_len != std::string::npos) {
@@ -206,7 +206,7 @@ static bool scan_donor_list(const std::string &donor_list,
       }
 
       const std::string entry = donor_list.substr(begin_pos, entry_len);
-      auto colon_pos = entry.find(":");
+      auto colon_pos = entry.find(':');
 
       /* Bad entry if no separator is found or found in beginning. */
       if (colon_pos == std::string::npos || colon_pos == 0) {
@@ -215,7 +215,7 @@ static bool scan_donor_list(const std::string &donor_list,
 
       auto port_str = entry.substr(colon_pos + 1);
       /* Allow only decimal digit in PORT. */
-      for (char &digit : port_str) {
+      for (char const &digit : port_str) {
         if (std::isdigit(digit) == 0) {
           return (false);
         }
@@ -223,7 +223,7 @@ static bool scan_donor_list(const std::string &donor_list,
       auto valid_port = static_cast<uint32_t>(std::stoi(port_str));
       auto valid_host = entry.substr(0, colon_pos);
 
-      bool match = callback(valid_host, valid_port);
+      bool const match = callback(valid_host, valid_port);
 
       if (match) {
         return (true);
@@ -257,7 +257,8 @@ static int match_valid_donor_address(MYSQL_THD thd, const char *host,
   auto &valid_str = configs[0].second;
   bool found = false;
 
-  Donor_Callback callback = [&](std::string &valid_host, uint32_t valid_port) {
+  Donor_Callback const callback = [&](std::string &valid_host,
+                                      uint32_t valid_port) {
     /* Host in MySQL is case insensitive and converted to lower case. */
     auto transform_lower = [](unsigned char c) {
       return static_cast<unsigned char>(std::tolower(c));
@@ -266,7 +267,7 @@ static int match_valid_donor_address(MYSQL_THD thd, const char *host,
                    transform_lower);
 
     /* Check if input matches with configured host and port. */
-    if (0 == valid_host.compare(host) && port == valid_port) {
+    if (host == valid_host && port == valid_port) {
       found = true;
     }
     return (found);
@@ -301,7 +302,7 @@ static int check_donor_addr_format(MYSQL_THD thd, SYS_VAR *var [[maybe_unused]],
   char temp_buffer[STRING_BUFFER_USUAL_SIZE];
   auto buf_len = static_cast<int>(sizeof(temp_buffer));
 
-  auto addrs_cstring = value->val_str(value, temp_buffer, &buf_len);
+  const auto *addrs_cstring = value->val_str(value, temp_buffer, &buf_len);
 
   if (addrs_cstring && (addrs_cstring == temp_buffer)) {
     addrs_cstring = thd_strmake(thd, addrs_cstring, buf_len);
@@ -317,9 +318,11 @@ static int check_donor_addr_format(MYSQL_THD thd, SYS_VAR *var [[maybe_unused]],
 
   const std::string addrs(addrs_cstring);
 
-  Donor_Callback callback = [](std::string, uint32_t) { return (false); };
+  const Donor_Callback callback = [](const std::string &, uint32_t) {
+    return (false);
+  };
 
-  bool success = scan_donor_list(addrs_cstring, callback);
+  bool const success = scan_donor_list(addrs_cstring, callback);
 
   if (!success) {
     (*(const char **)save) = nullptr;

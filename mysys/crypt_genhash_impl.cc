@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,27 +30,26 @@
   @file mysys/crypt_genhash_impl.cc
 */
 
-// First include (the generated) my_config.h, to get correct platform defines.
-#include "my_config.h"
+#include "my_config.h"  // IWYU pragma: keep HAVE_STRLCAT
 
 #include <memory>
 
 #include <sys/types.h>
 
-#include <openssl/evp.h>
+#include <openssl/evp.h>  // IWYU pragma: keep
+// IWYU pragma: no_include <openssl/types.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "crypt_genhash_impl.h"
-#include "m_string.h"
-#include "my_inttypes.h"
+#include "my_inttypes.h"  // IWYU pragma: keep
+#include "my_ssl_algo_cache.h"
 
-#include <errno.h>
+#include <cerrno>
 
 #define DIGEST_CTX EVP_MD_CTX
 #define DIGEST_LEN SHA256_DIGEST_LENGTH
@@ -62,7 +61,7 @@ static void DIGESTCreate(DIGEST_CTX **ctx) {
 }
 
 static void DIGESTInit(DIGEST_CTX *ctx) {
-  EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
+  EVP_DigestInit_ex(ctx, my_EVP_sha256(), nullptr);
 }
 
 static void DIGESTUpdate(DIGEST_CTX *ctx, const void *plaintext, int len) {
@@ -164,7 +163,7 @@ static uint getrounds(const char *s) {
     An error occurred or there is non-numeric stuff at the end
     which isn't one of the crypt(3c) special chars ',' or '$'
   */
-  if (errno != 0 || val < 0 || !(*e == '\0' || *e == ',' || *e == '$')) {
+  if (errno != 0 || val < 0 || (*e != '\0' && *e != ',' && *e != '$')) {
     return (0);
   }
 
@@ -323,7 +322,7 @@ char *my_crypt_genhash(char *ctbuffer, size_t ctbufflen, const char *plaintext,
   DIGESTFinal(DP, ctxDP);
 
   /* 16. */
-  std::unique_ptr<char[]> PPbuf(new char[plaintext_len]);
+  std::unique_ptr<char[]> const PPbuf(new char[plaintext_len]);
   Pp = P = PPbuf.get();
   for (i = plaintext_len; i >= MIXCHARS; i -= MIXCHARS) {
     Pp = (char *)(memcpy(Pp, DP, MIXCHARS)) + MIXCHARS;
@@ -336,7 +335,7 @@ char *my_crypt_genhash(char *ctbuffer, size_t ctbufflen, const char *plaintext,
   DIGESTFinal(DS, ctxDS);
 
   /* 20. */
-  std::unique_ptr<char[]> SSbuf(new char[salt_len]);
+  std::unique_ptr<char[]> const SSbuf(new char[salt_len]);
   Sp = S = SSbuf.get();
   for (i = salt_len; i >= MIXCHARS; i -= MIXCHARS) {
     Sp = (char *)(memcpy(Sp, DS, MIXCHARS)) + MIXCHARS;

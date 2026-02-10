@@ -8,6 +8,9 @@ if (!$require_case_insensitive_file_system)
   --source include/have_case_sensitive_file_system.inc
 }
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 --source include/no_valgrind_without_big.inc
 
 #Don't run this test when thread_pool active
@@ -39,3 +42,5 @@ having  table2 . grantor <> '2008-02-28 22:17:05.025739' limit 9;
 eval EXPLAIN $query;
 eval $query;
 DROP TABLE mysql.procs_priv_copy;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

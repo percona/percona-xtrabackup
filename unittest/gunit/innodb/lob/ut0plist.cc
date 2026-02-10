@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -90,7 +90,7 @@ void test_01() {
 
   base.print_list(std::cout);
 
-  plist_node_t first = base.get_first_node();
+  plist_node_t const first = base.get_first_node();
   plist_node_t last = base.get_last_node();
   plist_node_t cur = first.get_next_node();
   cur = cur.get_next_node();

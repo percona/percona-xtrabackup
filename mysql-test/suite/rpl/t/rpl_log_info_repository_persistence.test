@@ -153,7 +153,6 @@
 --source include/have_debug_sync.inc
 --source include/not_group_replication_plugin.inc
 --source include/have_binlog_format_row.inc
---source include/not_replica_parallel_workers.inc
 --source include/not_have_privilege_checks_user.inc
 --source include/rpl/init_source_replica.inc
 
@@ -243,7 +242,6 @@ CALL mtr.add_suppression("Replica SQL for channel 'ch1': Replica failed to initi
 #      privilege_checks_user with REPLICATION_APPLIER privilege.
 CREATE USER 'replication_applier'@'localhost' IDENTIFIED BY 'password';
 GRANT REPLICATION_APPLIER ON * . * TO 'replication_applier'@'localhost';
-FLUSH PRIVILEGES;
 
 STOP REPLICA FOR CHANNEL "";
 CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=10, PRIVILEGE_CHECKS_USER='replication_applier'@'localhost';

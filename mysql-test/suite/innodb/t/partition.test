@@ -892,7 +892,7 @@ ENGINE=INNODB
 PARTITION BY KEY(col1) PARTITIONS 2;
 
 --disable_warnings
-SELECT * FROM t1 WHERE sha(uuid_short());
+SELECT * FROM t1 WHERE sha2(uuid_short(),256);
 --enable_warnings
 
 DROP TABLE t1;

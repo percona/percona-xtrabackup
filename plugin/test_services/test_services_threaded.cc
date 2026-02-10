@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@
 #include <fcntl.h>
 #include <mysql/plugin.h>
 #include <mysql_version.h>
-#include <stdlib.h>
+#include <cstdlib>
 
 #include <mysql/components/my_service.h>
 #include <mysql/components/services/log_builtins.h>
@@ -127,7 +127,7 @@ static int test_services_plugin_init(void *p) {
   if (init_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs)) return 1;
   struct test_services_context *con;
   my_thread_attr_t attr; /* Thread attributes */
-  struct st_plugin_int *plugin = (struct st_plugin_int *)p;
+  auto *plugin = (struct st_plugin_int *)p;
   con = (struct test_services_context *)my_malloc(
       PSI_INSTRUMENT_ME, sizeof(struct test_services_context), MYF(0));
   my_thread_attr_init(&attr);
@@ -149,9 +149,8 @@ static int test_services_plugin_init(void *p) {
 static int test_services_plugin_deinit(void *p) {
   DBUG_TRACE;
   void *dummy_retval;
-  struct st_plugin_int *plugin = (struct st_plugin_int *)p;
-  struct test_services_context *con =
-      (struct test_services_context *)plugin->data;
+  auto *plugin = (struct st_plugin_int *)p;
+  auto *con = (struct test_services_context *)plugin->data;
   my_thread_cancel(&con->test_services_thread);
   my_thread_join(&con->test_services_thread, &dummy_retval);
   my_free(con);

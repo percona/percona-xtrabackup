@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <iterator>
 #include <new>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -67,28 +68,26 @@ static size_t BytesNeededForMatchFlags(size_t rows) {
   return (rows + 7) / 8;
 }
 
-BKAIterator::BKAIterator(THD *thd,
-                         unique_ptr_destroy_only<RowIterator> outer_input,
-                         const Prealloced_array<TABLE *, 4> &outer_input_tables,
-                         unique_ptr_destroy_only<RowIterator> inner_input,
-                         size_t max_memory_available,
-                         size_t mrr_bytes_needed_for_single_inner_row,
-                         float expected_inner_rows_per_outer_row,
-                         bool store_rowids, table_map tables_to_get_rowid_for,
-                         MultiRangeRowIterator *mrr_iterator,
-                         JoinType join_type)
+BKAIterator::BKAIterator(
+    THD *thd, unique_ptr_destroy_only<RowIterator> outer_input,
+    const Prealloced_array<TABLE *, 4> &outer_input_tables,
+    unique_ptr_destroy_only<RowIterator> inner_input,
+    size_t max_memory_available, size_t mrr_bytes_needed_for_single_inner_row,
+    float expected_inner_rows_per_outer_row, bool store_rowids,
+    table_map tables_to_get_rowid_for, MultiRangeRowIterator *mrr_iterator,
+    std::span<AccessPath *> single_row_index_lookups, JoinType join_type)
     : RowIterator(thd),
       m_outer_input(std::move(outer_input)),
       m_inner_input(std::move(inner_input)),
       m_mem_root(key_memory_hash_op, 16384 /* 16 kB */),
       m_rows(&m_mem_root),
       m_outer_input_tables(outer_input_tables, store_rowids,
-                           tables_to_get_rowid_for,
-                           /*tables_to_store_contents_of_null_rows_for=*/0),
+                           tables_to_get_rowid_for),
       m_max_memory_available(max_memory_available),
       m_mrr_bytes_needed_for_single_inner_row(
           mrr_bytes_needed_for_single_inner_row),
       m_mrr_iterator(mrr_iterator),
+      m_single_row_index_lookups(single_row_index_lookups),
       m_join_type(join_type) {
   assert(m_outer_input != nullptr);
   assert(m_inner_input != nullptr);
@@ -98,7 +97,7 @@ BKAIterator::BKAIterator(THD *thd,
             std::max(expected_inner_rows_per_outer_row, 1.0f));
 }
 
-bool BKAIterator::Init() {
+bool BKAIterator::DoInit() {
   if (!m_outer_input_tables.has_blob_column()) {
     size_t upper_row_size =
         pack_rows::ComputeRowSizeUpperBoundSansBlobs(m_outer_input_tables);
@@ -107,8 +106,7 @@ bool BKAIterator::Init() {
       return true;
     }
   }
-  PrepareForRequestRowId(m_outer_input_tables.tables(),
-                         m_outer_input_tables.tables_to_get_rowid_for());
+  m_outer_input_tables.PrepareForRequestRowId();
 
   BeginNewBatch();
   m_end_of_outer_rows = false;
@@ -122,6 +120,15 @@ void BKAIterator::BeginNewBatch() {
   new (&m_rows) Mem_root_array<BufferRow>(&m_mem_root);
   m_bytes_used = 0;
   m_state = State::NEED_OUTER_ROWS;
+
+  // Invalidate the cache in all single-row index lookups below us. The previous
+  // execution of the join, or the processing of the previous batch in the same
+  // join, may have overwritten the cached value in EQRefIterator with a value
+  // from a different row, and the next read from the EQRefIterator must read
+  // the correct value from the index.
+  for (AccessPath *lookup : m_single_row_index_lookups) {
+    lookup->eq_ref().ref->key_err = true;
+  }
 }
 
 int BKAIterator::ReadOuterRows() {
@@ -147,8 +154,7 @@ int BKAIterator::ReadOuterRows() {
         m_end_of_outer_rows = true;
         break;
       }
-      RequestRowId(m_outer_input_tables.tables(),
-                   m_outer_input_tables.tables_to_get_rowid_for());
+      m_outer_input_tables.RequestRowId();
 
       // Save the contents of all columns marked for reading.
       if (StoreFromTableBuffers(m_outer_input_tables, &m_outer_row_buffer)) {
@@ -267,7 +273,7 @@ int BKAIterator::MakeNullComplementedRow() {
   return -1;
 }
 
-int BKAIterator::Read() {
+int BKAIterator::DoRead() {
   for (;;) {  // Termination condition within loop.
     switch (m_state) {
       case State::END_OF_ROWS:
@@ -328,11 +334,10 @@ MultiRangeRowIterator::MultiRangeRowIterator(
       m_ref(ref),
       m_mrr_flags(mrr_flags),
       m_outer_input_tables(outer_input_tables, store_rowids,
-                           tables_to_get_rowid_for,
-                           /*tables_to_store_contents_of_null_rows_for=*/0),
+                           tables_to_get_rowid_for),
       m_join_type(join_type) {}
 
-bool MultiRangeRowIterator::Init() {
+bool MultiRangeRowIterator::DoInit() {
   /*
     Prepare to iterate over keys from the join buffer and to get
     matching candidates obtained with MRR handler functions.
@@ -428,7 +433,7 @@ bool MultiRangeRowIterator::MrrSkipRecord(char *range_info) {
   return RowHasBeenRead(rec_ptr);
 }
 
-int MultiRangeRowIterator::Read() {
+int MultiRangeRowIterator::DoRead() {
   // Read a row from the MRR buffer. rec_ptr tells us which outer row
   // this corresponds to; it corresponds to range->ptr in MrrNextCallback(),
   // and points to the serialized outer row in BKAIterator's m_row array.

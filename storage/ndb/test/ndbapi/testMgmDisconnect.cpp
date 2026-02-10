@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include <stdlib.h>
+#include <cstdlib>
 
 #include <NdbSleep.h>
 #include <mgmapi.h>
@@ -49,7 +49,7 @@ int main() {
     while (ndb_mgm_is_connected(handle) != 0) {
       struct ndb_mgm_cluster_state *state = ndb_mgm_get_status(handle);
 
-      if (state == NULL) {
+      if (state == nullptr) {
         printf("ndb_mgm_get_status failed, error: '%d: %s', line: %d\n",
                ndb_mgm_get_latest_error(handle),
                ndb_mgm_get_latest_error_desc(handle),

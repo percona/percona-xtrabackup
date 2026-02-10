@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,7 +49,6 @@ extern int NdbLockCpu_Init();
 extern void NdbLockCpu_End();
 extern void NdbTick_Init();
 extern void NdbOut_Init();
-extern void NdbSpin_Init();
 extern int NdbHW_Init();
 extern void NdbHW_End();
 

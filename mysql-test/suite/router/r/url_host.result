@@ -1,0 +1,421 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+create 3 different tables in the test schema, each will be exposed by a different
+sercvice instance so that we could see which service handles the request
+create database host_tests;
+create table host_tests.table1(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+insert into host_tests.table1 values(1, "TABLE1");
+create table host_tests.table2(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+insert into host_tests.table2 values(1, "TABLE2");
+create table host_tests.table3(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+insert into host_tests.table3 values(1, "TABLE3");
+CREATE PROCEDURE host_tests.procedure1() BEGIN select "PROCEDURE1"; END;$$
+CREATE PROCEDURE host_tests.procedure2() BEGIN select "PROCEDURE2"; END;$$
+CREATE PROCEDURE host_tests.procedure3() BEGIN select "PROCEDURE3"; END;$$
+CREATE FUNCTION host_tests.function1() RETURNS VARCHAR(20) BEGIN RETURN "FUNCTION1"; END;$$
+CREATE FUNCTION host_tests.function2() RETURNS VARCHAR(20) BEGIN RETURN "FUNCTION2"; END;$$
+CREATE FUNCTION host_tests.function3() RETURNS VARCHAR(20) BEGIN RETURN "FUNCTION3"; END;$$
+# Registred SERVICE at path: /svc
+SET @service_id1=@service_id;
+# Registred SERVICE at path: /svc
+SET @service_id2=@service_id;
+# Registred SERVICE at path: /svc
+SET @service_id3=@service_id;
+# Registred SERVICE at path: /svc
+SET @service_id4=@service_id;
+##########################################
+# Add our test schema to each service
+##########################################
+# Registred DB_SCHEMA at path: /svc/hostTests
+SET @schema_id1=@schema_id;
+# Registred DB_SCHEMA at path: /svc/hostTests
+SET @schema_id2=@schema_id;
+# Registred DB_SCHEMA at path: /svc/hostTests
+SET @schema_id3=@schema_id;
+# Registred DB_SCHEMA at path: /svc/hostTests
+SET @schema_id4=@schema_id;
+##########################################
+# Expose the table objects
+##########################################
+# Registred DB_OBJECT at path: /svc/hostTests/tab
+# Registred DB_OBJECT at path: /svc/hostTests/tab
+# Registred DB_OBJECT at path: /svc/hostTests/tab
+# Registred DB_OBJECT at path: /svc/hostTests/tab
+##########################################
+# Expose the procedure objects
+##########################################
+# Registred DB_OBJECT at path: /svc/hostTests/proc
+# Registred DB_OBJECT at path: /svc/hostTests/proc
+# Registred DB_OBJECT at path: /svc/hostTests/proc
+##########################################
+# Expose the function objects
+##########################################
+# Registred DB_OBJECT at path: /svc/hostTests/func
+# Registred DB_OBJECT at path: /svc/hostTests/func
+# Registred DB_OBJECT at path: /svc/hostTests/func
+"Default host - should use "svc" with url_host="" that exposes table1/procedure1/function1
+GET /svc/hostTests/tab
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/hostTests/tab/1"
+                }
+            ],
+            "value": "TABLE1",
+            "_metadata": {
+                "etag": "1F7972BA35981814E125D3C340BCDA2DCBA7484957529EBB8263000C36BDB37D"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/hostTests/tab/"
+        }
+    ]
+}
+OK
+GET /svc/hostTests/proc
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "PROCEDURE1": "PROCEDURE1"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "PROCEDURE1",
+                        "type": "VARCHAR(10)"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+Force host=HOST1 for the request - should use "svc" configured for HOST1 that exposes table2/procedure2/function2
+verifies that protocol in links is HTTPS
+GET /svc/hostTests/tab
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "https://HOST1/svc/hostTests/tab/1"
+                }
+            ],
+            "value": "TABLE2",
+            "_metadata": {
+                "etag": "2197BBAE19076C0F7B258934FD0500A0F1A31D32FD7B47478E87AFEAC704544A"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "https://HOST1/svc/hostTests/tab/"
+        }
+    ]
+}
+OK
+GET /svc/hostTests/proc
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "PROCEDURE2": "PROCEDURE2"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "PROCEDURE2",
+                        "type": "VARCHAR(10)"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION2"
+}
+OK
+Force host=HOST3 for the request - should use "svc" configured for HOST3 that exposes table2
+verifies that protocol in links is is HTTP
+GET /svc/hostTests/tab
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "http://HOST3/svc/hostTests/tab/1"
+                }
+            ],
+            "value": "TABLE2",
+            "_metadata": {
+                "etag": "2197BBAE19076C0F7B258934FD0500A0F1A31D32FD7B47478E87AFEAC704544A"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "http://HOST3/svc/hostTests/tab/"
+        }
+    ]
+}
+OK
+Force host=HOST2:<numeric_port> for the request - should use "svc" configured for HOST2 that exposes function3
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION3"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION3"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION3"
+}
+OK
+Force host=HOST2:<non_port> for the request - should use "svc" configured for url_host="" that exposes function1
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+Force various unknown host variations for the request - should use "svc" configured for url_host="" that exposes function1
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+Force host=HOST2 for the request - should use "svc" configured for HOST2 that exposes table3/procedure3/function3
+GET /svc/hostTests/tab
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "https://HOST2/svc/hostTests/tab/1"
+                }
+            ],
+            "value": "TABLE3",
+            "_metadata": {
+                "etag": "8FE1E68554F753B4CDCBF1223C5ED5D07593578C7E03263040557C23BA57573E"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "https://HOST2/svc/hostTests/tab/"
+        }
+    ]
+}
+OK
+GET /svc/hostTests/proc
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "PROCEDURE3": "PROCEDURE3"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "PROCEDURE3",
+                        "type": "VARCHAR(10)"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION3"
+}
+OK
+Force host=HOSTUNKNOW for the request - should use "svc" configured for url_host="" that exposes table1/procedure1/function1
+as there is no service for that sepcific host
+GET /svc/hostTests/tab
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/hostTests/tab/1"
+                }
+            ],
+            "value": "TABLE1",
+            "_metadata": {
+                "etag": "1F7972BA35981814E125D3C340BCDA2DCBA7484957529EBB8263000C36BDB37D"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/hostTests/tab/"
+        }
+    ]
+}
+OK
+GET /svc/hostTests/proc
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "PROCEDURE1": "PROCEDURE1"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "PROCEDURE1",
+                        "type": "VARCHAR(10)"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+GET /svc/hostTests/func
+{
+    "result": "FUNCTION1"
+}
+OK
+DROP SCHEMA host_tests;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

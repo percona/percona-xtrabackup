@@ -276,6 +276,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	SIMPLE	tt	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	Table function: json_table; Using temporary
 Warnings:
 Note	1003	/* select#1 */ select `tt`.`id` AS `id`,`tt`.`jpath` AS `jpath`,`tt`.`jexst` AS `jexst`,`tt`.`id_n` AS `id_n`,`tt`.`jpath_n` AS `jpath_n` from json_table('[\n      {"a":"3", "n": { "l": 1}},\n      {"a":2, "n": { "l": 1}},\n      {"b":1, "n": { "l": 1}},\n      {"a":0, "n": { "l": 1}}\n    ]', '$[*]' columns (`id` for ordinality, `jpath` varchar(100) character set utf8mb4 path '$.a', `jexst` int exists path '$.b', nested path '$.n' columns (`id_n` for ordinality, `jpath_n` varchar(50) character set utf8mb4 path '$.l'))) `tt`
+SET explain_json_format_version = 1;
 explain format=json select * from
 json_table(
 '[
@@ -326,6 +327,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	/* select#1 */ select `tt`.`id` AS `id`,`tt`.`jpath` AS `jpath`,`tt`.`jexst` AS `jexst`,`tt`.`id_n` AS `id_n`,`tt`.`jpath_n` AS `jpath_n` from json_table('[\n      {"a":"3", "n": { "l": 1}},\n      {"a":2, "n": { "l": 1}},\n      {"b":1, "n": { "l": 1}},\n      {"a":0, "n": { "l": 1}}\n    ]', '$[*]' columns (`id` for ordinality, `jpath` varchar(100) character set utf8mb4 path '$.a', `jexst` int exists path '$.b', nested path '$.n' columns (`id_n` for ordinality, `jpath_n` varchar(50) character set utf8mb4 path '$.l'))) `tt`
+SET explain_json_format_version = DEFAULT;
 select * from
 json_table(
 '[
@@ -2238,4 +2240,28 @@ EXPLAIN
             -> Materialize table function  (rows=2)
         -> Table scan on t  (rows=2)
 
+DROP TABLE t;
+#
+# Bug#37382579: Hypergraph crash with JSON_TABLE and escaped characters
+#
+CREATE TABLE t(txt LONGTEXT);
+INSERT INTO t VALUES ('[1]'), ('[2]'), ('[3]');
+SELECT *
+FROM t, JSON_TABLE(txt, '$[*]' COLUMNS (i INT PATH '$')) AS jt
+ORDER BY i;
+txt	i
+[1]	1
+[2]	2
+[3]	3
+DROP TABLE t;
+#
+# Bug#36606073: json_table and exists make a bug
+#
+CREATE TABLE t(x VARCHAR(10));
+INSERT INTO t VALUES ('[1]'), ('[2]'), ('[3]');
+SELECT * FROM t WHERE EXISTS (
+SELECT * FROM JSON_TABLE(x, '$[*]' COLUMNS (i INT PATH '$')) AS jt WHERE i = 2
+);
+x
+[2]
 DROP TABLE t;

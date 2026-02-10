@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -50,7 +50,6 @@ external tools. */
 /* Enable some extra debugging output.  This code can be enabled
 independently of any UNIV_ debugging conditions. */
 #if defined UNIV_DEBUG || defined UNIV_ZIP_DEBUG
-#include <stdarg.h>
 
 MY_ATTRIBUTE((format(printf, 1, 2)))
 /** Report a failure to decompress or compress.

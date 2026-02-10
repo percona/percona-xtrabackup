@@ -1,4 +1,4 @@
-# Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -52,6 +52,9 @@ usr/share/man/man1/mysqld_safe.1
 usr/share/man/man1/perror.1
 usr/share/man/man8/mysqld.8
 # private shared libraries
+usr/lib/mysql/private/libicui18n.so.77.1
+usr/lib/mysql/private/libicustubdata.so.77.1
+usr/lib/mysql/private/libicuuc.so.77.1
 usr/lib/mysql/private/libprotobuf-lite.so.24.4.0
 usr/lib/mysql/private/libprotobuf.so.24.4.0
 usr/lib/mysql/private/libabsl_bad_any_cast_impl.so
@@ -140,18 +143,20 @@ usr/lib/mysql/private/libabsl_throw_delegate.so
 usr/lib/mysql/private/libabsl_time.so
 usr/lib/mysql/private/libabsl_time_zone.so
 # private data files
-usr/lib/mysql/private/icudt73l/cnvalias.icu
-usr/lib/mysql/private/icudt73l/uemoji.icu
-usr/lib/mysql/private/icudt73l/ulayout.icu
-usr/lib/mysql/private/icudt73l/unames.icu
-usr/lib/mysql/private/icudt73l/brkitr/*
+usr/lib/mysql/private/icudt77l/cnvalias.icu
+usr/lib/mysql/private/icudt77l/uemoji.icu
+usr/lib/mysql/private/icudt77l/ulayout.icu
+usr/lib/mysql/private/icudt77l/unames.icu
+usr/lib/mysql/private/icudt77l/brkitr/*
 # plugins
 usr/lib/mysql/plugin/component_log_filter_dragnet.so
 usr/lib/mysql/plugin/component_log_sink_json.so
 usr/lib/mysql/plugin/component_log_sink_syseventlog.so
 usr/lib/mysql/plugin/component_mysqlbackup.so
 usr/lib/mysql/plugin/component_validate_password.so
+usr/lib/mysql/plugin/component_connection_control.so
 usr/lib/mysql/plugin/component_audit_api_message_emit.so
+usr/lib/mysql/plugin/component_classic_hashing.so
 usr/lib/mysql/plugin/component_query_attributes.so
 usr/lib/mysql/plugin/component_reference_cache.so
 usr/lib/mysql/plugin/ddl_rewriter.so
@@ -164,14 +169,12 @@ usr/lib/mysql/plugin/adt_null.so
 usr/lib/mysql/plugin/keyring_udf.so
 usr/lib/mysql/plugin/auth_socket.so
 usr/lib/mysql/plugin/validate_password.so
-usr/lib/mysql/plugin/semisync_master.so
-usr/lib/mysql/plugin/semisync_slave.so
 usr/lib/mysql/plugin/semisync_source.so
 usr/lib/mysql/plugin/semisync_replica.so
 usr/lib/mysql/plugin/libpluginmecab.so
-usr/lib/mysql/plugin/version_token.so
 usr/lib/mysql/plugin/group_replication.so
 usr/lib/mysql/plugin/connection_control.so
+usr/lib/mysql/plugin/component_connection_control.so
 usr/lib/mysql/plugin/component_keyring_file.so
 # support files
 usr/share/mysql-@MYSQL_BASE_VERSION@/dictionary.txt

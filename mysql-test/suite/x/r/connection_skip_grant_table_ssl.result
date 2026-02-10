@@ -57,6 +57,8 @@ ok
 # Enable back the "grant-tables", mysqlx client
 # that uses invalid passord must be disconnected
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 Application terminated with expected error: Access denied for user 'nonblank'@'localhost' (using password: YES) (code 1045)
 ok
 # restart:

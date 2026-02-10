@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -69,10 +69,9 @@ ROUTER_ADD_SHARED_LIBRARY(routing
   mysql_routing.cc
   destination.cc
   destination_error.cc
+  destinations_option_parser.cc
   dest_metadata_cache.cc
-  dest_first_available.cc
-  dest_next_available.cc
-  dest_round_robin.cc
+  dest_static.cc
   context.cc
   mysql_routing_common.cc
   connection_container.cc
@@ -83,6 +82,7 @@ ROUTER_ADD_SHARED_LIBRARY(routing
   x_connection.cc
   connection.cc
   blocked_endpoints.cc
+  routing_guidelines_adapter.cc
 
   await_client_or_server.cc
   forwarding_processor.cc
@@ -174,6 +174,7 @@ ROUTER_ADD_SHARED_LIBRARY(routing
   connection_pool
   destination_status
   sql_lexer
+  routing_guidelines
   )
 
 IF(SOLARIS)

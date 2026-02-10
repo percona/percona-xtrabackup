@@ -4,6 +4,7 @@
 # Creating manifest file for current MySQL server instance
 # Re-starting mysql server with manifest file
 # ----------------------------------------------------------------------
+include/rpl/set_gtid_mode_off.inc
 set @start_read_only= @@global.read_only;
 DROP TABLE IF EXISTS t1,t2,t3;
 set @orig_sql_mode= @@sql_mode;
@@ -144,11 +145,15 @@ delete from mysql.db where User like 'mysqltest_%';
 delete from mysql.tables_priv where User like 'mysqltest_%';
 delete from mysql.columns_priv where User like 'mysqltest_%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create user `mysqltest_u1`@`%`;
 grant all on mysqltest_db2.* to `mysqltest_u1`@`%`;
 create database mysqltest_db1;
 grant all on mysqltest_db1.* to `mysqltest_u1`@`%`;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 connect (con_bug27440,127.0.0.1,mysqltest_u1,,test,MASTER_MYPORT,);
 connection con_bug27440;
 create database mysqltest_db2;
@@ -164,6 +169,8 @@ delete from mysql.db where User like 'mysqltest_%';
 delete from mysql.tables_priv where User like 'mysqltest_%';
 delete from mysql.columns_priv where User like 'mysqltest_%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop database mysqltest_db1;
 set global read_only= @start_read_only;
 #
@@ -983,3 +990,4 @@ DROP USER user1@localhost;
 # Removing local configuration file for keyring component: component_keyring_file
 # Restarting server without the manifest file
 # ----------------------------------------------------------------------
+include/rpl/set_gtid_mode_on.inc

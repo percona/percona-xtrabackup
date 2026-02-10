@@ -73,12 +73,12 @@ INSERT INTO test.t1 VALUES
 
 --echo ## Verify inserted values on master, sync and verify those on replica
 
-SELECT a, sha1(b), sha1(bm), sha1(bl), sha1(t), sha1(tm), sha1(tl) FROM test.t1 ORDER BY a;
+SELECT a, sha2(b,256), sha2(bm,256), sha2(bl,256), sha2(t,256), sha2(tm,256), sha2(tl,256) FROM test.t1 ORDER BY a;
 
 --sync_slave_with_master
 --connection slave
 
-SELECT a, sha1(b), sha1(bm), sha1(bl), sha1(t), sha1(tm), sha1(tl) FROM test.t1 ORDER BY a;
+SELECT a, sha2(b,256), sha2(bm,256), sha2(bl,256), sha2(t,256), sha2(tm,256), sha2(tl,256) FROM test.t1 ORDER BY a;
 
 --echo
 
@@ -94,12 +94,12 @@ UPDATE test.t1 SET
   tm=left(tm, 59000),
   tl=left(tl, 59000);
 
-SELECT a, sha1(b), sha1(bm), sha1(bl), sha1(t), sha1(tm), sha1(tl) FROM test.t1 order by a;
+SELECT a, sha2(b,256), sha2(bm,256), sha2(bl,256), sha2(t,256), sha2(tm,256), sha2(tl,256) FROM test.t1 order by a;
 
 --sync_slave_with_master
 --connection slave
 
-SELECT a, sha1(b), sha1(bm), sha1(bl), sha1(t), sha1(tm), sha1(tl) FROM test.t1 order by a;
+SELECT a, sha2(b,256), sha2(bm,256), sha2(bl,256), sha2(t,256), sha2(tm,256), sha2(tl,256) FROM test.t1 order by a;
 
 --echo
 
@@ -112,7 +112,7 @@ DELETE FROM test.t1;
 --sync_slave_with_master
 --connection slave
 
-SELECT a, sha1(b), sha1(bm), sha1(bl), sha1(t), sha1(tm), sha1(tl) FROM test.t1 order by a;
+SELECT a, sha2(b,256), sha2(bm,256), sha2(bl,256), sha2(t,256), sha2(tm,256), sha2(tl,256) FROM test.t1 order by a;
 
 --connection master
 DROP TABLE test.t1;

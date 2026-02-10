@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,7 +52,7 @@ class SqlResultSet : public Properties {
   SqlResultSet();
   SqlResultSet(SqlResultSet &) = delete;
   SqlResultSet(SqlResultSet &&) = delete;
-  ~SqlResultSet();
+  ~SqlResultSet() override;
 
   const char *column(const char *col_name);
   std::string_view columnAsString(const char *col_name);
@@ -87,7 +87,7 @@ class SqlClient {
        object (since it's not owned by the class).
    */
   SqlClient(MYSQL *mysql);
-  SqlClient(const char *dbname = "mysql", const char *suffix = NULL);
+  SqlClient(const char *dbname = "mysql", const char *suffix = nullptr);
   ~SqlClient();
 
   bool doQuery(const char *query);

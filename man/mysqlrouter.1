@@ -2,12 +2,12 @@
 .\"     Title: mysqlrouter
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 09/12/2024
+.\"      Date: 12/11/2025
 .\"    Manual: MySQL Router
-.\"    Source: MySQL 9.0
+.\"    Source: MySQL 9.6
 .\"  Language: English
 .\"
-.TH "MYSQLROUTER" "1" "09/12/2024" "MySQL 9\&.0" "MySQL Router"
+.TH "MYSQLROUTER" "1" "12/11/2025" "MySQL 9\&.6" "MySQL Router"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -96,7 +96,7 @@ Displays the version number and related information of the application, and exit
 .\}
 .nf
 $> \fBmysqlrouter \-\-version\fR
-MySQL Router v9\&.0\&.0 on Linux (64\-bit) (GPL community edition)
+MySQL Router v9\&.6\&.0 on Linux (64\-bit) (GPL community edition)
 .fi
 .if n \{\
 .RE
@@ -375,6 +375,56 @@ command line option that sets the
 configuration file option during the bootstrap process\&.
 .sp
 This option is not available on Windows\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-core\-file\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--core-file[={0|1}]
+T}
+T{
+Type
+T}:T{
+Boolean
+T}
+T{
+Default Value
+T}:T{
+0
+T}
+.TE
+.sp 1
+Write a core file if
+\fBmysqlrouter\fR
+dies\&. The name and location of the core file is system dependent\&. On Linux, a core file named
+core\&.\fIpid\fR
+is written to the current working directory of the process\&.
+\fIpid\fR
+represents the process ID of the server process\&. On macOS, a core file named
+core\&.\fIpid\fR
+is written to the
+/cores
+directory, if the process has the
+com\&.apple\&.security\&.get\-task\-allow
+entitlement\&. On Solaris, use the
+\fBcoreadm\fR
+command to specify where to write the core file and how to name it\&. On Windows, a minidump file named
+mysqlrouter\&.\fI{pid}\fR\&.dmp
+is written to the current working directory of the process\&.
 .RE
 .sp
 .RS 4
@@ -3033,7 +3083,7 @@ at bootstrap\&. It defaults to 8443\&. Availability of the port is not checked\&
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 2006, 2024, Oracle and/or its affiliates.
+Copyright \(co 2006, 2025, Oracle and/or its affiliates.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
@@ -3045,12 +3095,12 @@ You should have received a copy of the GNU General Public License along with the
 .IP " 1." 4
 Connecting Using URI-Like Connection Strings
 .RS 4
-\%https://dev.mysql.com/doc/refman/9.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri
+\%https://dev.mysql.com/doc/refman/9.6/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri
 .RE
 .IP " 2." 4
 ClusterSet
 .RS 4
-\%https://dev.mysql.com/doc/mysql-shell/9.0/en/innodb-clusterset.html
+\%https://dev.mysql.com/doc/mysql-shell/9.6/en/innodb-clusterset.html
 .RE
 .SH AUTHOR
 Oracle Corporation (http://dev.mysql.com/).

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,7 +36,8 @@
 
 class NdbRestarter {
  public:
-  NdbRestarter(const char *_addr = 0, class Ndb_cluster_connection *con = 0);
+  NdbRestarter(const char *_addr = nullptr,
+               class Ndb_cluster_connection *con = nullptr);
   ~NdbRestarter();
 
   int getDbNodeId(int _i);
@@ -49,13 +50,11 @@ class NdbRestarter {
   };
 
   int restartOneDbNode(int _nodeId, bool initial = false, bool nostart = false,
-                       bool abort = false, bool force = false,
-                       bool captureError = false);
+                       bool abort = false, bool force = false);
 
-  int restartOneDbNode2(int _nodeId, Uint32 flags, bool captureError = false) {
+  int restartOneDbNode2(int _nodeId, Uint32 flags) {
     return restartOneDbNode(_nodeId, flags & NRRF_INITIAL, flags & NRRF_NOSTART,
-                            flags & NRRF_ABORT, flags & NRRF_FORCE,
-                            captureError);
+                            flags & NRRF_ABORT, flags & NRRF_FORCE);
   }
 
   int restartAll(bool initial = false, bool nostart = false, bool abort = false,
@@ -69,8 +68,7 @@ class NdbRestarter {
   int restartAll3(bool initial = false, bool nostart = false,
                   bool abort = false, bool force = false);
 
-  int restartNodes(int *nodes, int num_nodes, Uint32 flags,
-                   bool captureError = false);
+  int restartNodes(int *nodes, int num_nodes, Uint32 flags);
 
   int startAll();
   int startNodes(const int *_nodes, int _num_nodes);
@@ -148,6 +146,8 @@ class NdbRestarter {
 
   int getNodeConnectCount(int nodeId);
 
+  int getNumLdmThreads(int nodeId);
+
  protected:
   int waitClusterState(ndb_mgm_node_status _status, unsigned int _timeout,
                        int _startphase = -1);
@@ -173,7 +173,8 @@ class NdbRestarter {
   const ndb_mgm_configuration *getConfig();
 
   class Ndb_cluster_connection *m_cluster_connection;
-  int wait_until_ready(const int *nodes = 0, int cnt = 0, int timeout = 60);
+  int wait_until_ready(const int *nodes = nullptr, int cnt = 0,
+                       int timeout = 60);
 
  public:
   Vector<ndb_mgm_node_state> ndbNodes;

@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 RESET BINARY LOGS AND GTIDS;
 SET GTID_NEXT = 'ANONYMOUS';
 CREATE TABLE t1 (a int) ENGINE=MyISAM;
@@ -27,7 +28,7 @@ SET GTID_NEXT = 'ANONYMOUS';
 CREATE USER u1@h;
 SET GTID_NEXT = 'ANONYMOUS';
 DROP USER u1@h, u2@h;
-ERROR HY000: Operation DROP USER failed for 'u2'@'h'
+ERROR HY000: Operation DROP USER failed for 'u2'@'h' (User account does not exist)
 #
 # When binlog is disabled, verify that we can set
 # GTID_NEXT to 'ANONYMOUS' after the failed DROP USER
@@ -37,3 +38,4 @@ SET GTID_NEXT = 'ANONYMOUS';
 DROP USER u1@h;
 SET GTID_NEXT = 'ANONYMOUS';
 DROP TABLE t2;
+include/rpl/set_gtid_mode_on.inc

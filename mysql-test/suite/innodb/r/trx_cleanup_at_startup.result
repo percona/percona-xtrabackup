@@ -1,0 +1,25 @@
+create table t2 (id int auto_increment, txt1 char(150), txt2 char(150), txt3 char(150), txt4 char(150), primary key(id, txt1, txt2, txt3, txt4));
+insert t2(txt1, txt2, txt3, txt4) values('a', 'a', 'a', 'a');
+insert t2(txt1, txt2, txt3, txt4) values('a', 'a', 'a', 'a');
+begin;
+# Prepare data ...
+SET SESSION debug='+d,ib_crash_during_trx_commit_in_mem';
+commit;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+Pattern "Cleaning up trx with id" found
+update t2 set id = id + 1000;
+select * from t2 order by id, txt1, txt2, txt3, txt4 limit 10;
+id	txt1	txt2	txt3	txt4
+1001	a	a	a	a
+1002	a	a	a	a
+1003	a	b	c	d
+1004	a	b	c	d
+1005	a	b	c	d
+1006	a	b	c	d
+1007	a	b	c	d
+1008	a	b	c	d
+1009	a	b	c	d
+1010	a	b	c	d
+SET SESSION debug='-d,ib_crash_during_trx_commit_in_mem';
+drop table t2;

@@ -9,6 +9,8 @@
 --source include/no_valgrind_without_big.inc
 # Adding big test option for this test.
 --source include/big_test.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 let $engine_type= InnoDB;
 let $other_engine_type= MEMORY;
@@ -1048,5 +1050,8 @@ ALTER TABLE t1 ADD KEY idx ( col1 ), ADD FULLTEXT KEY ftidx ( col4 );
 ALTER TABLE t1 DROP KEY ftidx;
 TRUNCATE TABLE t1;
 DROP TABLE t1;
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc
 
 --echo End of 6.0 tests

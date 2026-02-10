@@ -1,0 +1,69 @@
+################################################################################
+# Validate that semi sync has SSL enabled by default.
+#
+# Test:
+# 0. The test requires two servers: source and replice with semisync installed.
+# 1. Validate that SSL is enabled on the replica.
+# 2. Create a table on the source and validate that it is
+#    replicated.
+# 3. Insert rows on the source and validate that they are
+#    replicated.
+# 4. Validate semi sync plugin status on both servers.
+# 5. Clean up.
+################################################################################
+--source include/rpl/init_source_replica.inc
+--source include/have_semisync_plugin.inc
+--source include/rpl/install_semisync.inc
+
+--echo
+--echo ############################################################
+--echo # 1. Validate that SSL is enabled on the replica.
+--source include/rpl/connection_replica.inc
+--let $current_source_ssl= query_get_value(SHOW REPLICA STATUS, Source_SSL_Allowed, 1)
+--let $assert_text= Source_SSL_Allowed must be YES by default
+--let $assert_cond= "$current_source_ssl" = "YES"
+--source include/assert.inc
+
+--echo
+--echo ############################################################
+--echo # 2. Create a table on the source and validate that it is
+--echo #    replicated.
+--source include/rpl/connection_source.inc
+CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY);
+
+--echo
+--echo ############################################################
+--echo # 3. Insert rows on the source and validate that they are
+--echo #    replicated.
+--source include/rpl/connection_source.inc
+INSERT INTO t1 VALUES(1);
+INSERT INTO t1 VALUES(2);
+--source include/rpl/sync_to_replica.inc
+
+--let $assert_text= Replica must have 2 rows
+--let $assert_cond= [SELECT COUNT(*) AS count FROM t1, count, 1] = 2
+--source include/assert.inc
+
+--echo
+--echo ############################################################
+--echo # 4. Validate semi sync plugin status on both servers.
+--source include/rpl/connection_source.inc
+--let $assert_text= semi-sync is running on the source
+--let $assert_cond= "[SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME="Rpl_semi_sync_source_status", VARIABLE_VALUE, 1]" = "ON"
+--source include/assert.inc
+
+--source include/rpl/connection_replica.inc
+--let $assert_text= semi-sync is running on the replica
+--let $assert_cond= "[SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME="Rpl_semi_sync_replica_status", VARIABLE_VALUE, 1]" = "ON"
+--source include/assert.inc
+
+--echo
+--echo ############################################################
+--echo # 5. Clean up.
+--source include/rpl/connection_source.inc
+DROP TABLE t1;
+--source include/rpl/sync_to_replica.inc
+
+--source include/rpl/uninstall_semisync.inc
+
+--source include/rpl/deinit.inc

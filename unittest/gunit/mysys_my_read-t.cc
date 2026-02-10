@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,10 +23,10 @@
 
 #include "my_config.h"
 
-#include <errno.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <stddef.h>
+#include <cerrno>
+#include <cstddef>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -74,7 +74,7 @@ class MysysMyReadTest : public ::testing::Test {
 // Test of normal case: read OK
 TEST_F(MysysMyReadTest, MyReadOK) {
   uchar buf[4096];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockread(_, _, 4096)).Times(1).WillOnce(Return(4096));
 
   const size_t result = my_read(42, buf, 4096, 0);
@@ -84,7 +84,7 @@ TEST_F(MysysMyReadTest, MyReadOK) {
 // Test of normal case: read OK with MY_NABP
 TEST_F(MysysMyReadTest, MyReadOKNABP) {
   uchar buf[4096];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockread(_, _, 4096)).Times(1).WillOnce(Return(4096));
 
   const size_t result = my_read(42, buf, 4096, MYF(MY_NABP));
@@ -94,7 +94,7 @@ TEST_F(MysysMyReadTest, MyReadOKNABP) {
 // Test of disk full: read not OK
 TEST_F(MysysMyReadTest, MyReadFail) {
   uchar buf[4096];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockread(_, _, 4096))
       .Times(1)
       .WillOnce(SetErrnoAndReturn(ENOSPC, -1));
@@ -106,7 +106,7 @@ TEST_F(MysysMyReadTest, MyReadFail) {
 // Test of disk full: read not OK, with MY_NABP
 TEST_F(MysysMyReadTest, MyReadFailNABP) {
   uchar buf[4096];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockread(_, _, 4096))
       .Times(1)
       .WillOnce(SetErrnoAndReturn(ENOSPC, -1));
@@ -118,7 +118,7 @@ TEST_F(MysysMyReadTest, MyReadFailNABP) {
 // Test of normal case: read OK, with MY_FULL_IO
 TEST_F(MysysMyReadTest, MyReadOkFULLIO) {
   uchar buf[132096];  // Read 129Kb
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockread(_, _, 132096))
       .Times(1)
       .WillOnce(Return(132096));

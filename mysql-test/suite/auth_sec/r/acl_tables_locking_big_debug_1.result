@@ -323,7 +323,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 CREATE USER u3, u2, u1;
-ERROR HY000: Operation CREATE USER failed for 'u1'@'%'
+ERROR HY000: Operation CREATE USER failed for 'u1'@'%' (User account already exists)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -347,7 +347,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 ALTER USER u2 IDENTIFIED BY 'abcd';
-ERROR HY000: Operation ALTER USER failed for 'u2'@'%'
+ERROR HY000: Operation ALTER USER failed for 'u2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -393,7 +393,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 DROP USER u2;
-ERROR HY000: Operation DROP USER failed for 'u2'@'%'
+ERROR HY000: Operation DROP USER failed for 'u2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -442,7 +442,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 CREATE ROLE r3, r2, r1;
-ERROR HY000: Operation CREATE ROLE failed for 'r1'@'%'
+ERROR HY000: Operation CREATE ROLE failed for 'r1'@'%' (User account already exists)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -466,7 +466,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 DROP ROLE r2;
-ERROR HY000: Operation DROP ROLE failed for 'r2'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'r2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -932,7 +932,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 CREATE USER u3, u2, u1;
-ERROR HY000: Operation CREATE USER failed for 'u1'@'%'
+ERROR HY000: Operation CREATE USER failed for 'u1'@'%' (User account already exists)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -956,7 +956,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 ALTER USER u2 IDENTIFIED BY 'abcd';
-ERROR HY000: Operation ALTER USER failed for 'u2'@'%'
+ERROR HY000: Operation ALTER USER failed for 'u2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1002,7 +1002,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 DROP USER u2;
-ERROR HY000: Operation DROP USER failed for 'u2'@'%'
+ERROR HY000: Operation DROP USER failed for 'u2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1051,7 +1051,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 CREATE ROLE r3, r2, r1;
-ERROR HY000: Operation CREATE ROLE failed for 'r1'@'%'
+ERROR HY000: Operation CREATE ROLE failed for 'r1'@'%' (User account already exists)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1075,7 +1075,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 DROP ROLE r2;
-ERROR HY000: Operation DROP ROLE failed for 'r2'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'r2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1541,7 +1541,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 CREATE USER u3, u2, u1;
-ERROR HY000: Operation CREATE USER failed for 'u1'@'%'
+ERROR HY000: Operation CREATE USER failed for 'u1'@'%' (User account already exists)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1565,7 +1565,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 ALTER USER u2 IDENTIFIED BY 'abcd';
-ERROR HY000: Operation ALTER USER failed for 'u2'@'%'
+ERROR HY000: Operation ALTER USER failed for 'u2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1611,7 +1611,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 DROP USER u2;
-ERROR HY000: Operation DROP USER failed for 'u2'@'%'
+ERROR HY000: Operation DROP USER failed for 'u2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1660,7 +1660,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 CREATE ROLE r3, r2, r1;
-ERROR HY000: Operation CREATE ROLE failed for 'r1'@'%'
+ERROR HY000: Operation CREATE ROLE failed for 'r1'@'%' (User account already exists)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1684,7 +1684,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 DROP ROLE r2;
-ERROR HY000: Operation DROP ROLE failed for 'r2'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'r2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -2150,7 +2150,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 CREATE USER u3, u2, u1;
-ERROR HY000: Operation CREATE USER failed for 'u1'@'%'
+ERROR HY000: Operation CREATE USER failed for 'u1'@'%' (User account already exists)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -2174,7 +2174,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 ALTER USER u2 IDENTIFIED BY 'abcd';
-ERROR HY000: Operation ALTER USER failed for 'u2'@'%'
+ERROR HY000: Operation ALTER USER failed for 'u2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -2220,7 +2220,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 DROP USER u2;
-ERROR HY000: Operation DROP USER failed for 'u2'@'%'
+ERROR HY000: Operation DROP USER failed for 'u2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -2269,7 +2269,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 CREATE ROLE r3, r2, r1;
-ERROR HY000: Operation CREATE ROLE failed for 'r1'@'%'
+ERROR HY000: Operation CREATE ROLE failed for 'r1'@'%' (User account already exists)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -2293,7 +2293,7 @@ SET DEBUG="+d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 SET DEBUG_SYNC="now WAIT_FOR proceed_with_acl_ddl";
 SET DEBUG_SYNC="wl14084_after_table_locks SIGNAL flush_now";
 DROP ROLE r2;
-ERROR HY000: Operation DROP ROLE failed for 'r2'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'r2'@'%' (User account does not exist)
 SET DEBUG="-d, wl14084_acl_ddl_error_before_cache_reload_trigger_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction

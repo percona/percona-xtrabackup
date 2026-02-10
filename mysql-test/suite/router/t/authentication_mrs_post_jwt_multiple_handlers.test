@@ -1,0 +1,16 @@
+# Verify authentication support per service where user session is identified
+# by JWT token using POST data authentication where credentials
+# are not exchanged directly, but using a secure SCRAM-SHA256 flow.
+#
+# The test assigns "authentication application", to a service and
+# checks if default permissions allow to access all object under
+# the service that require authentication.
+# Additionally there are two authentication apps in one of the
+# services. This makes that there is no default authentication
+# app for it, in other words the client-application must
+# specify which app should be used.
+
+--let $test_second_handler=1
+--let $test_session_type=jwt
+--let $test_scram=scram_post
+--source ../include/test/authentication_mrs.inc

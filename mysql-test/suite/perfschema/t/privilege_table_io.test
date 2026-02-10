@@ -1,5 +1,8 @@
 # Tests for PERFORMANCE_SCHEMA table io
 
+# This test will show different output with GTID_MODE=ON
+--source include/rpl/set_gtid_mode_off.inc
+
 --source ../include/table_io_setup_helper.inc
 # Disable automatic statistics for the helper table to prevent histogram IO.
 ALTER TABLE test.marker STATS_AUTO_RECALC=0;
@@ -61,3 +64,6 @@ let $schema_to_dump= "test", "mysql";
 
 update performance_schema.setup_objects set enabled='NO'
   where object_type='TABLE' and object_schema= 'mysql';
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

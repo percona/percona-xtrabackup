@@ -1,0 +1,21 @@
+select @@global.log_diagnostic;
+@@global.log_diagnostic
+0
+select @@session.log_diagnostic;
+ERROR HY000: Variable 'log_diagnostic' is a GLOBAL variable
+show global variables like 'log_diagnostic';
+Variable_name	Value
+log_diagnostic	0
+show session variables like 'log_diagnostic';
+Variable_name	Value
+log_diagnostic	0
+select * from performance_schema.global_variables where variable_name='log_diagnostic';
+VARIABLE_NAME	VARIABLE_VALUE
+log_diagnostic	0
+select * from performance_schema.session_variables where variable_name='log_diagnostic';
+VARIABLE_NAME	VARIABLE_VALUE
+log_diagnostic	0
+set global log_diagnostic=1;
+ERROR HY000: Variable 'log_diagnostic' is a read only variable
+set session log_diagnostic=1;
+ERROR HY000: Variable 'log_diagnostic' is a read only variable

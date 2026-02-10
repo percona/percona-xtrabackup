@@ -1,5 +1,7 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 --echo
 --echo Bug#26141 mixing table types in trigger causes full
@@ -75,4 +77,5 @@ select * from t3;
 drop table t1, t2, t3;
 disconnect connection_update;
 disconnect connection_aux;
-
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

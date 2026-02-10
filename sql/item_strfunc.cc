@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,8 +55,10 @@
 #include "base64.h"  // base64_encode_max_arg_length
 #include "decimal.h"
 #include "dig_vec.h"
+#include "extra/xxhash/my_xxhash.h"
 #include "field_types.h"  // MYSQL_TYPE_BIT
-#include "lex_string.h"   // LEX_CSTRING
+#include "item_json_func.h"
+#include "lex_string.h"  // LEX_CSTRING
 #include "m_string.h"
 #include "my_aes.h"    // MY_AES_IV_SIZE
 #include "my_alloc.h"  // MEM_ROOT
@@ -66,8 +68,6 @@
 #include "my_dbug.h"
 #include "my_dir.h"  // For my_stat
 #include "my_io.h"
-#include "my_md5.h"  // MD5_HASH_SIZE
-#include "my_md5_size.h"
 #include "my_rnd.h"  // my_rand_buffer
 #include "my_sqlcommand.h"
 #include "my_stacktrace.h"
@@ -86,8 +86,8 @@
 #include "mysqld_error.h"
 #include "mysys_err.h"
 #include "nulls.h"
-#include "sha1.h"  // SHA1_HASH_SIZE
 #include "sha2.h"
+#include "sql-common/json_hash.h"
 #include "sql-common/my_decimal.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_password_policy
@@ -107,11 +107,13 @@
 #include "sql/events.h"          // Events::reconstruct_interval_expression
 #include "sql/filesort.h"
 #include "sql/handler.h"
-#include "sql/mysqld.h"                             // binary_keyword etc
+#include "sql/json_duality_view/i_s.h"  // get_json_duality_view_property
+#include "sql/mysqld.h"
 #include "sql/parse_tree_node_base.h"               // Parse_context
 #include "sql/resourcegroups/resource_group_mgr.h"  // num_vcpus
 #include "sql/rpl_gtid.h"
 #include "sql/sort_param.h"
+#include "sql/sql_base.h"
 #include "sql/sql_class.h"          // THD
 #include "sql/sql_digest.h"         // get_max_digest_length
 #include "sql/sql_digest_stream.h"  // sql_digest_state
@@ -184,91 +186,25 @@ my_decimal *Item_str_func::val_decimal(my_decimal *decimal_value) {
   char buff[64];
   String *res, tmp(buff, sizeof(buff), &my_charset_bin);
   res = val_str(&tmp);
-  if (!res) return nullptr;
+  if (res == nullptr) return nullptr;
   (void)str2my_decimal(E_DEC_FATAL_ERROR, res->ptr(), res->length(),
                        res->charset(), decimal_value);
   return decimal_value;
 }
 
-String *Item_func_md5::val_str_ascii(String *str) {
-  assert(fixed);
-  String *sptr = args[0]->val_str(str);
-  str->set_charset(&my_charset_bin);
-  if (sptr) {
-    uchar digest[MD5_HASH_SIZE] = {0};
-
-    null_value = false;
-    const int retval =
-        compute_md5_hash((char *)digest, sptr->ptr(), sptr->length());
-    if (retval == 1) {
-      push_warning_printf(current_thd, Sql_condition::SL_WARNING,
-                          ER_DA_SSL_FIPS_MODE_ERROR,
-                          ER_THD(current_thd, ER_DA_SSL_FIPS_MODE_ERROR),
-                          "FIPS mode ON/STRICT: MD5 digest is not supported.");
-    }
-    if (str->alloc(32))  // Ensure that memory is free
-    {
-      null_value = true;
-      return nullptr;
-    }
-    array_to_hex(str->ptr(), digest, MD5_HASH_SIZE);
-    str->length((uint)32);
-    return str;
-  }
-  null_value = true;
-  return nullptr;
-}
-
 /*
-  The MD5()/SHA() functions treat their parameter as being a case sensitive.
-  Thus we set binary collation on it so different instances of MD5() will be
-  compared properly.
+  Convert an array of bytes to a hexadecimal representation.
+
+  Used to generate a hexadecimal representation of a message digest.
 */
-static CHARSET_INFO *get_checksum_charset(const char *csname) {
-  CHARSET_INFO *cs = get_charset_by_csname(csname, MY_CS_BINSORT, MYF(0));
-  if (!cs) {
-    // Charset has no binary collation: use my_charset_bin.
-    cs = &my_charset_bin;
+static inline void array_to_hex(char *to, const unsigned char *str,
+                                unsigned len) {
+  static const char *hex_lower = "0123456789abcdef";
+  for (unsigned i = 0; i < len; ++i) {
+    const unsigned offset = 2 * i;
+    to[offset] = hex_lower[str[i] >> 4];
+    to[offset + 1] = hex_lower[str[i] & 0x0F];
   }
-  return cs;
-}
-
-bool Item_func_md5::resolve_type(THD *thd) {
-  if (param_type_is_default(thd, 0, -1)) return true;
-  CHARSET_INFO *cs = get_checksum_charset(args[0]->collation.collation->csname);
-  args[0]->collation.set(cs, DERIVATION_COERCIBLE);
-  set_data_type_string(32, default_charset());
-  return false;
-}
-
-String *Item_func_sha::val_str_ascii(String *str) {
-  assert(fixed);
-  String *sptr = args[0]->val_str(str);
-  str->set_charset(&my_charset_bin);
-  if (sptr) /* If we got value different from NULL */
-  {
-    /* Temporary buffer to store 160bit digest */
-    uint8 digest[SHA1_HASH_SIZE];
-    compute_sha1_hash(digest, sptr->ptr(), sptr->length());
-    /* Ensure that memory is free */
-    if (!(str->alloc(SHA1_HASH_SIZE * 2))) {
-      array_to_hex(str->ptr(), digest, SHA1_HASH_SIZE);
-      str->length((uint)SHA1_HASH_SIZE * 2);
-      null_value = false;
-      return str;
-    }
-  }
-  null_value = true;
-  return nullptr;
-}
-
-bool Item_func_sha::resolve_type(THD *thd) {
-  if (param_type_is_default(thd, 0, 1)) return true;
-  CHARSET_INFO *cs = get_checksum_charset(args[0]->collation.collation->csname);
-  args[0]->collation.set(cs, DERIVATION_COERCIBLE);
-  // size of hex representation of hash
-  set_data_type_string(SHA1_HASH_SIZE * 2, default_charset());
-  return false;
 }
 
 /*
@@ -306,22 +242,22 @@ String *Item_func_sha2::val_str_ascii(String *str) {
 #ifndef OPENSSL_NO_SHA512
     case 512:
       digest_length = SHA512_DIGEST_LENGTH;
-      (void)SHA_EVP512(input_ptr, input_len, digest_buf);
+      SHA_EVP512(input_ptr, input_len, digest_buf);
       break;
     case 384:
       digest_length = SHA384_DIGEST_LENGTH;
-      (void)SHA_EVP384(input_ptr, input_len, digest_buf);
+      SHA_EVP384(input_ptr, input_len, digest_buf);
       break;
 #endif
 #ifndef OPENSSL_NO_SHA256
     case 224:
       digest_length = SHA224_DIGEST_LENGTH;
-      (void)SHA_EVP224(input_ptr, input_len, digest_buf);
+      SHA_EVP224(input_ptr, input_len, digest_buf);
       break;
     case 256:
     case 0:  // SHA-256 is the default
       digest_length = SHA256_DIGEST_LENGTH;
-      (void)SHA_EVP256(input_ptr, input_len, digest_buf);
+      SHA_EVP256(input_ptr, input_len, digest_buf);
       break;
 #endif
     default:
@@ -349,6 +285,15 @@ String *Item_func_sha2::val_str_ascii(String *str) {
 
   null_value = false;
   return str;
+}
+
+static CHARSET_INFO *get_checksum_charset(const char *csname) {
+  CHARSET_INFO *cs = get_charset_by_csname(csname, MY_CS_BINSORT, MYF(0));
+  if (!cs) {
+    // Charset has no binary collation: use my_charset_bin.
+    cs = &my_charset_bin;
+  }
+  return cs;
 }
 
 bool Item_func_sha2::resolve_type(THD *thd) {
@@ -402,121 +347,115 @@ const int max_kdf_option_size{256};
 const int max_kdf_iterations_size{65535};
 const int min_kdf_iterations_size{1000};
 
-class kdf_argument {
-  char tmp_option_buff[max_kdf_option_size]{'\0'};
-  String tmp_option_value;
+static bool parse_kdf_option(String *kdf_option_value, string &kdf_option,
+                             bool *error_generated,
+                             const size_t max_size_allowed) {
+  /*
+    For large KDF option value, KDF option value will be set as nullptr by
+    function callers.
+    It gives warning: Warning | 1301 | Result of repeat() was
+    larger than max_allowed_packet (16777216) - truncated Here arg_count >
 
- public:
-  kdf_argument()
-      : tmp_option_value(tmp_option_buff, sizeof(tmp_option_buff),
-                         system_charset_info) {}
-
-  bool parse_kdf_option(String *kdf_option_value, string &kdf_option,
-                        bool *error_generated, const size_t max_size_allowed) {
-    /*
-      For large KDF option value, KDF option value will be set as nullptr by
-      function callers.
-      It gives warning: Warning | 1301 | Result of repeat() was
-      larger than max_allowed_packet (16777216) - truncated Here arg_count >
-
-      KDF option value as nullptr will be treated as invalid KDF option value.
-    */
-    if (!kdf_option_value) {
-      my_error(ER_AES_INVALID_KDF_OPTION_SIZE, MYF(0), max_size_allowed);
-      *error_generated = true;
-      return false;
-    }
-    if (kdf_option_value->length() > (max_size_allowed - 1)) {
-      my_error(ER_AES_INVALID_KDF_OPTION_SIZE, MYF(0), max_size_allowed);
-      *error_generated = true;
-      return false;
-    }
-    kdf_option = to_string(*kdf_option_value);
-    return true;
-  }
-
-  /**
-     Validate the options and retrieve the KDF options value.
-
-     @param arg_count   number of parameters passed to the function
-     @param args        array of arguments passed to the function
-     @param func_name   the name of the function (for errors)
-     @param [out] error_generated  set to true if error was generated.
-
-     @return retrieved KDF option values
+    KDF option value as nullptr will be treated as invalid KDF option value.
   */
-  vector<string> retrieve_kdf_options(uint arg_count, Item **args,
-                                      const char *func_name,
-                                      bool *error_generated) {
-    vector<string> kdf_options;
-    String *kdf_option_value{nullptr};
-    string kdf_option;
-
-    *error_generated = false;
-
-    if (arg_count > 3) {
-      kdf_option_value = args[3]->val_str(&tmp_option_value);
-    } else {
-      return kdf_options;
-    }
-    // KDF funtion name
-    if (!parse_kdf_option(kdf_option_value, kdf_option, error_generated,
-                          max_kdf_option_size))
-      return kdf_options;
-
-      // KDF function name should be valid
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-    if (kdf_option == "pbkdf2_hmac") {
-#else
-    if (kdf_option == "hkdf" || kdf_option == "pbkdf2_hmac") {
-#endif
-      kdf_options.push_back(kdf_option);
-    } else {
-      my_error(ER_AES_INVALID_KDF_NAME, MYF(0), func_name);
-      *error_generated = true;
-      return kdf_options;
-    }
-
-    kdf_option_value = nullptr;
-    if (arg_count > 4) {
-      kdf_option_value = args[4]->val_str(&tmp_option_value);
-    } else {
-      return kdf_options;
-    }
-    // For hkdf and pbkdf2_hmac option 1 is salt
-    if (!parse_kdf_option(kdf_option_value, kdf_option, error_generated,
-                          max_kdf_option_size))
-      return kdf_options;
-    kdf_options.push_back(kdf_option);
-
-    kdf_option_value = nullptr;
-    if (arg_count > 5) {
-      kdf_option_value = args[5]->val_str(&tmp_option_value);
-    } else {
-      return kdf_options;
-    }
-    // For hkdf option 2 is info
-    // For pbkdf2_hmac option 2 is iterations
-    size_t max_size_allowed = max_kdf_option_size;
-    if (kdf_options[0] == "pbkdf2_hmac") {
-      // 4 bytes for integer (65535).
-      max_size_allowed = 6;
-    }
-    if (!parse_kdf_option(kdf_option_value, kdf_option, error_generated,
-                          max_size_allowed))
-      return kdf_options;
-    kdf_options.push_back(kdf_option);
-
-    if ((kdf_options[0] == "pbkdf2_hmac") && (kdf_options.size() > 2)) {
-      int iter = atoi(kdf_options[2].c_str());
-      if (iter < min_kdf_iterations_size || iter > max_kdf_iterations_size) {
-        *error_generated = true;
-        my_error(ER_AES_INVALID_KDF_ITERATIONS, MYF(0), func_name);
-      }
-    }
-    return kdf_options;
+  if (kdf_option_value == nullptr) {
+    my_error(ER_AES_INVALID_KDF_OPTION_SIZE, MYF(0), max_size_allowed);
+    *error_generated = true;
+    return false;
   }
-};
+  if (kdf_option_value->length() > (max_size_allowed - 1)) {
+    my_error(ER_AES_INVALID_KDF_OPTION_SIZE, MYF(0), max_size_allowed);
+    *error_generated = true;
+    return false;
+  }
+  kdf_option = to_string(*kdf_option_value);
+  return true;
+}
+
+/**
+   Validate the options and retrieve the KDF options value.
+
+   @param arg_count   number of parameters passed to the function
+   @param args        array of arguments passed to the function
+   @param func_name   the name of the function (for errors)
+   @param [out] error_generated  set to true if error was generated.
+   @param [out] result  retrieved KDF option values
+*/
+static void retrieve_kdf_options(uint arg_count, Item **args,
+                                 const char *func_name, bool *error_generated,
+                                 vector<string> &result) {
+  *error_generated = false;
+
+  if (arg_count < 4) {
+    return;
+  }
+
+  char tmp_option_buff[max_kdf_option_size]{'\0'};
+  String tmp_option_value(tmp_option_buff, sizeof(tmp_option_buff),
+                          system_charset_info);
+
+  String *kdf_option_value = args[3]->val_str(&tmp_option_value);
+
+  // KDF funtion name
+  string kdf_option;
+  if (!parse_kdf_option(kdf_option_value, kdf_option, error_generated,
+                        max_kdf_option_size)) {
+    return;
+  }
+
+  // KDF function name should be valid
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  if (kdf_option == "pbkdf2_hmac") {
+#else
+  if (kdf_option == "hkdf" || kdf_option == "pbkdf2_hmac") {
+#endif
+    result.push_back(kdf_option);
+  } else {
+    my_error(ER_AES_INVALID_KDF_NAME, MYF(0), func_name);
+    *error_generated = true;
+    return;
+  }
+
+  kdf_option_value = nullptr;
+  if (arg_count > 4) {
+    kdf_option_value = args[4]->val_str(&tmp_option_value);
+  } else {
+    return;
+  }
+  // For hkdf and pbkdf2_hmac option 1 is salt
+  if (!parse_kdf_option(kdf_option_value, kdf_option, error_generated,
+                        max_kdf_option_size)) {
+    return;
+  }
+  result.push_back(kdf_option);
+
+  kdf_option_value = nullptr;
+  if (arg_count > 5) {
+    kdf_option_value = args[5]->val_str(&tmp_option_value);
+  } else {
+    return;
+  }
+  // For hkdf option 2 is info
+  // For pbkdf2_hmac option 2 is iterations
+  size_t max_size_allowed = max_kdf_option_size;
+  if (result[0] == "pbkdf2_hmac") {
+    // 4 bytes for integer (65535).
+    max_size_allowed = 6;
+  }
+  if (!parse_kdf_option(kdf_option_value, kdf_option, error_generated,
+                        max_size_allowed)) {
+    return;
+  }
+  result.push_back(kdf_option);
+
+  if ((result[0] == "pbkdf2_hmac") && (result.size() > 2)) {
+    const int iter = atoi(result[2].c_str());
+    if (iter < min_kdf_iterations_size || iter > max_kdf_iterations_size) {
+      *error_generated = true;
+      my_error(ER_AES_INVALID_KDF_ITERATIONS, MYF(0), func_name);
+    }
+  }
+}
 
 /** helper class to process an IV argument to aes_encrypt/aes_decrypt */
 class iv_argument {
@@ -575,6 +514,20 @@ class iv_argument {
   }
 };
 
+void Item_func_aes_encrypt::create_op_context() {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  ctx = &stack_ctx;
+#else
+  ctx = EVP_CIPHER_CTX_new();
+#endif
+}
+
+void Item_func_aes_encrypt::destroy_op_context() {
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+  EVP_CIPHER_CTX_free(ctx);
+#endif
+}
+
 bool Item_func_aes_encrypt::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
   if (super::do_itemize(pc, res)) return true;
@@ -599,7 +552,7 @@ String *Item_func_aes_encrypt::val_str(String *str) {
   String *key = args[1]->val_str(&tmp_key_value);  // key
   if (key == nullptr) return error_str();
 
-  my_aes_opmode aes_opmode =
+  const auto aes_opmode =
       static_cast<my_aes_opmode>(thd->variables.my_aes_mode);
   assert(aes_opmode <= MY_AES_END);
 
@@ -608,30 +561,35 @@ String *Item_func_aes_encrypt::val_str(String *str) {
   if (null_value) return error_str();
 
   vector<string> kdf_options;
-  kdf_argument kdf_arg;
-  kdf_options =
-      kdf_arg.retrieve_kdf_options(arg_count, args, func_name(), &null_value);
+  retrieve_kdf_options(arg_count, args, func_name(), &null_value, kdf_options);
   if (null_value) return error_str();
 
   // Calculate result length
-  int aes_length = my_aes_get_size(sptr->length(), aes_opmode);
+  const int aes_length = my_aes_get_size(sptr->length(), aes_opmode);
 
   tmp_value.set_charset(&my_charset_bin);
   const uint rkey_size = my_aes_opmode_key_sizes[aes_opmode] / 8;
   const uint key_size = key->length();
-  if ((key_size > rkey_size) && (kdf_options.size() == 0)) {
+  if ((key_size > rkey_size) && kdf_options.empty()) {
     push_warning_printf(thd, Sql_condition::SL_WARNING, WARN_AES_KEY_SIZE,
                         ER_THD(thd, WARN_AES_KEY_SIZE), rkey_size);
   }
   if (tmp_value.alloc(aes_length)) return error_str();
 
   // Finally encrypt directly to allocated buffer.
-  if (my_aes_encrypt(pointer_cast<unsigned char *>(sptr->ptr()), sptr->length(),
-                     pointer_cast<unsigned char *>(tmp_value.ptr()),
-                     pointer_cast<unsigned char *>(key->ptr()), key->length(),
-                     aes_opmode, iv_str, true,
-                     (kdf_options.size() > 0) ? &kdf_options : nullptr) ==
-      aes_length) {
+  const int length = my_aes_encrypt(
+      ctx, pointer_cast<unsigned char *>(sptr->ptr()), sptr->length(),
+      pointer_cast<unsigned char *>(tmp_value.ptr()),
+      pointer_cast<unsigned char *>(key->ptr()), key->length(), aes_opmode,
+      iv_str, true, kdf_options.empty() ? nullptr : &kdf_options);
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  EVP_CIPHER_CTX_cleanup(ctx);
+#else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+  EVP_CIPHER_CTX_reset(ctx);
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+
+  if (length == aes_length) {
     // We got the expected result length
     tmp_value.length(static_cast<size_t>(aes_length));
     return &tmp_value;
@@ -647,6 +605,20 @@ bool Item_func_aes_encrypt::resolve_type(THD *thd) {
   set_data_type_string(static_cast<ulonglong>(
       my_aes_get_size(args[0]->max_length, (enum my_aes_opmode)aes_opmode)));
   return false;
+}
+
+void Item_func_aes_decrypt::create_op_context() {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  ctx = &stack_ctx;
+#else
+  ctx = EVP_CIPHER_CTX_new();
+#endif
+}
+
+void Item_func_aes_decrypt::destroy_op_context() {
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+  EVP_CIPHER_CTX_free(ctx);
+#endif
 }
 
 bool Item_func_aes_decrypt::do_itemize(Parse_context *pc, Item **res) {
@@ -685,19 +657,23 @@ String *Item_func_aes_decrypt::val_str(String *str) {
   if (str_value.alloc(sptr->length())) return error_str();
 
   // Finally decrypt directly to allocated buffer.
-  int length;
   vector<string> kdf_options;
-  kdf_argument kdf_arg;
-  kdf_options =
-      kdf_arg.retrieve_kdf_options(arg_count, args, func_name(), &null_value);
+  retrieve_kdf_options(arg_count, args, func_name(), &null_value, kdf_options);
   if (null_value) {
     return error_str();
   }
-  length = my_aes_decrypt(
-      pointer_cast<unsigned char *>(sptr->ptr()), sptr->length(),
+  const int length = my_aes_decrypt(
+      ctx, pointer_cast<unsigned char *>(sptr->ptr()), sptr->length(),
       pointer_cast<unsigned char *>(str_value.ptr()),
       pointer_cast<unsigned char *>(key->ptr()), key->length(), aes_opmode,
       iv_str, true, (kdf_options.size() > 0) ? &kdf_options : nullptr);
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  EVP_CIPHER_CTX_cleanup(ctx);
+#else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+  EVP_CIPHER_CTX_reset(ctx);
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+
   if (length >= 0)  // if we got correct data data
   {
     str_value.length((uint)length);
@@ -1198,6 +1174,82 @@ bool Item_func_concat_ws::resolve_type(THD *thd) {
   }
   set_data_type_string(char_length);
   set_nullable(is_nullable() || max_length > thd->variables.max_allowed_packet);
+  return false;
+}
+
+String *Item_func_etag::val_str(String *str) {
+  assert(fixed);
+
+  THD *thd = current_thd;
+  m_tmp_value.length(0);
+  XXH128_hash_t final_hash{0, 0};
+
+  for (uint i = 0; i < arg_count; i++) {
+    Json_wrapper_xxh_hasher hash_key;
+    switch (args[i]->data_type()) {
+      case MYSQL_TYPE_JSON: {
+        Json_wrapper wr;
+        if (get_json_wrapper(args, i, str, func_name(), &wr)) {
+          return error_str();
+        }
+        if (args[i]->null_value) {
+          /* Adding the null_value to the hash calculation to distiguish between
+           * NULL and 'NULL as JSON'. */
+          hash_key.add_character(args[i]->null_value);
+          hash_key.add_character(0);
+        } else {
+          if (calculate_etag_for_json(
+                  wr, hash_key,
+                  JsonSerializationDefaultErrorHandler(current_thd))) {
+            return error_str();
+          }
+        }
+      } break;
+      case MYSQL_TYPE_GEOMETRY:
+      case MYSQL_TYPE_VECTOR: {
+        my_error(ER_ETAG_NOT_SUPPORTED, MYF(0), func_name());
+        return error_str();
+      } break;
+      default: {
+        String *sptr = args[i]->val_str(str);
+        if (sptr == nullptr && !args[i]->null_value) {
+          assert(thd->is_error());
+          return error_str();
+        }
+        if (args[i]->null_value) {
+          /* Adding the null_value to the hash calculation to distiguish between
+           * NULL and '\0'*/
+          hash_key.add_character(args[i]->null_value);
+          hash_key.add_character(0);
+        } else {
+          hash_key.add_string(sptr->ptr(), sptr->length());
+        }
+
+        if (thd->is_error()) {
+          return error_str();
+        }
+      } break;
+    }
+    final_hash = add_xxh128_hash(final_hash, hash_key.get_digest());
+  }
+  str->length(0);
+
+  String res;
+  XXH128_hash_hex(final_hash, &res);
+  if (m_tmp_value.append(res)) {
+    return error_str();
+  }
+  m_tmp_value.set_charset(collation.collation);
+  return &m_tmp_value;
+}
+
+bool Item_func_etag::resolve_type(THD *thd) {
+  if (param_type_is_default(thd, 0, -1)) {
+    return true;
+  }
+
+  set_data_type_string(32U, default_charset());
+  set_nullable(false);
   return false;
 }
 
@@ -2736,7 +2788,8 @@ String *Item_func_rpad::val_str(String *str) {
     tmp_value.length(res_charpos);  // Shorten result if longer
     return &tmp_value;
   }
-  const size_t pad_char_length = pad->numchars();
+  const size_t pad_char_length =
+      std::max(pad->numchars(), static_cast<size_t>(1));
   const size_t pad_byte_length = pad->length();
 
   remainder_char_length -= res_char_length;
@@ -2748,7 +2801,6 @@ String *Item_func_rpad::val_str(String *str) {
   if (target_byte_size > current_thd->variables.max_allowed_packet) {
     return push_packet_overflow_warning(current_thd, func_name());
   }
-  if (pad_char_length == 0) return make_empty_result();
   /*
     alloc_buffer() doesn't modify 'res' because 'res' is guaranteed too short
     at this stage.
@@ -2944,7 +2996,8 @@ String *Item_func_lpad::val_str(String *str) {
     return &tmp_value;
   }
 
-  const size_t pad_char_length = pad->numchars();
+  const size_t pad_char_length =
+      std::max(pad->numchars(), static_cast<size_t>(1));
 
   remainder_char_length -= res_char_length;
 
@@ -2956,7 +3009,6 @@ String *Item_func_lpad::val_str(String *str) {
     return push_packet_overflow_warning(current_thd, func_name());
   }
 
-  if (pad_char_length == 0) return make_empty_result();
   if (str->alloc(target_byte_size)) {
     my_error(ER_DA_OOM, MYF(0));
     return error_str();
@@ -3086,30 +3138,20 @@ bool Item_func_set_collation::do_itemize(Parse_context *pc, Item **res) {
 String *Item_func_set_collation::val_str(String *str) {
   assert(fixed);
   str = args[0]->val_str(str);
-  if ((null_value = args[0]->null_value)) return nullptr;
+  null_value = args[0]->null_value;
+  if (null_value || current_thd->is_error()) return error_str();
   str->set_charset(collation.collation);
   return str;
 }
 
 bool Item_func_set_collation::resolve_type(THD *thd) {
   if (reject_vector_args()) return true;
-  CHARSET_INFO *set_collation;
   String tmp;
   assert(args[1]->basic_const_item());
   String *str = args[1]->val_str(&tmp);
-  const char *colname = str->c_ptr();
-  if (colname == binary_keyword) {
-    set_collation = get_charset_by_csname(args[0]->collation.collation->csname,
-                                          MY_CS_BINSORT, MYF(0));
-    if (set_collation == nullptr) {
-      my_error(ER_COLLATION_CHARSET_MISMATCH, MYF(0), colname,
-               args[0]->collation.collation->csname);
-      return true;
-    }
-  } else {
-    set_collation = mysqld_collation_get_by_name(colname);
-    if (set_collation == nullptr) return true;
-  }
+  const char *collation_name = str->c_ptr();
+  CHARSET_INFO *set_collation = mysqld_collation_get_by_name(collation_name);
+  if (set_collation == nullptr) return true;
 
   if (args[0]->data_type() == MYSQL_TYPE_INVALID &&
       args[0]->propagate_type(
@@ -3119,7 +3161,7 @@ bool Item_func_set_collation::resolve_type(THD *thd) {
 
   if (!my_charset_same(args[0]->collation.collation, set_collation) &&
       args[0]->collation.derivation != DERIVATION_NUMERIC) {
-    my_error(ER_COLLATION_CHARSET_MISMATCH, MYF(0), colname,
+    my_error(ER_COLLATION_CHARSET_MISMATCH, MYF(0), set_collation->m_coll_name,
              args[0]->collation.collation->csname);
     return true;
   }
@@ -3132,11 +3174,17 @@ bool Item_func_set_collation::resolve_type(THD *thd) {
   return false;
 }
 
-bool Item_func_set_collation::eq_specific(const Item *item) const {
+bool Item_func_set_collation::eq(const Item *item) const {
+  if (this == item) return true;
+  if (item->type() != FUNC_ITEM) return false;
+  const Item_func *item_func = down_cast<const Item_func *>(item);
+  if (functype() != item_func->functype()) return false;
+
   const Item_func_set_collation *item_func_sc =
       down_cast<const Item_func_set_collation *>(item);
-  if (collation.collation != item_func_sc->collation.collation) return false;
-  return true;
+  // Second argument is collation, which is checked as the resolved member
+  return collation.collation == item_func_sc->collation.collation &&
+         args[0]->eq(item_func_sc->args[0]);
 }
 
 void Item_func_set_collation::print(const THD *thd, String *str,
@@ -3521,9 +3569,10 @@ String *Item_charset_conversion::val_str(String *str) {
       snprintf(char_type, sizeof(char_type), "%s(%lu)",
                m_cast_cs == &my_charset_bin ? "BINARY" : "CHAR", (ulong)length);
 
-      if (!res->alloced_length()) {  // Don't change const str
+      if (res->alloced_length() == 0) {  // Don't change const str
         assert(res != &m_tmp_value);
-        m_tmp_value = *res;  // Not malloced string
+        // Not malloced string
+        m_tmp_value.set(res->ptr(), res->length(), res->charset());
         res = &m_tmp_value;
       }
       const ErrConvString err(res);
@@ -4166,11 +4215,12 @@ bool Item_func_from_vector::resolve_type(THD *thd) {
     my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
     return true;
   }
+  collation.set(default_charset(), DERIVATION_COERCIBLE, MY_REPERTOIRE_ASCII);
   set_data_type_string(Item_func_from_vector::max_output_bytes);
   return false;
 }
 
-String *Item_func_from_vector::val_str(String *str) {
+String *Item_func_from_vector::val_str_ascii(String *str) {
   assert(fixed);
   null_value = false;
   String *res = args[0]->val_str(str);
@@ -4273,14 +4323,6 @@ static char clock_seq_and_node_str[] = "-0000-000000000000";
 
 #define UUID_VERSION 0x1000
 #define UUID_VARIANT 0x8000
-
-static void tohex(char *to, uint from, uint len) {
-  to += len;
-  while (len--) {
-    *--to = dig_vec_lower[from & 15];
-    from >>= 4;
-  }
-}
 
 static void set_clock_seq_str() {
   const uint16 clock_seq = ((uint)(my_rnd(&uuid_rand) * 16383)) | UUID_VARIANT;
@@ -4460,7 +4502,7 @@ String *Item_func_get_dd_column_privileges::val_str(String *str) {
                                       table_name_ptr->c_ptr_safe());
 
       // Get column grants
-      uint col_access;
+      Access_bitmask col_access;
       col_access =
           get_column_grant(thd, &grant_info, schema_name_ptr->c_ptr_safe(),
                            table_name_ptr->c_ptr_safe(),
@@ -5284,6 +5326,91 @@ String *Item_func_get_dd_property_key_value::val_str(String *str) {
   }
 
   str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
+
+  return str;
+}
+
+/**
+  @brief
+    This function prepares a string representing the value
+    associated with the logical key that is supplied. The
+    logical key is the name of the I_S view.
+
+    Syntax:
+      string get_jdv_property_key_value(jdv_name, key)
+ */
+String *Item_func_get_jdv_property_key_value::val_str(String *str) {
+  THD *thd = current_thd;
+  if (thd == nullptr) {
+    assert(false);
+    return nullptr;
+  }
+
+  String sch;  // JSON duality view schema.
+  String tab;  // JSON duality view name.
+  String val;  // Validity of the view.
+  String key;  // Key for what info to retrieve - name of the I_S view.
+
+  /*
+    Store arguments, check that they are not null. Also check that the
+    view is valid. No need to emit warning if the view is invalid since
+    this has already been done when checking access to the view.
+  */
+  String *sch_ptr = args[0]->val_str(&sch);
+  String *tab_ptr = args[1]->val_str(&tab);
+  String *val_ptr = args[2]->val_str(&val);
+  String *key_ptr = args[3]->val_str(&key);
+
+  null_value = true;
+  if (sch_ptr == nullptr || tab_ptr == nullptr || val_ptr == nullptr ||
+      key_ptr == nullptr || strcmp(val_ptr->c_ptr_safe(), "1") != 0)
+    return nullptr;
+
+  /*
+    Wih lower-case-table-names == 2 we store the original versions of table
+    and db names in the data dictionary. Hence they need to be lowercased
+    to produce the correct MDL key and for other usages.
+  */
+  char buff_db[NAME_LEN + 1];
+  char buff_tb[NAME_LEN + 1];
+
+  my_stpncpy(buff_db, sch_ptr->c_ptr_safe(), NAME_LEN);
+  my_stpncpy(buff_tb, tab_ptr->c_ptr_safe(), NAME_LEN);
+  if (lower_case_table_names == 2) {
+    my_casedn_str(system_charset_info, buff_db);
+    my_casedn_str(system_charset_info, buff_tb);
+  }
+  MDL_request table_request;
+  MDL_REQUEST_INIT(&table_request, MDL_key::TABLE, buff_db, buff_tb, MDL_SHARED,
+                   MDL_TRANSACTION);
+
+  Table_ref *trp = new (thd->mem_root) Table_ref(buff_db, buff_tb, TL_READ);
+  if (trp == nullptr) {
+    assert(false);
+    return nullptr;
+  }
+
+  // Backup open tables and mdl savepoint.
+  Open_tables_backup backup;
+  thd->reset_n_backup_open_tables_state(&backup, 0);
+
+  // Acquire MDL and open table.
+  uint nt = 0;
+  if (!thd->mdl_context.acquire_lock(&table_request,
+                                     thd->variables.lock_wait_timeout) &&
+      !open_tables(thd, &trp, &nt, MYSQL_OPEN_FORCE_SHARED_MDL)) {
+    assert(trp->jdv_content_tree != nullptr);
+    null_value = false;
+    jdv::get_i_s_properties(trp->jdv_content_tree, key_ptr->c_ptr_safe(), str);
+    jdv::destroy_content_tree(trp->jdv_content_tree);
+    trp->jdv_content_tree = nullptr;
+  } else {
+    str = nullptr;
+  }
+
+  // Close opened tables, restore open table backup and mdl savepoint.
+  close_thread_tables(thd);
+  thd->restore_backup_open_tables_state(&backup);
 
   return str;
 }

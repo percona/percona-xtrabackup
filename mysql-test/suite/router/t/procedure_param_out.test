@@ -1,0 +1,777 @@
+# Validate handling of procedures, configured to generate a FEED response.
+#
+# Check handling of invalid: URL parameters, methods, payloads.
+# Validate the handling of input/output parameters.
+#
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/procedures_schema.sql
+
+--let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+--let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port --display REQUEST,BODY,RESULT
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify error messages while providing faulty configuration to rest procedure
+--echo #
+--echo # 1. POST request is not supported by object/procedures
+--echo # 2. DELETE request is not supported by object/procedures
+--echo # 3. PUT request is rejected when there is not payload proveided
+--echo # 4. PUT request is rejected when the payload is not JSON object
+--echo # 5. PUT request is rejected when the payloads, JSON object field
+--echo #    doesn't match registred input parameters.
+--echo # 6. GET request is rejected when the URL parameter name doesn'
+--echo #    match registred input parameters.
+--echo #
+--echo #
+--echo ## II. Verify generated resultsets when procedure returns a resultset
+--echo ##     or output parameters.
+--echo #
+--echo # 1. Procedure with GET request returns empty "items" field when there is not resultset
+--echo # 2. Procedure with GET request returns numeric resultset in "items" field
+--echo # 3. Procedure with GET request returns numeric resultset in "itemsOut" field
+--echo # 4. Procedure with GET request returns string resultset in "items" field
+--echo # 5. Procedure with GET request returns string resultset in "itemsOut" field
+--echo # 6. Procedure with POST request returns empty "items" field when there is not resultset
+--echo # 7. Procedure with POST request returns numeric resultset in "items" field
+--echo # 8. Procedure with POST request returns numeric resultset in "itemsOut" field
+--echo # 9. Procedure with POST request returns string resultset in "items" field
+--echo # 10. Procedure with POST request returns string resultset in "itemsOut" field
+--echo # 11. Procedure with POST request receives strings and returns string resultset in "items" field
+--echo # 12. Procedure with POST request receives strings and returns string resultset in "itemsOut" field
+--echo #
+--echo #
+--echo ## III. Verify handling of different MYSQL types as input and output of
+--echo ##      stored procedures, when they are transfered in GET requests
+--echo #
+--echo # 1. Verify if input varchar value is the same at output of stored procedure
+--echo # 2. Verify if input DATE value is the same at output of stored procedure
+--echo # 3. Verify if input YEAR value is the same at output of stored procedure
+--echo # 4. Verify if input TIME value is the same at output of stored procedure
+--echo # 5. Verify if input BIT(1) value is the same at output of stored procedure
+--echo # 6. Verify if input TINYINT(1) value is the same at output of stored procedure
+--echo # 7. Verify if input TINYINT(8) value is the same at output of stored procedure
+--echo # 8. Verify if input DECIMAL value is the same at output of stored procedure
+--echo # 9. Verify if input FLOAT value is the same at output of stored procedure
+--echo # 10. Verify if input DOUBLE value is the same at output of stored procedure
+--echo # 11. Verify if input VECTOR value is the same at output of stored procedure
+--echo #
+--echo #
+--echo ## IV. Verify handling of different MYSQL types as input and output of
+--echo ##      stored procedures, when they are transfered in PUT requests
+--echo #
+--echo # 1. Verify if input varchar value is the same at output of stored procedure
+--echo # 2. Verify if input DATE value is the same at output of stored procedure
+--echo # 3. Verify if input YEAR value is the same at output of stored procedure
+--echo # 4. Verify if input TIME value is the same at output of stored procedure
+--echo # 5. Verify if input BIT(1) value is the same at output of stored procedure
+--echo # 6. Verify if input TINYINT(1) value is the same at output of stored procedure
+--echo # 7. Verify if input TINYINT(8) value is the same at output of stored procedure
+--echo # 8. Verify if input DECIMAL value is the same at output of stored procedure
+--echo # 9. Verify if input FLOAT value is the same at output of stored procedure
+--echo # 10. Verify if input DOUBLE value is the same at output of stored procedure
+--echo # 11. Verify if input VECTOR value is the same at output of stored procedure
+--echo # 12. Verify if input GEOMETRY (GeoJSON) value is the same at output of stored procedure
+--echo # 12.1. Verify if input GEOMETRY (WKT) value is the same at output of stored procedure
+--echo # 13. Verify if input BLOB value is the same at output of stored procedure
+--echo # 14. Verify if input TIMESTAMP value is the same at output of stored procedure
+--echo # 15. Verify if input JSON value is the same at output of stored procedure
+--echo #
+--echo #
+--echo ## V. Verify handling of different MYSQL types and NULL value as input and
+--echo ##    output of stored procedures, when they are transfered in GET requests
+--echo #
+--echo # 1. Verify if NULL is used for not present varchar parameter and it is the same at output of stored procedure
+--echo # 2. Verify if NULL is used for not present DATE parameter and it is the same at output of stored procedure
+--echo # 3. Verify if NULL is used for not present YEAR parameter and it is the same at output of stored procedure
+--echo # 4. Verify if NULL is used for not present TIME parameter and it is the same at output of stored procedure
+--echo # 5. Verify if NULL is used for not present BIT(1) parameter and it is the same at output of stored procedure
+--echo # 6. Verify if NULL is used for not present TINYINT(1) parameter and it is the same at output of stored procedure
+--echo # 7. Verify if NULL is used for not present TINYINT(8) parameter and itis the same at output of stored procedure
+--echo # 8. Verify if NULL is used for not present DECIMAL parameter and it is the same at output of stored procedure
+--echo # 9. Verify if NULL is used for not present FLOAT parameter and it is the same at output of stored procedure
+--echo # 10. Verify if NULL is used for not present DOUBLE parameter and it is the same at output of stored procedure
+--echo # 11. Verify if NULL is used for not present VECTOR parameter and it is the same at output of stored procedure
+--echo #
+--echo #
+--echo ## VI. Verify handling of different MYSQL types and NULL value as input and
+--echo ##    output of stored procedures, when they are transfered in PUT requests
+--echo #
+--echo # 1. Verify if NULL is used for not present varchar parameter and it is the same at output of stored procedure
+--echo # 2. Verify if NULL is used for not present DATE parameter and it is the same at output of stored procedure
+--echo # 3. Verify if NULL is used for not present YEAR parameter and it is the same at output of stored procedure
+--echo # 4. Verify if NULL is used for not present TIME parameter and it is the same at output of stored procedure
+--echo # 5. Verify if NULL is used for not present BIT(1) parameter and it is the same at output of stored procedure
+--echo # 6. Verify if NULL is used for not present TINYINT(1) parameter and it is the same at output of stored procedure
+--echo # 7. Verify if NULL is used for not present TINYINT(8) parameter and itis the same at output of stored procedure
+--echo # 8. Verify if NULL is used for not present DECIMAL parameter and it is the same at output of stored procedure
+--echo # 9. Verify if NULL is used for not present FLOAT parameter and it is the same at output of stored procedure
+--echo # 10. Verify if NULL is used for not present DOUBLE parameter and it is the same at output of stored procedure
+--echo # 11. Verify if NULL is used for not present VECTOR parameter and it is the same at output of stored procedure
+--echo # 12. Verify if NULL is used for not present GEOMETRY parameter and it is the same at output of stored procedure
+--echo # 13. Verify if NULL is used for not present BLOB parameter and it is the same at output of stored procedure
+--echo # 14. Verify if NULL is used for not present TIMESTAMP parameter and it is the same at output of stored procedure
+--echo # 15. Verify if NULL is used for not present JSON parameter and it is the same at output of stored procedure
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=proc_schema
+--let $mrs_add_schema_path=/proc
+--let $mrs_add_schema_items_on_page=NULL
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc_sum
+--let $mrs_add_db_object_path=/sum
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc_sum_out
+--let $mrs_add_db_object_path=/sum_out
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc_concat
+--let $mrs_add_db_object_path=/concat
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc_concat_out
+--let $mrs_add_db_object_path=/concat_out
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_char
+--let $mrs_add_db_object_path=/move_char
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_date
+--let $mrs_add_db_object_path=/move_date
+--source ../include/mrs/db_object/add.inc
+
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_year
+--let $mrs_add_db_object_path=/move_year
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_time
+--let $mrs_add_db_object_path=/move_time
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_bit
+--let $mrs_add_db_object_path=/move_bit
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_tinyint1
+--let $mrs_add_db_object_path=/move_tinyint1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_tinyint8
+--let $mrs_add_db_object_path=/move_tinyint8
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_decimal
+--let $mrs_add_db_object_path=/move_decimal
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_float
+--let $mrs_add_db_object_path=/move_float
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_double
+--let $mrs_add_db_object_path=/move_double
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_vector
+--let $mrs_add_db_object_path=/move_vector
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_geometry
+--let $mrs_add_db_object_path=/move_geometry
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_blob
+--let $mrs_add_db_object_path=/move_blob
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_timestamp
+--let $mrs_add_db_object_path=/move_timestamp
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=move_json
+--let $mrs_add_db_object_path=/move_json
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=resultset_vector
+--let $mrs_add_db_object_path=/resultset_vector
+--source ../include/mrs/db_object/add.inc
+
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc_do_nothing
+--let $mrs_add_db_object_path=/nothing
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+# Wait until MySQLRouter fetches db-object.
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing
+  --wait-until-status 60;
+
+--echo
+--echo #
+--echo # I.1
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing -t POST
+  --expected-status BadRequest;
+
+--echo
+--echo #
+--echo # I.2
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing -t DELETE
+  --expected-status Forbidden;
+
+--echo
+--echo #
+--echo # I.3
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing -t PUT
+  --expected-status BadRequest;
+
+--echo
+--echo #
+--echo # I.4
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing -t PUT
+  --payload 10
+  --expected-status BadRequest;
+
+--echo
+--echo #
+--echo # I.5
+--let $mrs_client_arg_path='/svc/proc/nothing'
+--let $mrs_client_arg_payload='{"not-existing-param":20}'
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_expected_status=BadRequest
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.6
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing?not-existing-param=10
+  --expected-status BadRequest;
+
+
+
+--echo
+--echo #
+--echo # II.1
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing;
+
+--echo
+--echo #
+--echo # II.2
+
+--let $mrs_client_arg_path='/svc/proc/sum?a=10&b=20'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.3
+--let $mrs_client_arg_path='/svc/proc/sum_out?a=10&b=20'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.4
+--let $mrs_client_arg_path='/svc/proc/concat?a=10&b=20'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.5
+--let $mrs_client_arg_path='/svc/proc/concat_out?a=10&b=20'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # II.6
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing
+  -t PUT --payload '{}';
+
+--echo
+--echo #
+--echo # II.7
+--let $mrs_client_arg_path='/svc/proc/sum'
+--let $mrs_client_arg_payload='{"a":10,"b":20}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.8
+--let $mrs_client_arg_path='/svc/proc/sum_out'
+--let $mrs_client_arg_payload='{"a":10, "b":20}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.9
+--let $mrs_client_arg_path='/svc/proc/concat'
+--let $mrs_client_arg_payload='{"a":10,"b":20}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.10
+--let $mrs_client_arg_path='/svc/proc/concat_out'
+--let $mrs_client_arg_payload='{"a":10,"b":20}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.11
+--let $mrs_client_arg_path='/svc/proc/concat'
+--let $mrs_client_arg_payload='{"a":"10","b":"20"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.12
+--let $mrs_client_arg_path='/svc/proc/concat_out'
+--let $mrs_client_arg_payload='{"a":"10","b":"20"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # III.1
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_char?a=10;
+
+--echo
+--echo #
+--echo # III.2
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_date?a="1920-12-11";
+
+--echo
+--echo #
+--echo # III.3
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_year?a="1920";
+
+--echo
+--echo #
+--echo # III.4
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_time?a="12:34:12";
+
+--echo
+--echo #
+--echo # III.5
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_bit?a=1;
+
+--echo
+--echo #
+--echo # III.6
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_tinyint1?a=1;
+
+--echo
+--echo #
+--echo # III.7
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_tinyint8?a=10;
+
+--echo
+--echo #
+--echo # III.8
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_decimal?a=10;
+
+--echo
+--echo #
+--echo # III.9
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_float?a=10;
+
+--echo
+--echo #
+--echo # III.10
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_double?a=10;
+
+--echo
+--echo #
+--echo # III.11
+--let $mrs_client_arg_path='/svc/proc/move_vector?a=[0,1,4]'
+--let $mrs_client_arg_request_type='GET'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/resultset_vector?a=[0,1,4]'
+--let $mrs_client_arg_request_type='GET'
+--source ../include/mrs/mrs_client.inc
+
+
+
+--echo
+--echo #
+--echo # IV.1
+--let $mrs_client_arg_path='/svc/proc/move_char'
+--let $mrs_client_arg_payload='{"a":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.2
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/proc/move_date
+#  -t PUT --payload '{"a":"1920-12-11"}';
+
+--echo
+--echo #
+--echo # IV.3
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/proc/move_year
+#  -t PUT --payload '{"a":"1920"}';
+
+--echo
+--echo #
+--echo # IV.4
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/proc/move_time
+#  -t PUT --payload '{"a":"12:34:12"}';
+
+--echo
+--echo #
+--echo # IV.5
+--let $mrs_client_arg_path='/svc/proc/move_bit'
+--let $mrs_client_arg_payload='{"a":1}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.6
+--let $mrs_client_arg_path='/svc/proc/move_tinyint1'
+--let $mrs_client_arg_payload='{"a":1}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.7
+--let $mrs_client_arg_path='/svc/proc/move_tinyint8'
+--let $mrs_client_arg_payload='{"a":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.8
+--let $mrs_client_arg_path='/svc/proc/move_decimal'
+--let $mrs_client_arg_payload='{"a":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.9
+--let $mrs_client_arg_path='/svc/proc/move_float'
+--let $mrs_client_arg_payload='{"a":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.10
+--let $mrs_client_arg_path='/svc/proc/move_double'
+--let $mrs_client_arg_payload='{"a":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.11
+--let $mrs_client_arg_path='/svc/proc/move_vector'
+--let $mrs_client_arg_payload='{"a":[0,2,10]}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.12
+--let $mrs_client_arg_path='/svc/proc/move_geometry'
+--let $mrs_client_arg_payload='{"a":{"type":"Point", "coordinates":[100,0]}}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.12.1
+--let $mrs_client_arg_path='/svc/proc/move_geometry'
+--let $mrs_client_arg_payload='{"a":"POINT(20 30)"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.13
+--let $mrs_client_arg_path='/svc/proc/move_blob'
+--let $mrs_client_arg_payload='{"a":"SGVsbG8gV29ybGQ="}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.14
+--let $mrs_client_arg_path='/svc/proc/move_timestamp'
+--let $mrs_client_arg_payload='{"a":"2025-04-11 14:09:00"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.15
+--let $mrs_client_arg_path='/svc/proc/move_json'
+--let $mrs_client_arg_payload='{"a":{"foo":"bar"}}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.1
+--let $mrs_client_arg_path='/svc/proc/move_char'
+--let $mrs_client_arg_request_type='GET'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.2
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_date;
+
+--echo
+--echo #
+--echo # V.3
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_year;
+
+--echo
+--echo #
+--echo # V.4
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_time;
+
+--echo
+--echo #
+--echo # V.5
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_bit;
+
+--echo
+--echo #
+--echo # V.6
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_tinyint1;
+
+--echo
+--echo #
+--echo # V.7
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_tinyint8;
+
+--echo
+--echo #
+--echo # V.8
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_decimal;
+
+--echo
+--echo #
+--echo # V.9
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_float;
+
+--echo
+--echo #
+--echo # V.10
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_double;
+
+--echo
+--echo #
+--echo # V.11
+--let $mrs_client_arg_path='/svc/proc/move_vector'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.1
+--let $mrs_client_arg_path='/svc/proc/move_char'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.2
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_date
+  -t PUT --payload '{}';
+
+--echo
+--echo #
+--echo # VI.3
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_year
+  -t PUT --payload '{}';
+
+--echo
+--echo #
+--echo # VI.4
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/move_time
+  -t PUT --payload '{}';
+
+--echo
+--echo #
+--echo # VI.5
+--let $mrs_client_arg_path='/svc/proc/move_bit'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.6
+--let $mrs_client_arg_path='/svc/proc/move_tinyint1'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.7
+--let $mrs_client_arg_path='/svc/proc/move_tinyint8'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.8
+--let $mrs_client_arg_path='/svc/proc/move_decimal'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.9
+--let $mrs_client_arg_path='/svc/proc/move_float'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.10
+--let $mrs_client_arg_path='/svc/proc/move_double'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.11
+--let $mrs_client_arg_path='/svc/proc/move_vector'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.12
+--let $mrs_client_arg_path='/svc/proc/move_geometry'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.13
+--let $mrs_client_arg_path='/svc/proc/move_blob'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.14
+--let $mrs_client_arg_path='/svc/proc/move_timestamp'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.15
+--let $mrs_client_arg_path='/svc/proc/move_json'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VII.1
+--let $mrs_client_arg_path='/svc/proc/move_char'
+--let $mrs_client_arg_payload='{"a":null}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

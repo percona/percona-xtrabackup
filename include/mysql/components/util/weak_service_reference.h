@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -92,12 +92,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
   And @ref weak_service_reference::deinit() is called during the component
   deinitialization.
 
-
-  @warning Please pass the _no_lock registry variants to the deinit() call! It's
-  because component deinit function is called while the registry lock is held.
-  So trying to take the lock again (which is what the normal registry functions
-  do) is going to lead to a deadlock!
-
   One can expect that the function argument is called either at init() time or
   asyncronously, possibly from anoher thread, when an implementation of a
   service is registered.
@@ -111,9 +105,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
   ...
 
   REQUIRES_SERVICE_PLACEHOLDER(registry_registration);
-  REQUIRES_SERVICE_PLACEHOLDER_AS(registry, mysql_service_registry_no_lock);
-  REQUIRES_SERVICE_PLACEHOLDER_AS(registry_registration,
-                                mysql_service_registration_no_lock);
 
   const std::string c_name(component_foo), s_name("foo");
   typedef weak_service_reference<SERVICE_TYPE(foo), c_name, s_name>
@@ -123,11 +114,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
   BEGIN_COMPONENT_REQUIRES(component_foo)
   ...
     REQUIRES_SERVICE(registry_registration),
-    REQUIRES_SERVICE_IMPLEMENTATION_AS(registry_registration,
-                                       mysql_minimal_chassis_no_lock,
-                                       mysql_service_registration_no_lock),
-    REQUIRES_SERVICE_IMPLEMENTATION_AS(registry, mysql_minimal_chassis_no_lock,
-                                       mysql_service_registry_no_lock),
   ...
   END_COMPONENT_REQUIRES();
 
@@ -144,8 +130,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
   bool component_deinit() {
     ...
-    if (weak_option::deinit(
-      mysql_service_registry_no_lock, mysql_service_registration_no_lock,
+    if (weak_option::deinit(SERVICE_PLACEHOLDER(registry),
+    SERVICE_PLACEHOLDER(registry_registration),
       [&](SERVICE_TYPE(foo) * foo_svc) {
         return 0 != foo_svc->undefine(12);
       }))
@@ -385,6 +371,39 @@ class weak_service_reference {
     registry = nullptr;
     callback_registered = false;
     return false;
+  }
+
+  /**
+    @brief Get the service reference, if available
+
+    If you need to call more methods of the service the weak service reference
+    wraps around you can use this cast operator.
+    Warning: it might return a null pointer if the weak reference doesn't hold
+    an active reference (init()'s keep_active_reference_arg parameter is false).
+
+    @sa @ref my_service
+
+    @return Returns a service reference, if available. And a nullptr if mot.
+  */
+  static Service *get_service() {
+    return hton ? ((Service *)hton->service_reference) : nullptr;
+  }
+
+  /**
+    @brief Gets the my_h_service reference, if available
+
+    See the other cast operator for details.
+
+    Warning: it might return a null pointer if the weak reference doesn't hold
+    an active reference (init()'s keep_active_reference_arg parameter is false).
+
+    @return my_h_service Same as the other cast operator, but instead of
+    downcasting to the service class it will return the raw my_h_service.
+
+    @sa @ref my_service
+  */
+  static my_h_service get_my_hservice() {
+    return hton ? hton->service_reference : nullptr;
   }
 };
 

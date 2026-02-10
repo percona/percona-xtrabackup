@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,6 @@
 #include <BaseString.hpp>
 #include <EventLogger.hpp>
 #include <LogLevel.hpp>
-#include <signaldata/SetLogLevelOrd.hpp>
 #include "util/TlsKeyManager.hpp"
 
 #include <ConfigValues.hpp>
@@ -408,11 +407,6 @@ MgmApiSession::~MgmApiSession() {
   if (m_secure_socket.is_valid()) {
     m_secure_socket.close();
   }
-  if (m_cert) {
-    X509_free(m_cert);
-    m_mgmsrv.tls_stat_decrement(MgmtSrvr::TlsStats::tls);
-  }
-  m_mgmsrv.tls_stat_decrement(MgmtSrvr::TlsStats::current);
   if (m_stopSelf < 0) g_RestartServer = true;
   if (m_stopSelf) g_StopServer = true;
   NdbMutex_Destroy(m_mutex);
@@ -512,6 +506,12 @@ void MgmApiSession::runSession() {
   NdbMutex_Unlock(m_mutex);
 
   g_eventLogger->debug("%s: Disconnected!", name());
+
+  if (m_cert) {
+    X509_free(m_cert);
+    m_mgmsrv.tls_stat_decrement(MgmtSrvr::TlsStats::tls);
+  }
+  m_mgmsrv.tls_stat_decrement(MgmtSrvr::TlsStats::current);
 
   DBUG_VOID_RETURN;
 }
@@ -922,8 +922,6 @@ void MgmApiSession::setLogLevel(Parser<MgmApiSession>::Context &,
                                 Properties const &args) {
   Uint32 node = 0, level = 0, cat;
   BaseString errorString;
-  SetLogLevelOrd logLevel;
-  logLevel.clear();
   args.get("node", &node);
   args.get("category", &cat);
   args.get("level", &level);
@@ -1377,11 +1375,18 @@ int mgmsession_on_verify(int r, X509_STORE_CTX *ctx) {
 }
 
 int MgmApiSession::on_verify(int r, X509_STORE_CTX *ctx) {
-  if (r) {
+  /* If result is 1, verification has succeeded at this depth; on_verify()
+     will be called again at the next lower depth until verification fails or
+     depth is zero. */
+  int depth = X509_STORE_CTX_get_error_depth(ctx);
+  if (r == 1 && depth == 0) {
     /* certificate verification has succeeded */
     m_sessionAuthLevel |= (MgmAuth::clientHasTls | MgmAuth::clientHasCert);
+    assert(m_cert == nullptr);
     m_cert = X509_STORE_CTX_get_current_cert(ctx);
     X509_up_ref(m_cert);
+    m_mgmsrv.tls_stat_increment(MgmtSrvr::TlsStats::upgraded);
+    m_mgmsrv.tls_stat_increment(MgmtSrvr::TlsStats::tls);
   }
   return TlsKeyManager::on_verify(r, ctx);
 }
@@ -1415,8 +1420,6 @@ void MgmApiSession::startTls(Parser<MgmApiSession>::Context &,
       SSL_set_verify(ssl, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
                      mgmsession_on_verify);
       m_secure_socket.do_tls_handshake();
-      m_mgmsrv.tls_stat_increment(MgmtSrvr::TlsStats::upgraded);
-      m_mgmsrv.tls_stat_increment(MgmtSrvr::TlsStats::tls);
     } else
       NdbSocket::free_ssl(ssl);
   }

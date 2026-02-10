@@ -1,6 +1,7 @@
 #
 # Test for the DDL rewrite plugin.
 #
+include/rpl/set_gtid_mode_off.inc
 #
 # Create a table with a DATA DIRECTORY clause, to be dumped and
 # restored when the plugin is installed.
@@ -294,3 +295,4 @@ Warnings:
 Warning	1620	Plugin is busy and will be uninstalled on shutdown
 CREATE TABLE t(i int) /* data directory = 'x' */ ;
 DROP TABLE t;
+include/rpl/set_gtid_mode_on.inc

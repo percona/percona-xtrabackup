@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -28,19 +28,14 @@
 
 #include "mysqlrouter/metadata_cache_export.h"
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <ctime>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <set>
 #include <string>
-#include <thread>
 
-#include "gr_notifications_listener.h"
-#include "mysql/harness/logging/logging.h"
 #include "mysql/harness/stdx/monitor.h"
 #include "mysql_router_thread.h"
 #include "mysqlrouter/metadata.h"
@@ -73,17 +68,20 @@ class METADATA_CACHE_EXPORT MetadataCache
    * @param thread_stack_size The maximum memory allocated for thread's stack
    * @param use_cluster_notifications Flag indicating if the metadata cache
    * should use GR notifications as an additional trigger for metadata refresh
+   * @param close_connection_after_refresh if the connection should be closed
+   * after a refresh.
    */
   MetadataCache(
       const unsigned router_id, const std::string &clusterset_id,
-      const std::vector<mysql_harness::TCPAddress> &metadata_servers,
+      const std::vector<mysql_harness::TcpDestination> &metadata_servers,
       std::shared_ptr<MetaData> cluster_metadata,
       const metadata_cache::MetadataCacheTTLConfig &ttl_config,
       const mysqlrouter::SSLOptions &ssl_options,
       const mysqlrouter::TargetCluster &target_cluster,
       const metadata_cache::RouterAttributes &router_attributes,
       size_t thread_stack_size = mysql_harness::kDefaultStackSizeInKiloBytes,
-      bool use_cluster_notifications = false);
+      bool use_cluster_notifications = false,
+      bool close_connection_after_refresh = false);
 
   ~MetadataCache() override;
 
@@ -214,8 +212,6 @@ class METADATA_CACHE_EXPORT MetadataCache
 
   virtual mysqlrouter::ClusterType cluster_type() const noexcept = 0;
 
-  std::vector<mysql_harness::TCPAddress> metadata_servers();
-
   void enable_fetch_auth_metadata() { auth_metadata_fetch_enabled_ = true; }
 
   void force_cache_update() { on_refresh_requested(); }
@@ -232,9 +228,18 @@ class METADATA_CACHE_EXPORT MetadataCache
     trigger_acceptor_update_on_next_refresh_ = true;
   }
 
-  bool fetch_whole_topology() const { return fetch_whole_topology_; }
+  void add_routing_guidelines_update_callbacks(
+      metadata_cache::MetadataCacheAPI::update_routing_guidelines_callback_t
+          update_callback,
+      metadata_cache::MetadataCacheAPI::on_routing_guidelines_change_callback_t
+          on_routing_guidelines_change_callback);
 
-  void fetch_whole_topology(bool val);
+  void clear_routing_guidelines_update_callbacks();
+
+  void add_router_info_update_callback(
+      metadata_cache::MetadataCacheAPI::update_router_info_callback_t clb);
+
+  void clear_router_info_update_callback();
 
  protected:
   /** @brief Refreshes the cache
@@ -242,16 +247,14 @@ class METADATA_CACHE_EXPORT MetadataCache
    */
   virtual bool refresh(bool needs_writable_node) = 0;
 
-  void on_refresh_failed(bool terminated, bool md_servers_reachable = false);
+  void on_refresh_failed(bool md_servers_reachable = false);
   void on_refresh_succeeded(
       const metadata_cache::metadata_server_t &metadata_server);
 
   // Called each time the metadata has changed and we need to notify
   // the subscribed observers
-  void on_instances_changed(
-      const bool md_servers_reachable,
-      const metadata_cache::ClusterTopology &cluster_topology,
-      uint64_t view_id = 0);
+  void on_instances_changed(const bool md_servers_reachable,
+                            uint64_t view_id = 0);
 
   /**
    * Called when the listening sockets acceptors state should be updated but
@@ -265,10 +268,11 @@ class METADATA_CACHE_EXPORT MetadataCache
    *
    * @param[in] cluster_nodes_changed Information whether there was a change
    *            in instances reported by metadata refresh.
-   * @param[in] cluster_topology current cluster topology
+   * @param[in] routing_guidelines_doc Routing guidelines document fetched from
+   * metadata, used by the guidelines engine.
    */
   void on_md_refresh(const bool cluster_nodes_changed,
-                     const metadata_cache::ClusterTopology &cluster_topology);
+                     const std::string &routing_guidelines_doc);
 
   // Called each time we were requested to refresh the metadata
   void on_refresh_requested();
@@ -284,6 +288,12 @@ class METADATA_CACHE_EXPORT MetadataCache
 
   // Update Router last_check_in timestamp in the metadata
   void update_router_last_check_in();
+
+  // Report name of the routing guideline that is currently used.
+  void update_reported_routing_guideline_name(
+      const std::string &guideline_name);
+
+  void update_routing_guidelines(const std::string &routing_guidelines_doc);
 
   // Stores the current cluster state and topology.
   metadata_cache::ClusterTopology cluster_topology_;
@@ -346,6 +356,8 @@ class METADATA_CACHE_EXPORT MetadataCache
 
   bool use_cluster_notifications_;
 
+  bool close_connection_after_refresh_;
+
   std::condition_variable refresh_wait_;
   std::mutex refresh_wait_mtx_;
 
@@ -355,12 +367,21 @@ class METADATA_CACHE_EXPORT MetadataCache
   std::mutex cluster_instances_change_callbacks_mtx_;
   std::mutex acceptor_handler_callbacks_mtx_;
   std::mutex md_refresh_callbacks_mtx_;
+  std::mutex routing_guidelines_update_callback_mtx_;
+  std::mutex router_info_update_callback_mtx_;
 
   std::set<metadata_cache::ClusterStateListenerInterface *> state_listeners_;
   std::set<metadata_cache::AcceptorUpdateHandlerInterface *>
       acceptor_update_listeners_;
   std::set<metadata_cache::MetadataRefreshListenerInterface *>
       md_refresh_listeners_;
+  metadata_cache::MetadataCacheAPI::update_routing_guidelines_callback_t
+      update_routing_guidelines_callback_{nullptr};
+  std::vector<
+      metadata_cache::MetadataCacheAPI::on_routing_guidelines_change_callback_t>
+      on_routing_guidelines_change_callbacks_;
+  std::vector<metadata_cache::MetadataCacheAPI::update_router_info_callback_t>
+      update_router_info_callbacks_;
 
   struct Stats {
     std::chrono::system_clock::time_point last_refresh_failed;
@@ -380,7 +401,6 @@ class METADATA_CACHE_EXPORT MetadataCache
       std::chrono::steady_clock::now()};
 
   bool ready_announced_{false};
-  std::atomic<bool> fetch_whole_topology_{false};
 
   /**
    * Flag indicating if socket acceptors state should be updated on next
@@ -392,6 +412,9 @@ class METADATA_CACHE_EXPORT MetadataCache
 
   bool needs_initial_attributes_update();
   bool needs_last_check_in_update();
+
+  std::string current_routing_guidelines_doc_;
+  std::string last_routing_guidelines_used_;
 };
 
 std::string to_string(metadata_cache::ServerMode mode);

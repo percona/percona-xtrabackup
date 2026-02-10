@@ -28,6 +28,7 @@ include/rpl/sync_to_replica.inc [FOR CHANNEL 'channel_1']
 [connection slave_con_channel1]
 BEGIN;
 INSERT INTO d2_1.t VALUES (2, 'Slave local'); # Hold T3;
+INSERT INTO d2_1.t VALUES (3, 'Slave local'); # Hold T4;
 INSERT INTO d1_1.t VALUES (3, 'Slave local'); # Hold T6;
 [connection server_1]
 INSERT INTO d1_1.t VALUES (1, 'T1');;
@@ -50,6 +51,7 @@ include/rpl/sync_to_replica.inc [FOR CHANNEL 'channel_3']
 [connection slave_con_channel3]
 BEGIN;
 INSERT INTO d2_3.t VALUES (2, 'Slave local'); # Hold T3;
+INSERT INTO d2_3.t VALUES (3, 'Slave local'); # Hold T4;
 INSERT INTO d1_3.t VALUES (3, 'Slave local'); # Hold T6;
 [connection server_3]
 INSERT INTO d1_3.t VALUES (1, 'T1');;

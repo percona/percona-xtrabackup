@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -72,7 +72,7 @@ void basic_2() {
   line();
   frag_page.print(std::cout);
 
-  ulint frag = frag_page.alloc_fragment(100);
+  ulint const frag = frag_page.alloc_fragment(100);
 
   line();
   frag_page.print(std::cout);
@@ -92,7 +92,7 @@ void basic_3() {
   std::list<ulint> fragments;
 
   for (int i = 0; i < 5; ++i) {
-    ulint frag = frag_page.alloc_fragment(100);
+    ulint const frag = frag_page.alloc_fragment(100);
     fragments.push_back(frag);
   }
 
@@ -201,23 +201,23 @@ void test7() {
   zlob::z_frag_page_t frag_page;
   frag_page.alloc();
 
-  frag_id_t f1 = frag_page.alloc_fragment(5692);
+  frag_id_t const f1 = frag_page.alloc_fragment(5692);
 
   ut_ad(f1 != FRAG_ID_NULL);
 
   std::cout << "ONE" << std::endl;
   frag_page.print(std::cout);
 
-  frag_id_t f2 = frag_page.alloc_fragment(433);
+  frag_id_t const f2 = frag_page.alloc_fragment(433);
   ut_ad(f2 != FRAG_ID_NULL);
 
   std::cout << "TWO" << std::endl;
   frag_page.print(std::cout);
 
-  frag_id_t f3 = frag_page.alloc_fragment(419);
+  frag_id_t const f3 = frag_page.alloc_fragment(419);
   ut_ad(f3 != FRAG_ID_NULL);
 
-  frag_node_t node3 = frag_page.get_frag_node(f3);
+  frag_node_t const node3 = frag_page.get_frag_node(f3);
   std::cout << node3 << std::endl;
 }
 

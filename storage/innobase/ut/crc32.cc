@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 2009, 2010 Facebook, Inc.
-Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -90,7 +90,7 @@ factor of two increase in speed on a Power PC G4 (PPC7455) using gcc -O3.
 other files in library. The code in this file is used to make a library for
 external tools. */
 
-#include <string.h>
+#include <cstring>
 #include "my_compiler.h"
 #include "my_config.h"
 #include "my_inttypes.h"
@@ -602,7 +602,7 @@ and the results are combined together at the end to compute correct result.
 template <size_t slice_len, size_t slices_count, typename algo_to_use>
 static inline uint32_t consume_chunk(uint32_t crc0, const unsigned char *data) {
   static_assert(slices_count > 0, "there must be at least one slice");
-  const uint64_t *data64 = (const uint64_t *)data;
+  const auto *data64 = (const uint64_t *)data;
   /* crc[i] is the hash for i-th slice, data[i*slice_len...(i+1)*slice_len)
   where the initial value for each crc[i] is zero, except crc[0] for which we
   use the initial value crc0 passed in by the caller. */

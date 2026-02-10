@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,7 +28,6 @@
 #include "mysql/binlog/event/compression/decompress_status.h"  // Decompress_status
 #include "mysql/containers/buffers/grow_constraint.h"  // Grow_constraint
 #include "mysql/containers/buffers/managed_buffer.h"   // Managed_buffer
-#include "mysql/utils/nodiscard.h"                     // NODISCARD
 
 namespace mysql::binlog::event::compression {
 
@@ -124,7 +123,7 @@ class Decompressor {
   /// The caller may resume decompression after increasing the
   /// capacity, or resetting the buffer (perhaps after moving the data
   /// elsewhere), or using a different output buffer, or similar.
-  [[NODISCARD]] Decompress_status decompress(Managed_buffer_t &out,
+  [[nodiscard]] Decompress_status decompress(Managed_buffer_t &out,
                                              Size_t output_size);
 
   /// Decompress an exact, given number of bytes.
@@ -141,7 +140,7 @@ class Decompressor {
   /// exceeds_max_capacity.  The size will be equal to output_size if
   /// the status is success; strictly between 0 and output_size if the
   /// status is truncated; and 0 for the other cases.
-  [[NODISCARD]] std::pair<Decompress_status, Size_t> decompress(
+  [[nodiscard]] std::pair<Decompress_status, Size_t> decompress(
       Char_t *out, Size_t output_size);
 
   /// Return a `Grow_constraint` that may be used with the
@@ -166,7 +165,7 @@ class Decompressor {
   /// This differs from @c decompress in that it does not have to
   /// reset the frame when returning out_of_memory or corrupted; the
   /// caller does that.
-  [[NODISCARD]] virtual std::pair<Decompress_status, Size_t> do_decompress(
+  [[nodiscard]] virtual std::pair<Decompress_status, Size_t> do_decompress(
       Char_t *out, Size_t output_size) = 0;
 
   /// Implement @c get_grow_constraint_hint.

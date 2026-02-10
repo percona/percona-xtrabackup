@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2001, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -146,9 +146,9 @@ struct FTB : public FT_INFO {
 };
 
 static int FTB_WORD_cmp(void *v_v, uchar *u_a, uchar *u_b) {
-  my_off_t *v = static_cast<my_off_t *>(v_v);
-  FTB_WORD *a = pointer_cast<FTB_WORD *>(u_a);
-  FTB_WORD *b = pointer_cast<FTB_WORD *>(u_b);
+  auto *v = static_cast<my_off_t *>(v_v);
+  auto *a = pointer_cast<FTB_WORD *>(u_a);
+  auto *b = pointer_cast<FTB_WORD *>(u_b);
   int i;
 
   /* if a==curdoc, take it as  a < b */
@@ -169,13 +169,13 @@ struct MY_FTB_PARAM {
 
 static int ftb_query_add_word(MYSQL_FTPARSER_PARAM *param, char *word,
                               int word_len, MYSQL_FTPARSER_BOOLEAN_INFO *info) {
-  MY_FTB_PARAM *ftb_param = (MY_FTB_PARAM *)param->mysql_ftparam;
+  auto *ftb_param = (MY_FTB_PARAM *)param->mysql_ftparam;
   FTB_WORD *ftbw;
   FTB_EXPR *ftbe, *tmp_expr;
   FT_WORD *phrase_word;
   LIST *tmp_element;
-  int r = info->weight_adjust;
-  float weight =
+  int const r = info->weight_adjust;
+  auto weight =
       (float)(info->wasign ? nwghts : wghts)[(r > 5) ? 5 : ((r < -5) ? -5 : r)];
 
   switch (info->type) {
@@ -266,10 +266,10 @@ static int ftb_query_add_word(MYSQL_FTPARSER_PARAM *param, char *word,
 
 static int ftb_parse_query_internal(MYSQL_FTPARSER_PARAM *param, char *query,
                                     int len) {
-  MY_FTB_PARAM *ftb_param = (MY_FTB_PARAM *)param->mysql_ftparam;
+  auto *ftb_param = (MY_FTB_PARAM *)param->mysql_ftparam;
   MYSQL_FTPARSER_BOOLEAN_INFO info;
   const CHARSET_INFO *cs = ftb_param->ftb->charset;
-  uchar **start = (uchar **)&query;
+  auto **start = (uchar **)&query;
   uchar *end = (uchar *)query + len;
   FT_WORD w;
 
@@ -334,9 +334,10 @@ static int _ft2_search_no_lock(FTB *ftb, FTB_WORD *ftbw, bool init_search) {
   MI_INFO *info = ftb->info;
   uint off = 0, extra = HA_FT_WLEN + info->s->rec_reflength;
   uchar *lastkey_buf = ftbw->word + ftbw->off;
-  uint max_word_length = (ftbw->flags & FTB_FLAG_TRUNC)
-                             ? MI_MAX_KEY_BUFF
-                             : ((ftbw->len) * ftb->charset->mbmaxlen) + extra;
+  uint const max_word_length =
+      (ftbw->flags & FTB_FLAG_TRUNC)
+          ? MI_MAX_KEY_BUFF
+          : ((ftbw->len) * ftb->charset->mbmaxlen) + extra;
 
   if (ftbw->flags & FTB_FLAG_TRUNC) lastkey_buf += ftbw->len;
 
@@ -396,8 +397,8 @@ static int _ft2_search_no_lock(FTB *ftb, FTB_WORD *ftbw, bool init_search) {
         */
         ftb->state = FTB::INDEX_DONE;
         return 1; /* search is done */
-      } else
-        return 0;
+      }
+      return 0;
     }
 
     /*
@@ -530,7 +531,7 @@ FT_INFO *ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
   assert(keynr == NO_SUCH_KEY || cs == info->s->keyinfo[keynr].seg->charset);
   ftb->with_scan = 0;
   ftb->lastpos = HA_OFFSET_ERROR;
-  memset(&ftb->no_dupes, 0, sizeof(TREE));
+  memset((void *)&ftb->no_dupes, 0, sizeof(TREE));
   ftb->last_word = nullptr;
 
   ::new ((void *)&ftb->mem_root) MEM_ROOT(PSI_INSTRUMENT_ME, 1024);
@@ -568,9 +569,9 @@ FT_INFO *ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
   std::sort(ftb->list, ftb->list + ftb->queue.elements,
             [ftb](FTB_WORD *a, FTB_WORD *b) {
               /* ORDER BY word, ndepth */
-              int i = ha_compare_text(ftb->charset, (uchar *)a->word + 1,
-                                      a->len - 1, (uchar *)b->word + 1,
-                                      b->len - 1, false);
+              int const i = ha_compare_text(ftb->charset, (uchar *)a->word + 1,
+                                            a->len - 1, (uchar *)b->word + 1,
+                                            b->len - 1, false);
               if (i != 0) return i < 0;
               return a->ndepth < b->ndepth;
             });
@@ -596,9 +597,8 @@ static int ftb_phrase_add_word(MYSQL_FTPARSER_PARAM *param, char *word,
                                int word_len,
                                MYSQL_FTPARSER_BOOLEAN_INFO *boolean_info
                                [[maybe_unused]]) {
-  MY_FTB_PHRASE_PARAM *phrase_param =
-      (MY_FTB_PHRASE_PARAM *)param->mysql_ftparam;
-  FT_WORD *w = (FT_WORD *)phrase_param->document->data;
+  auto *phrase_param = (MY_FTB_PHRASE_PARAM *)param->mysql_ftparam;
+  auto *w = (FT_WORD *)phrase_param->document->data;
   LIST *phrase, *document;
   w->pos = (uchar *)word;
   w->len = word_len;
@@ -611,8 +611,8 @@ static int ftb_phrase_add_word(MYSQL_FTPARSER_PARAM *param, char *word,
      comparing the same word twice. */
   for (phrase = phrase_param->phrase, document = phrase_param->document->next;
        phrase; phrase = phrase->next, document = document->next) {
-    FT_WORD *phrase_word = (FT_WORD *)phrase->data;
-    FT_WORD *document_word = (FT_WORD *)document->data;
+    auto *phrase_word = (FT_WORD *)phrase->data;
+    auto *document_word = (FT_WORD *)document->data;
     if (my_strnncoll(phrase_param->cs, (uchar *)phrase_word->pos,
                      phrase_word->len, (uchar *)document_word->pos,
                      document_word->len))
@@ -625,8 +625,7 @@ static int ftb_phrase_add_word(MYSQL_FTPARSER_PARAM *param, char *word,
 static int ftb_check_phrase_internal(MYSQL_FTPARSER_PARAM *param,
                                      char *document, int len) {
   FT_WORD word;
-  MY_FTB_PHRASE_PARAM *phrase_param =
-      (MY_FTB_PHRASE_PARAM *)param->mysql_ftparam;
+  auto *phrase_param = (MY_FTB_PHRASE_PARAM *)param->mysql_ftparam;
   const uchar *docend = (uchar *)document + len;
   while (ft_simple_get_word(phrase_param->cs, (uchar **)&document, docend,
                             &word, false)) {
@@ -685,7 +684,7 @@ static int _ftb_climb_the_tree(FTB *ftb, FTB_WORD *ftbw,
   FTB_EXPR *ftbe;
   float weight = ftbw->weight;
   int yn_flag = ftbw->flags, ythresh, mode = (ftsi_orig != nullptr);
-  my_off_t curdoc = ftbw->docid[mode];
+  my_off_t const curdoc = ftbw->docid[mode];
   struct st_mysql_ftparser *parser =
       ftb->keynr == NO_SUCH_KEY ? &ft_default_parser
                                 : ftb->info->s->keyinfo[ftb->keynr].parser;
@@ -819,7 +818,7 @@ static int ftb_find_relevance_add_word(MYSQL_FTPARSER_PARAM *param, char *word,
                                        int len,
                                        MYSQL_FTPARSER_BOOLEAN_INFO *boolean_info
                                        [[maybe_unused]]) {
-  MY_FTB_FIND_PARAM *ftb_param = (MY_FTB_FIND_PARAM *)param->mysql_ftparam;
+  auto *ftb_param = (MY_FTB_FIND_PARAM *)param->mysql_ftparam;
   FTB *ftb = ftb_param->ftb;
   FTB_WORD *ftbw;
   int a, b, c;
@@ -859,10 +858,8 @@ static int ftb_find_relevance_add_word(MYSQL_FTPARSER_PARAM *param, char *word,
     if (ha_compare_text(ftb->charset, (uchar *)word, len,
                         (uchar *)ftbw->word + 1, ftbw->len - 1,
                         (bool)(ftbw->flags & FTB_FLAG_TRUNC))) {
-      if (ftb->with_scan & FTB_FLAG_TRUNC)
-        continue;
-      else
-        break;
+      if (ftb->with_scan & FTB_FLAG_TRUNC) continue;
+      break;
     }
     if (ftbw->docid[1] == ftb->info->lastpos) continue;
     ftbw->docid[1] = ftb->info->lastpos;
@@ -873,7 +870,7 @@ static int ftb_find_relevance_add_word(MYSQL_FTPARSER_PARAM *param, char *word,
 
 static int ftb_find_relevance_parse(MYSQL_FTPARSER_PARAM *param, char *doc,
                                     int len) {
-  MY_FTB_FIND_PARAM *ftb_param = (MY_FTB_FIND_PARAM *)param->mysql_ftparam;
+  auto *ftb_param = (MY_FTB_FIND_PARAM *)param->mysql_ftparam;
   FTB *ftb = ftb_param->ftb;
   uchar *end = (uchar *)doc + len;
   FT_WORD w;
@@ -887,7 +884,7 @@ extern "C" float ft_boolean_find_relevance(FT_INFO *ftb_base, uchar *record,
   FTB *ftb = (FTB *)ftb_base;
   FTB_EXPR *ftbe;
   FT_SEG_ITERATOR ftsi, ftsi2;
-  my_off_t docid = ftb->info->lastpos;
+  my_off_t const docid = ftb->info->lastpos;
   MY_FTB_FIND_PARAM ftb_param;
   MYSQL_FTPARSER_PARAM *param;
   struct st_mysql_ftparser *parser =
@@ -934,9 +931,9 @@ extern "C" float ft_boolean_find_relevance(FT_INFO *ftb_base, uchar *record,
   if (ftbe->docid[1] == docid && ftbe->cur_weight > 0 &&
       ftbe->yesses >= ftbe->ythresh && !ftbe->nos) { /* row matched ! */
     return ftbe->cur_weight;
-  } else { /* match failed ! */
-    return 0.0;
   }
+  /* match failed ! */
+  return 0.0;
 }
 
 extern "C" void ft_boolean_close_search(FT_INFO *ftb_base) {

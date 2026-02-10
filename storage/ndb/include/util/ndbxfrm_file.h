@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -293,11 +293,23 @@ class ndbxfrm_file {
    * is read and one need to skip implicit checksum checks.
    */
   int close(bool abort);
-  ndb_off_t get_size() const { return m_data_size; }
-  ndb_off_t get_file_size() const { return m_file_size; }
-  ndb_off_t get_file_pos() const { return m_file_pos; }
+  ndb_off_t get_size() const {
+    if (unlikely(m_data_size == INDEFINITE_SIZE)) clear_last_os_error();
+    return m_data_size;
+  }
+  ndb_off_t get_file_size() const {
+    if (unlikely(m_file_size == INDEFINITE_SIZE)) clear_last_os_error();
+    return m_file_size;
+  }
+  ndb_off_t get_file_pos() const {
+    if (unlikely(m_file_pos == INDEFINITE_OFFSET)) clear_last_os_error();
+    return m_file_pos;
+  }
   size_t get_data_block_size() const { return m_data_block_size; }
-  ndb_off_t get_data_size() const { return m_data_size; }
+  ndb_off_t get_data_size() const {
+    if (unlikely(m_data_size == INDEFINITE_SIZE)) clear_last_os_error();
+    return m_data_size;
+  }
   ndb_off_t get_data_pos() const { return m_data_pos; }
   bool has_definite_data_size() const;
   bool has_definite_file_size() const;

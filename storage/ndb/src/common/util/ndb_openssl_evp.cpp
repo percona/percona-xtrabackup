@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +25,9 @@
 #include "util/ndb_math.h"
 #include "util/require.h"
 
-#include <assert.h>  // assert()
-#include <stdlib.h>  // abort()
-#include <string.h>
+#include <cassert>  // assert()
+#include <cstdlib>  // abort()
+#include <cstring>
 
 #include <limits>
 #include <new>
@@ -45,6 +45,8 @@
 #include "portlib/NdbMutex.h"
 #include "portlib/NdbThread.h"
 #endif
+
+#include "my_ssl_algo_cache.h"
 
 // clang-format off
 #ifndef REQUIRE
@@ -274,8 +276,8 @@ size_t ndb_openssl_evp::get_needed_key_iv_pair_count(
     key_iv_pairs = ndb_ceil_div(data_size, data_size_per_key_iv_pair);
   } else {
     // Unknown cipher
-    require((m_evp_cipher == EVP_aes_256_cbc()) ||
-            (m_evp_cipher == EVP_aes_256_xts()));
+    require((m_evp_cipher == my_EVP_aes_256_cbc()) ||
+            (m_evp_cipher == my_EVP_aes_256_xts()));
     abort();  // In case we in future forget to add new cipher in require above.
   }
 
@@ -327,7 +329,7 @@ int ndb_openssl_evp::derive_and_add_key_iv_pair(const byte pwd[],
     // RFC2898 PKCS #5: Password-Based Cryptography Specification Version 2.0
     const char *pass = reinterpret_cast<const char *>(pwd);
     r = PKCS5_PBKDF2_HMAC(pass ? pass : "", pwd_len, salt, SALT_LEN, iter_count,
-                          EVP_sha256(), KEY_LEN + IV_LEN, key_iv);
+                          my_EVP_sha256(), KEY_LEN + IV_LEN, key_iv);
   } else {
     /*
      * iter_count == 0 indicates pwd is a key.
@@ -337,7 +339,7 @@ int ndb_openssl_evp::derive_and_add_key_iv_pair(const byte pwd[],
     const char *pass = reinterpret_cast<const char *>(pwd);
     r = PKCS5_PBKDF2_HMAC(pass ? pass : "", pwd_len, salt, SALT_LEN,
                           1,  // one iteration
-                          EVP_sha256(), KEY_LEN + IV_LEN, key_iv);
+                          my_EVP_sha256(), KEY_LEN + IV_LEN, key_iv);
   }
   if (r != 1) {
     RETURN(-1);
@@ -516,7 +518,7 @@ int ndb_openssl_evp::operation::setup_key_iv(ndb_off_t input_position,
 
       size_t data_unit_index = input_position / m_context->m_data_unit_size;
       int key_iv_pair_index;
-      if (m_context->m_evp_cipher == EVP_aes_256_xts()) {
+      if (m_context->m_evp_cipher == my_EVP_aes_256_xts()) {
         key_iv_pair_index = data_unit_index >> 16;
       } else {
         key_iv_pair_index = data_unit_index;
@@ -527,7 +529,7 @@ int ndb_openssl_evp::operation::setup_key_iv(ndb_off_t input_position,
         RETURN(-1);
       }
 
-      if (m_context->m_evp_cipher == EVP_aes_256_xts()) {
+      if (m_context->m_evp_cipher == my_EVP_aes_256_xts()) {
         /*
          * aes_256_xts uses double length key
          * iv should be set as 16 bit sequence number in bigendian
@@ -704,64 +706,64 @@ int ndb_openssl_evp::operation::encrypt(output_iterator *out,
       return 0;
     }
     return progress ? need_more_input : have_more_output;
-  } else {
-    require(!m_context->m_padding);
+  }
+  require(!m_context->m_padding);
 
-    if (in->size() < data_unit_size && !in->last()) {
-      return need_more_input;
+  if (in->size() < data_unit_size && !in->last()) {
+    return need_more_input;
+  }
+  if (out->size() < data_unit_size) {
+    return have_more_output;
+  }
+
+  /*
+   * G is used as loop guard.
+   * Each lap of loop will encrypt at most one data unit.
+   * Allow yet another lap to get a chance to detect input have become empty.
+   * Loop may end earlier due to errors or out of output space.
+   */
+  int G = ndb_ceil_div(in->size(), data_unit_size) + 1;
+  for (;;) {
+    require(G--);
+    if (in->empty() && in->last()) {
+      out->set_last();
+      return 0;
     }
-    if (out->size() < data_unit_size) {
+    if (in->empty() || out->empty()) {
+      return progress ? need_more_input : have_more_output;
+    }
+
+    int inl = (in->size() > data_unit_size) ? data_unit_size : in->size();
+    if (out->size() < static_cast<size_t>(inl)) {
       return have_more_output;
     }
-
-    /*
-     * G is used as loop guard.
-     * Each lap of loop will encrypt at most one data unit.
-     * Allow yet another lap to get a chance to detect input have become empty.
-     * Loop may end earlier due to errors or out of output space.
-     */
-    int G = ndb_ceil_div(in->size(), data_unit_size) + 1;
-    for (;;) {
-      require(G--);
-      if (in->empty() && in->last()) {
-        out->set_last();
-        return 0;
-      } else if (in->empty() || out->empty()) {
-        return progress ? need_more_input : have_more_output;
-      }
-
-      int inl = (in->size() > data_unit_size) ? data_unit_size : in->size();
-      if (out->size() < static_cast<size_t>(inl)) {
-        return have_more_output;
-      }
-      if (static_cast<size_t>(inl) < data_unit_size && !in->last()) {
-        return need_more_input;
-      }
-      if (setup_encrypt_key_iv(m_input_position) == -1) {
-        RETURN(-1);
-      }
-
-      int outl;
-      int r = EVP_EncryptUpdate(m_evp_context, out->begin(), &outl,
-                                in->cbegin(), inl);
-      if (r != 1) {
-        RETURN(-1);
-      }
-
-      require(outl == inl);
-      m_input_position += inl;
-      m_output_position += outl;
-      out->advance(outl);
-      in->advance(inl);
-      progress = true;
-
-      r = EVP_EncryptFinal_ex(m_evp_context, out->begin(), &outl);
-      if (r != 1) {
-        RETURN(-1);
-      }
-
-      require(outl == 0);
+    if (static_cast<size_t>(inl) < data_unit_size && !in->last()) {
+      return need_more_input;
     }
+    if (setup_encrypt_key_iv(m_input_position) == -1) {
+      RETURN(-1);
+    }
+
+    int outl;
+    int r = EVP_EncryptUpdate(m_evp_context, out->begin(), &outl, in->cbegin(),
+                              inl);
+    if (r != 1) {
+      RETURN(-1);
+    }
+
+    require(outl == inl);
+    m_input_position += inl;
+    m_output_position += outl;
+    out->advance(outl);
+    in->advance(inl);
+    progress = true;
+
+    r = EVP_EncryptFinal_ex(m_evp_context, out->begin(), &outl);
+    if (r != 1) {
+      RETURN(-1);
+    }
+
+    require(outl == 0);
   }
 }
 
@@ -846,55 +848,54 @@ int ndb_openssl_evp::operation::decrypt(output_iterator *out,
       return 0;
     }
     return progress ? need_more_input : have_more_output;
-  } else {
-    require(!m_context->m_padding);
+  }
+  require(!m_context->m_padding);
 
-    /*
-     * G is used as loop guard.
-     * Each lap of loop will encrypt at most one data unit.
-     * Allow yet another lap to get a chance to detect input have become empty.
-     * Loop may end earlier due to errors or out of output space.
-     */
-    int G = ndb_ceil_div(in->size(), data_unit_size) + 1;
-    for (;;) {
-      require(G--);
-      if (in->empty() && in->last()) {
-        out->set_last();
-        return 0;
-      }
-      int inl = (in->size() >= data_unit_size) ? data_unit_size : in->size();
-      if (static_cast<size_t>(inl) < data_unit_size && !in->last()) {
-        return need_more_input;
-      }
-      if (out->size() < static_cast<size_t>(inl)) {
-        return have_more_output;
-      }
-
-      if (setup_decrypt_key_iv(m_output_position) == -1) {
-        RETURN(-1);
-      }
-
-      int outl;
-      int r = EVP_DecryptUpdate(m_evp_context, out->begin(), &outl,
-                                in->cbegin(), inl);
-      if (r != 1) {
-        RETURN(-1);
-      }
-
-      require(outl == inl);
-      m_input_position += inl;
-      m_output_position += outl;
-      out->advance(outl);
-      in->advance(inl);
-      progress = true;
-
-      r = EVP_DecryptFinal_ex(m_evp_context, out->begin(), &outl);
-      if (r != 1) {
-        RETURN(-1);
-      }
-
-      require(outl == 0);
+  /*
+   * G is used as loop guard.
+   * Each lap of loop will encrypt at most one data unit.
+   * Allow yet another lap to get a chance to detect input have become empty.
+   * Loop may end earlier due to errors or out of output space.
+   */
+  int G = ndb_ceil_div(in->size(), data_unit_size) + 1;
+  for (;;) {
+    require(G--);
+    if (in->empty() && in->last()) {
+      out->set_last();
+      return 0;
     }
+    int inl = (in->size() >= data_unit_size) ? data_unit_size : in->size();
+    if (static_cast<size_t>(inl) < data_unit_size && !in->last()) {
+      return need_more_input;
+    }
+    if (out->size() < static_cast<size_t>(inl)) {
+      return have_more_output;
+    }
+
+    if (setup_decrypt_key_iv(m_output_position) == -1) {
+      RETURN(-1);
+    }
+
+    int outl;
+    int r = EVP_DecryptUpdate(m_evp_context, out->begin(), &outl, in->cbegin(),
+                              inl);
+    if (r != 1) {
+      RETURN(-1);
+    }
+
+    require(outl == inl);
+    m_input_position += inl;
+    m_output_position += outl;
+    out->advance(outl);
+    in->advance(inl);
+    progress = true;
+
+    r = EVP_DecryptFinal_ex(m_evp_context, out->begin(), &outl);
+    if (r != 1) {
+      RETURN(-1);
+    }
+
+    require(outl == 0);
   }
 }
 
@@ -1008,11 +1009,12 @@ int ndb_openssl_evp::wrap_keys_aeskw256(byte *wrapped, size_t *wrapped_size,
                                         size_t wrapping_key_size) {
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
   EVP_CIPHER_CTX_set_flags(ctx, EVP_CIPHER_CTX_FLAG_WRAP_ALLOW);
-  if (wrapping_key_size != (size_t)EVP_CIPHER_key_length(EVP_aes_256_wrap())) {
+  if (wrapping_key_size !=
+      (size_t)EVP_CIPHER_key_length(my_EVP_aes_256_wrap())) {
     RETURN(-1);
   }
   if (*wrapped_size < keys_size + AESKW_EXTRA) RETURN(-1);
-  if (EVP_EncryptInit_ex(ctx, EVP_aes_256_wrap(), nullptr, wrapping_key,
+  if (EVP_EncryptInit_ex(ctx, my_EVP_aes_256_wrap(), nullptr, wrapping_key,
                          nullptr) != 1) {
     RETURN(-1);
   }
@@ -1045,12 +1047,13 @@ int ndb_openssl_evp::unwrap_keys_aeskw256(byte *keys, size_t *keys_size,
                                           size_t wrapping_key_size) {
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
   EVP_CIPHER_CTX_set_flags(ctx, EVP_CIPHER_CTX_FLAG_WRAP_ALLOW);
-  if (wrapping_key_size != (size_t)EVP_CIPHER_key_length(EVP_aes_256_wrap())) {
+  if (wrapping_key_size !=
+      (size_t)EVP_CIPHER_key_length(my_EVP_aes_256_wrap())) {
     RETURN(-1);
   }
   if (wrapped_size < AESKW_EXTRA) RETURN(-1);
   if (*keys_size < wrapped_size - AESKW_EXTRA) RETURN(-1);
-  if (EVP_DecryptInit_ex(ctx, EVP_aes_256_wrap(), nullptr, wrapping_key,
+  if (EVP_DecryptInit_ex(ctx, my_EVP_aes_256_wrap(), nullptr, wrapping_key,
                          nullptr) != 1) {
     RETURN(-1);
   }

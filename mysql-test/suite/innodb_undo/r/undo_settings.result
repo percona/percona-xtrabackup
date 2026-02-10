@@ -4,6 +4,7 @@
 # innodb_rollback_segments is tested here.
 # Also make sure that --innodb_validate_tablespace_paths=OFF does not
 # affect the validation of undo tablespaces. (See undo_settings-master.opt)
+include/rpl/set_gtid_mode_off.inc
 SET DEFAULT_STORAGE_ENGINE=InnoDB;
 SET GLOBAL innodb_monitor_enable='module_buffer_page';
 SET GLOBAL innodb_monitor_enable='trx_rseg_current_size';

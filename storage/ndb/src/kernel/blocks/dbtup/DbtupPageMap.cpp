@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -42,6 +42,7 @@
 // #define DEBUG_LCP_FREE 1
 // #define DEBUG_LCP_SKIP 1
 // #define DEBUG_LCP_SCANNED_BIT 1
+#define LCP_EXTRA_DEBUG 1
 #endif
 
 #ifdef DEBUG_LCP
@@ -832,6 +833,20 @@ Uint32 Dbtup::allocFragPage(Uint32 *err, Tablerec *tabPtrP,
      * also to ensure that drop fragment doesn't drop things from the
      * prev_ptr position.
      */
+
+#ifdef LCP_EXTRA_DEBUG
+    {
+      LCPEXTRADEBUG(
+          c_backup,
+          "allocFragPage: tab(%u,%u):%u, row_count: %llu, prev entry flags: "
+          "%u:%u:%u, NEW page entry",
+          fragPtrP->fragTableId, fragPtrP->fragmentId, page_no,
+          fragPtrP->m_row_count, (*prev_ptr & FREE_PAGE_BIT) != 0,
+          (*prev_ptr & LCP_SCANNED_BIT) != 0,
+          (*prev_ptr & FREE_PAGE_RNIL) != 0);
+    }
+#endif
+
     jam();
     *ptr = pagePtr.i;
     *prev_ptr = FREE_PAGE_BIT | LAST_LCP_FREE_BIT;
@@ -842,6 +857,20 @@ Uint32 Dbtup::allocFragPage(Uint32 *err, Tablerec *tabPtrP,
      * it from this list.
      */
     remove_page_id_from_dll(fragPtrP, page_no, pagePtr.i, ptr);
+
+#ifdef LCP_EXTRA_DEBUG
+    {
+      LCPEXTRADEBUG(
+          c_backup,
+          "allocFragPage: tab(%u,%u):%u, row_count: %llu, prev entry flags: "
+          "%u:%u:%u, previously USED page "
+          "entry",
+          fragPtrP->fragTableId, fragPtrP->fragmentId, page_no,
+          fragPtrP->m_row_count, (*prev_ptr & FREE_PAGE_BIT) != 0,
+          (*prev_ptr & LCP_SCANNED_BIT) != 0,
+          (*prev_ptr & FREE_PAGE_RNIL) != 0);
+    }
+#endif
   }
   if (DBUG_PAGE_MAP) {
     g_eventLogger->info("(%u)tab(%u,%u):%u alloc(%u max: %u next: %x)",
@@ -972,6 +1001,20 @@ void Dbtup::releaseFragPage(Fragrecord *fragPtrP, Uint32 logicalPageId,
                              instance(), fragPtrP->fragTableId,
                              fragPtrP->fragmentId, logicalPageId));
         lcp_scanned_bit = LCP_SCANNED_BIT;
+
+#ifdef LCP_EXTRA_DEBUG
+        {
+          LCPEXTRADEBUG(
+              c_backup,
+              "releaseFragPage : Set lcp_scanned_bit on tab(%u,%u):%u, "
+              "row_count: %llu, change part: %u last_lcp_state: %u "
+              "page_to_skip_lcp %u",
+              fragPtrP->fragTableId, fragPtrP->fragmentId, logicalPageId,
+              fragPtrP->m_row_count, is_change_part, last_lcp_state,
+              pagePtr.p->is_page_to_skip_lcp());
+        }
+#endif
+
         bool page_to_skip_lcp = pagePtr.p->is_page_to_skip_lcp();
         Uint32 new_last_lcp_state;
         if (page_to_skip_lcp) {
@@ -1017,6 +1060,16 @@ void Dbtup::releaseFragPage(Fragrecord *fragPtrP, Uint32 logicalPageId,
              instance(), fragPtrP->fragTableId, fragPtrP->fragmentId,
              logicalPageId));
         /* Coverage tested */
+#ifdef LCP_EXTRA_DEBUG
+        {
+          LCPEXTRADEBUG(
+              c_backup,
+              "releaseFragPage : lcp_scanned_bit already set when page released"
+              "in tab(%u,%u) page(%u), row_count: %llu, last_lcp_state: %u",
+              fragPtrP->fragTableId, fragPtrP->fragmentId, logicalPageId,
+              fragPtrP->m_row_count, last_lcp_state);
+        }
+#endif
       }
     } else {
       /* Coverage tested */

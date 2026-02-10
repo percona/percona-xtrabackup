@@ -165,6 +165,9 @@ update t1 set s1 = 3 where s1=1;
 select * from t2 where match(s2) against ('sunshine');
 
 # FTS Doc ID cannot be reused
+--disable_query_log
+call mtr.add_suppression("FTS Doc ID must be larger than 3 for table `test`\.`t2`");
+--enable_query_log
 --error 1451
 update t1 set s1 = 1 where s1=3;
 

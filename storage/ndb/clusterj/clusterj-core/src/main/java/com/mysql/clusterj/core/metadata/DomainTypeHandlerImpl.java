@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@ package com.mysql.clusterj.core.metadata;
 import com.mysql.clusterj.core.spi.DomainFieldHandler;
 import com.mysql.clusterj.core.spi.ValueHandlerFactory;
 import com.mysql.clusterj.core.spi.ValueHandler;
+import com.mysql.clusterj.ClusterJDatastoreException;
 import com.mysql.clusterj.ClusterJException;
 import com.mysql.clusterj.ClusterJFatalInternalException;
 import com.mysql.clusterj.ClusterJUserException;
@@ -65,28 +66,34 @@ import java.util.Map;
  */
 public class DomainTypeHandlerImpl<T> extends AbstractDomainTypeHandlerImpl<T> {
 
-    public interface Finalizable {
-        void finalize() throws Throwable;
-    }
-
     /** The domain class. */
     Class<T> cls;
 
     /** Dynamic class indicator */
-    boolean dynamic = false;
+    final boolean dynamic;
 
     /** The methods of the properties. */
     private Map<String, Method> unmatchedGetMethods = new HashMap<String, Method>();
     private Map<String, Method> unmatchedSetMethods = new HashMap<String, Method>();
 
+    /** The Proxy class for the Domain Class. */
+    final private Class<T> proxyClass;
+
     /** The proxy interfaces implemented by the domain object */
-    Class<?>[] proxyInterfaces = null;
+    final Class<?>[] proxyInterfaces;
 
     /** The PersistenceCapable annotation for this class. */
-    PersistenceCapable persistenceCapable;
+    final PersistenceCapable persistenceCapable;
 
     /** The smart value handler factory */
-    ValueHandlerFactory valueHandlerFactory;
+    final ValueHandlerFactory valueHandlerFactory;
+
+    /** Set when schema change has made this DomainTypeHandler invalid,
+        and schema change processing in progress */
+    volatile boolean isClosing;
+
+    /** Set after schema change processing is complete */
+    volatile boolean isClosed;
 
     /* The column number is the entry indexed by field number */
     private int[] fieldNumberToColumnNumberMap;
@@ -106,7 +113,7 @@ public class DomainTypeHandlerImpl<T> extends AbstractDomainTypeHandlerImpl<T> {
         this(cls, dictionary, null);
     }
 
-    @SuppressWarnings( "unchecked" )
+    @SuppressWarnings( {"unchecked","deprecation"} )
     public DomainTypeHandlerImpl(Class<T> cls, Dictionary dictionary,
             ValueHandlerFactory smartValueHandlerFactory) {
         this.valueHandlerFactory = smartValueHandlerFactory!=null?
@@ -118,14 +125,20 @@ public class DomainTypeHandlerImpl<T> extends AbstractDomainTypeHandlerImpl<T> {
             this.dynamic = true;
             // Dynamic object has a handler but no proxy
             this.tableName = getTableNameForDynamicObject((Class<DynamicObject>)cls);
+            proxyClass = null;
+            proxyInterfaces = null;
+            persistenceCapable = null;
         } else {
+            this.dynamic = false;
             if (!cls.isInterface()) {
                 // Only interfaces or subclasses of DynamicObject
                 // can be persistence-capable.
                 throw new ClusterJUserException(local.message(
                         "ERR_Not_Persistence_Capable_Type", name));
             }
-            proxyInterfaces = new Class<?>[] {cls, Finalizable.class};
+            proxyInterfaces = new Class<?>[] { cls };
+            proxyClass = (Class<T>)
+                Proxy.getProxyClass(cls.getClassLoader(), proxyInterfaces);
             // Get the table name from Persistence Capable annotation
             persistenceCapable = cls.getAnnotation(PersistenceCapable.class);
             if (persistenceCapable == null) {
@@ -140,9 +153,6 @@ public class DomainTypeHandlerImpl<T> extends AbstractDomainTypeHandlerImpl<T> {
         }
         List<String> columnNamesUsed = new ArrayList<String>();
         this.table = getTable(dictionary);
-        if (table == null) {
-            throw new ClusterJUserException(local.message("ERR_Get_NdbTable", name, tableName));
-        }
         if (logger.isDebugEnabled()) logger.debug("Found Table for " + tableName);
 
         // the id field handlers will be initialized via registerPrimaryKeyColumn
@@ -409,8 +419,8 @@ public class DomainTypeHandlerImpl<T> extends AbstractDomainTypeHandlerImpl<T> {
         handler.markModified(fieldNumber);
     }
 
-    public Class<?>[] getProxyInterfaces() {
-        return proxyInterfaces;
+    public Class<?> getProxyClass() {
+        return proxyClass;
     }
 
     public Class<T> getDomainClass() {
@@ -482,8 +492,6 @@ public class DomainTypeHandlerImpl<T> extends AbstractDomainTypeHandlerImpl<T> {
                 ((DynamicObject)instance).delegate((DynamicObjectDelegate)valueHandler);
             } else {
                 instance = (T)Proxy.newProxyInstance(cls.getClassLoader(), proxyInterfaces, valueHandler);
-                // TODO is setProxy really needed?
-                valueHandler.setProxy(instance);
             }
             return instance;
         } catch (InstantiationException ex) {
@@ -525,12 +533,6 @@ public class DomainTypeHandlerImpl<T> extends AbstractDomainTypeHandlerImpl<T> {
         String head = methodName.substring(3, 4).toLowerCase();
         String tail = methodName.substring(4);
         return head + tail;
-    }
-
-    @SuppressWarnings( "unchecked" )
-    public T getInstance(ValueHandler valueHandler) {
-        T instance = (T)valueHandler.getProxy();
-        return instance;
     }
 
     private Class<?> getType(Method method) {
@@ -706,4 +708,16 @@ public class DomainTypeHandlerImpl<T> extends AbstractDomainTypeHandlerImpl<T> {
         return result;
     }
 
+    public String getTableVersion() {
+        if(table == null) return "(unknown)";
+        return table.getVersion();
+    }
+
+    public boolean isClosing()  { return this.isClosing; }
+
+    public void setClosing()    { this.isClosing = true; }
+
+    public boolean isClosed()   { return this.isClosed;  }
+
+    public void setClosed()     { this.isClosed = true;  }
 }

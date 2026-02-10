@@ -1,4 +1,6 @@
 --source include/no_valgrind_without_big.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 # Save the initial number of concurrent sessions
 --source include/count_sessions.inc
@@ -185,5 +187,90 @@ DROP DATABASE B35205310;
 
 --echo # End of 8.0 tests
 
+--echo #
+--echo # Bug#38284832: mysqldump --order-by-primary is sorting by
+--echo #   all table indices instead of just the primary key
+--echo #
+
+# The hypergraph generates an error even with the right query. See bug#38473156
+SET @saved_optimizer_switch = @@global.optimizer_switch;
+SET GLOBAL optimizer_switch = 'hypergraph_optimizer=off';
+CREATE DATABASE B38284832;
+
+CREATE TABLE B38284832.foo (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `col1` INT UNSIGNED NOT NULL,
+  `col2` INT UNSIGNED NOT NULL,
+  `data` JSON DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_col1` (`col1`),
+  KEY `idx_col2` (`col2`)
+);
+
+INSERT INTO B38284832.foo (`col1`, `col2`, `data`)
+  VALUES (111, 222, JSON_OBJECT('data', REPEAT('LotsOfData', 250000)));
+--echo # Test: should not produce an execution error
+--exec $MYSQL_DUMP --order-by-primary --result-file=$MYSQLTEST_VARDIR/tmp/b38284832.sql B38284832 2>&1
+
+DROP DATABASE B38284832;
+--remove_file $MYSQLTEST_VARDIR/tmp/b38284832.sql
+SET GLOBAL optimizer_switch = @saved_optimizer_switch;
+
+
+--echo # End of 8.4 tests
+
 # Wait till we reached the initial number of concurrent sessions
 --source include/wait_until_count_sessions.inc
+
+
+--echo #
+--echo # Bug #37353658: Contribution: Remove whitespace between INSERT/REPLACE and IGNORE
+--echo #
+
+CREATE DATABASE B37353658;
+CREATE TABLE B37353658.t1 (a INT);
+INSERT INTO B37353658.t1 VALUES (1),(2),(3),(4);
+
+--echo # Test should not have double space between INSERT and IGNORE
+--exec $MYSQL_DUMP --skip-comments --compact --no-create-info --insert-ignore B37353658 t1
+
+DROP DATABASE B37353658;
+
+--echo #End of 9.3 tests
+
+--echo #
+--echo # Bug#22240504: MYSQLDUMP --ROUTINES MISQUOTES DATABASE NAMES
+--echo #
+
+CREATE DATABASE `B\\22240504`;
+CREATE EVENT `B\\22240504`.inner_b22240404 ON SCHEDULE EVERY 1 DAY DO SELECT 1;
+CREATE EVENT outer_b22240404 ON SCHEDULE EVERY 1 DAY DO SELECT 1;
+
+--echo # Test dump routines should not fail on USE
+--exec $MYSQL_DUMP --skip-comments --compact --routines B\\\\22240504
+
+--echo # Test dump events should not fail on USE
+--exec $MYSQL_DUMP --skip-comments --compact --events B\\\\22240504 > $MYSQLTEST_VARDIR/tmp/b22240504_events.sql
+
+--let $assert_text=check for inner_b22240404 present
+--let $assert_file=$MYSQLTEST_VARDIR/tmp/b22240504_events.sql
+--let $assert_select=inner_b22240404
+--let $assert_count=1
+--source include/assert_grep.inc
+
+--let $assert_text=check for outer_b22240404 absent
+--let $assert_file=$MYSQLTEST_VARDIR/tmp/b22240504_events.sql
+--let $assert_select=outer_b22240404
+--let $assert_count=0
+--source include/assert_grep.inc
+
+--remove_file $MYSQLTEST_VARDIR/tmp/b22240504_events.sql
+
+# Cleanup
+DROP EVENT `B\\22240504`.inner_b22240404;
+DROP EVENT outer_b22240404;
+DROP DATABASE `B\\22240504`;
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc
+

@@ -1,7 +1,7 @@
 #ifndef SQL_ITERATORS_WINDOW_ITERATORS_H_
 #define SQL_ITERATORS_WINDOW_ITERATORS_H_
 
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -97,10 +97,6 @@ class WindowIterator final : public RowIterator {
                  Temp_table_param *temp_table_param,  // Includes the window.
                  JOIN *join, int output_slice);
 
-  bool Init() override;
-
-  int Read() override;
-
   void SetNullRowFlag(bool is_null_row) override {
     m_source->SetNullRowFlag(is_null_row);
   }
@@ -115,6 +111,9 @@ class WindowIterator final : public RowIterator {
   }
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   /// The iterator we are reading from.
   unique_ptr_destroy_only<RowIterator> const m_source;
 
@@ -208,10 +207,6 @@ class BufferingWindowIterator final : public RowIterator {
       Temp_table_param *temp_table_param,  // Includes the window.
       JOIN *join, int output_slice);
 
-  bool Init() override;
-
-  int Read() override;
-
   void SetNullRowFlag(bool is_null_row) override {
     m_source->SetNullRowFlag(is_null_row);
   }
@@ -226,6 +221,8 @@ class BufferingWindowIterator final : public RowIterator {
   }
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
   int ReadBufferedRow(bool new_partition_or_eof);
 
   /// The iterator we are reading from.

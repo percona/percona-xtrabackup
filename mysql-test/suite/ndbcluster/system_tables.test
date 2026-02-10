@@ -1,0 +1,15 @@
+--source include/have_ndb.inc
+
+--echo #
+--echo # BUG#37413657 System tables never stored in NDB
+--echo #
+--error ER_UNSUPPORTED_ENGINE
+ALTER TABLE mysql.user ENGINE = NDB;
+--error ER_UNSUPPORTED_ENGINE
+ALTER TABLE mysql.db ENGINE = NDB;
+--error ER_UNSUPPORTED_ENGINE
+ALTER TABLE mysql.tables_priv ENGINE = NDB;
+--error ER_UNSUPPORTED_ENGINE
+ALTER TABLE mysql.columns_priv ENGINE = NDB;
+--error ER_UNSUPPORTED_ENGINE
+ALTER TABLE mysql.proxies_priv ENGINE = NDB;

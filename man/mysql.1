@@ -2,12 +2,12 @@
 .\"     Title: mysql
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 09/13/2024
+.\"      Date: 12/12/2025
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 9.0
+.\"    Source: MySQL 9.6
 .\"  Language: English
 .\"
-.TH "MYSQL" "1" "09/13/2024" "MySQL 9\&.0" "MySQL Database System"
+.TH "MYSQL" "1" "12/12/2025" "MySQL 9\&.6" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -59,7 +59,7 @@ mysql_store_result()\&.
 .br
 .PP
 Alternatively, MySQL Shell offers access to the X DevAPI\&. For details, see
-\m[blue]\fBMySQL Shell 9\&.0\fR\m[]\&\s-2\u[1]\d\s+2\&.
+\m[blue]\fBMySQL Shell 9\&.6\fR\m[]\&\s-2\u[1]\d\s+2\&.
 .sp .5v
 .RE
 .PP
@@ -160,6 +160,57 @@ T}
 .TE
 .sp 1
 Display a help message and exit\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-authentication\-oci\-client\-config\-profile\fR
+.TS
+allbox tab(:);
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--authentication-oci-client-config-profile=profileName
+T}
+T{
+Type
+T}:T{
+String
+T}
+.TE
+.sp 1
+Specify the name of the OCI configuration profile to use\&. If not set, the default profile is used\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-authentication\-openid\-connect\-client\-id\-token\-file\fR
+.TS
+allbox tab(:);
+lB l.
+T{
+Command-Line Format
+T}:T{
+--authentication-openid-connect-client-id-token-file
+T}
+.TE
+.sp 1
+For OpenID Connect, this sets the required Identity token to authenticate with a mapped MySQL user\&. It\*(Aqs a full filepath to the Identity token file used when connecting to the MySQL server\&. For additional information, see
+Section\ \&8.4.1.9, \(lqOpenID Connect Pluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -499,6 +550,10 @@ in noninteractive mode (for input piped to
 or loaded using the
 source
 command)\&.
+.sp
+\fB\-\-binary\-mode\fR, when enabled, causes the server to disregard any setting for
+\fB\-\-commands\fR
+\&.
 .RE
 .sp
 .RS 4
@@ -597,6 +652,374 @@ Display result set metadata\&. This information corresponds to the contents of C
 MYSQL_FIELD
 data structures\&. See
 \m[blue]\fBC API Basic Data Structures\fR\m[]\&\s-2\u[2]\d\s+2\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-commands\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--commands
+T}
+T{
+Type
+T}:T{
+Boolean
+T}
+T{
+Default Value
+T}:T{
+FALSE
+T}
+.TE
+.sp 1
+Whether to enable or disable processing of local
+\fBmysql\fR
+client commands\&. Setting this option to
+FALSE
+disables such processing, and has the effects listed here:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The following
+\fBmysql\fR
+client commands are disabled:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+charset
+(/C
+remains enabled)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+clear
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+connect
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+edit
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+ego
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+exit
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+go
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+help
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+nopager
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+notee
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+nowarning
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+pager
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+print
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+prompt
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+query_attributes
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+quit
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+rehash
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+resetconnection
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+ssl_session_data_print
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+source
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+status
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+system
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+tee
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\eu
+(use
+is passed to the server)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+warnings
+.RE
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The
+\eC
+and
+delimiter
+commands remain enabled\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The
+\fB\-\-system\-command\fR
+option is ignored, and has no effect\&.
+.RE
+.sp
+This option has no effect when
+\fB\-\-binary\-mode\fR
+is enabled\&.
+.sp
+When
+\fB\-\-commands\fR
+is enabled, it is possible to disable (only) the system command using the
+\fB\-\-system\-command\fR
+option\&.
 .RE
 .sp
 .RS 4
@@ -2562,7 +2985,60 @@ This option has no effect if the device does not support the resident\-key featu
 .sp .5v
 .RE
 For more information, see
-Section\ \&8.4.1.10, \(lqWebAuthn Pluggable Authentication\(rq\&.
+Section\ \&8.4.1.11, \(lqWebAuthn Pluggable Authentication\(rq\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-plugin\-authentication\-webauthn\-device=#\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--plugin-authentication-webauthn-device
+T}
+T{
+Type
+T}:T{
+Integer
+T}
+T{
+Default Value
+T}:T{
+0
+T}
+.TE
+.sp 1
+Determiens which device to use for
+libfido
+authentication\&. The default is the first device (0)\&.
+.if n \{\
+.sp
+.\}
+.RS 4
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+Specifying a nonexistent device raises an error\&.
+.sp .5v
+.RE
+For more information, see
+Section\ \&8.4.1.11, \(lqWebAuthn Pluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -3341,6 +3817,31 @@ Do not write line numbers for errors\&. Useful when you want to compare result f
 .sp -1
 .IP \(bu 2.3
 .\}
+\fB\-\-skip\-system\-command\fR
+.TS
+allbox tab(:);
+lB l.
+T{
+Command-Line Format
+T}:T{
+--skip-system-command
+T}
+.TE
+.sp 1
+Disables the
+system
+(\e!) command\&. Equivalent to
+\fB\-\-system\-command=OFF\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 \fB\-\-socket=\fR\fB\fIpath\fR\fR,
 \fB\-S \fR\fB\fIpath\fR\fR
 .TS
@@ -3552,6 +4053,54 @@ Mar  7 12:39:28 myhost MysqlClient[20824]:
 .sp
 For more information, see
 the section called \(lqMYSQL CLIENT LOGGING\(rq\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-system\-command[={ON|OFF}]\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--system-command[={ON|OFF}]
+T}
+T{
+Disabled by
+T}:T{
+skip-system-command
+T}
+T{
+Type
+T}:T{
+Boolean
+T}
+T{
+Default Value
+T}:T{
+OFF
+T}
+.TE
+.sp 1
+Enable or disable the
+system
+(\e!) command\&. This option is disabled by default, which means the
+system
+command is rejected with an error\&. To enable it, use
+\fB\-\-system\-command=ON\fR\&.
+.sp
+\fB\-\-commands\fR, when disabled (set to
+FALSE), causes the server to disregard any setting for this option\&.
 .RE
 .sp
 .RS 4
@@ -4076,7 +4625,12 @@ in noninteractive mode (for input piped to
 \fBmysql\fR
 or loaded using the
 source
-command)\&.
+command)\&.The
+\fB\-\-commands\fR
+option can be used to enable or disable all commands except
+/C,
+delimiter, and
+use\&.
 .PP
 Each command has both a long and short form\&. The long form is not case\-sensitive; the short form is\&. The long form can be followed by an optional semicolon terminator, but the short form should not\&.
 .PP
@@ -4659,6 +5213,9 @@ system \fIcommand\fR,
 \e! \fIcommand\fR
 .sp
 Execute the given command using your default command interpreter\&.
+.sp
+In MySQL 9\&.6, this command is disabled by default\&. You can enable it by starting the client with
+\fB\-\-system\-command=ON\fR\&.
 .RE
 .sp
 .RS 4
@@ -6517,7 +7074,7 @@ command)\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2024, Oracle and/or its affiliates.
+Copyright \(co 1997, 2025, Oracle and/or its affiliates.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
@@ -6527,29 +7084,29 @@ You should have received a copy of the GNU General Public License along with the
 .sp
 .SH "NOTES"
 .IP " 1." 4
-MySQL Shell 9.0
+MySQL Shell 9.6
 .RS 4
-\%https://dev.mysql.com/doc/mysql-shell/9.0/en/
+\%https://dev.mysql.com/doc/mysql-shell/9.6/en/
 .RE
 .IP " 2." 4
 C API Basic Data Structures
 .RS 4
-\%https://dev.mysql.com/doc/c-api/9.0/en/c-api-data-structures.html
+\%https://dev.mysql.com/doc/c-api/9.6/en/c-api-data-structures.html
 .RE
 .IP " 3." 4
 Multiple Statement Execution Support
 .RS 4
-\%https://dev.mysql.com/doc/c-api/9.0/en/c-api-multiple-queries.html
+\%https://dev.mysql.com/doc/c-api/9.6/en/c-api-multiple-queries.html
 .RE
 .IP " 4." 4
 mysql_change_user()
 .RS 4
-\%https://dev.mysql.com/doc/c-api/9.0/en/mysql-change-user.html
+\%https://dev.mysql.com/doc/c-api/9.6/en/mysql-change-user.html
 .RE
 .IP " 5." 4
 Automatic Reconnection Control
 .RS 4
-\%https://dev.mysql.com/doc/c-api/9.0/en/c-api-auto-reconnect.html
+\%https://dev.mysql.com/doc/c-api/9.6/en/c-api-auto-reconnect.html
 .RE
 .SH "SEE ALSO"
 For more information, please refer to the MySQL Reference Manual,

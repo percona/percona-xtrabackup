@@ -1,7 +1,7 @@
 #ifndef SQL_ITERATORS_TIMING_ITERATOR_H_
 #define SQL_ITERATORS_TIMING_ITERATOR_H_
 
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -162,7 +162,8 @@ class TimingIterator final : public RowIterator {
   TimingIterator(THD *thd, Args &&...args)
       : RowIterator(thd), m_iterator(thd, std::forward<Args>(args)...) {}
 
-  bool Init() override {
+ private:
+  bool DoInit() override {
     const IteratorProfilerImpl::TimeStamp start_time =
         IteratorProfilerImpl::Now();
     bool err = m_iterator.Init();
@@ -170,7 +171,7 @@ class TimingIterator final : public RowIterator {
     return err;
   }
 
-  int Read() override {
+  int DoRead() override {
     const IteratorProfilerImpl::TimeStamp start_time =
         IteratorProfilerImpl::Now();
     int err = m_iterator.Read();
@@ -178,6 +179,7 @@ class TimingIterator final : public RowIterator {
     return err;
   }
 
+ public:
   void SetNullRowFlag(bool is_null_row) override {
     m_iterator.SetNullRowFlag(is_null_row);
   }

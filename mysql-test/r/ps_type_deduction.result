@@ -193,7 +193,7 @@ select json_extract(trace,"$.steps[*].statement_parameters") from information_sc
 json_extract(trace,"$.steps[*].statement_parameters")
 [["VARCHAR"]]
 prepare s from 'select sum(1) over (order by ? range 2 preceding)';
-ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 prepare s from 'select sum(1) over (order by 1.1 range ? preceding)';
 select json_extract(trace,"$.steps[*].statement_parameters") from information_schema.optimizer_trace;
 json_extract(trace,"$.steps[*].statement_parameters")
@@ -1870,10 +1870,6 @@ prepare s from 'select MBRWithin(?,?)';
 select json_extract(trace,"$.steps[*].statement_parameters") from information_schema.optimizer_trace;
 json_extract(trace,"$.steps[*].statement_parameters")
 [["GEOMETRY", "GEOMETRY"]]
-prepare s from 'select MD5(?)';
-select json_extract(trace,"$.steps[*].statement_parameters") from information_schema.optimizer_trace;
-json_extract(trace,"$.steps[*].statement_parameters")
-[["VARCHAR"]]
 prepare s from 'select MICROSECOND(?)';
 select json_extract(trace,"$.steps[*].statement_parameters") from information_schema.optimizer_trace;
 json_extract(trace,"$.steps[*].statement_parameters")
@@ -2128,10 +2124,6 @@ prepare s from 'select SESSION_USER()';
 select json_extract(trace,"$.steps[*].statement_parameters") from information_schema.optimizer_trace;
 json_extract(trace,"$.steps[*].statement_parameters")
 NULL
-prepare s from 'select SHA1(?)';
-select json_extract(trace,"$.steps[*].statement_parameters") from information_schema.optimizer_trace;
-json_extract(trace,"$.steps[*].statement_parameters")
-[["VARCHAR"]]
 prepare s from 'select SHA2(?,?)';
 select json_extract(trace,"$.steps[*].statement_parameters") from information_schema.optimizer_trace;
 json_extract(trace,"$.steps[*].statement_parameters")

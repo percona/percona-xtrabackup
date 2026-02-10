@@ -1,7 +1,8 @@
 SET default_storage_engine=InnoDB;
 SET innodb_strict_mode=OFF;
 SET SESSION debug="+d,row_print_geometry_data";
-SHOW VARIABLES LIKE '%storage_engine%';
+SHOW VARIABLES WHERE Variable_name LIKE '%storage_engine%'
+AND Variable_name NOT LIKE 'external_table%';
 Variable_name	Value
 default_storage_engine	InnoDB
 default_tmp_storage_engine	InnoDB

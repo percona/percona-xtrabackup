@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -723,7 +723,7 @@ static inline MY_STAT *inline_mysql_file_stat(
     const char *path, MY_STAT *stat_area, myf flags) {
   MY_STAT *result;
 #ifdef HAVE_PSI_FILE_INTERFACE
-  struct PSI_file_locker *locker;
+  struct PSI_file_locker *locker = nullptr;
   PSI_file_locker_state state;
   locker = PSI_FILE_CALL(get_thread_file_name_locker)(
       &state, key, PSI_FILE_STAT, path, &locker);
@@ -938,7 +938,7 @@ static inline File inline_mysql_file_create(
     const char *filename, int create_flags, int access_flags, myf myFlags) {
   File file;
 #ifdef HAVE_PSI_FILE_INTERFACE
-  struct PSI_file_locker *locker;
+  struct PSI_file_locker *locker = nullptr;
   PSI_file_locker_state state;
   locker = PSI_FILE_CALL(get_thread_file_name_locker)(
       &state, key, PSI_FILE_CREATE, filename, &locker);
@@ -962,7 +962,7 @@ static inline File inline_mysql_file_create_temp(
     UnlinkOrKeepFile unlink_or_keep, myf myFlags) {
   File file;
 #ifdef HAVE_PSI_FILE_INTERFACE
-  struct PSI_file_locker *locker;
+  struct PSI_file_locker *locker = nullptr;
   PSI_file_locker_state state;
   locker = PSI_FILE_CALL(get_thread_file_name_locker)(
       &state, key, PSI_FILE_CREATE, nullptr, &locker);
@@ -987,7 +987,7 @@ static inline File inline_mysql_file_open(
     const char *filename, int flags, myf myFlags) {
   File file;
 #ifdef HAVE_PSI_FILE_INTERFACE
-  struct PSI_file_locker *locker;
+  struct PSI_file_locker *locker = nullptr;
   PSI_file_locker_state state;
   locker = PSI_FILE_CALL(get_thread_file_name_locker)(
       &state, key, PSI_FILE_OPEN, filename, &locker);
@@ -1195,7 +1195,7 @@ static inline int inline_mysql_file_delete(
     const char *name, myf flags) {
   int result;
 #ifdef HAVE_PSI_FILE_INTERFACE
-  struct PSI_file_locker *locker;
+  struct PSI_file_locker *locker = nullptr;
   PSI_file_locker_state state;
   locker = PSI_FILE_CALL(get_thread_file_name_locker)(
       &state, key, PSI_FILE_DELETE, name, &locker);
@@ -1218,7 +1218,7 @@ static inline int inline_mysql_file_rename(
     const char *from, const char *to, myf flags) {
   int result;
 #ifdef HAVE_PSI_FILE_INTERFACE
-  struct PSI_file_locker *locker;
+  struct PSI_file_locker *locker = nullptr;
   PSI_file_locker_state state;
   locker = PSI_FILE_CALL(get_thread_file_name_locker)(
       &state, key, PSI_FILE_RENAME, from, &locker);
@@ -1243,7 +1243,7 @@ static inline File inline_mysql_file_create_with_symlink(
     int access_flags, myf flags) {
   File file;
 #ifdef HAVE_PSI_FILE_INTERFACE
-  struct PSI_file_locker *locker;
+  struct PSI_file_locker *locker = nullptr;
   PSI_file_locker_state state;
   locker = PSI_FILE_CALL(get_thread_file_name_locker)(
       &state, key, PSI_FILE_CREATE, filename, &locker);
@@ -1268,7 +1268,7 @@ static inline int inline_mysql_file_delete_with_symlink(
     const char *name, myf flags) {
   int result;
 #ifdef HAVE_PSI_FILE_INTERFACE
-  struct PSI_file_locker *locker;
+  struct PSI_file_locker *locker = nullptr;
   PSI_file_locker_state state;
   locker = PSI_FILE_CALL(get_thread_file_name_locker)(
       &state, key, PSI_FILE_DELETE, name, &locker);
@@ -1291,7 +1291,7 @@ static inline int inline_mysql_file_rename_with_symlink(
     const char *from, const char *to, myf flags) {
   int result;
 #ifdef HAVE_PSI_FILE_INTERFACE
-  struct PSI_file_locker *locker;
+  struct PSI_file_locker *locker = nullptr;
   PSI_file_locker_state state;
   locker = PSI_FILE_CALL(get_thread_file_name_locker)(
       &state, key, PSI_FILE_RENAME, from, &locker);

@@ -1,0 +1,2 @@
+# Check default router_name registered in the metadata
+--source bootstrap_mrs_standalone.inc

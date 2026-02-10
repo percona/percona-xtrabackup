@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,11 +21,13 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <errno.h>
 #include <algorithm>
 #include <bitset>
+#include <cerrno>
 #include <cstring>
+#include <memory>
 #include <set>
+#include <utility>
 
 #ifndef _WIN32
 #include <netdb.h>
@@ -93,7 +95,7 @@ static bool is_address_localhost(const std::string &address) {
 bool get_local_addresses(Gcs_sock_probe_interface &sock_probe_if,
                          std::map<std::string, int> &addr_to_cidr_bits,
                          bool filter_out_inactive) {
-  sock_probe *s = (sock_probe *)calloc(1, sizeof(sock_probe));
+  auto *s = (sock_probe *)calloc(1, sizeof(sock_probe));
 
   if (sock_probe_if.init_sock_probe(s) < 0) {
     free(s);
@@ -137,7 +139,7 @@ bool get_local_addresses(Gcs_sock_probe_interface &sock_probe_if,
         inmask = &((struct sockaddr_in *)netmask)->sin_addr;
 
         // byte order does not matter, only how many bits are set does
-        std::bitset<sizeof(unsigned long) * 8> prefix(inmask->s_addr);
+        std::bitset<sizeof(unsigned long) * 8> const prefix(inmask->s_addr);
 
         sname[0] = smask[0] = '\0';
 
@@ -164,11 +166,11 @@ bool get_local_addresses(Gcs_sock_probe_interface &sock_probe_if,
         // byte order does not matter, only how many bits are set does
         std::ostringstream binary_string;
         for (int ipv6_bytes = 0; ipv6_bytes < 16; ipv6_bytes++) {
-          std::bitset<8> prefix_unit(inmaskv6->s6_addr[ipv6_bytes]);
+          std::bitset<8> const prefix_unit(inmaskv6->s6_addr[ipv6_bytes]);
           binary_string << prefix_unit.to_string();
         }
 
-        std::bitset<(4 * sizeof(unsigned long) * 8)> prefix(
+        std::bitset<(4 * sizeof(unsigned long) * 8)> const prefix(
             binary_string.str());
 
         sname[0] = smask[0] = '\0';
@@ -221,8 +223,8 @@ bool get_local_private_addresses(std::map<std::string, int> &out,
   - Class C - 16-bit block	192.168.0.0 – 192.168.255.255
   */
   for (it = addr_to_cidr.begin(); it != addr_to_cidr.end(); it++) {
-    std::string ip = it->first;
-    int cidr = it->second;
+    std::string const ip = it->first;
+    int const cidr = it->second;
 
     int part1, part2, part3, part4;
     sscanf(ip.c_str(), "%d.%d.%d.%d", &part1, &part2, &part3, &part4);
@@ -243,10 +245,10 @@ bool get_local_private_addresses(std::map<std::string, int> &out,
   multiple subnets
  */
   for (it = addr_to_cidr.begin(); it != addr_to_cidr.end(); it++) {
-    std::string ip = it->first;
-    int cidr = it->second;
+    std::string const ip = it->first;
+    int const cidr = it->second;
 
-    if (ip.compare("::1") == 0 || ip.compare(0, 2, "fd") == 0 ||
+    if (ip == "::1" || ip.compare(0, 2, "fd") == 0 ||
         ip.compare(0, 4, "fe80") == 0) {
       out.insert(std::make_pair(ip, cidr));
     }
@@ -255,11 +257,11 @@ bool get_local_private_addresses(std::map<std::string, int> &out,
   return false;
 }
 
-bool resolve_ip_addr_from_hostname(std::string name,
+bool resolve_ip_addr_from_hostname(const std::string &name,
                                    std::vector<std::string> &ip) {
   int res = true;
   char cip[INET6_ADDRSTRLEN];
-  socklen_t cip_len = static_cast<socklen_t>(sizeof(cip));
+  auto cip_len = static_cast<socklen_t>(sizeof(cip));
   struct addrinfo *addrinf = nullptr, *addrinf_cycle = nullptr, hints;
   struct sockaddr *sa = nullptr;
   void *in_addr = nullptr;
@@ -284,7 +286,7 @@ bool resolve_ip_addr_from_hostname(std::string name,
     memset(cip, '\0', cip_len);
     if (!inet_ntop(sa->sa_family, in_addr, cip, cip_len)) goto end;
 
-    std::string resolved_ip(cip);
+    std::string const resolved_ip(cip);
     ip.push_back(resolved_ip);
 
     addrinf_cycle = addrinf_cycle->ai_next;
@@ -298,10 +300,11 @@ end:
 }
 
 bool resolve_all_ip_addr_from_hostname(
-    std::string name, std::vector<std::pair<sa_family_t, std::string>> &ips) {
+    const std::string &name,
+    std::vector<std::pair<sa_family_t, std::string>> &ips) {
   int res = true;
   char cip[INET6_ADDRSTRLEN];
-  socklen_t cip_len = static_cast<socklen_t>(sizeof(cip));
+  auto cip_len = static_cast<socklen_t>(sizeof(cip));
   struct addrinfo *addrinf = nullptr, *addrinfo_list = nullptr, hints;
   struct sockaddr *sa = nullptr;
   void *in_addr = nullptr;
@@ -330,7 +333,7 @@ bool resolve_all_ip_addr_from_hostname(
 
     if (!inet_ntop(sa->sa_family, in_addr, cip, cip_len)) goto end;
 
-    ips.push_back(std::make_pair(sa->sa_family, std::string(cip)));
+    ips.emplace_back(sa->sa_family, std::string(cip));
 
     addrinfo_list = addrinfo_list->ai_next;
   }
@@ -360,11 +363,8 @@ bool string_to_sockaddr(const std::string &addr, struct sockaddr_storage *sa) {
     Try IPv6.
    */
   sa->ss_family = AF_INET6;
-  if (inet_pton(AF_INET6, addr.c_str(),
-                &(((struct sockaddr_in6 *)sa)->sin6_addr)) == 1)
-    return false;
-
-  return true;
+  return inet_pton(AF_INET6, addr.c_str(),
+                   &(((struct sockaddr_in6 *)sa)->sin6_addr)) != 1;
 }
 
 /**
@@ -373,7 +373,7 @@ bool string_to_sockaddr(const std::string &addr, struct sockaddr_storage *sa) {
 static bool sock_descriptor_to_sockaddr(int fd, struct sockaddr_storage *sa) {
   int res = 0;
   memset(sa, 0, sizeof(struct sockaddr_storage));
-  socklen_t addr_size = static_cast<socklen_t>(sizeof(struct sockaddr_storage));
+  auto addr_size = static_cast<socklen_t>(sizeof(struct sockaddr_storage));
   if (!(res = getpeername(fd, (struct sockaddr *)sa, &addr_size))) {
     if (sa->ss_family != AF_INET && sa->ss_family != AF_INET6) {
       MYSQL_GCS_LOG_DEBUG(
@@ -382,7 +382,7 @@ static bool sock_descriptor_to_sockaddr(int fd, struct sockaddr_storage *sa) {
       res = 1;
     }
   } else {
-    int err = errno;
+    int const err = errno;
     switch (err) {
       case EBADF:
         MYSQL_GCS_LOG_DEBUG("The file descriptor fd=%d is not valid", fd);
@@ -414,7 +414,7 @@ static bool sock_descriptor_to_sockaddr(int fd, struct sockaddr_storage *sa) {
         break;
     }
   }
-  return res ? true : false;
+  return res != 0;
 }
 
 /**
@@ -422,7 +422,6 @@ static bool sock_descriptor_to_sockaddr(int fd, struct sockaddr_storage *sa) {
   */
 static bool sock_descriptor_to_string(int fd, std::string &out) {
   struct sockaddr_storage sa;
-  socklen_t addr_size = static_cast<socklen_t>(sizeof(struct sockaddr_storage));
   char saddr[INET6_ADDRSTRLEN];
 
   // get the sockaddr struct
@@ -430,8 +429,9 @@ static bool sock_descriptor_to_string(int fd, std::string &out) {
 
   // try IPv4
   if (sa.ss_family == AF_INET) {
-    if (inet_ntop(AF_INET, &(((struct sockaddr_in *)&sa)->sin_addr), saddr,
-                  addr_size)) {
+    auto inaddr = &(((struct sockaddr_in *)&sa)->sin_addr);
+    if (inet_ntop(AF_INET, inaddr, saddr,
+                  static_cast<socklen_t>(sizeof(saddr)))) {
       out = saddr;
       return false;
     }
@@ -439,8 +439,9 @@ static bool sock_descriptor_to_string(int fd, std::string &out) {
 
   // try IPv6
   if (sa.ss_family == AF_INET6) {
-    if (inet_ntop(AF_INET6, &(((struct sockaddr_in6 *)&sa)->sin6_addr), saddr,
-                  addr_size)) {
+    auto inaddr = &(((struct sockaddr_in6 *)&sa)->sin6_addr);
+    if (inet_ntop(AF_INET6, inaddr, saddr,
+                  static_cast<socklen_t>(sizeof(saddr)))) {
       out = saddr;
       return false;
     }
@@ -490,14 +491,14 @@ const std::string Gcs_ip_allowlist::DEFAULT_ALLOWLIST =
 
 Gcs_ip_allowlist_entry::Gcs_ip_allowlist_entry(std::string addr,
                                                std::string mask)
-    : m_addr(addr), m_mask(mask) {}
+    : m_addr(std::move(addr)), m_mask(std::move(mask)) {}
 
 Gcs_ip_allowlist_entry_ip::Gcs_ip_allowlist_entry_ip(std::string addr,
                                                      std::string mask)
-    : Gcs_ip_allowlist_entry(addr, mask) {}
+    : Gcs_ip_allowlist_entry(std::move(addr), std::move(mask)) {}
 
 bool Gcs_ip_allowlist_entry_ip::init_value() {
-  bool error = get_address_for_allowlist(get_addr(), get_mask(), m_value);
+  bool const error = get_address_for_allowlist(get_addr(), get_mask(), m_value);
 
   return error;
 }
@@ -511,11 +512,11 @@ std::vector<std::pair<std::vector<unsigned char>, std::vector<unsigned char>>>
 
 Gcs_ip_allowlist_entry_hostname::Gcs_ip_allowlist_entry_hostname(
     std::string addr, std::string mask)
-    : Gcs_ip_allowlist_entry(addr, mask) {}
+    : Gcs_ip_allowlist_entry(std::move(addr), std::move(mask)) {}
 
 Gcs_ip_allowlist_entry_hostname::Gcs_ip_allowlist_entry_hostname(
     std::string addr)
-    : Gcs_ip_allowlist_entry(addr, "") {}
+    : Gcs_ip_allowlist_entry(std::move(addr), "") {}
 
 bool Gcs_ip_allowlist_entry_hostname::init_value() { return false; }
 
@@ -538,7 +539,7 @@ std::vector<std::pair<std::vector<unsigned char>, std::vector<unsigned char>>>
                    [](std::pair<sa_family_t, std::string> const &ip_entry) {
                      return ip_entry.first == AF_INET;
                    });
-  bool has_v4_addresses = has_v4_addresses_it != ips.end();
+  bool const has_v4_addresses = has_v4_addresses_it != ips.end();
 
   auto *retval = new std::vector<
       std::pair<std::vector<unsigned char>, std::vector<unsigned char>>>();
@@ -586,7 +587,7 @@ std::string Gcs_ip_allowlist::to_string() const {
 
 bool Gcs_ip_allowlist::is_valid(const std::string &the_list) {
   // lock the list
-  Atomic_lock_guard guard{m_atomic_guard};
+  Atomic_lock_guard const guard{m_atomic_guard};
 
   // copy the string
   std::string allowlist = the_list;
@@ -640,7 +641,7 @@ bool Gcs_ip_allowlist::is_valid(const std::string &the_list) {
 
 bool Gcs_ip_allowlist::configure(const std::string &the_list) {
   // lock the list
-  Atomic_lock_guard guard{m_atomic_guard};
+  Atomic_lock_guard const guard{m_atomic_guard};
 
   // copy the list
   std::string allowlist = the_list;
@@ -706,7 +707,7 @@ bool Gcs_ip_allowlist::configure(const std::string &the_list) {
 }
 
 bool get_address_for_allowlist(
-    std::string addr, std::string mask,
+    const std::string &addr, const std::string &mask,
     std::pair<std::vector<unsigned char>, std::vector<unsigned char>>
         &out_pair) {
   struct sockaddr_storage sa;
@@ -759,8 +760,7 @@ bool get_address_for_allowlist(
 }
 
 void Gcs_ip_allowlist::clear() {
-  std::set<Gcs_ip_allowlist_entry *>::const_iterator wl_it =
-      m_ip_allowlist.begin();
+  auto wl_it = m_ip_allowlist.begin();
   while (wl_it != m_ip_allowlist.end()) {
     delete (*wl_it);
     m_ip_allowlist.erase(wl_it++);
@@ -769,7 +769,8 @@ void Gcs_ip_allowlist::clear() {
 
 Gcs_ip_allowlist::~Gcs_ip_allowlist() { this->clear(); }
 
-bool Gcs_ip_allowlist::add_address(std::string addr, std::string mask) {
+bool Gcs_ip_allowlist::add_address(const std::string &addr,
+                                   const std::string &mask) {
   Gcs_ip_allowlist_entry *addr_for_wl;
   struct sockaddr_storage sa;
   if (!string_to_sockaddr(addr, &sa)) {
@@ -799,9 +800,9 @@ bool Gcs_ip_allowlist::do_check_block_allowlist(
     The check compares both IPs' bytes (octets) in network byte order.
   */
   bool block = true;
-  for (auto &wl_it : m_ip_allowlist) {
-    std::unique_ptr<std::vector<
-        std::pair<std::vector<unsigned char>, std::vector<unsigned char>>>>
+  for (const auto &wl_it : m_ip_allowlist) {
+    std::unique_ptr<std::vector<std::pair<std::vector<unsigned char>,
+                                          std::vector<unsigned char>>>> const
         wl_value((*wl_it).get_value());
 
     if (wl_value == nullptr) continue;
@@ -854,10 +855,11 @@ bool Gcs_ip_allowlist::do_check_block_xcom(
 
       TODO: CHANGE THIS 32!!!!
     */
-    bool is_hostname = string_to_sockaddr(xcom_addr.get_member_ip(), &xcom_sa);
+    bool const is_hostname =
+        string_to_sockaddr(xcom_addr.get_member_ip(), &xcom_sa);
     if (is_hostname) {
-      xcom_addr_wl.reset(
-          new Gcs_ip_allowlist_entry_hostname(xcom_addr.get_member_ip()));
+      xcom_addr_wl = std::make_unique<Gcs_ip_allowlist_entry_hostname>(
+          xcom_addr.get_member_ip());
     } else {
       std::string xcom_entry_netmask;
 
@@ -866,21 +868,21 @@ bool Gcs_ip_allowlist::do_check_block_xcom(
       else
         xcom_entry_netmask.append("128");
 
-      xcom_addr_wl.reset(new Gcs_ip_allowlist_entry_ip(
-          xcom_addr.get_member_ip(), xcom_entry_netmask));
+      xcom_addr_wl = std::make_unique<Gcs_ip_allowlist_entry_ip>(
+          xcom_addr.get_member_ip(), xcom_entry_netmask);
     }
 
-    bool error = xcom_addr_wl->init_value();
+    bool const error = xcom_addr_wl->init_value();
     if (error) {
       continue;
     }
 
     wl_value.reset(xcom_addr_wl->get_value());
-    if (wl_value.get() == nullptr) {
+    if (wl_value == nullptr) {
       continue;
     }
 
-    for (auto &wl_value_entry : *wl_value.get()) {
+    for (auto &wl_value_entry : *wl_value) {
       xcom_octets = &wl_value_entry.first;
 
       // no point in comparing different families, e.g. IPv4 with IPv6
@@ -958,7 +960,7 @@ end:
 
 bool Gcs_ip_allowlist::shall_block(int fd, site_def const *xcom_config) {
   // lock the list
-  Atomic_lock_guard guard{m_atomic_guard};
+  Atomic_lock_guard const guard{m_atomic_guard};
 
   bool ret = true;
   if (fd > 0) {
@@ -986,7 +988,7 @@ bool Gcs_ip_allowlist::shall_block(int fd, site_def const *xcom_config) {
 bool Gcs_ip_allowlist::shall_block(const std::string &ip_addr,
                                    site_def const *xcom_config) {
   // lock the list
-  Atomic_lock_guard guard{m_atomic_guard};
+  Atomic_lock_guard const guard{m_atomic_guard};
 
   bool ret = true;
   if (!ip_addr.empty()) {

@@ -2,12 +2,12 @@
 .\"     Title: ibd2sdi
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 09/13/2024
+.\"      Date: 12/12/2025
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 9.0
+.\"    Source: MySQL 9.6
 .\"  Language: English
 .\"
-.TH "IBD2SDI" "1" "09/13/2024" "MySQL 9\&.0" "MySQL Database System"
+.TH "IBD2SDI" "1" "12/12/2025" "MySQL 9\&.6" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -36,7 +36,7 @@ ibd2sdi \- InnoDB utility for extracting serialized dictionary information (SDI)
 .PP
 \fBibd2sdi\fR
 is a utility for extracting
-serialized dictionary information
+\m[blue]\fBserialized dictionary information\fR\m[]\&\s-2\u[1]\d\s+2
 (SDI) from
 InnoDB
 tablespace files\&. SDI data is present in all persistent
@@ -51,7 +51,7 @@ files),
 general tablespace
 files (*\&.ibd
 files),
-system tablespace
+\m[blue]\fBsystem tablespace\fR\m[]\&\s-2\u[2]\d\s+2
 files (ibdata*
 files), and the data dictionary tablespace (mysql\&.ibd)\&. It is not supported for use with temporary tablespaces or undo tablespaces\&.
 .PP
@@ -146,11 +146,11 @@ Display a help message and exit\&. For example:
 .\}
 .nf
 Usage: \&./ibd2sdi [\-v] [\-c <strict\-check>] [\-d <dump file name>] [\-n] filename1 [filenames]
-See http://dev\&.mysql\&.com/doc/refman/9\&.0/en/ibd2sdi\&.html for usage hints\&.
+See http://dev\&.mysql\&.com/doc/refman/9\&.6/en/ibd2sdi\&.html for usage hints\&.
   \-h, \-\-help          Display this help and exit\&.
   \-v, \-\-version       Display version information and exit\&.
   \-#, \-\-debug[=name]  Output debug log\&. See
-                      http://dev\&.mysql\&.com/doc/refman/9\&.0/en/dbug\-package\&.html
+                      http://dev\&.mysql\&.com/doc/refman/9\&.6/en/dbug\-package\&.html
   \-d, \-\-dump\-file=name
                       Dump the tablespace SDI into the file passed by user\&.
                       Without the filename, it will default to stdout
@@ -221,7 +221,7 @@ Display version information and exit\&. For example:
 .RS 4
 .\}
 .nf
-ibd2sdi  Ver 9\&.0\&.1 for Linux on x86_64 (Source distribution)
+ibd2sdi  Ver 9\&.6\&.0 for Linux on x86_64 (Source distribution)
 .fi
 .if n \{\
 .RE
@@ -597,7 +597,7 @@ $> \fBibd2sdi \&.\&./data/i/t2\&.ibd  | grep \-m1 \*(Aq\e"default_value\e"\*(Aq 
 Examination of
 \fBibd2sdi\fR
 output may be easier using a JSON\-aware utility like
-\fB\m[blue]\fBjq\fR\m[]\&\s-2\u[1]\d\s+2\fR, as shown here:
+\fB\m[blue]\fBjq\fR\m[]\&\s-2\u[3]\d\s+2\fR, as shown here:
 .sp
 .if n \{\
 .RS 4
@@ -613,7 +613,7 @@ $> \fBibd2sdi \&.\&./data/i/t2\&.ibd  | jq \*(Aq\&.[1]["object"]["dd_object"]["c
 .\}
 .sp
 For more information, see the
-\m[blue]\fBMySQL Internals documentation\fR\m[]\&\s-2\u[2]\d\s+2\&.
+\m[blue]\fBMySQL Internals documentation\fR\m[]\&\s-2\u[4]\d\s+2\&.
 .RE
 .sp
 .RS 4
@@ -796,7 +796,7 @@ ibd2sdi \-\-skip\-pretty \&.\&./data/test/t1\&.ibd
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2024, Oracle and/or its affiliates.
+Copyright \(co 1997, 2025, Oracle and/or its affiliates.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
@@ -806,11 +806,21 @@ You should have received a copy of the GNU General Public License along with the
 .sp
 .SH "NOTES"
 .IP " 1." 4
+serialized dictionary information
+.RS 4
+\%https://dev.mysql.com/doc/refman/8.4/en/glossary.html#glos_serialized_dictionary_information
+.RE
+.IP " 2." 4
+system tablespace
+.RS 4
+\%https://dev.mysql.com/doc/refman/8.4/en/glossary.html#glos_system_tablespace
+.RE
+.IP " 3." 4
 jq
 .RS 4
 \%https://stedolan.github.io/jq/
 .RE
-.IP " 2." 4
+.IP " 4." 4
 MySQL Internals documentation
 .RS 4
 \%https://dev.mysql.com/doc/dev/mysql-server/latest/

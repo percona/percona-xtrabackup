@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -80,7 +80,7 @@ ConstIterator::ConstIterator(THD *thd, TABLE *table, Index_lookup *table_ref,
       m_ref(table_ref),
       m_examined_rows(examined_rows) {}
 
-bool ConstIterator::Init() {
+bool ConstIterator::DoInit() {
   m_first_record_since_init = true;
   return false;
 }
@@ -94,7 +94,7 @@ bool ConstIterator::Init() {
   @retval 1  Got an error (other than row not found) during read
 */
 
-int ConstIterator::Read() {
+int ConstIterator::DoRead() {
   if (!m_first_record_since_init) {
     return -1;
   }
@@ -130,7 +130,7 @@ EQRefIterator::EQRefIterator(THD *thd, TABLE *table, Index_lookup *ref,
   @retval  1 - Error
 */
 
-bool EQRefIterator::Init() {
+bool EQRefIterator::DoInit() {
   if (!table()->file->inited) {
     int error = table()->file->ha_index_init(m_ref->key, /*sorted=*/false);
     if (error) {
@@ -160,7 +160,7 @@ bool EQRefIterator::Init() {
   @retval  1 - Error
 */
 
-int EQRefIterator::Read() {
+int EQRefIterator::DoRead() {
   if (!m_first_record_since_init) {
     return -1;
   }
@@ -236,11 +236,11 @@ int EQRefIterator::Read() {
 
 /**
   Since EQRefIterator may buffer a record, do not unlock
-  it if it was not used in this invocation of EQRefIterator::Read().
+  it if it was not used in this invocation of EQRefIterator::DoRead().
   Only count locks, thus remembering if the record was left unused,
   and unlock already when pruning the current value of
   Index_lookup buffer.
-  @sa EQRefIterator::Read()
+  @sa EQRefIterator::DoRead()
 */
 
 void EQRefIterator::UnlockRow() {
@@ -258,7 +258,7 @@ PushedJoinRefIterator::PushedJoinRefIterator(THD *thd, TABLE *table,
       m_is_unique(is_unique),
       m_examined_rows(examined_rows) {}
 
-bool PushedJoinRefIterator::Init() {
+bool PushedJoinRefIterator::DoInit() {
   assert(!m_use_order);  // Pushed child can't be sorted
 
   if (!table()->file->inited) {
@@ -273,14 +273,14 @@ bool PushedJoinRefIterator::Init() {
   return false;
 }
 
-int PushedJoinRefIterator::Read() {
+int PushedJoinRefIterator::DoRead() {
   if (m_first_record_since_init) {
     m_first_record_since_init = false;
 
     /* Perform "Late NULLs Filtering" (see internals manual for explanations) */
     if (m_ref->impossible_null_ref()) {
       table()->set_no_row();
-      DBUG_PRINT("info", ("PushedJoinRefIterator::Read() null_rejected"));
+      DBUG_PRINT("info", ("PushedJoinRefIterator::DoRead() null_rejected"));
       return -1;
     }
 
@@ -335,7 +335,7 @@ static bool init_index(TABLE *table, handler *file, uint idx, bool sorted) {
 }
 
 template <bool Reverse>
-bool RefIterator<Reverse>::Init() {
+bool RefIterator<Reverse>::DoInit() {
   m_first_record_since_init = true;
   m_is_mvi_unique_filter_enabled = false;
   if (table()->file->inited) return false;
@@ -355,7 +355,7 @@ bool RefIterator<Reverse>::Init() {
 
 //! @cond
 template <>
-int RefIterator<false>::Read() {  // Forward read.
+int RefIterator<false>::DoRead() {  // Forward read.
   if (m_first_record_since_init) {
     m_first_record_since_init = false;
 
@@ -406,7 +406,7 @@ int RefIterator<false>::Read() {  // Forward read.
   SELECT * FROM t1 WHERE a=1 ORDER BY a DESC,b DESC.
 */
 template <>
-int RefIterator<true>::Read() {  // Reverse read.
+int RefIterator<true>::DoRead() {  // Reverse read.
   assert(m_ref->keypart_hash == nullptr);
 
   if (m_first_record_since_init) {
@@ -490,7 +490,7 @@ DynamicRangeIterator::~DynamicRangeIterator() {
   }
 }
 
-bool DynamicRangeIterator::Init() {
+bool DynamicRangeIterator::DoInit() {
   Opt_trace_context *const trace = &thd()->opt_trace;
   const bool disable_trace =
       m_quick_traced_before &&
@@ -584,7 +584,7 @@ bool DynamicRangeIterator::Init() {
   return m_iterator->Init();
 }
 
-int DynamicRangeIterator::Read() {
+int DynamicRangeIterator::DoRead() {
   if (m_iterator == nullptr) {
     return -1;
   } else {
@@ -647,7 +647,7 @@ FullTextSearchIterator::~FullTextSearchIterator() {
   }
 }
 
-bool FullTextSearchIterator::Init() {
+bool FullTextSearchIterator::DoInit() {
   assert(m_ft_func->ft_handler != nullptr);
   assert(table()->file->ft_handler == m_ft_func->ft_handler);
 
@@ -670,7 +670,7 @@ bool FullTextSearchIterator::Init() {
   return false;
 }
 
-int FullTextSearchIterator::Read() {
+int FullTextSearchIterator::DoRead() {
   int error = table()->file->ha_ft_read(table()->record[0]);
   if (error) {
     return HandleError(error);
@@ -694,7 +694,7 @@ RefOrNullIterator::RefOrNullIterator(THD *thd, TABLE *table, Index_lookup *ref,
       m_expected_rows(expected_rows),
       m_examined_rows(examined_rows) {}
 
-bool RefOrNullIterator::Init() {
+bool RefOrNullIterator::DoInit() {
   m_reading_first_row = true;
   m_is_mvi_unique_filter_enabled = false;
   *m_ref->null_ref_key = false;
@@ -711,7 +711,7 @@ bool RefOrNullIterator::Init() {
   return set_record_buffer(table(), m_expected_rows);
 }
 
-int RefOrNullIterator::Read() {
+int RefOrNullIterator::DoRead() {
   if (m_reading_first_row && !*m_ref->null_ref_key) {
     /* Perform "Late NULLs Filtering" (see internals manual for explanations)
      */
@@ -783,7 +783,7 @@ AlternativeIterator::AlternativeIterator(
   assert(!m_applicable_cond_guards.empty());
 }
 
-bool AlternativeIterator::Init() {
+bool AlternativeIterator::DoInit() {
   m_iterator = m_source_iterator.get();
   for (bool *cond_guard : m_applicable_cond_guards) {
     if (!*cond_guard) {
@@ -845,7 +845,7 @@ static ulonglong get_exact_record_count(QEP_TAB *qep_tab, uint table_count,
   return count;
 }
 
-int UnqualifiedCountIterator::Read() {
+int UnqualifiedCountIterator::DoRead() {
   if (!m_has_row) {
     return -1;
   }
@@ -874,7 +874,7 @@ int UnqualifiedCountIterator::Read() {
   return 0;
 }
 
-int ZeroRowsAggregatedIterator::Read() {
+int ZeroRowsAggregatedIterator::DoRead() {
   if (!m_has_row) {
     return -1;
   }
@@ -914,12 +914,12 @@ TableValueConstructorIterator::TableValueConstructorIterator(
   assert(examined_rows != nullptr);
 }
 
-bool TableValueConstructorIterator::Init() {
+bool TableValueConstructorIterator::DoInit() {
   m_row_it = m_row_value_list.begin();
   return false;
 }
 
-int TableValueConstructorIterator::Read() {
+int TableValueConstructorIterator::DoRead() {
   if (m_row_it == m_row_value_list.end()) return -1;
 
   // If the TVC has a single row, we don't create Item_values_column reference

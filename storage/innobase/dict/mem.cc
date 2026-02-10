@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -112,6 +112,8 @@ void dict_mem_table_free(dict_table_t *table) /*!< in: table */
   dict_table_autoinc_destroy(table);
 
   dict_table_stats_latch_destroy(table);
+
+  dict_table_stats_compute_mutex_destroy(table);
 
   table->foreign_set.~dict_foreign_set();
   table->referenced_set.~dict_foreign_set();
@@ -231,10 +233,12 @@ dict_table_t *dict_mem_table_create(const char *name, space_id_t space,
 
   /* true means that the stats latch will be enabled -
   dict_table_stats_lock() will not be noop. */
-  dict_table_stats_latch_create(table, true);
+  dict_table_stats_latch_create_lazy(table, true);
 
-  table->autoinc_lock =
-      static_cast<ib_lock_t *>(mem_heap_alloc(heap, lock_get_size()));
+  /* mutex is enabled */
+  dict_table_stats_compute_mutex_create_lazy(table, true);
+
+  table->autoinc_lock = lock_alloc_from_heap(heap);
 
   /* lazy creation of table autoinc latch */
   dict_table_autoinc_create_lazy(table);

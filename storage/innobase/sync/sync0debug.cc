@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
 Portions of this file contain modifications contributed and copyrighted by
 Google, Inc. Those modifications are gratefully acknowledged and are described
@@ -515,7 +515,6 @@ LatchDebug::LatchDebug() {
   LEVEL_MAP_INSERT(SYNC_RSEG_HEADER_NEW);
   LEVEL_MAP_INSERT(SYNC_TEMP_SPACE_RSEG);
   LEVEL_MAP_INSERT(SYNC_UNDO_SPACE_RSEG);
-  LEVEL_MAP_INSERT(SYNC_TRX_SYS_RSEG);
   LEVEL_MAP_INSERT(SYNC_RSEGS);
   LEVEL_MAP_INSERT(SYNC_UNDO_SPACES);
   LEVEL_MAP_INSERT(SYNC_UNDO_DDL);
@@ -525,6 +524,7 @@ LatchDebug::LatchDebug() {
   LEVEL_MAP_INSERT(SYNC_TREE_NODE_FROM_HASH);
   LEVEL_MAP_INSERT(SYNC_TREE_NODE_NEW);
   LEVEL_MAP_INSERT(SYNC_INDEX_TREE);
+  LEVEL_MAP_INSERT(SYNC_TABLE_STATS_COMPUTE);
   LEVEL_MAP_INSERT(SYNC_PERSIST_DIRTY_TABLES);
   LEVEL_MAP_INSERT(SYNC_PERSIST_AUTOINC);
   LEVEL_MAP_INSERT(SYNC_IBUF_PESS_INSERT_MUTEX);
@@ -542,6 +542,7 @@ LatchDebug::LatchDebug() {
   LEVEL_MAP_INSERT(SYNC_TRX_I_S_RWLOCK);
   LEVEL_MAP_INSERT(SYNC_LEVEL_VARYING);
   LEVEL_MAP_INSERT(SYNC_NO_ORDER_CHECK);
+  LEVEL_MAP_INSERT(SYNC_PAGE_ZIP_STAT);
 
   /* Enum count starts from 0 */
   ut_ad(m_levels.size() == SYNC_LEVEL_MAX + 1);
@@ -745,7 +746,6 @@ Latches *LatchDebug::check_order(const latch_t *latch,
     case SYNC_IBUF_BITMAP_MUTEX:
     case SYNC_TEMP_SPACE_RSEG:
     case SYNC_UNDO_SPACE_RSEG:
-    case SYNC_TRX_SYS_RSEG:
     case SYNC_RSEGS:
     case SYNC_UNDO_SPACES:
     case SYNC_UNDO_DDL:
@@ -768,6 +768,8 @@ Latches *LatchDebug::check_order(const latch_t *latch,
     case SYNC_DICT:
     case SYNC_AHI_ENABLED:
     case SYNC_ALTER_STAGE:
+    case SYNC_PAGE_ZIP_STAT:
+    case SYNC_TABLE_STATS_COMPUTE:
 
       /* This is the most typical case, in which we expect requested<held. */
       assert_requested_is_lower_than_held(level, latches);
@@ -848,8 +850,7 @@ Latches *LatchDebug::check_order(const latch_t *latch,
 
       if (find(latches, SYNC_TRX_UNDO) == nullptr &&
           find(latches, SYNC_TEMP_SPACE_RSEG) == nullptr &&
-          find(latches, SYNC_UNDO_SPACE_RSEG) == nullptr &&
-          find(latches, SYNC_TRX_SYS_RSEG) == nullptr) {
+          find(latches, SYNC_UNDO_SPACE_RSEG) == nullptr) {
         assert_requested_is_lower_or_equal_to_held(level, latches);
       }
       break;
@@ -857,8 +858,7 @@ Latches *LatchDebug::check_order(const latch_t *latch,
     case SYNC_RSEG_HEADER:
 
       ut_a(find(latches, SYNC_TEMP_SPACE_RSEG) != nullptr ||
-           find(latches, SYNC_UNDO_SPACE_RSEG) != nullptr ||
-           find(latches, SYNC_TRX_SYS_RSEG) != nullptr);
+           find(latches, SYNC_UNDO_SPACE_RSEG) != nullptr);
       break;
 
     case SYNC_RSEG_HEADER_NEW:
@@ -1328,8 +1328,6 @@ static void sync_latch_meta_init() UNIV_NOTHROW {
   LATCH_ADD_MUTEX(UNDO_SPACE_RSEG, SYNC_UNDO_SPACE_RSEG,
                   undo_space_rseg_mutex_key);
 
-  LATCH_ADD_MUTEX(TRX_SYS_RSEG, SYNC_TRX_SYS_RSEG, trx_sys_rseg_mutex_key);
-
 #ifdef UNIV_DEBUG
   /* Mutex names starting with '.' are not tracked. They are assumed
   to be diagnostic mutexes used in debugging. */
@@ -1392,7 +1390,7 @@ static void sync_latch_meta_init() UNIV_NOTHROW {
 
   LATCH_ADD_MUTEX(SRV_SYS_TASKS, SYNC_ANY_LATCH, srv_threads_mutex_key);
 
-  LATCH_ADD_MUTEX(PAGE_ZIP_STAT_PER_INDEX, SYNC_ANY_LATCH,
+  LATCH_ADD_MUTEX(PAGE_ZIP_STAT_PER_INDEX, SYNC_PAGE_ZIP_STAT,
                   page_zip_stat_per_index_mutex_key);
 
 #ifndef PFS_SKIP_EVENT_MUTEX
@@ -1466,6 +1464,9 @@ static void sync_latch_meta_init() UNIV_NOTHROW {
   LATCH_ADD_RWLOCK(INDEX_TREE, SYNC_INDEX_TREE, index_tree_rw_lock_key);
 
   LATCH_ADD_RWLOCK(DICT_TABLE_STATS, SYNC_INDEX_TREE, dict_table_stats_key);
+
+  LATCH_ADD_MUTEX(DICT_TABLE_STATS_COMPUTE, SYNC_TABLE_STATS_COMPUTE,
+                  dict_table_stats_compute_mutex_key);
 
   LATCH_ADD_RWLOCK(HASH_TABLE_RW_LOCK, SYNC_BUF_PAGE_HASH,
                    hash_table_locks_key);

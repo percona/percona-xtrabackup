@@ -1,0 +1,927 @@
+SET SESSION innodb_lock_wait_timeout = 1;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1);
+SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+START TRANSACTION;
+INSERT INTO self VALUES(3, 2);
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT pk FROM self WHERE pk = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IS	GRANTED	NULL
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	PRIMARY	RECORD	S,REC_NOT_GAP	GRANTED	2
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+UPDATE self SET fk1 = 1 WHERE fk1 = 2;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE pk = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	1, 3
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	PRIMARY	RECORD	S,REC_NOT_GAP	GRANTED	1
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+UPDATE self SET pk = 4 WHERE pk = 3;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE pk = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE pk = 4 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	4
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+DELETE FROM self WHERE pk = 3;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk)
+ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2), (4, 3);
+START TRANSACTION;
+DELETE FROM self WHERE pk = 2;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	3, 4
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	2
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	4
+COMMIT;
+DROP TABLE self;
+SET FOREIGN_KEY_CHECKS = 0;
+CREATE TABLE t1(cid INT PRIMARY KEY, eid INT,
+FOREIGN KEY(eid) REFERENCES t2(eid)
+ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE TABLE t2(eid INT PRIMARY KEY, cid INT,
+FOREIGN KEY(cid) REFERENCES t1(cid)
+ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t1 VALUES(1, 10);
+INSERT INTO t1 VALUES(2, 20);
+INSERT INTO t2 VALUES(10, 1);
+INSERT INTO t2 VALUES(20, 2);
+SET FOREIGN_KEY_CHECKS = 1;
+SELECT * FROM t1;
+cid	eid
+1	10
+2	20
+SELECT * FROM t2;
+eid	cid
+10	1
+20	2
+START TRANSACTION;
+DELETE FROM t1 WHERE cid = 1;
+START TRANSACTION;
+SELECT cid FROM t2 WHERE cid = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT eid FROM t1 WHERE eid = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	t1	SHARED_WRITE	TRANSACTION	GRANTED
+test	t2	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	t1	NULL	TABLE	IX	GRANTED	NULL
+test	t1	eid	RECORD	X,REC_NOT_GAP	GRANTED	10, 1
+test	t1	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	1
+test	t2	NULL	TABLE	IX	GRANTED	NULL
+test	t2	cid	RECORD	X,REC_NOT_GAP	GRANTED	1, 10
+test	t2	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+SELECT * FROM t1;
+cid	eid
+2	20
+SELECT * FROM t2;
+eid	cid
+20	2
+START TRANSACTION;
+UPDATE t1 SET cid = 3 WHERE cid = 2;
+START TRANSACTION;
+SELECT cid FROM t2 WHERE cid = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT cid FROM t2 WHERE cid = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	t1	SHARED_WRITE	TRANSACTION	GRANTED
+test	t2	SHARED_READ	TRANSACTION	GRANTED
+test	t2	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	t1	NULL	TABLE	IX	GRANTED	NULL
+test	t1	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	2
+test	t2	NULL	TABLE	IX	GRANTED	NULL
+test	t2	cid	RECORD	X,REC_NOT_GAP	GRANTED	2, 20
+test	t2	cid	RECORD	X,REC_NOT_GAP	GRANTED	3, 20
+test	t2	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	20
+COMMIT;
+DROP TABLE t1, t2;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1);
+SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION;
+INSERT INTO self VALUES(3, 2);
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT pk FROM self WHERE pk = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IS	GRANTED	NULL
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	PRIMARY	RECORD	S,REC_NOT_GAP	GRANTED	2
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+UPDATE self SET fk1 = 1 WHERE fk1 = 2;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE pk = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	1, 3
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	PRIMARY	RECORD	S,REC_NOT_GAP	GRANTED	1
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+UPDATE self SET pk = 4 WHERE pk = 3;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE pk = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE pk = 4 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	4
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+DELETE FROM self WHERE pk = 3;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk)
+ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2), (4, 3);
+START TRANSACTION;
+DELETE FROM self WHERE pk = 2;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	3, 4
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	2
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	4
+COMMIT;
+DROP TABLE self;
+SET FOREIGN_KEY_CHECKS = 0;
+CREATE TABLE t1(cid INT PRIMARY KEY, eid INT,
+FOREIGN KEY(eid) REFERENCES t2(eid)
+ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE TABLE t2(eid INT PRIMARY KEY, cid INT,
+FOREIGN KEY(cid) REFERENCES t1(cid)
+ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t1 VALUES(1, 10);
+INSERT INTO t1 VALUES(2, 20);
+INSERT INTO t2 VALUES(10, 1);
+INSERT INTO t2 VALUES(20, 2);
+SET FOREIGN_KEY_CHECKS = 1;
+SELECT * FROM t1;
+cid	eid
+1	10
+2	20
+SELECT * FROM t2;
+eid	cid
+10	1
+20	2
+START TRANSACTION;
+DELETE FROM t1 WHERE cid = 1;
+START TRANSACTION;
+SELECT cid FROM t2 WHERE cid = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT eid FROM t1 WHERE eid = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	t1	SHARED_WRITE	TRANSACTION	GRANTED
+test	t2	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	t1	NULL	TABLE	IX	GRANTED	NULL
+test	t1	eid	RECORD	X,REC_NOT_GAP	GRANTED	10, 1
+test	t1	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	1
+test	t2	NULL	TABLE	IX	GRANTED	NULL
+test	t2	cid	RECORD	X,REC_NOT_GAP	GRANTED	1, 10
+test	t2	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+SELECT * FROM t1;
+cid	eid
+2	20
+SELECT * FROM t2;
+eid	cid
+20	2
+START TRANSACTION;
+UPDATE t1 SET cid = 3 WHERE cid = 2;
+START TRANSACTION;
+SELECT cid FROM t2 WHERE cid = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT cid FROM t2 WHERE cid = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	t1	SHARED_WRITE	TRANSACTION	GRANTED
+test	t2	SHARED_READ	TRANSACTION	GRANTED
+test	t2	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	t1	NULL	TABLE	IX	GRANTED	NULL
+test	t1	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	2
+test	t2	NULL	TABLE	IX	GRANTED	NULL
+test	t2	cid	RECORD	X,REC_NOT_GAP	GRANTED	2, 20
+test	t2	cid	RECORD	X,REC_NOT_GAP	GRANTED	3, 20
+test	t2	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	20
+COMMIT;
+DROP TABLE t1, t2;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1);
+SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+START TRANSACTION;
+INSERT INTO self VALUES(3, 2);
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT pk FROM self WHERE pk = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IS	GRANTED	NULL
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	PRIMARY	RECORD	S,REC_NOT_GAP	GRANTED	2
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+UPDATE self SET fk1 = 1 WHERE fk1 = 2;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE pk = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X	GRANTED	2, 3
+test	self	fk1	RECORD	X	GRANTED	supremum pseudo-record
+test	self	fk1	RECORD	X,GAP	GRANTED	1, 3
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	1, 3
+test	self	PRIMARY	RECORD	S,REC_NOT_GAP	GRANTED	1
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+UPDATE self SET pk = 4 WHERE pk = 3;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE pk = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE pk = 4 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	S	GRANTED	supremum pseudo-record
+test	self	fk1	RECORD	S,GAP	GRANTED	2, 4
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	4
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+DELETE FROM self WHERE pk = 3;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	S	GRANTED	supremum pseudo-record
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk)
+ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2), (4, 3);
+START TRANSACTION;
+DELETE FROM self WHERE pk = 2;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X	GRANTED	2, 3
+test	self	fk1	RECORD	X	GRANTED	3, 4
+test	self	fk1	RECORD	X	GRANTED	supremum pseudo-record
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	2
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	4
+COMMIT;
+DROP TABLE self;
+SET FOREIGN_KEY_CHECKS = 0;
+CREATE TABLE t1(cid INT PRIMARY KEY, eid INT,
+FOREIGN KEY(eid) REFERENCES t2(eid)
+ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE TABLE t2(eid INT PRIMARY KEY, cid INT,
+FOREIGN KEY(cid) REFERENCES t1(cid)
+ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t1 VALUES(1, 10);
+INSERT INTO t1 VALUES(2, 20);
+INSERT INTO t2 VALUES(10, 1);
+INSERT INTO t2 VALUES(20, 2);
+SET FOREIGN_KEY_CHECKS = 1;
+SELECT * FROM t1;
+cid	eid
+1	10
+2	20
+SELECT * FROM t2;
+eid	cid
+10	1
+20	2
+START TRANSACTION;
+DELETE FROM t1 WHERE cid = 1;
+START TRANSACTION;
+SELECT cid FROM t2 WHERE cid = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT eid FROM t1 WHERE eid = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	t1	SHARED_WRITE	TRANSACTION	GRANTED
+test	t2	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	t1	NULL	TABLE	IX	GRANTED	NULL
+test	t1	eid	RECORD	X	GRANTED	10, 1
+test	t1	eid	RECORD	X,GAP	GRANTED	20, 2
+test	t1	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	1
+test	t2	NULL	TABLE	IX	GRANTED	NULL
+test	t2	cid	RECORD	X	GRANTED	1, 10
+test	t2	cid	RECORD	X,GAP	GRANTED	2, 20
+test	t2	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+SELECT * FROM t1;
+cid	eid
+2	20
+SELECT * FROM t2;
+eid	cid
+20	2
+START TRANSACTION;
+UPDATE t1 SET cid = 3 WHERE cid = 2;
+START TRANSACTION;
+SELECT cid FROM t2 WHERE cid = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT cid FROM t2 WHERE cid = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	t1	SHARED_WRITE	TRANSACTION	GRANTED
+test	t2	SHARED_READ	TRANSACTION	GRANTED
+test	t2	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	t1	NULL	TABLE	IX	GRANTED	NULL
+test	t1	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	2
+test	t2	NULL	TABLE	IX	GRANTED	NULL
+test	t2	cid	RECORD	X	GRANTED	2, 20
+test	t2	cid	RECORD	X,GAP	GRANTED	3, 20
+test	t2	cid	RECORD	X,REC_NOT_GAP	GRANTED	3, 20
+test	t2	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	20
+COMMIT;
+DROP TABLE t1, t2;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1);
+SET SESSION TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+START TRANSACTION;
+INSERT INTO self VALUES(3, 2);
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT pk FROM self WHERE pk = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IS	GRANTED	NULL
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	PRIMARY	RECORD	S,REC_NOT_GAP	GRANTED	2
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+UPDATE self SET fk1 = 1 WHERE fk1 = 2;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE pk = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X	GRANTED	2, 3
+test	self	fk1	RECORD	X	GRANTED	supremum pseudo-record
+test	self	fk1	RECORD	X,GAP	GRANTED	1, 3
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	1, 3
+test	self	PRIMARY	RECORD	S,REC_NOT_GAP	GRANTED	1
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+UPDATE self SET pk = 4 WHERE pk = 3;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE pk = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT fk1 FROM self WHERE pk = 4 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	S	GRANTED	supremum pseudo-record
+test	self	fk1	RECORD	S,GAP	GRANTED	2, 4
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	4
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk));
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2);
+START TRANSACTION;
+DELETE FROM self WHERE pk = 3;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	S	GRANTED	supremum pseudo-record
+test	self	fk1	RECORD	X,REC_NOT_GAP	GRANTED	2, 3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+COMMIT;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+COMMIT;
+DROP TABLE self;
+CREATE TABLE self(pk INT PRIMARY KEY, fk1 INT,
+FOREIGN KEY(fk1) REFERENCES self(pk)
+ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO self VALUES(1, NULL), (2, 1), (3, 2), (4, 3);
+START TRANSACTION;
+DELETE FROM self WHERE pk = 2;
+START TRANSACTION;
+SELECT fk1 FROM self WHERE fk1 = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	self	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	self	NULL	TABLE	IX	GRANTED	NULL
+test	self	fk1	RECORD	X	GRANTED	2, 3
+test	self	fk1	RECORD	X	GRANTED	3, 4
+test	self	fk1	RECORD	X	GRANTED	supremum pseudo-record
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	2
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	3
+test	self	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	4
+COMMIT;
+DROP TABLE self;
+SET FOREIGN_KEY_CHECKS = 0;
+CREATE TABLE t1(cid INT PRIMARY KEY, eid INT,
+FOREIGN KEY(eid) REFERENCES t2(eid)
+ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE TABLE t2(eid INT PRIMARY KEY, cid INT,
+FOREIGN KEY(cid) REFERENCES t1(cid)
+ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t1 VALUES(1, 10);
+INSERT INTO t1 VALUES(2, 20);
+INSERT INTO t2 VALUES(10, 1);
+INSERT INTO t2 VALUES(20, 2);
+SET FOREIGN_KEY_CHECKS = 1;
+SELECT * FROM t1;
+cid	eid
+1	10
+2	20
+SELECT * FROM t2;
+eid	cid
+10	1
+20	2
+START TRANSACTION;
+DELETE FROM t1 WHERE cid = 1;
+START TRANSACTION;
+SELECT cid FROM t2 WHERE cid = 1 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT eid FROM t1 WHERE eid = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	t1	SHARED_WRITE	TRANSACTION	GRANTED
+test	t2	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	t1	NULL	TABLE	IX	GRANTED	NULL
+test	t1	eid	RECORD	X	GRANTED	10, 1
+test	t1	eid	RECORD	X,GAP	GRANTED	20, 2
+test	t1	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	1
+test	t2	NULL	TABLE	IX	GRANTED	NULL
+test	t2	cid	RECORD	X	GRANTED	1, 10
+test	t2	cid	RECORD	X,GAP	GRANTED	2, 20
+test	t2	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+SELECT * FROM t1;
+cid	eid
+2	20
+SELECT * FROM t2;
+eid	cid
+20	2
+START TRANSACTION;
+UPDATE t1 SET cid = 3 WHERE cid = 2;
+START TRANSACTION;
+SELECT cid FROM t2 WHERE cid = 2 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+SELECT cid FROM t2 WHERE cid = 3 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	t1	SHARED_WRITE	TRANSACTION	GRANTED
+test	t2	SHARED_READ	TRANSACTION	GRANTED
+test	t2	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	t1	NULL	TABLE	IX	GRANTED	NULL
+test	t1	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	2
+test	t2	NULL	TABLE	IX	GRANTED	NULL
+test	t2	cid	RECORD	X	GRANTED	2, 20
+test	t2	cid	RECORD	X,GAP	GRANTED	3, 20
+test	t2	cid	RECORD	X,REC_NOT_GAP	GRANTED	3, 20
+test	t2	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	20
+COMMIT;
+DROP TABLE t1, t2;

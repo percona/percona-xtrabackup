@@ -54,10 +54,12 @@ from t1
 join t1 as t2 on t2.a = t1.b and t2.b = t1.c;
 
 # Check that new JSON explain format is also handled:
+SET explain_json_format_version = 1;
 explain format=JSON
 select *
 from t1
 join t1 as t2 on t2.a = t1.b and t2.b = t1.c;
+SET explain_json_format_version = DEFAULT;
 
 # Check that we do not push an operation if this prevents us from using
 # 'join buffer'.
@@ -5707,9 +5709,23 @@ insert into t2 values(1), (2);
 create table t3(a int, b int) engine=ndbcluster;
 insert into t3 values(1, 3), (2, 3);
 
+# Below query is no longer valid, but kept for reference.
 let $query =
   select a,
        (select sum(a) over w from t2 window w as(order by t3.a) limit 1)
+  from t3;
+
+--error ER_INVALID_OUTER_REFERENCE
+eval explain format=tree $query;
+--sorted_result
+--error ER_INVALID_OUTER_REFERENCE
+eval $query;
+
+# Below query is added to have a query with similar plan to what above query
+# had before it got invalid.
+let $query =
+  select a,
+       (select sum(a) over w from t2 window w as(order by "whatever") limit 1)
   from t3;
 
 --replace_regex /  \(cost=.*//

@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -84,7 +84,7 @@ unsigned long long ndb_get_program_base_address() { return ULLONG_MAX; }
 static int ndb_get_program_base_address_callback(struct dl_phdr_info *info,
                                                  size_t /* size */,
                                                  void *data) {
-  unsigned long long *base_address = (unsigned long long *)data;
+  auto *base_address = (unsigned long long *)data;
   *base_address = info->dlpi_addr;
   return 1;  // End iteration after first module which is program.
 }

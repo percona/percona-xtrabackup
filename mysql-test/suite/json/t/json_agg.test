@@ -76,6 +76,7 @@ ANALYZE TABLE t1;
 EXPLAIN SELECT a, JSON_ARRAYAGG(b) FROM t1 GROUP BY a;
 EXPLAIN SELECT JSON_ARRAYAGG(b) FROM t1;
 
+SET explain_json_format_version = 1;
 --skip_if_hypergraph  # Depends on the query plan.
 EXPLAIN FORMAT=json SELECT a, JSON_ARRAYAGG(b) FROM t1 GROUP BY a;
 --skip_if_hypergraph  # Depends on the query plan.
@@ -187,6 +188,8 @@ ANALYZE TABLE t1;
 EXPLAIN format=json SELECT (SELECT 1 FROM t WHERE JSON_ARRAYAGG(1 IN (SELECT 1 FROM t)));
 SELECT (SELECT 1 FROM t WHERE JSON_ARRAYAGG(1 IN (SELECT 1 FROM t)));
 DROP TABLE t;
+
+SET explain_json_format_version = DEFAULT;
 
 --echo #
 --echo # Coverage test for fix_fields: check_cols.
@@ -514,4 +517,20 @@ CREATE TABLE t1 (a JSON);
 INSERT INTO t1 SELECT JSON_OBJECTAGG('a', b'01010101');
 SELECT JSON_TYPE(JSON_EXTRACT(a, '$.a')) FROM t1;
 SELECT JSON_TYPE(JSON_EXTRACT(JSON_OBJECT('a', b'01010101'), '$.a'));
+DROP TABLE t1;
+
+
+--echo #
+--echo # Test case to verify NULL ON NULL and ABSENT ON NULL usage
+--echo # in JSON_ARRAYAGG.
+--echo #
+
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT);
+
+SELECT JSON_ARRAYAGG(JSON_OBJECT("f1" , f1, "f2" , f2)) FROM t1;
+SELECT JSON_ARRAYAGG(JSON_OBJECT("f1" , f1, "f2" , f2) NULL ON NULL) FROM t1;
+
+--error ER_NOT_SUPPORTED_YET
+SELECT JSON_ARRAYAGG(JSON_OBJECT("f1" , f1, "f2" , f2) ABSENT ON NULL) FROM t1;
+
 DROP TABLE t1;

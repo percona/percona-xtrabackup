@@ -5,7 +5,6 @@
 [mysqld.2]
 
 [mysqld.3]
-replica-parallel-type=       database
 replica-parallel-workers=    4
 replica-transaction-retries= 0
 replica-preserve-commit-order= 0

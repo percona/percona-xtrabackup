@@ -858,7 +858,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb3 */;
 /*!50001 SET character_set_results     = utf8mb3 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
+/*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50001 VIEW `view_A` AS select `A`.`pk` AS `pk`,`A`.`col_int_nokey` AS `col_int_nokey`,`A`.`col_int_key` AS `col_int_key`,`A`.`col_date_key` AS `col_date_key`,`A`.`col_date_nokey` AS `col_date_nokey`,`A`.`col_time_key` AS `col_time_key`,`A`.`col_time_nokey` AS `col_time_nokey`,`A`.`col_datetime_key` AS `col_datetime_key`,`A`.`col_datetime_nokey` AS `col_datetime_nokey`,`A`.`col_varchar_key` AS `col_varchar_key`,`A`.`col_varchar_nokey` AS `col_varchar_nokey` from `A` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
@@ -875,7 +875,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb3 */;
 /*!50001 SET character_set_results     = utf8mb3 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
+/*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50001 VIEW `view_AA` AS select `AA`.`pk` AS `pk`,`AA`.`col_int_nokey` AS `col_int_nokey`,`AA`.`col_int_key` AS `col_int_key`,`AA`.`col_date_key` AS `col_date_key`,`AA`.`col_date_nokey` AS `col_date_nokey`,`AA`.`col_time_key` AS `col_time_key`,`AA`.`col_time_nokey` AS `col_time_nokey`,`AA`.`col_datetime_key` AS `col_datetime_key`,`AA`.`col_datetime_nokey` AS `col_datetime_nokey`,`AA`.`col_varchar_key` AS `col_varchar_key`,`AA`.`col_varchar_nokey` AS `col_varchar_nokey` from `AA` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
@@ -892,7 +892,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb3 */;
 /*!50001 SET character_set_results     = utf8mb3 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
+/*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50001 VIEW `view_B` AS select `B`.`pk` AS `pk`,`B`.`col_int_nokey` AS `col_int_nokey`,`B`.`col_int_key` AS `col_int_key`,`B`.`col_date_key` AS `col_date_key`,`B`.`col_date_nokey` AS `col_date_nokey`,`B`.`col_time_key` AS `col_time_key`,`B`.`col_time_nokey` AS `col_time_nokey`,`B`.`col_datetime_key` AS `col_datetime_key`,`B`.`col_datetime_nokey` AS `col_datetime_nokey`,`B`.`col_varchar_key` AS `col_varchar_key`,`B`.`col_varchar_nokey` AS `col_varchar_nokey` from `B` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
@@ -909,7 +909,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb3 */;
 /*!50001 SET character_set_results     = utf8mb3 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
+/*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50001 VIEW `view_BB` AS select `BB`.`pk` AS `pk`,`BB`.`col_int_nokey` AS `col_int_nokey`,`BB`.`col_int_key` AS `col_int_key`,`BB`.`col_date_key` AS `col_date_key`,`BB`.`col_date_nokey` AS `col_date_nokey`,`BB`.`col_time_key` AS `col_time_key`,`BB`.`col_time_nokey` AS `col_time_nokey`,`BB`.`col_datetime_key` AS `col_datetime_key`,`BB`.`col_datetime_nokey` AS `col_datetime_nokey`,`BB`.`col_varchar_key` AS `col_varchar_key`,`BB`.`col_varchar_nokey` AS `col_varchar_nokey` from `BB` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
@@ -926,7 +926,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb3 */;
 /*!50001 SET character_set_results     = utf8mb3 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
+/*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50001 VIEW `view_C` AS select `C`.`pk` AS `pk`,`C`.`col_int_nokey` AS `col_int_nokey`,`C`.`col_int_key` AS `col_int_key`,`C`.`col_date_key` AS `col_date_key`,`C`.`col_date_nokey` AS `col_date_nokey`,`C`.`col_time_key` AS `col_time_key`,`C`.`col_time_nokey` AS `col_time_nokey`,`C`.`col_datetime_key` AS `col_datetime_key`,`C`.`col_datetime_nokey` AS `col_datetime_nokey`,`C`.`col_varchar_key` AS `col_varchar_key`,`C`.`col_varchar_nokey` AS `col_varchar_nokey` from `C` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
@@ -943,7 +943,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb3 */;
 /*!50001 SET character_set_results     = utf8mb3 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
+/*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50001 VIEW `view_CC` AS select `CC`.`pk` AS `pk`,`CC`.`col_int_nokey` AS `col_int_nokey`,`CC`.`col_int_key` AS `col_int_key`,`CC`.`col_date_key` AS `col_date_key`,`CC`.`col_date_nokey` AS `col_date_nokey`,`CC`.`col_time_key` AS `col_time_key`,`CC`.`col_time_nokey` AS `col_time_nokey`,`CC`.`col_datetime_key` AS `col_datetime_key`,`CC`.`col_datetime_nokey` AS `col_datetime_nokey`,`CC`.`col_varchar_key` AS `col_varchar_key`,`CC`.`col_varchar_nokey` AS `col_varchar_nokey` from `CC` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
@@ -960,7 +960,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb3 */;
 /*!50001 SET character_set_results     = utf8mb3 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
+/*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50001 VIEW `view_D` AS select `D`.`pk` AS `pk`,`D`.`col_int_nokey` AS `col_int_nokey`,`D`.`col_int_key` AS `col_int_key`,`D`.`col_date_key` AS `col_date_key`,`D`.`col_date_nokey` AS `col_date_nokey`,`D`.`col_time_key` AS `col_time_key`,`D`.`col_time_nokey` AS `col_time_nokey`,`D`.`col_datetime_key` AS `col_datetime_key`,`D`.`col_datetime_nokey` AS `col_datetime_nokey`,`D`.`col_varchar_key` AS `col_varchar_key`,`D`.`col_varchar_nokey` AS `col_varchar_nokey` from `D` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
@@ -977,7 +977,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb3 */;
 /*!50001 SET character_set_results     = utf8mb3 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
+/*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50001 VIEW `view_DD` AS select `DD`.`pk` AS `pk`,`DD`.`col_int_nokey` AS `col_int_nokey`,`DD`.`col_int_key` AS `col_int_key`,`DD`.`col_date_key` AS `col_date_key`,`DD`.`col_date_nokey` AS `col_date_nokey`,`DD`.`col_time_key` AS `col_time_key`,`DD`.`col_time_nokey` AS `col_time_nokey`,`DD`.`col_datetime_key` AS `col_datetime_key`,`DD`.`col_datetime_nokey` AS `col_datetime_nokey`,`DD`.`col_varchar_key` AS `col_varchar_key`,`DD`.`col_varchar_nokey` AS `col_varchar_nokey` from `DD` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
@@ -994,7 +994,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb3 */;
 /*!50001 SET character_set_results     = utf8mb3 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
+/*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50001 VIEW `view_E` AS select `E`.`pk` AS `pk`,`E`.`col_int_nokey` AS `col_int_nokey`,`E`.`col_int_key` AS `col_int_key`,`E`.`col_date_key` AS `col_date_key`,`E`.`col_date_nokey` AS `col_date_nokey`,`E`.`col_time_key` AS `col_time_key`,`E`.`col_time_nokey` AS `col_time_nokey`,`E`.`col_datetime_key` AS `col_datetime_key`,`E`.`col_datetime_nokey` AS `col_datetime_nokey`,`E`.`col_varchar_key` AS `col_varchar_key`,`E`.`col_varchar_nokey` AS `col_varchar_nokey` from `E` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
@@ -1045,7 +1045,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb3 */;
 /*!50001 SET character_set_results     = utf8mb3 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
+/*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50001 VIEW `view_PP` AS select `PP`.`col_int_key` AS `col_int_key`,`PP`.`col_varchar_255_utf8` AS `col_varchar_255_utf8`,`PP`.`col_varchar_10_latin1` AS `col_varchar_10_latin1`,`PP`.`col_varchar_10_utf8` AS `col_varchar_10_utf8`,`PP`.`col_varchar_255_latin1` AS `col_varchar_255_latin1`,`PP`.`col_varchar_255_latin1_key` AS `col_varchar_255_latin1_key`,`PP`.`pk` AS `pk`,`PP`.`col_varchar_10_latin1_key` AS `col_varchar_10_latin1_key`,`PP`.`col_int` AS `col_int`,`PP`.`col_varchar_10_utf8_key` AS `col_varchar_10_utf8_key`,`PP`.`col_varchar_255_utf8_key` AS `col_varchar_255_utf8_key` from `PP` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;

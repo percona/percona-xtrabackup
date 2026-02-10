@@ -101,7 +101,7 @@ def	information_schema	EVENTS	EVENT_TYPE	8		NO	varchar	9	27	NULL	NULL	NULL	utf8m
 def	information_schema	EVENTS	EXECUTE_AT	9	NULL	YES	datetime	NULL	NULL	NULL	NULL	0	NULL	NULL	datetime			select			NULL
 def	information_schema	EVENTS	INTERVAL_VALUE	10	NULL	YES	varchar	256	768	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(256)			select			NULL
 def	information_schema	EVENTS	INTERVAL_FIELD	11	NULL	YES	enum	18	54	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	enum('YEAR','QUARTER','MONTH','DAY','HOUR','MINUTE','WEEK','SECOND','MICROSECOND','YEAR_MONTH','DAY_HOUR','DAY_MINUTE','DAY_SECOND','HOUR_MINUTE','HOUR_SECOND','MINUTE_SECOND','DAY_MICROSECOND','HOUR_MICROSECOND','MINUTE_MICROSECOND','SECOND_MICROSECOND')			select			NULL
-def	information_schema	EVENTS	SQL_MODE	12	NULL	NO	set	520	1560	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL')			select			NULL
+def	information_schema	EVENTS	SQL_MODE	12	NULL	NO	set	546	1638	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')			select			NULL
 def	information_schema	EVENTS	STARTS	13	NULL	YES	datetime	NULL	NULL	NULL	NULL	0	NULL	NULL	datetime			select			NULL
 def	information_schema	EVENTS	ENDS	14	NULL	YES	datetime	NULL	NULL	NULL	NULL	0	NULL	NULL	datetime			select			NULL
 def	information_schema	EVENTS	STATUS	15		NO	varchar	21	63	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(21)			select			NULL
@@ -152,6 +152,62 @@ def	information_schema	FILES	CHECK_TIME	35	NULL	YES	varbinary	0	0	NULL	NULL	NULL
 def	information_schema	FILES	CHECKSUM	36	NULL	YES	varbinary	0	0	NULL	NULL	NULL	NULL	NULL	varbinary(0)			select			NULL
 def	information_schema	FILES	STATUS	37	NULL	YES	varchar	256	768	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(256)			select			NULL
 def	information_schema	FILES	EXTRA	38	NULL	YES	varchar	256	768	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(256)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	TABLE_CATALOG	1	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	TABLE_SCHEMA	2	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	TABLE_NAME	3	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	DEFINER	4	NULL	YES	varchar	288	864	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(288)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	SECURITY_TYPE	5	NULL	YES	varchar	7	21	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(7)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	JSON_COLUMN_NAME	6	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	ROOT_TABLE_CATALOG	7	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	ROOT_TABLE_SCHEMA	8	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	ROOT_TABLE_NAME	9	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	ALLOW_INSERT	10	NULL	YES	varchar	4	12	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(4)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	ALLOW_UPDATE	11	NULL	YES	varchar	4	12	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(4)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	ALLOW_DELETE	12	NULL	YES	varchar	4	12	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(4)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	READ_ONLY	13	NULL	YES	varchar	4	12	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(4)			select			NULL
+def	information_schema	JSON_DUALITY_VIEWS	STATUS	14		NO	varchar	7	21	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(7)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	TABLE_CATALOG	1	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	TABLE_SCHEMA	2	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	TABLE_NAME	3	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	REFERENCED_TABLE_CATALOG	4	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	REFERENCED_TABLE_SCHEMA	5	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	REFERENCED_TABLE_NAME	6	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	IS_ROOT_TABLE	7	NULL	YES	tinyint	NULL	NULL	3	0	NULL	NULL	NULL	tinyint			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	REFERENCED_TABLE_ID	8	NULL	YES	int	NULL	NULL	10	0	NULL	NULL	NULL	int			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	REFERENCED_COLUMN_NAME	9	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	JSON_KEY_NAME	10	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	ALLOW_INSERT	11	NULL	YES	tinyint	NULL	NULL	3	0	NULL	NULL	NULL	tinyint			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	ALLOW_UPDATE	12	NULL	YES	tinyint	NULL	NULL	3	0	NULL	NULL	NULL	tinyint			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	ALLOW_DELETE	13	NULL	YES	tinyint	NULL	NULL	3	0	NULL	NULL	NULL	tinyint			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_COLUMNS	READ_ONLY	14	NULL	YES	tinyint	NULL	NULL	3	0	NULL	NULL	NULL	tinyint			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	TABLE_CATALOG	1	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	TABLE_SCHEMA	2	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	TABLE_NAME	3	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	PARENT_TABLE_CATALOG	4	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	PARENT_TABLE_SCHEMA	5	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	PARENT_TABLE_NAME	6	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	CHILD_TABLE_CATALOG	7	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	CHILD_TABLE_SCHEMA	8	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	CHILD_TABLE_NAME	9	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	PARENT_COLUMN_NAME	10	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	CHILD_COLUMN_NAME	11	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	JOIN_TYPE	12	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_LINKS	JSON_KEY_NAME	13	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	TABLE_CATALOG	1	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	TABLE_SCHEMA	2	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	TABLE_NAME	3	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_CATALOG	4	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_SCHEMA	5	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_NAME	6	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	WHERE_CLAUSE	7	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	ALLOW_INSERT	8	NULL	YES	tinyint	NULL	NULL	3	0	NULL	NULL	NULL	tinyint			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	ALLOW_UPDATE	9	NULL	YES	tinyint	NULL	NULL	3	0	NULL	NULL	NULL	tinyint			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	ALLOW_DELETE	10	NULL	YES	tinyint	NULL	NULL	3	0	NULL	NULL	NULL	tinyint			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	READ_ONLY	11	NULL	YES	tinyint	NULL	NULL	3	0	NULL	NULL	NULL	tinyint			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	IS_ROOT_TABLE	12	NULL	YES	tinyint	NULL	NULL	3	0	NULL	NULL	NULL	tinyint			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_ID	13	NULL	YES	int	NULL	NULL	10	0	NULL	NULL	NULL	int			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_PARENT_ID	14	NULL	YES	int	NULL	NULL	10	0	NULL	NULL	NULL	int			select			NULL
+def	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_PARENT_RELATIONSHIP	15	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)			select			NULL
 def	information_schema	KEYWORDS	WORD	1	NULL	YES	varchar	128	512	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(128)			select			NULL
 def	information_schema	KEYWORDS	RESERVED	2	NULL	YES	int	NULL	NULL	10	0	NULL	NULL	NULL	int			select			NULL
 def	information_schema	KEY_COLUMN_USAGE	CONSTRAINT_CATALOG	1	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
@@ -166,6 +222,16 @@ def	information_schema	KEY_COLUMN_USAGE	POSITION_IN_UNIQUE_CONSTRAINT	9	NULL	YES
 def	information_schema	KEY_COLUMN_USAGE	REFERENCED_TABLE_SCHEMA	10	NULL	YES	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
 def	information_schema	KEY_COLUMN_USAGE	REFERENCED_TABLE_NAME	11	NULL	YES	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
 def	information_schema	KEY_COLUMN_USAGE	REFERENCED_COLUMN_NAME	12	NULL	YES	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	LIBRARIES	LIBRARY_CATALOG	1	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	LIBRARIES	LIBRARY_SCHEMA	2	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	LIBRARIES	LIBRARY_NAME	3	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
+def	information_schema	LIBRARIES	LIBRARY_DEFINITION	4	NULL	YES	longtext	4294967295	4294967295	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	longtext			select			NULL
+def	information_schema	LIBRARIES	LANGUAGE	5	SQL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	LIBRARIES	CREATED	6	NULL	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select			NULL
+def	information_schema	LIBRARIES	LAST_ALTERED	7	NULL	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select			NULL
+def	information_schema	LIBRARIES	SQL_MODE	8	NULL	NO	set	546	1638	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')			select			NULL
+def	information_schema	LIBRARIES	LIBRARY_COMMENT	9	NULL	NO	text	65535	65535	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	text			select			NULL
+def	information_schema	LIBRARIES	CREATOR	10	NULL	NO	varchar	288	864	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(288)			select			NULL
 def	information_schema	OPTIMIZER_TRACE	QUERY	1		NO	varchar	21845	65535	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(65535)			select			NULL
 def	information_schema	OPTIMIZER_TRACE	TRACE	2		NO	varchar	21845	65535	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(65535)			select			NULL
 def	information_schema	OPTIMIZER_TRACE	MISSING_BYTES_BEYOND_MAX_MEM_SIZE	3		NO	int	NULL	NULL	NULL	NULL	NULL	NULL	NULL	int			select			NULL
@@ -185,7 +251,7 @@ def	information_schema	PARAMETERS	DATETIME_PRECISION	12	NULL	YES	int	NULL	NULL	1
 def	information_schema	PARAMETERS	CHARACTER_SET_NAME	13	NULL	YES	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
 def	information_schema	PARAMETERS	COLLATION_NAME	14	NULL	YES	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
 def	information_schema	PARAMETERS	DTD_IDENTIFIER	15	NULL	NO	mediumtext	16777215	16777215	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	mediumtext			select			NULL
-def	information_schema	PARAMETERS	ROUTINE_TYPE	16	NULL	NO	enum	9	27	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE')			select			NULL
+def	information_schema	PARAMETERS	ROUTINE_TYPE	16	NULL	NO	enum	9	27	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE','LIBRARY')			select			NULL
 def	information_schema	PARTITIONS	TABLE_CATALOG	1	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
 def	information_schema	PARTITIONS	TABLE_SCHEMA	2	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
 def	information_schema	PARTITIONS	TABLE_NAME	3	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
@@ -193,24 +259,25 @@ def	information_schema	PARTITIONS	PARTITION_NAME	4	NULL	YES	varchar	64	192	NULL	
 def	information_schema	PARTITIONS	SUBPARTITION_NAME	5	NULL	YES	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
 def	information_schema	PARTITIONS	PARTITION_ORDINAL_POSITION	6	NULL	YES	int	NULL	NULL	10	0	NULL	NULL	NULL	int unsigned			select			NULL
 def	information_schema	PARTITIONS	SUBPARTITION_ORDINAL_POSITION	7	NULL	YES	int	NULL	NULL	10	0	NULL	NULL	NULL	int unsigned			select			NULL
-def	information_schema	PARTITIONS	PARTITION_METHOD	8	NULL	YES	varchar	13	39	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(13)			select			NULL
-def	information_schema	PARTITIONS	SUBPARTITION_METHOD	9	NULL	YES	varchar	13	39	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(13)			select			NULL
-def	information_schema	PARTITIONS	PARTITION_EXPRESSION	10	NULL	YES	varchar	2048	6144	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(2048)			select			NULL
-def	information_schema	PARTITIONS	SUBPARTITION_EXPRESSION	11	NULL	YES	varchar	2048	6144	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(2048)			select			NULL
-def	information_schema	PARTITIONS	PARTITION_DESCRIPTION	12	NULL	YES	text	65535	65535	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	text			select			NULL
-def	information_schema	PARTITIONS	TABLE_ROWS	13	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
-def	information_schema	PARTITIONS	AVG_ROW_LENGTH	14	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
-def	information_schema	PARTITIONS	DATA_LENGTH	15	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
-def	information_schema	PARTITIONS	MAX_DATA_LENGTH	16	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
-def	information_schema	PARTITIONS	INDEX_LENGTH	17	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
-def	information_schema	PARTITIONS	DATA_FREE	18	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
-def	information_schema	PARTITIONS	CREATE_TIME	19	NULL	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select			NULL
-def	information_schema	PARTITIONS	UPDATE_TIME	20	NULL	YES	datetime	NULL	NULL	NULL	NULL	0	NULL	NULL	datetime			select			NULL
-def	information_schema	PARTITIONS	CHECK_TIME	21	NULL	YES	datetime	NULL	NULL	NULL	NULL	0	NULL	NULL	datetime			select			NULL
-def	information_schema	PARTITIONS	CHECKSUM	22	NULL	YES	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select			NULL
-def	information_schema	PARTITIONS	PARTITION_COMMENT	23	NULL	NO	text	65535	65535	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	text			select			NULL
-def	information_schema	PARTITIONS	NODEGROUP	24	NULL	YES	varchar	256	768	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(256)			select			NULL
-def	information_schema	PARTITIONS	TABLESPACE_NAME	25	NULL	YES	varchar	268	804	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(268)			select			NULL
+def	information_schema	PARTITIONS	SECONDARY_LOAD	8	NULL	YES	varchar	1	3	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(1)			select			NULL
+def	information_schema	PARTITIONS	PARTITION_METHOD	9	NULL	YES	varchar	13	39	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(13)			select			NULL
+def	information_schema	PARTITIONS	SUBPARTITION_METHOD	10	NULL	YES	varchar	13	39	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(13)			select			NULL
+def	information_schema	PARTITIONS	PARTITION_EXPRESSION	11	NULL	YES	varchar	2048	6144	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(2048)			select			NULL
+def	information_schema	PARTITIONS	SUBPARTITION_EXPRESSION	12	NULL	YES	varchar	2048	6144	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(2048)			select			NULL
+def	information_schema	PARTITIONS	PARTITION_DESCRIPTION	13	NULL	YES	text	65535	65535	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	text			select			NULL
+def	information_schema	PARTITIONS	TABLE_ROWS	14	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
+def	information_schema	PARTITIONS	AVG_ROW_LENGTH	15	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
+def	information_schema	PARTITIONS	DATA_LENGTH	16	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
+def	information_schema	PARTITIONS	MAX_DATA_LENGTH	17	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
+def	information_schema	PARTITIONS	INDEX_LENGTH	18	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
+def	information_schema	PARTITIONS	DATA_FREE	19	NULL	YES	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select			NULL
+def	information_schema	PARTITIONS	CREATE_TIME	20	NULL	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select			NULL
+def	information_schema	PARTITIONS	UPDATE_TIME	21	NULL	YES	datetime	NULL	NULL	NULL	NULL	0	NULL	NULL	datetime			select			NULL
+def	information_schema	PARTITIONS	CHECK_TIME	22	NULL	YES	datetime	NULL	NULL	NULL	NULL	0	NULL	NULL	datetime			select			NULL
+def	information_schema	PARTITIONS	CHECKSUM	23	NULL	YES	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select			NULL
+def	information_schema	PARTITIONS	PARTITION_COMMENT	24	NULL	NO	text	65535	65535	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	text			select			NULL
+def	information_schema	PARTITIONS	NODEGROUP	25	NULL	YES	varchar	256	768	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(256)			select			NULL
+def	information_schema	PARTITIONS	TABLESPACE_NAME	26	NULL	YES	varchar	268	804	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(268)			select			NULL
 def	information_schema	PLUGINS	PLUGIN_NAME	1		NO	varchar	21	64	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
 def	information_schema	PLUGINS	PLUGIN_VERSION	2		NO	varchar	6	20	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(20)			select			NULL
 def	information_schema	PLUGINS	PLUGIN_STATUS	3		NO	varchar	3	10	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(10)			select			NULL
@@ -281,7 +348,7 @@ def	information_schema	ROUTINES	SPECIFIC_NAME	1	NULL	NO	varchar	64	192	NULL	NULL
 def	information_schema	ROUTINES	ROUTINE_CATALOG	2	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
 def	information_schema	ROUTINES	ROUTINE_SCHEMA	3	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
 def	information_schema	ROUTINES	ROUTINE_NAME	4	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
-def	information_schema	ROUTINES	ROUTINE_TYPE	5	NULL	NO	enum	9	27	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE')			select			NULL
+def	information_schema	ROUTINES	ROUTINE_TYPE	5	NULL	NO	enum	9	27	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE','LIBRARY')			select			NULL
 def	information_schema	ROUTINES	DATA_TYPE	6	NULL	YES	longtext	4294967295	4294967295	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	longtext			select			NULL
 def	information_schema	ROUTINES	CHARACTER_MAXIMUM_LENGTH	7	NULL	YES	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select			NULL
 def	information_schema	ROUTINES	CHARACTER_OCTET_LENGTH	8	NULL	YES	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select			NULL
@@ -302,12 +369,20 @@ def	information_schema	ROUTINES	SQL_PATH	22	NULL	YES	varbinary	0	0	NULL	NULL	NUL
 def	information_schema	ROUTINES	SECURITY_TYPE	23	NULL	NO	enum	7	21	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	enum('DEFAULT','INVOKER','DEFINER')			select			NULL
 def	information_schema	ROUTINES	CREATED	24	NULL	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select			NULL
 def	information_schema	ROUTINES	LAST_ALTERED	25	NULL	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select			NULL
-def	information_schema	ROUTINES	SQL_MODE	26	NULL	NO	set	520	1560	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL')			select			NULL
+def	information_schema	ROUTINES	SQL_MODE	26	NULL	NO	set	546	1638	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')			select			NULL
 def	information_schema	ROUTINES	ROUTINE_COMMENT	27	NULL	NO	text	65535	65535	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	text			select			NULL
 def	information_schema	ROUTINES	DEFINER	28	NULL	NO	varchar	288	864	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(288)			select			NULL
 def	information_schema	ROUTINES	CHARACTER_SET_CLIENT	29	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
 def	information_schema	ROUTINES	COLLATION_CONNECTION	30	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
 def	information_schema	ROUTINES	DATABASE_COLLATION	31	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	ROUTINE_CATALOG	1	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	ROUTINE_SCHEMA	2	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	ROUTINE_NAME	3	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	ROUTINE_TYPE	4	NULL	NO	enum	9	27	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE','LIBRARY')			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	LIBRARY_CATALOG	5	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	LIBRARY_SCHEMA	6	NULL	YES	varchar	100	400	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(100)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	LIBRARY_NAME	7	NULL	YES	varchar	100	400	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(100)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	LIBRARY_VERSION	8	NULL	YES	varchar	100	400	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(100)			select			NULL
 def	information_schema	SCHEMATA	CATALOG_NAME	1	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
 def	information_schema	SCHEMATA	SCHEMA_NAME	2	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
 def	information_schema	SCHEMATA	DEFAULT_CHARACTER_SET_NAME	3	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
@@ -421,7 +496,7 @@ def	information_schema	TRIGGERS	ACTION_REFERENCE_NEW_TABLE	14	NULL	YES	varbinary
 def	information_schema	TRIGGERS	ACTION_REFERENCE_OLD_ROW	15		NO	varchar	3	9	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(3)			select			NULL
 def	information_schema	TRIGGERS	ACTION_REFERENCE_NEW_ROW	16		NO	varchar	3	9	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(3)			select			NULL
 def	information_schema	TRIGGERS	CREATED	17	NULL	NO	timestamp	NULL	NULL	NULL	NULL	2	NULL	NULL	timestamp(2)			select			NULL
-def	information_schema	TRIGGERS	SQL_MODE	18	NULL	NO	set	520	1560	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL')			select			NULL
+def	information_schema	TRIGGERS	SQL_MODE	18	NULL	NO	set	546	1638	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')			select			NULL
 def	information_schema	TRIGGERS	DEFINER	19	NULL	NO	varchar	288	864	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(288)			select			NULL
 def	information_schema	TRIGGERS	CHARACTER_SET_CLIENT	20	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
 def	information_schema	TRIGGERS	COLLATION_CONNECTION	21	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
@@ -503,6 +578,7 @@ COL_CML	DATA_TYPE	CHARACTER_SET_NAME	COLLATION_NAME
 4.0000	varchar	utf8mb3	utf8mb3_general_ci
 3.0000	varchar	utf8mb3	utf8mb3_tolower_ci
 4.0000	varchar	utf8mb4	utf8mb4_0900_ai_ci
+4.0000	varchar	utf8mb4	utf8mb4_bin
 SELECT DISTINCT
 CHARACTER_OCTET_LENGTH / CHARACTER_MAXIMUM_LENGTH AS COL_CML,
 DATA_TYPE,
@@ -635,7 +711,7 @@ NULL	information_schema	COLUMN_STATISTICS	HISTOGRAM	json	NULL	NULL	NULL	NULL	jso
 NULL	information_schema	EVENTS	EXECUTE_AT	datetime	NULL	NULL	NULL	NULL	datetime
 3.0000	information_schema	EVENTS	INTERVAL_VALUE	varchar	256	768	utf8mb3	utf8mb3_general_ci	varchar(256)
 3.0000	information_schema	EVENTS	INTERVAL_FIELD	enum	18	54	utf8mb3	utf8mb3_bin	enum('YEAR','QUARTER','MONTH','DAY','HOUR','MINUTE','WEEK','SECOND','MICROSECOND','YEAR_MONTH','DAY_HOUR','DAY_MINUTE','DAY_SECOND','HOUR_MINUTE','HOUR_SECOND','MINUTE_SECOND','DAY_MICROSECOND','HOUR_MICROSECOND','MINUTE_MICROSECOND','SECOND_MICROSECOND')
-3.0000	information_schema	EVENTS	SQL_MODE	set	520	1560	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL')
+3.0000	information_schema	EVENTS	SQL_MODE	set	546	1638	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')
 NULL	information_schema	EVENTS	STARTS	datetime	NULL	NULL	NULL	NULL	datetime
 NULL	information_schema	EVENTS	ENDS	datetime	NULL	NULL	NULL	NULL	datetime
 3.0000	information_schema	EVENTS	STATUS	varchar	21	63	utf8mb3	utf8mb3_bin	varchar(21)
@@ -686,6 +762,62 @@ NULL	information_schema	FILES	CHECK_TIME	varbinary	0	0	NULL	NULL	varbinary(0)
 NULL	information_schema	FILES	CHECKSUM	varbinary	0	0	NULL	NULL	varbinary(0)
 3.0000	information_schema	FILES	STATUS	varchar	256	768	utf8mb3	utf8mb3_general_ci	varchar(256)
 3.0000	information_schema	FILES	EXTRA	varchar	256	768	utf8mb3	utf8mb3_general_ci	varchar(256)
+3.0000	information_schema	JSON_DUALITY_VIEWS	TABLE_CATALOG	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEWS	TABLE_SCHEMA	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEWS	TABLE_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEWS	DEFINER	varchar	288	864	utf8mb3	utf8mb3_bin	varchar(288)
+3.0000	information_schema	JSON_DUALITY_VIEWS	SECURITY_TYPE	varchar	7	21	utf8mb3	utf8mb3_bin	varchar(7)
+3.0000	information_schema	JSON_DUALITY_VIEWS	JSON_COLUMN_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEWS	ROOT_TABLE_CATALOG	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEWS	ROOT_TABLE_SCHEMA	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEWS	ROOT_TABLE_NAME	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEWS	ALLOW_INSERT	varchar	4	12	utf8mb3	utf8mb3_general_ci	varchar(4)
+3.0000	information_schema	JSON_DUALITY_VIEWS	ALLOW_UPDATE	varchar	4	12	utf8mb3	utf8mb3_general_ci	varchar(4)
+3.0000	information_schema	JSON_DUALITY_VIEWS	ALLOW_DELETE	varchar	4	12	utf8mb3	utf8mb3_general_ci	varchar(4)
+3.0000	information_schema	JSON_DUALITY_VIEWS	READ_ONLY	varchar	4	12	utf8mb3	utf8mb3_general_ci	varchar(4)
+3.0000	information_schema	JSON_DUALITY_VIEWS	STATUS	varchar	7	21	utf8mb3	utf8mb3_general_ci	varchar(7)
+3.0000	information_schema	JSON_DUALITY_VIEW_COLUMNS	TABLE_CATALOG	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEW_COLUMNS	TABLE_SCHEMA	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEW_COLUMNS	TABLE_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_COLUMNS	REFERENCED_TABLE_CATALOG	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_COLUMNS	REFERENCED_TABLE_SCHEMA	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_COLUMNS	REFERENCED_TABLE_NAME	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+NULL	information_schema	JSON_DUALITY_VIEW_COLUMNS	IS_ROOT_TABLE	tinyint	NULL	NULL	NULL	NULL	tinyint
+NULL	information_schema	JSON_DUALITY_VIEW_COLUMNS	REFERENCED_TABLE_ID	int	NULL	NULL	NULL	NULL	int
+4.0000	information_schema	JSON_DUALITY_VIEW_COLUMNS	REFERENCED_COLUMN_NAME	varchar	64	256	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_COLUMNS	JSON_KEY_NAME	varchar	64	256	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)
+NULL	information_schema	JSON_DUALITY_VIEW_COLUMNS	ALLOW_INSERT	tinyint	NULL	NULL	NULL	NULL	tinyint
+NULL	information_schema	JSON_DUALITY_VIEW_COLUMNS	ALLOW_UPDATE	tinyint	NULL	NULL	NULL	NULL	tinyint
+NULL	information_schema	JSON_DUALITY_VIEW_COLUMNS	ALLOW_DELETE	tinyint	NULL	NULL	NULL	NULL	tinyint
+NULL	information_schema	JSON_DUALITY_VIEW_COLUMNS	READ_ONLY	tinyint	NULL	NULL	NULL	NULL	tinyint
+3.0000	information_schema	JSON_DUALITY_VIEW_LINKS	TABLE_CATALOG	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEW_LINKS	TABLE_SCHEMA	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEW_LINKS	TABLE_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_LINKS	PARENT_TABLE_CATALOG	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_LINKS	PARENT_TABLE_SCHEMA	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_LINKS	PARENT_TABLE_NAME	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_LINKS	CHILD_TABLE_CATALOG	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_LINKS	CHILD_TABLE_SCHEMA	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_LINKS	CHILD_TABLE_NAME	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_LINKS	PARENT_COLUMN_NAME	varchar	64	256	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_LINKS	CHILD_COLUMN_NAME	varchar	64	256	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_LINKS	JOIN_TYPE	varchar	64	256	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_LINKS	JSON_KEY_NAME	varchar	64	256	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEW_TABLES	TABLE_CATALOG	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEW_TABLES	TABLE_SCHEMA	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	JSON_DUALITY_VIEW_TABLES	TABLE_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_CATALOG	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_SCHEMA	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_NAME	varchar	64	256	utf8mb4	utf8mb4_bin	varchar(64)
+4.0000	information_schema	JSON_DUALITY_VIEW_TABLES	WHERE_CLAUSE	varchar	64	256	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)
+NULL	information_schema	JSON_DUALITY_VIEW_TABLES	ALLOW_INSERT	tinyint	NULL	NULL	NULL	NULL	tinyint
+NULL	information_schema	JSON_DUALITY_VIEW_TABLES	ALLOW_UPDATE	tinyint	NULL	NULL	NULL	NULL	tinyint
+NULL	information_schema	JSON_DUALITY_VIEW_TABLES	ALLOW_DELETE	tinyint	NULL	NULL	NULL	NULL	tinyint
+NULL	information_schema	JSON_DUALITY_VIEW_TABLES	READ_ONLY	tinyint	NULL	NULL	NULL	NULL	tinyint
+NULL	information_schema	JSON_DUALITY_VIEW_TABLES	IS_ROOT_TABLE	tinyint	NULL	NULL	NULL	NULL	tinyint
+NULL	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_ID	int	NULL	NULL	NULL	NULL	int
+NULL	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_PARENT_ID	int	NULL	NULL	NULL	NULL	int
+4.0000	information_schema	JSON_DUALITY_VIEW_TABLES	REFERENCED_TABLE_PARENT_RELATIONSHIP	varchar	64	256	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)
 4.0000	information_schema	KEYWORDS	WORD	varchar	128	512	utf8mb4	utf8mb4_0900_ai_ci	varchar(128)
 NULL	information_schema	KEYWORDS	RESERVED	int	NULL	NULL	NULL	NULL	int
 3.0000	information_schema	KEY_COLUMN_USAGE	CONSTRAINT_CATALOG	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
@@ -700,6 +832,16 @@ NULL	information_schema	KEY_COLUMN_USAGE	POSITION_IN_UNIQUE_CONSTRAINT	int	NULL	
 3.0000	information_schema	KEY_COLUMN_USAGE	REFERENCED_TABLE_SCHEMA	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
 3.0000	information_schema	KEY_COLUMN_USAGE	REFERENCED_TABLE_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
 3.0000	information_schema	KEY_COLUMN_USAGE	REFERENCED_COLUMN_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	LIBRARIES	LIBRARY_CATALOG	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	LIBRARIES	LIBRARY_SCHEMA	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	LIBRARIES	LIBRARY_NAME	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)
+1.0000	information_schema	LIBRARIES	LIBRARY_DEFINITION	longtext	4294967295	4294967295	utf8mb3	utf8mb3_bin	longtext
+3.0000	information_schema	LIBRARIES	LANGUAGE	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+NULL	information_schema	LIBRARIES	CREATED	timestamp	NULL	NULL	NULL	NULL	timestamp
+NULL	information_schema	LIBRARIES	LAST_ALTERED	timestamp	NULL	NULL	NULL	NULL	timestamp
+3.0000	information_schema	LIBRARIES	SQL_MODE	set	546	1638	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')
+1.0000	information_schema	LIBRARIES	LIBRARY_COMMENT	text	65535	65535	utf8mb3	utf8mb3_bin	text
+3.0000	information_schema	LIBRARIES	CREATOR	varchar	288	864	utf8mb3	utf8mb3_bin	varchar(288)
 3.0000	information_schema	OPTIMIZER_TRACE	QUERY	varchar	21845	65535	utf8mb3	utf8mb3_general_ci	varchar(65535)
 3.0000	information_schema	OPTIMIZER_TRACE	TRACE	varchar	21845	65535	utf8mb3	utf8mb3_general_ci	varchar(65535)
 NULL	information_schema	OPTIMIZER_TRACE	MISSING_BYTES_BEYOND_MAX_MEM_SIZE	int	NULL	NULL	NULL	NULL	int
@@ -719,7 +861,7 @@ NULL	information_schema	PARAMETERS	DATETIME_PRECISION	int	NULL	NULL	NULL	NULL	in
 3.0000	information_schema	PARAMETERS	CHARACTER_SET_NAME	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)
 3.0000	information_schema	PARAMETERS	COLLATION_NAME	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)
 1.0000	information_schema	PARAMETERS	DTD_IDENTIFIER	mediumtext	16777215	16777215	utf8mb3	utf8mb3_bin	mediumtext
-3.0000	information_schema	PARAMETERS	ROUTINE_TYPE	enum	9	27	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE')
+3.0000	information_schema	PARAMETERS	ROUTINE_TYPE	enum	9	27	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE','LIBRARY')
 3.0000	information_schema	PARTITIONS	TABLE_CATALOG	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
 3.0000	information_schema	PARTITIONS	TABLE_SCHEMA	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
 3.0000	information_schema	PARTITIONS	TABLE_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
@@ -727,6 +869,7 @@ NULL	information_schema	PARAMETERS	DATETIME_PRECISION	int	NULL	NULL	NULL	NULL	in
 3.0000	information_schema	PARTITIONS	SUBPARTITION_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
 NULL	information_schema	PARTITIONS	PARTITION_ORDINAL_POSITION	int	NULL	NULL	NULL	NULL	int unsigned
 NULL	information_schema	PARTITIONS	SUBPARTITION_ORDINAL_POSITION	int	NULL	NULL	NULL	NULL	int unsigned
+3.0000	information_schema	PARTITIONS	SECONDARY_LOAD	varchar	1	3	utf8mb3	utf8mb3_bin	varchar(1)
 3.0000	information_schema	PARTITIONS	PARTITION_METHOD	varchar	13	39	utf8mb3	utf8mb3_general_ci	varchar(13)
 3.0000	information_schema	PARTITIONS	SUBPARTITION_METHOD	varchar	13	39	utf8mb3	utf8mb3_general_ci	varchar(13)
 3.0000	information_schema	PARTITIONS	PARTITION_EXPRESSION	varchar	2048	6144	utf8mb3	utf8mb3_bin	varchar(2048)
@@ -815,7 +958,7 @@ NULL	information_schema	RESOURCE_GROUPS	THREAD_PRIORITY	int	NULL	NULL	NULL	NULL	
 3.0000	information_schema	ROUTINES	ROUTINE_CATALOG	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
 3.0000	information_schema	ROUTINES	ROUTINE_SCHEMA	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
 3.0000	information_schema	ROUTINES	ROUTINE_NAME	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)
-3.0000	information_schema	ROUTINES	ROUTINE_TYPE	enum	9	27	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE')
+3.0000	information_schema	ROUTINES	ROUTINE_TYPE	enum	9	27	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE','LIBRARY')
 1.0000	information_schema	ROUTINES	DATA_TYPE	longtext	4294967295	4294967295	utf8mb3	utf8mb3_bin	longtext
 NULL	information_schema	ROUTINES	CHARACTER_MAXIMUM_LENGTH	bigint	NULL	NULL	NULL	NULL	bigint
 NULL	information_schema	ROUTINES	CHARACTER_OCTET_LENGTH	bigint	NULL	NULL	NULL	NULL	bigint
@@ -836,12 +979,20 @@ NULL	information_schema	ROUTINES	SQL_PATH	varbinary	0	0	NULL	NULL	varbinary(0)
 3.0000	information_schema	ROUTINES	SECURITY_TYPE	enum	7	21	utf8mb3	utf8mb3_bin	enum('DEFAULT','INVOKER','DEFINER')
 NULL	information_schema	ROUTINES	CREATED	timestamp	NULL	NULL	NULL	NULL	timestamp
 NULL	information_schema	ROUTINES	LAST_ALTERED	timestamp	NULL	NULL	NULL	NULL	timestamp
-3.0000	information_schema	ROUTINES	SQL_MODE	set	520	1560	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL')
+3.0000	information_schema	ROUTINES	SQL_MODE	set	546	1638	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')
 1.0000	information_schema	ROUTINES	ROUTINE_COMMENT	text	65535	65535	utf8mb3	utf8mb3_bin	text
 3.0000	information_schema	ROUTINES	DEFINER	varchar	288	864	utf8mb3	utf8mb3_bin	varchar(288)
 3.0000	information_schema	ROUTINES	CHARACTER_SET_CLIENT	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)
 3.0000	information_schema	ROUTINES	COLLATION_CONNECTION	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)
 3.0000	information_schema	ROUTINES	DATABASE_COLLATION	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)
+3.0000	information_schema	ROUTINE_LIBRARIES	ROUTINE_CATALOG	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	ROUTINE_LIBRARIES	ROUTINE_SCHEMA	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
+3.0000	information_schema	ROUTINE_LIBRARIES	ROUTINE_NAME	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)
+3.0000	information_schema	ROUTINE_LIBRARIES	ROUTINE_TYPE	enum	9	27	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE','LIBRARY')
+4.0000	information_schema	ROUTINE_LIBRARIES	LIBRARY_CATALOG	varchar	64	256	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)
+4.0000	information_schema	ROUTINE_LIBRARIES	LIBRARY_SCHEMA	varchar	100	400	utf8mb4	utf8mb4_0900_ai_ci	varchar(100)
+4.0000	information_schema	ROUTINE_LIBRARIES	LIBRARY_NAME	varchar	100	400	utf8mb4	utf8mb4_0900_ai_ci	varchar(100)
+4.0000	information_schema	ROUTINE_LIBRARIES	LIBRARY_VERSION	varchar	100	400	utf8mb4	utf8mb4_0900_ai_ci	varchar(100)
 3.0000	information_schema	SCHEMATA	CATALOG_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
 3.0000	information_schema	SCHEMATA	SCHEMA_NAME	varchar	64	192	utf8mb3	utf8mb3_bin	varchar(64)
 3.0000	information_schema	SCHEMATA	DEFAULT_CHARACTER_SET_NAME	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)
@@ -955,7 +1106,7 @@ NULL	information_schema	TRIGGERS	ACTION_REFERENCE_NEW_TABLE	varbinary	0	0	NULL	N
 3.0000	information_schema	TRIGGERS	ACTION_REFERENCE_OLD_ROW	varchar	3	9	utf8mb3	utf8mb3_general_ci	varchar(3)
 3.0000	information_schema	TRIGGERS	ACTION_REFERENCE_NEW_ROW	varchar	3	9	utf8mb3	utf8mb3_general_ci	varchar(3)
 NULL	information_schema	TRIGGERS	CREATED	timestamp	NULL	NULL	NULL	NULL	timestamp(2)
-3.0000	information_schema	TRIGGERS	SQL_MODE	set	520	1560	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL')
+3.0000	information_schema	TRIGGERS	SQL_MODE	set	546	1638	utf8mb3	utf8mb3_bin	set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')
 3.0000	information_schema	TRIGGERS	DEFINER	varchar	288	864	utf8mb3	utf8mb3_bin	varchar(288)
 3.0000	information_schema	TRIGGERS	CHARACTER_SET_CLIENT	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)
 3.0000	information_schema	TRIGGERS	COLLATION_CONNECTION	varchar	64	192	utf8mb3	utf8mb3_general_ci	varchar(64)

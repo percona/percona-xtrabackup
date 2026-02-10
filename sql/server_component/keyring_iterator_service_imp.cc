@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -26,8 +26,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 int my_key_iterator_init(void **);
 int my_key_iterator_deinit(void *);
 int my_key_iterator_get_key(void *, char *, char *);
-
-void mysql_keyring_iterator_service_init() {}
 
 DEFINE_BOOL_METHOD(mysql_keyring_iterator_imp::init,
                    (my_h_keyring_iterator * iterator)) {

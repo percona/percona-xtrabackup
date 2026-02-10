@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -686,12 +686,10 @@ int Bank::findLastGL(Uint64 &lastTime) {
   }
 
   int eof;
-  int rows = 0;
   eof = pOp->nextResult();
   lastTime = 0;
 
   while (eof == 0) {
-    rows++;
     Uint64 t = timeRec->u_32_value();
 
     if (t > lastTime) lastTime = t;
@@ -1246,13 +1244,11 @@ int Bank::performValidateGL(Uint64 glTime) {
   }
 
   int eof;
-  int rows = 0;
   int countGlRecords = 0;
   int result = NDBT_OK;
   eof = pOp->nextResult();
 
   while (eof == 0) {
-    rows++;
     Uint64 t = timeRec->u_64_value();
 
     if (t == glTime) {
@@ -1478,12 +1474,10 @@ int Bank::getOldestPurgedGL(const Uint32 accountType, Uint64 &oldest) {
     }
 
     int eof;
-    int rows = 0;
     eof = pOp->nextResult();
     oldest = 0;
 
     while (eof == 0) {
-      rows++;
       Uint32 a = accountTypeRec->u_32_value();
       Uint32 p = purgedRec->u_32_value();
 
@@ -1579,13 +1573,11 @@ int Bank::getOldestNotPurgedGL(Uint64 &oldest, Uint32 &accountTypeId,
   }
 
   int eof;
-  int rows = 0;
   eof = pOp->nextResult();
   oldest = (Uint64)-1;
   found = false;
 
   while (eof == 0) {
-    rows++;
     Uint32 p = purgedRec->u_32_value();
     if (p == 0) {
       found = true;
@@ -1623,12 +1615,10 @@ int Bank::checkNoTransactionsOlderThan(const Uint32 accountType,
    *
    */
 
-  int loop = 0;
   int found = 0;
   NdbConnection *pScanTrans = 0;
   do {
     int check;
-    loop++;
     pScanTrans = m_ndb.startTransaction();
     if (pScanTrans == NULL) {
       const NdbError err = m_ndb.getNdbError();
@@ -1689,12 +1679,10 @@ int Bank::checkNoTransactionsOlderThan(const Uint32 accountType,
     }
 
     int eof;
-    int rows = 0;
     found = 0;
     eof = pOp->nextResult();
 
     while (eof == 0) {
-      rows++;
       Uint32 a = accountTypeRec->u_32_value();
       Uint32 t = timeRec->u_32_value();
 
@@ -1940,17 +1928,13 @@ int Bank::findTransactionsToPurge(const Uint64 glTime, const Uint32 accountType,
   }
 
   int eof;
-  int rows = 0;
-  int rowsFound = 0;
   eof = pOp->nextResult();
 
   while (eof == 0) {
-    rows++;
     Uint64 t = timeRec->u_64_value();
     Uint32 a = accountTypeRec->u_32_value();
 
     if (a == accountType && t == glTime) {
-      rowsFound++;
       // One record found
       check = pOp->deleteCurrentTuple(pTrans);
       if (check == -1) {

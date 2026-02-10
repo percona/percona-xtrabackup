@@ -1,6 +1,10 @@
-CALL mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot add field.*");
 # save mysql tables
 # restore mysql tables from 8.0.27
+# But, add suppression because table mysql.procs_priv prior to version 9.2 had 'Routine_type' at position 4 of type enum('FUNCTION','PROCEDURE')
+# but since 9.2 it has type enum('FUNCTION','PROCEDURE','LIBRARY'). This is not an issue, since the new definition
+# is a superset of the prior and the old values (and the order) wont be affected.
+# Note: the warning is reported by Table_check_intact::check() & System_table_intact::report_error()
+CALL mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot load from mysql.procs_priv");
 SHOW KEYS FROM mysql.db;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
 db	0	PRIMARY	1	Host	A	1	NULL	NULL		BTREE			YES	NULL
@@ -23,16 +27,28 @@ columns_priv	0	PRIMARY	4	Table_name	A	1	NULL	NULL		BTREE			YES	NULL
 columns_priv	0	PRIMARY	5	Column_name	A	1	NULL	NULL		BTREE			YES	NULL
 SHOW KEYS FROM mysql.procs_priv;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
-procs_priv	0	PRIMARY	1	Host	A	0	NULL	NULL		BTREE			YES	NULL
-procs_priv	0	PRIMARY	2	Db	A	0	NULL	NULL		BTREE			YES	NULL
-procs_priv	0	PRIMARY	3	User	A	0	NULL	NULL		BTREE			YES	NULL
-procs_priv	0	PRIMARY	4	Routine_name	A	0	NULL	NULL		BTREE			YES	NULL
-procs_priv	0	PRIMARY	5	Routine_type	A	0	NULL	NULL		BTREE			YES	NULL
-procs_priv	1	Grantor	1	Grantor	A	0	NULL	NULL		BTREE			YES	NULL
+procs_priv	0	PRIMARY	1	Host	A	1	NULL	NULL		BTREE			YES	NULL
+procs_priv	0	PRIMARY	2	Db	A	1	NULL	NULL		BTREE			YES	NULL
+procs_priv	0	PRIMARY	3	User	A	1	NULL	NULL		BTREE			YES	NULL
+procs_priv	0	PRIMARY	4	Routine_name	A	1	NULL	NULL		BTREE			YES	NULL
+procs_priv	0	PRIMARY	5	Routine_type	A	1	NULL	NULL		BTREE			YES	NULL
+procs_priv	1	Grantor	1	Grantor	A	1	NULL	NULL		BTREE			YES	NULL
+# Before restart
+SELECT * FROM mysql.procs_priv;
+Host	Db	User	Routine_name	Routine_type	Grantor	Proc_priv	Timestamp
+localhost	DB1	userExecutesSingleFunc	lib_uses_both	FUNCTION	root@localhost	Execute	2024-11-18 20:01:27
 # Restart server without upgrade option
 # restart
+# Before upgrade force
+SELECT * FROM mysql.procs_priv;
+Host	Db	User	Routine_name	Routine_type	Grantor	Proc_priv	Timestamp
+localhost	DB1	userExecutesSingleFunc	lib_uses_both	FUNCTION	root@localhost	Execute	2024-11-18 20:01:27
 # Restart server with upgrade option
 # restart:--upgrade=force
+# After upgrade force
+SELECT * FROM mysql.procs_priv;
+Host	Db	User	Routine_name	Routine_type	Grantor	Proc_priv	Timestamp
+localhost	DB1	userExecutesSingleFunc	lib_uses_both	FUNCTION	root@localhost	Execute	2024-11-18 20:01:27
 SHOW KEYS FROM mysql.db;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
 db	0	PRIMARY	1	Host	A	1	NULL	NULL		BTREE			YES	NULL
@@ -55,12 +71,12 @@ columns_priv	0	PRIMARY	4	Table_name	A	1	NULL	NULL		BTREE			YES	NULL
 columns_priv	0	PRIMARY	5	Column_name	A	1	NULL	NULL		BTREE			YES	NULL
 SHOW KEYS FROM mysql.procs_priv;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
-procs_priv	0	PRIMARY	1	Host	A	0	NULL	NULL		BTREE			YES	NULL
-procs_priv	0	PRIMARY	2	User	A	0	NULL	NULL		BTREE			YES	NULL
-procs_priv	0	PRIMARY	3	Db	A	0	NULL	NULL		BTREE			YES	NULL
-procs_priv	0	PRIMARY	4	Routine_name	A	0	NULL	NULL		BTREE			YES	NULL
-procs_priv	0	PRIMARY	5	Routine_type	A	0	NULL	NULL		BTREE			YES	NULL
-procs_priv	1	Grantor	1	Grantor	A	0	NULL	NULL		BTREE			YES	NULL
+procs_priv	0	PRIMARY	1	Host	A	1	NULL	NULL		BTREE			YES	NULL
+procs_priv	0	PRIMARY	2	User	A	1	NULL	NULL		BTREE			YES	NULL
+procs_priv	0	PRIMARY	3	Db	A	1	NULL	NULL		BTREE			YES	NULL
+procs_priv	0	PRIMARY	4	Routine_name	A	1	NULL	NULL		BTREE			YES	NULL
+procs_priv	0	PRIMARY	5	Routine_type	A	1	NULL	NULL		BTREE			YES	NULL
+procs_priv	1	Grantor	1	Grantor	A	1	NULL	NULL		BTREE			YES	NULL
 CREATE USER wl14965_u2;
 GRANT ALL ON test.* to wl14965_u2;
 SHOW GRANTS FOR wl14965_u2;

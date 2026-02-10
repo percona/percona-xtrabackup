@@ -38,8 +38,10 @@ INSERT INTO t1 VALUES (465931136,39,1,1,20000318160950);
 INSERT INTO t1 VALUES (1092858576,14,1,1,20000319013445);
 INSERT INTO t1 VALUES (357917728,3,2,2,20000319145026);
 INSERT INTO t1 VALUES (357917728,7,2,2,20000319145027);
+--sorted_result
 select visitor_id,max(ts) as mts from t1 group by visitor_id
 having mts < DATE_SUB(NOW(),INTERVAL 3 MONTH);
+--sorted_result
 select visitor_id,max(ts) as mts from t1 group by visitor_id
 having DATE_ADD(mts,INTERVAL 3 MONTH) < NOW();
 drop table t1;

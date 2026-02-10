@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -168,7 +168,7 @@ bool Foreign_key_spec::validate(THD *thd, const char *table_name,
   }
 
   for (const Key_part_spec *fk_col : ref_columns) {
-    if (check_column_name(fk_col->get_field_name())) {
+    if (check_column_name(to_lex_cstring(fk_col->get_field_name()))) {
       my_error(ER_WRONG_COLUMN_NAME, MYF(0), fk_col->get_field_name());
       return true;
     }

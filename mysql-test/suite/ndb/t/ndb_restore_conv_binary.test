@@ -32,17 +32,17 @@ insert into test.t1 select a+4, repeat(a+4, 10), c, d, e, f, g, h from test.t1;
 --echo Source data
 select a,
        hex(b),
-       sha1(c),
+       sha2(c,256),
        length(c),
-       sha1(d),
+       sha2(d,256),
        length(d),
-       sha1(e),
+       sha2(e,256),
        length(e),
-       sha1(f),
+       sha2(f,256),
        length(f),
-       sha1(g),
+       sha2(g,256),
        length(g),
-       sha1(h),
+       sha2(h,256),
        length(h) from test.t1 order by a;
 
 --echo Run backup
@@ -73,8 +73,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no data differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  LEFT(o.b,10) != r.b or  # ignore Binary padding
@@ -103,8 +103,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no data differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  LEFT(o.b,10) != r.b or  # ignore Binary padding
@@ -134,8 +134,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no data differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  LEFT(o.b,10) != r.b or  # ignore Binary padding
@@ -164,8 +164,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no data differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  LEFT(o.b,10) != r.b or  # ignore Binary padding
@@ -194,8 +194,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no data differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  LEFT(o.b,10) != r.b or  # ignore Binary padding
@@ -225,8 +225,8 @@ create table test.t1 (
 
 
 --echo Expect no data differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  LEFT(o.b,10) != r.b or  # ignore Binary padding
@@ -262,8 +262,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no unexpected differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  o.b != r.b                # b as is
@@ -295,8 +295,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no unexpected differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  o.b != r.b                # b as is
@@ -330,8 +330,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no unexpected differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  o.b != r.b                # b as is
@@ -366,8 +366,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no unexpected differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  o.b != r.b                # b as is
@@ -402,8 +402,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no unexpected differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  o.b != r.b                # b as is
@@ -437,8 +437,8 @@ create table test.t1 (
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
 --echo Expect no unexpected differences between orig and restored
-select o.a, o.b, sha1(o.c), length(o.c), sha1(o.d), length(o.d), sha1(o.e), length(o.e), sha1(o.f), length(o.f), sha1(o.g), length(o.g), sha1(o.h), length(o.h),
-       r.a, r.b, sha1(r.c), length(r.c), sha1(r.d), length(r.d), sha1(r.e), length(r.e), sha1(r.f), length(r.f), sha1(r.g), length(r.g), sha1(r.h), length(r.h)
+select o.a, o.b, sha2(o.c,256), length(o.c), sha2(o.d,256), length(o.d), sha2(o.e,256), length(o.e), sha2(o.f,256), length(o.f), sha2(o.g,256), length(o.g), sha2(o.h,256), length(o.h),
+       r.a, r.b, sha2(r.c,256), length(r.c), sha2(r.d,256), length(r.d), sha2(r.e,256), length(r.e), sha2(r.f,256), length(r.f), sha2(r.g,256), length(r.g), sha2(r.h,256), length(r.h)
  from  t1_orig o join t1 r
    on  o.a = r.a
 where  o.b != r.b                # b as is
@@ -507,13 +507,13 @@ insert into test.t2 values  (0,
 
 --echo Source data
 select a,
- sha(tinytext1), sha(tinytext2), sha(tinytext3), sha(tinytext4),
+ sha2(tinytext1,256), sha2(tinytext2,256), sha2(tinytext3,256), sha2(tinytext4,256),
  length(tinytext1), length(tinytext2), length(tinytext3), length(tinytext4),
- sha(text1), sha(text2), sha(text3), sha(text4),
+ sha2(text1,256), sha2(text2,256), sha2(text3,256), sha2(text4,256),
  length(text1), length(text2), length(text3), length(text4),
- sha(mediumtext1), sha(mediumtext2), sha(mediumtext3), sha(mediumtext4),
+ sha2(mediumtext1,256), sha2(mediumtext2,256), sha2(mediumtext3,256), sha2(mediumtext4,256),
  length(mediumtext1), length(mediumtext2), length(mediumtext3), length(mediumtext4),
- sha(longtext1), sha(longtext2), sha(longtext3), sha(longtext4),
+ sha2(longtext1,256), sha2(longtext2,256), sha2(longtext3,256), sha2(longtext4,256),
  length(longtext1), length(longtext2), length(longtext3), length(longtext4) from test.t2 order by a;
 
 --echo Run backup
@@ -547,13 +547,13 @@ create table test.t2 (
 select count(*) from test.t2;
 
 select a,
- sha(tinytext1), sha(tinytext2), sha(tinytext3), sha(tinytext4),
+ sha2(tinytext1,256), sha2(tinytext2,256), sha2(tinytext3,256), sha2(tinytext4,256),
  length(tinytext1), length(tinytext2), length(tinytext3), length(tinytext4),
- sha(text1), sha(text2), sha(text3), sha(text4),
+ sha2(text1,256), sha2(text2,256), sha2(text3,256), sha2(text4,256),
  length(text1), length(text2), length(text3), length(text4),
- sha(mediumtext1), sha(mediumtext2), sha(mediumtext3), sha(mediumtext4),
+ sha2(mediumtext1,256), sha2(mediumtext2,256), sha2(mediumtext3,256), sha2(mediumtext4,256),
  length(mediumtext1), length(mediumtext2), length(mediumtext3), length(mediumtext4),
- sha(longtext1), sha(longtext2), sha(longtext3), sha(longtext4),
+ sha2(longtext1,256), sha2(longtext2,256), sha2(longtext3,256), sha2(longtext4,256),
  length(longtext1), length(longtext2), length(longtext3), length(longtext4) from test.t2 order by a;
 
 drop table test.t2;
@@ -609,13 +609,13 @@ insert into test.t2 values  (0,
 
 --echo Source data
 select a,
- sha(tinyblob1), sha(tinyblob2), sha(tinyblob3), sha(tinyblob4),
+ sha2(tinyblob1,256), sha2(tinyblob2,256), sha2(tinyblob3,256), sha2(tinyblob4,256),
  length(tinyblob1), length(tinyblob2), length(tinyblob3), length(tinyblob4),
- sha(blob1), sha(blob2), sha(blob3), sha(blob4),
+ sha2(blob1,256), sha2(blob2,256), sha2(blob3,256), sha2(blob4,256),
  length(blob1), length(blob2), length(blob3), length(blob4),
- sha(mediumblob1), sha(mediumblob2), sha(mediumblob3), sha(mediumblob4),
+ sha2(mediumblob1,256), sha2(mediumblob2,256), sha2(mediumblob3,256), sha2(mediumblob4,256),
  length(mediumblob1), length(mediumblob2), length(mediumblob3), length(mediumblob4),
- sha(longblob1), sha(longblob2), sha(longblob3), sha(longblob4),
+ sha2(longblob1,256), sha2(longblob2,256), sha2(longblob3,256), sha2(longblob4,256),
  length(longblob1), length(longblob2), length(longblob3), length(longblob4) from test.t2 order by a;
 
 --echo Run backup
@@ -649,13 +649,13 @@ create table test.t2 (
 select count(*) from test.t2;
 
 select a,
- sha(tinyblob1), sha(tinyblob2), sha(tinyblob3), sha(tinyblob4),
+ sha2(tinyblob1,256), sha2(tinyblob2,256), sha2(tinyblob3,256), sha2(tinyblob4,256),
  length(tinyblob1), length(tinyblob2), length(tinyblob3), length(tinyblob4),
- sha(blob1), sha(blob2), sha(blob3), sha(blob4),
+ sha2(blob1,256), sha2(blob2,256), sha2(blob3,256), sha2(blob4,256),
  length(blob1), length(blob2), length(blob3), length(blob4),
- sha(mediumblob1), sha(mediumblob2), sha(mediumblob3), sha(mediumblob4),
+ sha2(mediumblob1,256), sha2(mediumblob2,256), sha2(mediumblob3,256), sha2(mediumblob4,256),
  length(mediumblob1), length(mediumblob2), length(mediumblob3), length(mediumblob4),
- sha(longblob1), sha(longblob2), sha(longblob3), sha(longblob4),
+ sha2(longblob1,256), sha2(longblob2,256), sha2(longblob3,256), sha2(longblob4,256),
  length(longblob1), length(longblob2), length(longblob3), length(longblob4) from test.t2 order by a;
 
 drop table test.t2;

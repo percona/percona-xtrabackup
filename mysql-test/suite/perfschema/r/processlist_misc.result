@@ -1,0 +1,61 @@
+##
+## Miscellaneous test cases for performance_schema.processlist
+##
+## Test cases:
+##   1. Verify naming of foreground system threads.
+##
+
+##
+## Test Case 1: Verify naming of foreground system threads.
+##
+## Foreground system threads should be named 'system user' except for
+## singleton threads such as 'event_scheduler'.
+##
+## Reference: Bug#36895513 "Wrong result in P_S.processlist on replica node"
+## NOTE: Results must be manually verified.
+##
+
+# Configure two servers to be source and replica.
+include/rpl/init_source_replica.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection master]
+
+# Wait until the replica SQL thread has been synced and all events have been copied over to the replica.
+include/rpl/sync_to_replica.inc
+
+# Stop replica.
+include/rpl/stop_replica.inc
+
+# Start replica.
+include/rpl/start_replica.inc
+
+# Verify processlist user name is 'system_user'.
+
+
+# Create user 'test_processlist' then restart the replica and verify that
+# the processlist user name for the replica threads is 'system user'.
+
+CREATE USER 'test_processlist'@'localhost';
+GRANT ALL ON *.* TO 'test_processlist'@'localhost';
+
+# Stop replica.
+include/rpl/stop_replica.inc
+
+# Connect as 'test_processlist'.
+
+# Start replica as user 'test_processlist'.
+include/rpl/start_replica.inc
+
+# Verify processlist user name is 'system_user' for the replica threads.
+
+
+# Compare the count of 'system user' threads. The number of threads may vary, so we compare
+# the counts rather than list rows in the table.
+"SUCCESS: User1 count == User2 count"
+
+# Clean up.
+
+DROP USER 'test_processlist'@'localhost';
+include/rpl/deinit.inc

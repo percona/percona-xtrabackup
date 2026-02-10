@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -237,6 +237,7 @@ Command::Command() {
       &Command::cmd_recv_with_stored_metadata;
   m_commands["clear_stored_metadata"] = &Command::cmd_clear_stored_metadata;
   m_commands["assert"] = &Command::cmd_assert;
+  m_commands["debug_stmt"] = &Command::cmd_debug_stmt;
 }
 
 bool Command::is_command_registred(const std::string &command_line,
@@ -916,11 +917,11 @@ Command::Result Command::cmd_sleep(std::istream & /*input*/,
   context->m_variables->replace(&tmp);
   const double delay_in_seconds = std::stod(tmp);
 #ifdef _WIN32
-  const int delay_in_milliseconds = static_cast<int>(delay_in_seconds * 1000);
+  const int delay_in_milliseconds = static_cast<int>(delay_in_seconds * 1'000);
   Sleep(delay_in_milliseconds);
 #else
   const int delay_in_microseconds =
-      static_cast<int>(delay_in_seconds * 1000000);
+      static_cast<int>(delay_in_seconds * 1'000'000);
   usleep(delay_in_microseconds);
 #endif
   return Result::Continue;
@@ -2152,6 +2153,15 @@ Command::Result Command::cmd_assert(std::istream &input,
   return (this->*method)(input, context, vargs[0] + "\t" + vargs[2]);
 }
 
+Command::Result Command::cmd_debug_stmt(std::istream & /*input*/,
+                                        Execution_context *context,
+                                        const std::string &args) {
+  context->m_debug_stmt.push_back(args);
+  context->m_debug += args + "\n";
+
+  return Result::Continue;
+}
+
 Command::Result Command::cmd_query(std::istream & /*input*/,
                                    Execution_context *context,
                                    const std::string & /*args*/) {
@@ -2835,5 +2845,7 @@ void print_help_commands() {
   std::cout << "-->clear_stored_metadata\n";
   std::cout << "  Clear metadata information stored by the "
                "recvresult_store_metadata\n";
+  std::cout << "-->debug_stmt <STMT>\n";
+  std::cout << "  Specify MySQLxTEST statement to be executed at failed run\n";
   std::cout << "# comment\n";
 }

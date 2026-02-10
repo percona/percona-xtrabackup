@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -607,6 +607,7 @@ void THD::enter_stage(const PSI_stage_info *new_stage,
 
     m_current_stage_key = new_stage->m_key;
     set_proc_info(msg);
+    store_cached_properties(cached_properties::RW_STATUS);
 
     m_stage_progress_psi =
         MYSQL_SET_STAGE(m_current_stage_key, calling_file, calling_line);
@@ -680,6 +681,7 @@ THD::THD(bool enable_plugins)
       m_dd_client(new dd::cache::Dictionary_client(this)),
       m_query_string(NULL_CSTR),
       m_db(NULL_CSTR),
+      m_eligible_secondary_engine_handlerton(nullptr),
       rli_fake(nullptr),
       rli_slave(nullptr),
       copy_status_var_ptr(nullptr),
@@ -869,7 +871,7 @@ THD::THD(bool enable_plugins)
   protocol_text->init(this);
   protocol_binary->init(this);
   protocol_text->set_client_capabilities(0);  // minimalistic client
-  m_cached_is_connection_alive.store(m_protocol->connection_alive());
+  store_cached_properties();
 
   /*
     Make sure thr_lock_info_init() is called for threads which do not get
@@ -904,6 +906,26 @@ THD::THD(bool enable_plugins)
   if (events_cache_ == nullptr || !events_cache_->valid()) {
     /*ToDo: Raise warning */
   }
+
+  // Initialize based on the global system startup variable
+  if (!innodb_native_foreign_keys)
+    variables.option_bits |= OPTION_USE_SQL_FOREIGN_KEY_HANDLING;
+}
+
+void THD::store_cached_properties(cached_properties prop_mask) {
+  DBUG_EXECUTE_IF("assert_only_current_thd_protocol_access",
+                  { assert(current_thd == this); });
+
+  auto is_selected = [this, prop_mask](cached_properties property) -> bool {
+    return (this->m_protocol != nullptr &&
+            static_cast<int>(prop_mask) & static_cast<int>(property));
+  };
+
+  if (is_selected(cached_properties::IS_ALIVE))
+    m_cached_is_connection_alive.store(m_protocol->connection_alive());
+
+  if (is_selected(cached_properties::RW_STATUS))
+    m_cached_rw_status.store(m_protocol->get_rw_status());
 }
 
 void THD::copy_table_access_properties(THD *thd) {
@@ -923,6 +945,14 @@ void THD::set_transaction(Transaction_ctx *transaction_ctx) {
 void THD::set_secondary_engine_statement_context(
     std::unique_ptr<Secondary_engine_statement_context> context) {
   m_secondary_engine_statement_context = std::move(context);
+}
+
+void THD::set_eligible_secondary_engine_handlerton(handlerton *hton) {
+  m_eligible_secondary_engine_handlerton = hton;
+}
+
+void THD::cleanup_after_statement_execution() {
+  set_secondary_engine_statement_context(nullptr);
 }
 
 bool THD::set_db(const LEX_CSTRING &new_db) {
@@ -1208,6 +1238,15 @@ void THD::set_new_thread_id() {
   thr_lock_info_init(&lock_info, m_thread_id, &COND_thr_lock);
 }
 
+void THD::set_protocol_dependent_variables(Protocol *proto) {
+  assert(proto != nullptr);
+
+  if (proto->has_client_capability(CLIENT_INTERACTIVE))
+    variables.net_wait_timeout = variables.net_interactive_timeout;
+  if (proto->has_client_capability(CLIENT_IGNORE_SPACE))
+    variables.sql_mode |= MODE_IGNORE_SPACE;
+}
+
 /*
   Do what's needed when one invokes change user
 
@@ -1235,6 +1274,7 @@ void THD::cleanup_connection(void) {
   running_explain_analyze = false;
   m_thd_life_cycle_stage = enum_thd_life_cycle_stages::ACTIVE;
   init();
+  set_protocol_dependent_variables(m_protocol);
   stmt_map.reset();
   user_vars.clear();
   sp_cache_clear(&sp_proc_cache);
@@ -1417,7 +1457,7 @@ void THD::release_resources() {
   if (is_classic_protocol() && get_protocol_classic()->get_vio()) {
     vio_delete(get_protocol_classic()->get_vio());
     get_protocol_classic()->end_net();
-    m_cached_is_connection_alive.store(m_protocol->connection_alive());
+    store_cached_properties();
   }
 
   /* modification plan for UPDATE/DELETE should be freed. */
@@ -1485,7 +1525,7 @@ THD::~THD() {
   THD_CHECK_SENTRY(this);
   DBUG_TRACE;
   DBUG_PRINT("info", ("THD dtor, this %p", this));
-
+  assert(m_eligible_secondary_engine_handlerton == nullptr);
   assert(m_secondary_engine_statement_context == nullptr);
 
   if (has_incremented_gtid_automatic_count) {
@@ -1722,6 +1762,8 @@ void THD::disconnect(bool server_shutdown) {
     /* Disconnect even if a active vio is not associated. */
     if (is_classic_protocol() && get_protocol_classic()->get_vio() != vio &&
         get_protocol_classic()->connection_alive()) {
+      DBUG_EXECUTE_IF("assert_only_current_thd_protocol_access",
+                      { assert(current_thd == this); });
       m_protocol->shutdown(server_shutdown);
     }
   }
@@ -1879,6 +1921,8 @@ void THD::cleanup_after_query() {
   // Cleanup and free items that were created during this execution
   cleanup_items(item_list());
   free_items();
+  m_eligible_secondary_engine_handlerton = nullptr;
+
   /* Reset where. */
   where = THD::DEFAULT_WHERE;
   /* reset table map for multi-table update */
@@ -1888,7 +1932,9 @@ void THD::cleanup_after_query() {
   if (lex) {
     lex->mi.repl_ignore_server_ids.clear();
   }
-  if (rli_slave) rli_slave->cleanup_after_query();
+  if (rli_slave) {
+    rli_slave->cleanup_after_query();
+  }
   // Set the default "cute" mode for the execution environment:
   check_for_truncated_fields = CHECK_FIELD_IGNORE;
 }
@@ -2080,6 +2126,7 @@ void THD::rollback_item_tree_changes() {
 }
 
 void Query_arena::add_item(Item *item) {
+  assert(item->next_free == nullptr);
   item->next_free = m_item_list;
   m_item_list = item;
 }
@@ -2331,6 +2378,8 @@ void THD::reset_sub_statement_state(Sub_statement_state *backup,
   backup->examined_row_count = m_examined_row_count;
   backup->sent_row_count = m_sent_row_count;
   backup->num_truncated_fields = num_truncated_fields;
+  DBUG_EXECUTE_IF("assert_only_current_thd_protocol_access",
+                  { assert(current_thd == this); });
   backup->client_capabilities = m_protocol->get_client_capabilities();
   backup->savepoints = get_transaction()->m_savepoints;
   backup->first_successful_insert_id_in_prev_stmt =
@@ -2903,6 +2952,8 @@ bool THD::send_result_metadata(const mem_root_deque<Item *> &list, uint flags) {
   DBUG_TRACE;
   uchar buff[MAX_FIELD_WIDTH];
   String tmp((char *)buff, sizeof(buff), &my_charset_bin);
+  DBUG_EXECUTE_IF("assert_only_current_thd_protocol_access",
+                  { assert(current_thd == this); });
 
   if (m_protocol->start_result_metadata(CountVisibleFields(list), flags,
                                         variables.character_set_results))
@@ -2943,6 +2994,8 @@ bool THD::send_result_set_row(const mem_root_deque<Item *> &row_items) {
   String str_buffer(buffer, sizeof(buffer), &my_charset_bin);
 
   DBUG_TRACE;
+  DBUG_EXECUTE_IF("assert_only_current_thd_protocol_access",
+                  { assert(current_thd == this); });
 
   for (Item *item : VisibleFields(row_items)) {
     if (item->send(m_protocol, &str_buffer) || is_error()) return true;
@@ -2960,6 +3013,8 @@ void THD::send_statement_status() {
   assert(!get_stmt_da()->is_sent());
   bool error = false;
   Diagnostics_area *da = get_stmt_da();
+  DBUG_EXECUTE_IF("assert_only_current_thd_protocol_access",
+                  { assert(current_thd == this); });
 
   /* Can not be true, but do not take chances in production. */
   if (da->is_sent()) return;
@@ -3260,14 +3315,16 @@ bool THD::is_connected(bool use_cached_connection_alive) {
   return get_protocol()->connection_alive();
 }
 
+uint THD::get_protocol_rw_status() { return m_cached_rw_status.load(); }
+
 Protocol *THD::get_protocol() {
-  m_cached_is_connection_alive.store(m_protocol->connection_alive());
+  store_cached_properties();
   return m_protocol;
 }
 
 Protocol_classic *THD::get_protocol_classic() {
   assert(is_classic_protocol());
-  m_cached_is_connection_alive.store(m_protocol->connection_alive());
+  store_cached_properties();
   return pointer_cast<Protocol_classic *>(m_protocol);
 }
 
@@ -3276,14 +3333,14 @@ void THD::push_protocol(Protocol *protocol) {
   assert(protocol != nullptr);
   m_protocol->push_protocol(protocol);
   m_protocol = protocol;
-  m_cached_is_connection_alive.store(m_protocol->connection_alive());
+  store_cached_properties();
 }
 
 void THD::pop_protocol() {
   assert(m_protocol != nullptr);
   m_protocol = m_protocol->pop_protocol();
   assert(m_protocol != nullptr);
-  m_cached_is_connection_alive.store(m_protocol->connection_alive());
+  store_cached_properties();
 }
 
 void THD::set_time() {
@@ -3331,6 +3388,19 @@ void *THD::fetch_external(unsigned int slot) {
   return external_store_.at(slot) ? external_store_.at(slot) : nullptr;
 }
 
+/**
+  @brief Check if there are event subscribers for the event
+
+  Subscribers can be one of the following:
+     * audit plugins subscribing via the component->plugin bridge
+     * reference cache registered components
+
+  @param event the class to check for
+  @param subevent the even in the class to check for
+  @param check_audited  true if we should skip non-audited users
+  @retval true : no subscribers present
+  @retval false: subscribers present
+*/
 bool THD::check_event_subscribers(Event_tracking_class event,
                                   unsigned long subevent, bool check_audited) {
   audit_plugins_present = false;
@@ -3420,7 +3490,6 @@ bool THD::event_notify(struct st_mysql_event_generic *event_data) {
       create_scope_guard([&] { this->pop_event_tracking_data(); });
 
   bool retval = false;
-
   if (audit_plugins_present) {
     /* Notify all plugins first */
     switch (event_data->event_class) {
@@ -3523,12 +3592,12 @@ bool THD::event_notify(struct st_mysql_event_generic *event_data) {
         break;
     };
   }
-
-  if (events_cache_ == nullptr || !events_cache_->valid()) return retval;
+  if (retval || events_cache_ == nullptr || !events_cache_->valid())
+    return retval;
 
   const my_h_service *refs{nullptr};
 
-  if (events_cache_->get(event_data->event_class, &refs)) return retval;
+  if (events_cache_->get(event_data->event_class, &refs)) return false;
 
   switch (event_data->event_class) {
     case Event_tracking_class::AUTHENTICATION: {
@@ -3799,4 +3868,9 @@ const Cost_model_server *THD::cost_model() const {
   } else {
     return &m_cost_model;
   }
+}
+
+bool use_sql_fk_checks_for_table(THD *thd, TABLE *table) {
+  return ((table->s->db_type()->flags & HTON_SUPPORTS_SQL_FK) &&
+          is_sql_fk_checks_enabled(thd));
 }

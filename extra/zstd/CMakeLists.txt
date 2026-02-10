@@ -33,6 +33,7 @@ SET(ZSTD_SRCS
   ${ZSTD_VERSION_DIR}/lib/compress/zstd_ldm.c
   ${ZSTD_VERSION_DIR}/lib/compress/zstdmt_compress.c
   ${ZSTD_VERSION_DIR}/lib/compress/zstd_opt.c
+  ${ZSTD_VERSION_DIR}/lib/compress/zstd_preSplit.c
 
   ${ZSTD_VERSION_DIR}/lib/decompress/huf_decompress.c
   ${ZSTD_VERSION_DIR}/lib/decompress/zstd_ddict.c

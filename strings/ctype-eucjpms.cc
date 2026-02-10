@@ -1,5 +1,5 @@
 /* Copyright (c) 2002, tommy@valley.ne.jp
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
@@ -42,7 +42,6 @@ ctype-ujis.c file.
 #include <cstddef>
 #include <cstdint>
 
-#include "my_compiler.h"
 #include "mysql/strings/m_ctype.h"
 #include "strings/m_ctype_internals.h"
 #include "template_utils.h"
@@ -36420,7 +36419,7 @@ static size_t my_well_formed_len_eucjpms(const CHARSET_INFO *cs
                                          [[maybe_unused]],
                                          const char *beg, const char *end,
                                          size_t pos, int *error) {
-  const uint8_t *b = pointer_cast<const uint8_t *>(beg);
+  const auto *b = pointer_cast<const uint8_t *>(beg);
   *error = 0;
 
   for (; pos && b < pointer_cast<const uint8_t *>(end); pos--, b++) {
@@ -36462,8 +36461,8 @@ static size_t my_well_formed_len_eucjpms(const CHARSET_INFO *cs
 static size_t my_numcells_eucjpms(const CHARSET_INFO *cs [[maybe_unused]],
                                   const char *str, const char *str_end) {
   size_t clen;
-  const uint8_t *b = pointer_cast<const uint8_t *>(str);
-  const uint8_t *e = pointer_cast<const uint8_t *>(str_end);
+  const auto *b = pointer_cast<const uint8_t *>(str);
+  const auto *e = pointer_cast<const uint8_t *>(str_end);
 
   for (clen = 0; b < e;) {
     if (*b == 0x8E) {

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,9 +27,6 @@
 #include <exception>
 #include <memory>
 #include <system_error>
-#include <thread>
-#include <tuple>
-#include "mysql/harness/utility/string.h"
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 #include "my_rapidjson_size_t.h"
@@ -37,12 +34,12 @@
 
 #include <rapidjson/document.h>
 
-#include "my_config.h"
-
 #include "harness_assert.h"
 #include "mysql/harness/net_ts/buffer.h"
 #include "mysql/harness/net_ts/impl/socket_constants.h"
 #include "mysql/harness/stdx/expected.h"
+#include "mysql/harness/tls_server_context.h"
+#include "mysql/harness/utility/string.h"
 #include "mysqlrouter/classic_protocol_codec_base.h"
 #include "mysqlrouter/classic_protocol_codec_error.h"
 #include "mysqlrouter/classic_protocol_codec_wire.h"
@@ -66,7 +63,7 @@ static std::string duration_to_us_string(
 
 stdx::expected<size_t, std::error_code> MySQLXProtocol::decode_frame(
     std::vector<uint8_t> &payload) {
-  auto buf = net::buffer(recv_buffer_);
+  auto buf = net::buffer(conn_.recv_buffer());
   auto decode_res =
       classic_protocol::decode<classic_protocol::wire::FixedInt<4>>(buf, {});
   if (!decode_res) return stdx::unexpected(decode_res.error());
@@ -86,7 +83,7 @@ stdx::expected<size_t, std::error_code> MySQLXProtocol::decode_frame(
   net::buffer_copy(net::buffer(payload), buf, payload_size);
 
   // remove the bytes from the recv-buffer
-  net::dynamic_buffer(recv_buffer_).consume(hdr_size + payload_size);
+  net::dynamic_buffer(conn_.recv_buffer()).consume(hdr_size + payload_size);
 
   return payload_size;
 }
@@ -131,8 +128,8 @@ void MySQLXProtocol::encode_message(
   auto payload_size = 1 + msg_size;
 
   classic_protocol::encode(classic_protocol::wire::FixedInt<4>(payload_size),
-                           {}, net::dynamic_buffer(send_buffer_));
-  auto dyn_buf = net::dynamic_buffer(send_buffer_);
+                           {}, net::dynamic_buffer(send_buffer()));
+  auto dyn_buf = net::dynamic_buffer(send_buffer());
 
   auto orig_size = dyn_buf.size();
   auto grow_size = payload_size;
@@ -262,13 +259,13 @@ void MySQLXProtocol::encode_async_notice(const AsyncNotice &async_notice) {
 }
 
 MySQLServerMockSessionX::MySQLServerMockSessionX(
-    ProtocolBase::socket_type client_sock,
-    ProtocolBase::endpoint_type client_ep, TlsServerContext &tls_server_ctx,
+    mysql_harness::DestinationSocket sock,
+    mysql_harness::DestinationEndpoint ep, TlsServerContext &tls_ctx,
     std::unique_ptr<StatementReaderBase> statement_processor,
     const bool debug_mode, bool with_tls)
     : MySQLServerMockSession(std::move(statement_processor), debug_mode),
       async_notices_(this->json_reader_->get_async_notices()),
-      protocol_{std::move(client_sock), client_ep, tls_server_ctx},
+      protocol_{std::move(sock), std::move(ep), tls_ctx},
       with_tls_{with_tls} {}
 
 void MySQLServerMockSessionX::send_response_then_handshake() {
@@ -371,9 +368,9 @@ void MySQLServerMockSessionX::handshake() {
               return;
             }
 
-            protocol_.init_tls();
+            protocol_.connection().init_tls();
 
-            protocol_.async_tls_accept([&](std::error_code ec) {
+            protocol_.connection().async_tls_accept([&](std::error_code ec) {
               if (ec) {
                 if (ec != std::errc::operation_canceled) {
                   logger_.warning("async_tls_accept failed: " + ec.message());
@@ -383,7 +380,7 @@ void MySQLServerMockSessionX::handshake() {
                 return;
               }
 
-              auto *ssl = protocol_.ssl();
+              auto *ssl = protocol_.connection().ssl();
               json_reader_->set_session_ssl_info(ssl);
 
               // read the next message via SSL

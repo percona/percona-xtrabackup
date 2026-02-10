@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -582,8 +582,7 @@ inline bool Handler::is_field_type_fixed_size(const Field &mysql_field) const {
   }
 }
 
-void kv_store_shards_debug_dump();
-void shared_block_pool_release(THD *thd);
+void close_connection(THD *thd);
 
 } /* namespace temptable */
 

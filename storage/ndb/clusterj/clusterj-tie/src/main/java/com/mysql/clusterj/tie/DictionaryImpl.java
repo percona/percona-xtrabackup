@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+ *  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License, version 2.0,
@@ -25,12 +25,15 @@
 
 package com.mysql.clusterj.tie;
 
-import com.mysql.ndbjtie.ndbapi.NdbDictionary.Dictionary;
+import com.mysql.clusterj.ClusterJTableException;
+
+import com.mysql.ndbjtie.ndbapi.NdbDictionary;
 import com.mysql.ndbjtie.ndbapi.NdbDictionary.DictionaryConst;
 import com.mysql.ndbjtie.ndbapi.NdbDictionary.DictionaryConst.ListConst.Element;
 import com.mysql.ndbjtie.ndbapi.NdbDictionary.DictionaryConst.ListConst.ElementArray;
 import com.mysql.ndbjtie.ndbapi.NdbDictionary.IndexConst;
 import com.mysql.ndbjtie.ndbapi.NdbDictionary.TableConst;
+import com.mysql.ndbjtie.ndbapi.NdbErrorConst;
 
 import com.mysql.clusterj.core.store.Index;
 import com.mysql.clusterj.core.store.Table;
@@ -44,50 +47,115 @@ import com.mysql.clusterj.core.util.LoggerFactoryService;
  */
 class DictionaryImpl implements com.mysql.clusterj.core.store.Dictionary {
 
-    /** My message translator */
-    static final I18NHelper local = I18NHelper
-            .getInstance(DictionaryImpl.class);
-
     /** My logger */
     static final Logger logger = LoggerFactoryService.getFactory()
             .getInstance(DictionaryImpl.class);
 
-    private Dictionary ndbDictionary;
+    private final NdbDictionary.Dictionary ndbDictionary;
 
-    private ClusterConnectionImpl clusterConnection;
+    private final DbFactoryImpl dbFactory;
 
-    public DictionaryImpl(Dictionary ndbDictionary, ClusterConnectionImpl clusterConnection) {
+    /* If true, prefer getTable() over getTableGlobal() */
+    private final boolean preferThreadLocal;
+
+    /* waitMsec in nanos; max allowed execution time */
+    private final long maxNanos;
+
+    /* Set of wait times per iteration in the getTable() wait loop */
+    private final int[] configWaitTimes;
+
+    public DictionaryImpl(NdbDictionary.Dictionary ndbDictionary,
+                          DbFactoryImpl dbFactory,
+                          boolean preferThreadLocal) {
         this.ndbDictionary = ndbDictionary;
-        this.clusterConnection = clusterConnection;
+        this.dbFactory = dbFactory;
+        this.preferThreadLocal = preferThreadLocal;
+
+        /* Configure the wait loop in getTable().
+        */
+        int waitMsec = dbFactory.getTableWaitTime();
+        maxNanos = waitMsec * 1000000;
+        if(waitMsec == 0) {
+            configWaitTimes = new int[0];
+        } else if(waitMsec <= 5) {
+            configWaitTimes = new int[1];
+            configWaitTimes[0] = waitMsec;
+        } else {
+            configWaitTimes = new int[4];
+            configWaitTimes[0] = waitMsec / 10;         // 1 tenth
+            configWaitTimes[1] = (waitMsec * 2) / 10;   // 2 tenths
+            configWaitTimes[2] = (waitMsec * 3) / 10;   // 3 tenths
+            configWaitTimes[3] = (waitMsec * 4) / 10;   // 4 tenths
+        }
+    }
+
+    private TableConst getNdbTable(String tableName) {
+        return preferThreadLocal ?
+            ndbDictionary.getTable(tableName) :
+            ndbDictionary.getTableGlobal(tableName);
+    }
+
+    private IndexConst getNdbIndex(String indexName, String tableName) {
+        return preferThreadLocal ?
+            ndbDictionary.getIndex(indexName, tableName) :
+            ndbDictionary.getIndexGlobal(indexName, tableName);
     }
 
     public Table getTable(String tableName) {
-        TableConst ndbTable = ndbDictionary.getTable(tableName);
-        if (ndbTable == null) {
-            // try the lower case table name
-            ndbTable = ndbDictionary.getTable(tableName.toLowerCase());
+        final long startNanos = System.nanoTime();
+        final long breakTime = startNanos + maxNanos;
+        final int retries = configWaitTimes.length;
+        final String lowerCaseName = tableName.toLowerCase();
+        TableConst ndbTable = null;
+
+        for(int iter = 0; iter <= retries ; iter++) {
+            ndbTable = getNdbTable(tableName);
+            if (ndbTable == null && ! lowerCaseName.equals(tableName)) {
+                // try the lower case table name
+                ndbTable = getNdbTable(tableName.toLowerCase());
+            }
+
+            if (ndbTable == null && iter < retries) {
+                if(System.nanoTime() > breakTime) break;
+                try {
+                    Thread.sleep(configWaitTimes[iter]);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
         }
+
         if (ndbTable == null) {
-            return null;
+            NdbErrorConst error = ndbDictionary.getNdbError();
+            throw new ClusterJTableException(
+                tableName, startNanos, System.nanoTime(),
+                error.message(), error.code(), error.mysql_code(),
+                error.status(), error.classification());
         }
+
+        if (ndbTable.getObjectStatus() != NdbDictionary.ObjectConst.Status.Retrieved)
+            throw new ClusterJTableException(
+                tableName, startNanos, System.nanoTime(),
+                "Invalid table in local dictionary", -1, 159, 2, 5);
+
         return new TableImpl(ndbTable, getIndexNames(ndbTable.getName()));
     }
 
     public Index getIndex(String indexName, String tableName, String indexAlias) {
         if ("PRIMARY$KEY".equals(indexName)) {
             // create a pseudo index for the primary key hash
-            TableConst ndbTable = ndbDictionary.getTable(tableName);
+            TableConst ndbTable = getNdbTable(tableName);
             if (ndbTable == null) {
                 // try the lower case table name
-                ndbTable = ndbDictionary.getTable(tableName.toLowerCase());
+                ndbTable = getNdbTable(tableName.toLowerCase());
             }
             handleError(ndbTable, ndbDictionary, "");
             return new IndexImpl(ndbTable);
         }
-        IndexConst ndbIndex = ndbDictionary.getIndex(indexName, tableName);
+        IndexConst ndbIndex = getNdbIndex(indexName, tableName);
         if (ndbIndex == null) {
             // try the lower case table name
-            ndbIndex = ndbDictionary.getIndex(indexName, tableName.toLowerCase());
+            ndbIndex = getNdbIndex(indexName, tableName.toLowerCase());
         }
         handleError(ndbIndex, ndbDictionary, indexAlias);
         return new IndexImpl(ndbIndex, indexAlias);
@@ -95,8 +163,8 @@ class DictionaryImpl implements com.mysql.clusterj.core.store.Dictionary {
 
     public String[] getIndexNames(String tableName) {
         // get all indexes for this table including ordered PRIMARY
-        com.mysql.ndbjtie.ndbapi.NdbDictionary.DictionaryConst.List indexList = 
-            com.mysql.ndbjtie.ndbapi.NdbDictionary.DictionaryConst.List.create();
+        DictionaryConst.List indexList = DictionaryConst.List.create();
+        handleError(indexList, ndbDictionary, tableName);
         final String[] result;
         try {
             int returnCode = ndbDictionary.listIndexes(indexList, tableName);
@@ -137,15 +205,11 @@ class DictionaryImpl implements com.mysql.clusterj.core.store.Dictionary {
     /** Remove cached table from this ndb dictionary. This allows schema change to work.
      * @param tableName the name of the table
      */
-    public void removeCachedTable(String tableName) {
-        // remove the cached table from this dictionary
-        ndbDictionary.removeCachedTable(tableName);
-        // also remove the cached NdbRecord associated with this table
-        clusterConnection.unloadSchema(tableName);
+    public void invalidateTable(String tableName) {
+        ndbDictionary.invalidateTable(tableName);
     }
 
-    public Dictionary getNdbDictionary() {
+    public NdbDictionary.Dictionary getNdbDictionary() {
         return ndbDictionary;
     }
-
 }

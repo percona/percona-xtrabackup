@@ -10,6 +10,8 @@ GRANT EXECUTE ON PROCEDURE db31491261.p31491261 TO u31491261;
 CALL mtr.add_suppression("'procs_priv' entry 'p31491261' ignored, bad routine type");
 # FLUSH PRIVILEGES should succeed
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # SHOW GRANTS should show EXECUTE privilege on db31491261.p31491261
 SHOW GRANTS FOR 'u31491261';
 Grants for u31491261@%
@@ -18,6 +20,8 @@ GRANT EXECUTE ON PROCEDURE `db31491261`.`p31491261` TO `u31491261`@`%`
 UPDATE mysql.procs_priv SET Routine_type = '0' WHERE User like 'u31491261';
 # FLUSH PRIVILEGES should succeed
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Search for: 'procs_priv' entry 'p31491261' ignored, bad routine type
 Pattern "'procs_priv' entry 'p31491261' ignored, bad routine type" found
 # Search completed.
@@ -28,6 +32,8 @@ GRANT USAGE ON *.* TO `u31491261`@`%`
 UPDATE mysql.procs_priv SET Routine_type = 'PROCEDURE' WHERE User like 'u31491261';
 # FLUSH PRIVILEGES should succeed
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # SHOW GRANTS should show EXECUTE privilege on db31491261.p31491261
 SHOW GRANTS FOR 'u31491261';
 Grants for u31491261@%

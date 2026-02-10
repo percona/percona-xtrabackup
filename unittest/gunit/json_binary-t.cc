@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,7 @@
 #include "my_byteorder.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
+#include "my_temporal.h"
 #include "my_time.h"
 #include "mysql/strings/m_ctype.h"
 #include "mysql_time.h"
@@ -354,27 +355,20 @@ TEST_F(JsonBinaryTest, EmptyDocument) {
   EXPECT_EQ(Value::LITERAL_NULL, val.type());
 }
 
-static MYSQL_TIME create_time() {
-  const char *tstr = "13:14:15.654321";
-  MYSQL_TIME t;
-  MYSQL_TIME_STATUS status;
-  EXPECT_FALSE(
-      str_to_time(&my_charset_utf8mb4_bin, tstr, strlen(tstr), &t, 0, &status));
-  return t;
-}
+static Time_val create_time() { return Time_val(false, 13, 14, 15, 654321); }
 
-static MYSQL_TIME create_date() {
+static Date_val create_date() {
   const char *dstr = "20140517";
-  MYSQL_TIME d;
+  Date_val d;
   MYSQL_TIME_STATUS status;
   EXPECT_FALSE(str_to_datetime(&my_charset_utf8mb4_bin, dstr, strlen(dstr), &d,
                                0, &status));
   return d;
 }
 
-static MYSQL_TIME create_datetime() {
+static Datetime_val create_datetime() {
   const char *dtstr = "2015-01-15 15:16:17.123456";
-  MYSQL_TIME dt;
+  Datetime_val dt;
   MYSQL_TIME_STATUS status;
   EXPECT_FALSE(str_to_datetime(&my_charset_utf8mb4_bin, dtstr, strlen(dtstr),
                                &dt, 0, &status));
@@ -387,7 +381,7 @@ static MYSQL_TIME create_datetime() {
 TEST_F(JsonBinaryTest, DateAndTimeTest) {
   // Create an array that contains a TIME, a DATE and a DATETIME.
   Json_array array;
-  Json_datetime tt(create_time(), MYSQL_TYPE_TIME);
+  Json_time tt(create_time());
   Json_datetime td(create_date(), MYSQL_TYPE_DATE);
   Json_datetime tdt(create_datetime(), MYSQL_TYPE_DATETIME);
   array.append_clone(&tt);
@@ -411,14 +405,13 @@ TEST_F(JsonBinaryTest, DateAndTimeTest) {
   EXPECT_EQ(MYSQL_TYPE_TIME, t_val.field_type());
   const size_t json_datetime_packed_size = Json_datetime::PACKED_SIZE;
   EXPECT_EQ(json_datetime_packed_size, t_val.get_data_length());
-  MYSQL_TIME t_out;
-  Json_datetime::from_packed(t_val.get_data(), t_val.field_type(), &t_out);
-  EXPECT_EQ(13U, t_out.hour);
-  EXPECT_EQ(14U, t_out.minute);
-  EXPECT_EQ(15U, t_out.second);
-  EXPECT_EQ(654321U, t_out.second_part);
-  EXPECT_FALSE(t_out.neg);
-  EXPECT_EQ(MYSQL_TIMESTAMP_TIME, t_out.time_type);
+  Time_val t_out;
+  Json_time::from_packed(t_val.get_data(), &t_out);
+  EXPECT_EQ(13U, t_out.hour());
+  EXPECT_EQ(14U, t_out.minute());
+  EXPECT_EQ(15U, t_out.second());
+  EXPECT_EQ(654321U, t_out.microsecond());
+  EXPECT_FALSE(t_out.is_negative());
 
   // The second element should be the DATE "2014-05-17".
   Value d_val = val.element(1);
@@ -1107,8 +1100,8 @@ static const SpaceNeededTuple space_needed_tuples[] = {
     {new (std::nothrow) Json_opaque(MYSQL_TYPE_BLOB, "a"), false, 3},
     {new (std::nothrow) Json_opaque(MYSQL_TYPE_BLOB, 127, 'a'), false, 129},
     {new (std::nothrow) Json_opaque(MYSQL_TYPE_BLOB, 128, 'a'), false, 131},
-    {new (std::nothrow) Json_datetime(create_time(), MYSQL_TYPE_TIME), false,
-     Json_datetime::PACKED_SIZE + 2},
+    {new (std::nothrow) Json_time(create_time()), false,
+     Json_time::PACKED_SIZE + 2},
     {new (std::nothrow) Json_datetime(create_date(), MYSQL_TYPE_DATE), false,
      Json_datetime::PACKED_SIZE + 2},
     {new (std::nothrow) Json_datetime(create_datetime(), MYSQL_TYPE_DATETIME),

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -73,6 +73,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
   "EXISTS source_line THEN unset source_line."
 
 #include <mysqld_error.h>
+#include <cctype>
 #include "../sql/sql_error.h"
 
 #include <mysql/components/component_implementation.h>
@@ -81,8 +82,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <mysql/components/services/component_status_var_service.h>
 #include <mysql/components/services/component_sys_var_service.h>
 #include <mysql/components/services/mysql_system_variable.h>
-
-#include "../sql/set_var.h"
 
 REQUIRES_SERVICE_PLACEHOLDER(component_sys_variable_register);
 REQUIRES_SERVICE_PLACEHOLDER(component_sys_variable_unregister);
@@ -828,7 +827,7 @@ static set_arg_result log_filter_set_arg(const char **token, const size_t *len,
   }
 
   // prio -- convenience: we convert ERROR / WARNING / INFO -> int
-  else if ((li->type == LOG_ITEM_LOG_PRIO) && !isdigit(**token)) {
+  if ((li->type == LOG_ITEM_LOG_PRIO) && !isdigit(**token)) {
     int prio = -1;
 
     *state = "Resolving prio ...";
@@ -852,7 +851,7 @@ static set_arg_result log_filter_set_arg(const char **token, const size_t *len,
   }
 
   // quoted string
-  else if (((**token == '\"') || (**token == '\''))) {
+  if (((**token == '\"') || (**token == '\''))) {
     *state = "setting quoted string argument";
 
     // if it's any ad hoc type, we set it to "ad hoc string"

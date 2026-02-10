@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -23,446 +23,403 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "mysqlrouter/cluster_metadata_instance_attributes.h"
 
+#include "mysql/harness/utility/string.h"  // string_format
+#include "router/tests/helpers/stdx_expected_no_error.h"
+
 class ClusterMetadataInstanceAttributesTest : public ::testing::Test {};
 using mysqlrouter::InstanceAttributes;
 
-TEST_F(ClusterMetadataInstanceAttributesTest, IsHidden) {
-  stdx::expected<bool, std::string> res;
+using ::testing::ElementsAre;
+using ::testing::Pair;
 
-  res =
-      InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": true} })", false);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
+TEST_F(ClusterMetadataInstanceAttributesTest, EmptyTags) {
+  const auto res = InstanceAttributes::get_tags(R"({"tags" : {}})");
+  ASSERT_NO_ERROR(res);
+  EXPECT_TRUE(res.value().empty());
+}
 
-  res = InstanceAttributes::get_hidden(
-      R"({"tags" : {"foo" : "bar", "_hidden": true} })", false);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
+TEST_F(ClusterMetadataInstanceAttributesTest, TagsEmptyValue) {
+  const auto res = InstanceAttributes::get_tags(R"({"tags" : {"": true}})");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 1);
+}
 
-  res =
-      InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": false} })", true);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
+TEST_F(ClusterMetadataInstanceAttributesTest, TagsOneValue) {
+  const auto res = InstanceAttributes::get_tags(R"({"tags" : {"foo": "bar"}})");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 1);
+  EXPECT_THAT(res.value(), ElementsAre(Pair("foo", "\"bar\"")));
+}
 
-  res = InstanceAttributes::get_hidden("", false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
+TEST_F(ClusterMetadataInstanceAttributesTest, TagsMultipleValues) {
+  const auto res = InstanceAttributes::get_tags(
+      R"({"tags" : {"foo": "bar", "vvv": {}, "x": true, "y": [], "z": null}})");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 5);
+  EXPECT_THAT(res.value(), ElementsAre(Pair("foo", "\"bar\""),
+                                       Pair("vvv", "{}"), Pair("x", "true"),
+                                       Pair("y", "[]"), Pair("z", "null")));
+}
 
-  res = InstanceAttributes::get_hidden("not json", true);
+TEST_F(ClusterMetadataInstanceAttributesTest, NestedTags) {
+  const auto res =
+      InstanceAttributes::get_tags(R"({"tags" : {"tags": "bar"}})");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 1);
+  EXPECT_THAT(res.value(), ElementsAre(Pair("tags", "\"bar\"")));
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, NoTags) {
+  const auto res = InstanceAttributes::get_tags(R"({"foo" : {"x": "y"}})");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 0);
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, TagsWrongType) {
+  std::vector<std::string> values{"\"hidden\"", "[]", "true", "1", "null"};
+
+  for (const auto &val : values) {
+    const auto res = InstanceAttributes::get_tags(R"({"tags" : )" + val + "}");
+    EXPECT_FALSE(res);
+    EXPECT_STREQ("tags field is not a valid JSON object", res.error().c_str());
+  }
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, TagsCaseSensitivity) {
+  const auto res =
+      InstanceAttributes::get_tags(R"({"TAGS" : {"_hidden": true}})");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 0);
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, MultipleFields) {
+  const auto res = InstanceAttributes::get_tags(R"({"tags": {}, "foo": {} })");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 0);
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, IsHiddenOnly) {
+  // hidden = true
+  {
+    const auto res =
+        InstanceAttributes::get_tags(R"({"tags" : {"_hidden": true} })");
+    ASSERT_NO_ERROR(res);
+    EXPECT_THAT(res.value(), ElementsAre(Pair("_hidden", "true")));
+    const auto hidden_res = InstanceAttributes::get_hidden(res.value(), false);
+    ASSERT_NO_ERROR(hidden_res);
+    EXPECT_TRUE(hidden_res.value());
+  }
+  // hidden = false
+  {
+    const auto res =
+        InstanceAttributes::get_tags(R"({"tags" : {"_hidden": false} })");
+    ASSERT_NO_ERROR(res);
+    EXPECT_THAT(res.value(), ElementsAre(Pair("_hidden", "false")));
+    const auto hidden_res = InstanceAttributes::get_hidden(res.value(), false);
+    ASSERT_NO_ERROR(hidden_res);
+    EXPECT_FALSE(hidden_res.value());
+  }
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, IsHiddenAdditionalTags) {
+  const auto res = InstanceAttributes::get_tags(
+      R"({"tags" : {"foo" : "bar", "_hidden": true} })");
+  ASSERT_NO_ERROR(res);
+  EXPECT_THAT(res.value(),
+              ElementsAre(Pair("_hidden", "true"), Pair("foo", "\"bar\"")));
+  const auto hidden_res = InstanceAttributes::get_hidden(res.value(), false);
+  ASSERT_NO_ERROR(hidden_res);
+  EXPECT_TRUE(hidden_res.value());
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, HiddenDefaultValue) {
+  const auto res = InstanceAttributes::get_tags(R"({"tags" : {}})");
+  ASSERT_NO_ERROR(res);
+  EXPECT_TRUE(res.value().empty());
+
+  const auto hidden_res = InstanceAttributes::get_hidden(res.value(), false);
+  ASSERT_NO_ERROR(hidden_res);
+  EXPECT_FALSE(hidden_res.value());
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, HiddenWrongType) {
+  const std::vector<std::string> &values{"1",        "0",        "null",
+                                         "\"null\"", "\"true\"", "\"false\"",
+                                         "{}",       "[]",       "\"\""};
+
+  for (const auto &val : values) {
+    const auto res =
+        InstanceAttributes::get_tags(R"({"tags" : {"_hidden": )" + val + "}}");
+    ASSERT_NO_ERROR(res);
+    EXPECT_THAT(res.value(), ElementsAre(Pair("_hidden", val)));
+
+    const auto hidden_res = InstanceAttributes::get_hidden(res.value(), false);
+    EXPECT_FALSE(hidden_res);
+    EXPECT_STREQ("tags._hidden not a boolean", hidden_res.error().c_str());
+  }
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, HiddenNoTags) {
+  const auto res =
+      InstanceAttributes::get_tags(R"({"foo" : {"_hidden": true} })");
+  ASSERT_NO_ERROR(res);
+  EXPECT_TRUE(res.value().empty());
+
+  const auto hidden_res = InstanceAttributes::get_hidden(res.value(), false);
+  ASSERT_NO_ERROR(hidden_res);
+  EXPECT_FALSE(hidden_res.value());  // Default is used
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, HiddenNotInTags) {
+  const auto res =
+      InstanceAttributes::get_tags(R"({"tags" : {"_unrecognized": true} })");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 1);
+
+  const auto hidden_res = InstanceAttributes::get_hidden(res.value(), false);
+  ASSERT_NO_ERROR(hidden_res);
+  EXPECT_FALSE(hidden_res.value());  // Default is used
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest, HiddenNoValue) {
+  const auto res = InstanceAttributes::get_tags(R"({"foo" : {"_hidden": } })");
   EXPECT_FALSE(res);
-  EXPECT_STREQ("not a valid JSON object", res.error().c_str());
+  EXPECT_STREQ(res.error().c_str(), "not a valid JSON object");
+}
 
-  res = InstanceAttributes::get_hidden("{}", false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
+TEST_F(ClusterMetadataInstanceAttributesTest, HiddenCaseSensitivity) {
+  const auto res =
+      InstanceAttributes::get_tags(R"({"tags" : {"_HIDDEN": true} })");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 1);
 
-  res = InstanceAttributes::get_hidden(R"({"tags": {} })", false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
+  const auto hidden_res = InstanceAttributes::get_hidden(res.value(), false);
+  ASSERT_NO_ERROR(hidden_res);
+  EXPECT_FALSE(hidden_res.value());  // Default is used
+}
 
-  res = InstanceAttributes::get_hidden(R"({"tags" : {"_unrecognized": true} })",
-                                       true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : {"": true} })", true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res = InstanceAttributes::get_hidden(R"({"tags": {}, "foo": {} })", true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res =
-      InstanceAttributes::get_hidden(R"({"foo" : {"_hidden": false} })", false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : "_hidden" })", false);
+TEST_F(ClusterMetadataInstanceAttributesTest, HiddenValueCaseSensitivity) {
+  const auto res =
+      InstanceAttributes::get_tags(R"({"tags" : {"_hidden": TRUE} })");
   EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
+  EXPECT_STREQ(res.error().c_str(), "not a valid JSON object");
+}
 
-  res = InstanceAttributes::get_hidden(R"({"tags" : [] })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
+TEST_F(ClusterMetadataInstanceAttributesTest, HiddenOutsideTags) {
+  const auto res =
+      InstanceAttributes::get_tags(R"({"tags" : {}, "_hidden": true} )");
+  ASSERT_NO_ERROR(res);
+  EXPECT_TRUE(res.value().empty());
 
-  res = InstanceAttributes::get_hidden(R"({"tags" : null })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : true })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : "foo" })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : 0 })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": 0} })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._hidden not a boolean", res.error().c_str());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": 1 } })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._hidden not a boolean", res.error().c_str());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": "true" } })",
-                                       false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._hidden not a boolean", res.error().c_str());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": "false" } })",
-                                       false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._hidden not a boolean", res.error().c_str());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": "foo" } })",
-                                       false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._hidden not a boolean", res.error().c_str());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": "null" } })",
-                                       false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._hidden not a boolean", res.error().c_str());
-
-  res =
-      InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": {} } })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._hidden not a boolean", res.error().c_str());
-
-  res =
-      InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": [] } })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._hidden not a boolean", res.error().c_str());
-
-  res =
-      InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": "" } })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._hidden not a boolean", res.error().c_str());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : {"foo": 0 } })", false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  // we are case sensitive
-  res =
-      InstanceAttributes::get_hidden(R"({"TAGS" : {"_hidden": true} })", false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res =
-      InstanceAttributes::get_hidden(R"({"TAGS" : {"_hidden": false} })", true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res =
-      InstanceAttributes::get_hidden(R"({"tags" : {"_HIDDEN": true} })", false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res =
-      InstanceAttributes::get_hidden(R"({"tags" : {"_HIDDEN": false} })", true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res =
-      InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": TRUE} })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("not a valid JSON object", res.error().c_str());
-
-  res =
-      InstanceAttributes::get_hidden(R"({"tags" : {"_hidden": FALSE} })", true);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("not a valid JSON object", res.error().c_str());
-
-  // outside of the tags object does not have an effect
-  res = InstanceAttributes::get_hidden(R"({"tags" : {}, "_hidden": true })",
-                                       false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_hidden(R"({"tags" : {}, "_hidden": false })",
-                                       true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
+  const auto hidden_res = InstanceAttributes::get_hidden(res.value(), false);
+  ASSERT_NO_ERROR(hidden_res);
+  EXPECT_FALSE(hidden_res.value());  // Default is used
 }
 
 TEST_F(ClusterMetadataInstanceAttributesTest,
-       IsDisconnect_existing_sessions_when_hidden) {
-  stdx::expected<bool, std::string> res;
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": true} })",
-      false);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"foo" : "bar", "_disconnect_existing_sessions_when_hidden": true} })",
-      false);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": false} })",
-      true);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden("",
-                                                                         false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      "not json", true);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden("{}",
-                                                                         false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags": {} })", false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_unrecognized": true} })", true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"": true} })", true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags": {}, "foo": {} })", true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"foo" : {"_disconnect_existing_sessions_when_hidden": false} })",
-      false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : "_disconnect_existing_sessions_when_hidden" })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : [] })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : null })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : true })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : "foo" })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : 0 })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags - not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": 0} })", false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._disconnect_existing_sessions_when_hidden not a boolean",
-               res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": 1 } })",
-      false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._disconnect_existing_sessions_when_hidden not a boolean",
-               res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": "true" } })",
-      false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._disconnect_existing_sessions_when_hidden not a boolean",
-               res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": "false" } })",
-      false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._disconnect_existing_sessions_when_hidden not a boolean",
-               res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": "foo" } })",
-      false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._disconnect_existing_sessions_when_hidden not a boolean",
-               res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": "null" } })",
-      false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._disconnect_existing_sessions_when_hidden not a boolean",
-               res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": {} } })",
-      false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._disconnect_existing_sessions_when_hidden not a boolean",
-               res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": [] } })",
-      false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._disconnect_existing_sessions_when_hidden not a boolean",
-               res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": "" } })",
-      false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("tags._disconnect_existing_sessions_when_hidden not a boolean",
-               res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"foo": 0 } })", false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  // we are case sensitive
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"TAGS" : {"_disconnect_existing_sessions_when_hidden": true} })",
-      false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"TAGS" : {"_disconnect_existing_sessions_when_hidden": false} })",
-      true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_DISCONNECT_EXISTING_SESSIONS_WHEN_HIDDEN": true} })",
-      false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_DISCONNECT_EXISTING_SESSIONS_WHEN_HIDDEN": false} })",
-      true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": TRUE} })",
-      false);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("not a valid JSON object", res.error().c_str());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": FALSE} })",
-      true);
-  EXPECT_FALSE(res);
-  EXPECT_STREQ("not a valid JSON object", res.error().c_str());
-
-  // outside of the tags object does not have an effect
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {}, "_disconnect_existing_sessions_when_hidden": true })",
-      false);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {}, "_disconnect_existing_sessions_when_hidden": false })",
-      true);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
+       IsDisconnectExistingSessionsWhenHiddenOnly) {
+  // disconnect_existing_sessions_when_hidden = true
+  {
+    const auto res = InstanceAttributes::get_tags(
+        R"({"tags" : {"_disconnect_existing_sessions_when_hidden": true} })");
+    ASSERT_NO_ERROR(res);
+    EXPECT_THAT(
+        res.value(),
+        ElementsAre(Pair("_disconnect_existing_sessions_when_hidden", "true")));
+    const auto disconnect_existing_sessions_when_hidden_res =
+        InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
+            res.value(), false);
+    ASSERT_NO_ERROR(disconnect_existing_sessions_when_hidden_res);
+    EXPECT_TRUE(disconnect_existing_sessions_when_hidden_res.value());
+  }
+  // disconnect_existing_sessions_when_hidden = false
+  {
+    const auto res = InstanceAttributes::get_tags(
+        R"({"tags" : {"_disconnect_existing_sessions_when_hidden": false} })");
+    ASSERT_NO_ERROR(res);
+    EXPECT_THAT(res.value(),
+                ElementsAre(Pair("_disconnect_existing_sessions_when_hidden",
+                                 "false")));
+    const auto disconnect_existing_sessions_when_hidden_res =
+        InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
+            res.value(), false);
+    ASSERT_NO_ERROR(disconnect_existing_sessions_when_hidden_res);
+    EXPECT_FALSE(disconnect_existing_sessions_when_hidden_res.value());
+  }
 }
 
 TEST_F(ClusterMetadataInstanceAttributesTest,
+       IsDisconnectExistingSessionsWhenHiddenAdditionalTags) {
+  const auto res = InstanceAttributes::get_tags(
+      R"({"tags" : {"foo" : "bar", "_disconnect_existing_sessions_when_hidden": true} })");
+  ASSERT_NO_ERROR(res);
+  EXPECT_THAT(
+      res.value(),
+      ElementsAre(Pair("_disconnect_existing_sessions_when_hidden", "true"),
+                  Pair("foo", "\"bar\"")));
+  const auto disconnect_existing_sessions_when_hidden_res =
+      InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
+          res.value(), false);
+  ASSERT_NO_ERROR(disconnect_existing_sessions_when_hidden_res);
+  EXPECT_TRUE(disconnect_existing_sessions_when_hidden_res.value());
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest,
+       DisconnectExistingSessionsWhenHiddenDefaultValue) {
+  const auto res = InstanceAttributes::get_tags(R"({"tags" : {}})");
+  ASSERT_NO_ERROR(res);
+  EXPECT_TRUE(res.value().empty());
+
+  const auto disconnect_existing_sessions_when_hidden_res =
+      InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
+          res.value(), false);
+  ASSERT_NO_ERROR(disconnect_existing_sessions_when_hidden_res);
+  EXPECT_FALSE(disconnect_existing_sessions_when_hidden_res.value());
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest,
+       DisconnectExistingSessionsWhenHiddenWrongType) {
+  const std::vector<std::string> &values{"1",        "0",        "null",
+                                         "\"null\"", "\"true\"", "\"false\"",
+                                         "{}",       "[]",       "\"\""};
+
+  for (const auto &val : values) {
+    const auto res = InstanceAttributes::get_tags(
+        R"({"tags" : {"_disconnect_existing_sessions_when_hidden": )" + val +
+        "}}");
+    ASSERT_NO_ERROR(res);
+    EXPECT_THAT(
+        res.value(),
+        ElementsAre(Pair("_disconnect_existing_sessions_when_hidden", val)));
+
+    const auto disconnect_existing_sessions_when_hidden_res =
+        InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
+            res.value(), false);
+    EXPECT_FALSE(disconnect_existing_sessions_when_hidden_res);
+    EXPECT_STREQ("tags._disconnect_existing_sessions_when_hidden not a boolean",
+                 disconnect_existing_sessions_when_hidden_res.error().c_str());
+  }
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest,
+       DisconnectExistingSessionsWhenHiddenNoTags) {
+  const auto res = InstanceAttributes::get_tags(
+      R"({"foo" : {"_disconnect_existing_sessions_when_hidden": true} })");
+  ASSERT_NO_ERROR(res);
+  EXPECT_TRUE(res.value().empty());
+
+  const auto disconnect_existing_sessions_when_hidden_res =
+      InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
+          res.value(), false);
+  ASSERT_NO_ERROR(disconnect_existing_sessions_when_hidden_res);
+  EXPECT_FALSE(
+      disconnect_existing_sessions_when_hidden_res.value());  // Default is used
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest,
+       DisconnectExistingSessionsWhenHiddenNotInTags) {
+  const auto res =
+      InstanceAttributes::get_tags(R"({"tags" : {"_unrecognized": true} })");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 1);
+
+  const auto disconnect_existing_sessions_when_hidden_res =
+      InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
+          res.value(), false);
+  ASSERT_NO_ERROR(disconnect_existing_sessions_when_hidden_res);
+  EXPECT_FALSE(
+      disconnect_existing_sessions_when_hidden_res.value());  // Default is used
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest,
+       DisconnectExistingSessionsWhenHiddenNoValue) {
+  const auto res = InstanceAttributes::get_tags(
+      R"({"foo" : {"_disconnect_existing_sessions_when_hidden": } })");
+  EXPECT_FALSE(res);
+  EXPECT_STREQ(res.error().c_str(), "not a valid JSON object");
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest,
+       DisconnectExistingSessionsWhenHiddenCaseSensitivity) {
+  const auto res =
+      InstanceAttributes::get_tags(R"({"tags" : {"_HIDDEN": true} })");
+  ASSERT_NO_ERROR(res);
+  EXPECT_EQ(res.value().size(), 1);
+
+  const auto disconnect_existing_sessions_when_hidden_res =
+      InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
+          res.value(), false);
+  ASSERT_NO_ERROR(disconnect_existing_sessions_when_hidden_res);
+  EXPECT_FALSE(
+      disconnect_existing_sessions_when_hidden_res.value());  // Default is used
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest,
+       DisconnectExistingSessionsWhenHiddenValueCaseSensitivity) {
+  const auto res = InstanceAttributes::get_tags(
+      R"({"tags" : {"_disconnect_existing_sessions_when_hidden": TRUE} })");
+  EXPECT_FALSE(res);
+  EXPECT_STREQ(res.error().c_str(), "not a valid JSON object");
+}
+
+TEST_F(ClusterMetadataInstanceAttributesTest,
+       DisconnectExistingSessionsWhenHiddenOutsideTags) {
+  const auto res = InstanceAttributes::get_tags(
+      R"({"tags" : {}, "_disconnect_existing_sessions_when_hidden": true} )");
+  ASSERT_NO_ERROR(res);
+  EXPECT_TRUE(res.value().empty());
+
+  const auto disconnect_existing_sessions_when_hidden_res =
+      InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
+          res.value(), false);
+  ASSERT_NO_ERROR(disconnect_existing_sessions_when_hidden_res);
+  EXPECT_FALSE(
+      disconnect_existing_sessions_when_hidden_res.value());  // Default is used
+}
+
+class BothHiddenAndDisconnectWhenHiddenTest
+    : public ClusterMetadataInstanceAttributesTest,
+      public ::testing::WithParamInterface<std::pair<bool, bool>> {};
+
+TEST_P(BothHiddenAndDisconnectWhenHiddenTest,
        BothHiddenAndDisconnectWhenHidden) {
-  stdx::expected<bool, std::string> res;
+  auto bool_to_str = [](const bool val) { return val ? "true" : "false"; };
 
-  // true, true
-  res = InstanceAttributes::get_hidden(
-      R"({"tags" : {"_hidden": true, "_disconnect_existing_sessions_when_hidden": true} })",
-      false);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
+  const bool hidden = GetParam().first;
+  const bool disconnect_when_hidden = GetParam().second;
 
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_hidden": true, "_disconnect_existing_sessions_when_hidden": true} })",
-      false);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
+  const auto tags_res =
+      InstanceAttributes::get_tags(mysql_harness::utility::string_format(
+          R"({"tags" : {"_hidden": %s, "_disconnect_existing_sessions_when_hidden": %s}} )",
+          bool_to_str(hidden), bool_to_str(disconnect_when_hidden)));
 
-  // true, false
-  res = InstanceAttributes::get_hidden(
-      R"({"tags" : {"_hidden": true, "_disconnect_existing_sessions_when_hidden": false} })",
-      false);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
+  ASSERT_NO_ERROR(tags_res);
+  EXPECT_EQ(tags_res.value().size(), 2);
 
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_hidden": true, "_disconnect_existing_sessions_when_hidden": false} })",
-      true);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
+  const auto disconnect_existing_sessions_when_hidden_res =
+      InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
+          tags_res.value(), false);
+  ASSERT_NO_ERROR(disconnect_existing_sessions_when_hidden_res);
+  EXPECT_EQ(disconnect_existing_sessions_when_hidden_res.value(),
+            disconnect_when_hidden);
 
-  // false, true
-  res = InstanceAttributes::get_hidden(
-      R"({"tags" : {"_hidden": false, "_disconnect_existing_sessions_when_hidden": true} })",
-      true);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_hidden": false, "_disconnect_existing_sessions_when_hidden": true} })",
-      false);
-  EXPECT_TRUE(res);
-  EXPECT_TRUE(res.value());
-
-  // false, false
-  res = InstanceAttributes::get_hidden(
-      R"({"tags" : {"_hidden": false, "_disconnect_existing_sessions_when_hidden": false} })",
-      true);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
-
-  res = InstanceAttributes::get_disconnect_existing_sessions_when_hidden(
-      R"({"tags" : {"_hidden": false, "_disconnect_existing_sessions_when_hidden": false} })",
-      true);
-  EXPECT_TRUE(res);
-  EXPECT_FALSE(res.value());
+  const auto hidden_res =
+      InstanceAttributes::get_hidden(tags_res.value(), false);
+  ASSERT_NO_ERROR(hidden_res);
+  EXPECT_EQ(hidden_res.value(), hidden);
 }
+
+INSTANTIATE_TEST_SUITE_P(BothHiddenAndDisconnectWhenHidden,
+                         BothHiddenAndDisconnectWhenHiddenTest,
+                         ::testing::Values(std::make_pair(true, true),
+                                           std::make_pair(true, false),
+                                           std::make_pair(false, true),
+                                           std::make_pair(false, false)));
 
 int main(int argc, char *argv[]) {
   ::testing::InitGoogleTest(&argc, argv);

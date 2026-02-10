@@ -2,6 +2,8 @@ CALL mtr.add_suppression('Following users were specified in CREATE USER IF NOT E
 CALL mtr.add_suppression('Following users were specified in ALTER USER IF EXISTS but they do not exist');
 DELETE FROM mysql.user WHERE user = 'wl8540';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT COUNT(*) FROM mysql.user WHERE user = 'wl8540';
 COUNT(*)
 0
@@ -10,7 +12,7 @@ SELECT COUNT(*) FROM mysql.user WHERE user = 'wl8540';
 COUNT(*)
 1
 CREATE USER wl8540@host1;
-ERROR HY000: Operation CREATE USER failed for 'wl8540'@'host1'
+ERROR HY000: Operation CREATE USER failed for 'wl8540'@'host1' (User account already exists)
 CREATE USER IF NOT EXISTS wl8540@host1;
 Warnings:
 Note	3163	Authorization ID 'wl8540'@'host1' already exists.
@@ -44,7 +46,7 @@ SELECT COUNT(*) FROM mysql.user WHERE user = 'wl8540' AND account_locked = 'Y';
 COUNT(*)
 0
 ALTER USER wl8540@host3 ACCOUNT LOCK;
-ERROR HY000: Operation ALTER USER failed for 'wl8540'@'host3'
+ERROR HY000: Operation ALTER USER failed for 'wl8540'@'host3' (User account does not exist)
 SELECT COUNT(*) FROM mysql.user WHERE user = 'wl8540' AND account_locked = 'Y';
 COUNT(*)
 0
@@ -69,7 +71,7 @@ SELECT COUNT(*) FROM mysql.user WHERE user = 'wl8540';
 COUNT(*)
 2
 DROP USER wl8540@host3;
-ERROR HY000: Operation DROP USER failed for 'wl8540'@'host3'
+ERROR HY000: Operation DROP USER failed for 'wl8540'@'host3' (User account does not exist)
 SELECT COUNT(*) FROM mysql.user WHERE user = 'wl8540';
 COUNT(*)
 2
@@ -167,6 +169,8 @@ COUNT(*)
 3
 DELETE FROM mysql.user WHERE user = 'wl8540';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 
 
 CREATE USER user1@localhost

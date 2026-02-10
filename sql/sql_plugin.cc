@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1082,6 +1082,12 @@ static bool plugin_add(MEM_ROOT *tmp_root, LEX_CSTRING name,
         report_error(report, ER_CANT_OPEN_LIBRARY, dl_name, 0, buf);
         return true;
       }
+
+      if (plugin->type == MYSQL_KEYRING_PLUGIN) {
+        LogErr(WARNING_LEVEL, ER_WARN_KEYRING_PLUGIN_DEPRECTED,
+               plugin->name ? plugin->name : "<unknown name>");
+      }
+
       tmp.plugin = plugin;
       tmp.name.str = plugin->name;
       tmp.name.length = name_len;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,23 +57,27 @@
 
 #endif
 
-#include <limits.h>
+#include <climits>
 
 #ifndef _WIN32
 #include <arpa/inet.h>
 #include <netdb.h>
 #endif
 
-#include <assert.h>
-#include <errno.h>
 #include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
-#include <time.h>
+#include <cassert>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 
 #include <memory>
+
+#ifdef _WIN32
+#include <chrono>
+#endif
 
 #include "xcom/node_connection.h"
 #include "xdr_gen/xcom_vp.h"
@@ -151,7 +155,7 @@ with the system time.
 Windows version and Posix version differ slightly, but use the same general
 approach.
 */
-#define crash(x) g_critical("%s\n", x)
+#define crash(x) G_FATAL("%s\n", x)
 
 #ifdef _WIN32
 
@@ -456,7 +460,7 @@ static task_env *task_queue_remove(task_queue *q, int i) {
   /* The element at index 0 is never part of the queue */
   if (0 == i) return nullptr;
   assert(q->curn);
-  IFDBG(D_NONE, FN; STRLIT("task_queue_remove "); NDBG(i, d));
+  XCOM_IFDBG(D_NONE, FN; STRLIT("task_queue_remove "); NDBG(i, d));
   TASK_MOVE(i, q->curn); /* Fill the hole */
   q->curn--;             /* Heap is now smaller */
                          /* Re-establish heap property */
@@ -487,7 +491,7 @@ static void task_queue_insert(task_queue *q, task_env *t) {
 
 static int task_queue_empty(task_queue *q) {
 #ifdef DEBUG_TASKS
-  IFDBG(D_NONE, FN; PTREXP(q));
+  XCOM_IFDBG(D_NONE, FN; PTREXP(q));
 #endif
   return q->curn < 1;
 }
@@ -545,8 +549,8 @@ static linkage free_tasks = {0, &free_tasks, &free_tasks};
 /* Basic operations on tasks */
 static task_env *activate(task_env *t) {
   if (t) {
-    IFDBG(D_NONE, FN; STRLIT("activating task "); PTREXP(t); STREXP(t->name);
-          NDBG(t->heap_pos, d); NDBG(t->time, f););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("activating task "); PTREXP(t);
+               STREXP(t->name); NDBG(t->heap_pos, d); NDBG(t->time, f););
     assert(ash_nazg_gimbatul.type == TYPE_HASH("task_env"));
     if (t->heap_pos) task_queue_remove(&task_time_q, t->heap_pos);
     link_into(&t->l, &tasks);
@@ -608,7 +612,7 @@ channel *channel_init(channel *c, unsigned int type) {
 }
 
 void channel_put(channel *c, linkage *data) {
-  IFDBG(D_NONE, FN; PTREXP(data); PTREXP(&c->data));
+  XCOM_IFDBG(D_NONE, FN; PTREXP(data); PTREXP(&c->data));
   link_into(data, &c->data);
   task_wakeup_first(&c->queue);
 }
@@ -625,7 +629,7 @@ task_env *task_new(task_func func, task_arg arg, const char *name, int debug) {
     t = (task_env *)xcom_malloc(sizeof(task_env));
   else
     t = container_of(link_extract_first(&free_tasks), task_env, l);
-  IFDBG(D_NONE, FN; PTREXP(t); STREXP(name); NDBG(active_tasks, d););
+  XCOM_IFDBG(D_NONE, FN; PTREXP(t); STREXP(name); NDBG(active_tasks, d););
   task_init(t);
   t->func = func;
   t->arg = arg;
@@ -691,14 +695,14 @@ static int runnable_tasks() { return !link_empty(&tasks); }
 
 static int delayed_tasks() {
 #ifdef DEBUG_TASKS
-  IFDBG(D_NONE, FN; PTREXP(&task_time_q));
+  XCOM_IFDBG(D_NONE, FN; PTREXP(&task_time_q));
 #endif
   return !task_queue_empty(&task_time_q);
 }
 
 static void task_delete(task_env *t) {
-  IFDBG(D_NONE, FN; PTREXP(t); STREXP(t->name); NDBG(t->refcnt, d);
-        NDBG(active_tasks, d););
+  XCOM_IFDBG(D_NONE, FN; PTREXP(t); STREXP(t->name); NDBG(t->refcnt, d);
+             NDBG(active_tasks, d););
   link_out(&t->all); /* Remove task from list of all tasks */
 #if 1
   free(deactivate(t)); /* Deactivate and free task */
@@ -734,12 +738,12 @@ task_env *task_deactivate(task_env *t) { return deactivate(t); }
 /* Set terminate flag and activate task */
 task_env *task_terminate(task_env *t) {
   if (t) {
-    IFDBG(D_NONE, FN; STRLIT("terminating "); PTREXP(t); STREXP(t->name);
-          NDBG(t->refcnt, d));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("terminating "); PTREXP(t); STREXP(t->name);
+               NDBG(t->refcnt, d));
     t->terminate = KILL; /* Set terminate flag */
     activate(t);         /* and get it running */
-    IFDBG(D_NONE, FN; STRLIT("terminated "); PTREXP(t); STREXP(t->name);
-          NDBG(t->refcnt, d));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("terminated "); PTREXP(t); STREXP(t->name);
+               NDBG(t->refcnt, d));
   }
   return t;
 }
@@ -769,14 +773,14 @@ static task_env *extract_first_delayed() {
 static iotasks iot;
 
 static void iotasks_init(iotasks *iot_to_init) {
-  IFDBG(D_NONE, FN);
+  XCOM_IFDBG(D_NONE, FN);
   iot_to_init->nwait = 0;
   init_pollfd_array(&iot_to_init->fd);
   init_task_env_p_array(&iot_to_init->tasks);
 }
 
 static void iotasks_deinit(iotasks *iot_to_deinit) {
-  IFDBG(D_NONE, FN);
+  XCOM_IFDBG(D_NONE, FN);
   iot_to_deinit->nwait = 0;
   free_pollfd_array(&iot_to_deinit->fd);
   free_task_env_p_array(&iot_to_deinit->tasks);
@@ -795,7 +799,7 @@ static int poll_wait(int ms) {
   int wake = 0;
 
   /* Wait at most ms milliseconds */
-  IFDBG(D_NONE, FN; NDBG(ms, d));
+  XCOM_IFDBG(D_NONE, FN; NDBG(ms, d));
   if (ms < 0 || ms > 1000) ms = 1000; /* Wait at most 1000 ms */
   SET_OS_ERR(0);
   while ((nfds.val = poll(iot.fd.pollfd_array_val, iot.nwait, ms)) == -1) {
@@ -803,8 +807,8 @@ static int poll_wait(int ms) {
     nfds.funerr = to_errno(GET_OS_ERR);
     if (!can_retry(nfds.funerr)) {
       task_dump_err(nfds.funerr);
-      DBGOUT(FN; STRLIT("poll failed "); NUMEXP(nfds.val); NUMEXP(nfds.funerr);
-             NUMEXP(iot.nwait));
+      XCOM_DBGOUT(FN; STRLIT("poll failed "); NUMEXP(nfds.val);
+                  NUMEXP(nfds.funerr); NUMEXP(iot.nwait));
       break;
       /* abort(); */
     }
@@ -821,11 +825,11 @@ static int poll_wait(int ms) {
       if (interrupt || /* timeout ? */
           get_pollfd(&iot.fd, i).revents) {
         if (get_pollfd(&iot.fd, i).revents & POLLERR) {
-          DBGOUT(FN; STRLIT("IO failed POLLERR "); NUMEXP(i);
-                 NUMEXP(get_pollfd(&iot.fd, i).fd);
-                 NUMEXP(get_pollfd(&iot.fd, i).events);
-                 NUMEXP(get_pollfd(&iot.fd, i).revents); NUMEXP(i);
-                 NUMEXP(iot.nwait););
+          XCOM_DBGOUT(FN; STRLIT("IO failed POLLERR "); NUMEXP(i);
+                      NUMEXP(get_pollfd(&iot.fd, i).fd);
+                      NUMEXP(get_pollfd(&iot.fd, i).events);
+                      NUMEXP(get_pollfd(&iot.fd, i).revents); NUMEXP(i);
+                      NUMEXP(iot.nwait););
         }
         get_task_env_p(&iot.tasks, i)->interrupt = interrupt;
         poll_wakeup(i);
@@ -840,7 +844,7 @@ static int poll_wait(int ms) {
 
 static void add_fd(task_env *t, int fd, int op) {
   short events = 'r' == op ? POLLIN | POLLRDNORM : POLLOUT;
-  IFDBG(D_NONE, FN; PTREXP(t); NDBG(fd, d); NDBG(op, d));
+  XCOM_IFDBG(D_NONE, FN; PTREXP(t); NDBG(fd, d); NDBG(op, d));
   assert(fd >= 0);
   t->waitfd = fd;
   deactivate(t);
@@ -879,7 +883,7 @@ static void wake_all_io() {
 
 void remove_and_wakeup(int fd) {
   u_int i = 0;
-  IFDBG(D_NONE, FN; NDBG(fd, d));
+  XCOM_IFDBG(D_NONE, FN; NDBG(fd, d));
   while (i < iot.nwait) {
     if (static_cast<int>(get_pollfd(&iot.fd, i).fd) == fd) {
       poll_wakeup(i);
@@ -961,7 +965,8 @@ int task_read(connection_descriptor const *con, void *buf, int n, int64_t *ret,
   assert(n >= 0);
 
   TASK_BEGIN
-  IFDBG(D_NONE, FN; PTREXP(stack); NDBG(con->fd, d); PTREXP(buf); NDBG(n, d));
+  XCOM_IFDBG(D_NONE, FN; PTREXP(stack); NDBG(con->fd, d); PTREXP(buf);
+             NDBG(n, d));
 
   for (;;) {
     if (con->fd <= 0) TASK_FAIL;
@@ -969,19 +974,20 @@ int task_read(connection_descriptor const *con, void *buf, int n, int64_t *ret,
     sock_ret = read_function(con, buf, n);
 
     *ret = sock_ret.val;
-    IFDBG(D_TRANSPORT, FN; NDBG(con->fd, d); NDBG(n, d); NDBG(sock_ret.val, d);
-          NDBG(sock_ret.funerr, d););
+    XCOM_IFDBG(D_TRANSPORT, FN; NDBG(con->fd, d); NDBG(n, d);
+               NDBG(sock_ret.val, d); NDBG(sock_ret.funerr, d););
     if (sock_ret.val >= 0) /* OK */
       break;
     /* If we get here, we have an error, see if we can retry, and fail if not */
     if (!can_retry_read(sock_ret.funerr)) {
-      IFDBG(D_BUG, FN; PTREXP(stack); NDBG(con->fd, d); PTREXP(buf);
-            NDBG(n, d));
+      XCOM_IFDBG(D_BUG, FN; PTREXP(stack); NDBG(con->fd, d); PTREXP(buf);
+                 NDBG(n, d));
       TASK_FAIL;
     }
     wait_io(stack, con->fd, 'r');
     TASK_YIELD;
-    IFDBG(D_NONE, FN; PTREXP(stack); NDBG(con->fd, d); PTREXP(buf); NDBG(n, d));
+    XCOM_IFDBG(D_NONE, FN; PTREXP(stack); NDBG(con->fd, d); PTREXP(buf);
+               NDBG(n, d));
   }
 
   FINALLY
@@ -1052,7 +1058,8 @@ int task_write(connection_descriptor const *con, void *_buf, uint32_t n,
   ep->total = 0;
   *ret = 0;
   while (ep->total < n) {
-    IFDBG(D_NONE, FN; PTREXP(stack); NDBG(con->fd, d); NDBG(n - ep->total, u));
+    XCOM_IFDBG(D_NONE, FN; PTREXP(stack); NDBG(con->fd, d);
+               NDBG(n - ep->total, u));
     for (;;) {
       if (con->fd <= 0) TASK_FAIL;
       /*
@@ -1068,13 +1075,13 @@ int task_write(connection_descriptor const *con, void *_buf, uint32_t n,
       /* If we get here, we have an error, see if we can retry, and fail if not
        */
       if (!can_retry_write(sock_ret.funerr)) {
-        IFDBG(D_NONE, FN; PTREXP(stack); NDBG(con->fd, d);
-              NDBG(sock_ret.val, d));
+        XCOM_IFDBG(D_NONE, FN; PTREXP(stack); NDBG(con->fd, d);
+                   NDBG(sock_ret.val, d));
         TASK_FAIL;
       }
       wait_io(stack, con->fd, 'w');
-      IFDBG(D_NONE, FN; PTREXP(stack); NDBG(con->fd, d);
-            NDBG(n - ep->total, u));
+      XCOM_IFDBG(D_NONE, FN; PTREXP(stack); NDBG(con->fd, d);
+                 NDBG(n - ep->total, u));
       TASK_YIELD;
     }
     if (0 == sock_ret.val) { /* We have successfully written n bytes */
@@ -1168,8 +1175,8 @@ void task_loop() {
     while (runnable_tasks()) {
       task_env *next = next_task(t);
       if (!is_task_head(t)) {
-        /* IFDBG(D_NONE, FN; PTREXP(t); STRLIT(t->name ? t->name : "TASK WITH NO
-         * NAME")); */
+        /* XCOM_IFDBG(D_NONE, FN; PTREXP(t); STRLIT(t->name ? t->name : "TASK
+         * WITH NO NAME")); */
         stack = t;
         assert(stack);
         assert(t->terminate != TERMINATED);
@@ -1195,8 +1202,8 @@ void task_loop() {
        Wait until something happens.
     */
 #ifdef DEBUG_TASKS
-    IFDBG(D_NONE, FN; STRLIT("waiting tasks time "); NDBG(seconds(), f);
-          NDBG(iot.nwait, d); NDBG(task_time_q.curn));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("waiting tasks time "); NDBG(seconds(), f);
+               NDBG(iot.nwait, d); NDBG(task_time_q.curn));
 #endif
     {
       double time = seconds();
@@ -1275,7 +1282,7 @@ static int statistics_task(task_arg arg) {
     TASK_DELAY_UNTIL(ep->next);
   }
   FINALLY
-  IFDBG(D_BUG, FN; STRLIT(" shutdown "));
+  XCOM_IFDBG(D_BUG, FN; STRLIT(" shutdown "));
   TASK_END;
 }
 #endif
@@ -1287,7 +1294,7 @@ static void init_task_vars() {
 
 void task_sys_init() {
   xcom_init_clock(&task_timer);
-  IFDBG(D_NONE, FN; NDBG(FD_SETSIZE, d));
+  XCOM_IFDBG(D_NONE, FN; NDBG(FD_SETSIZE, d));
   init_task_vars();
   link_init(&tasks, TYPE_HASH("task_env"));
   link_init(&free_tasks, TYPE_HASH("task_env"));
@@ -1297,7 +1304,7 @@ void task_sys_init() {
 }
 
 static void task_sys_deinit() {
-  IFDBG(D_NONE, FN);
+  XCOM_IFDBG(D_NONE, FN);
   iotasks_deinit(&iot);
 }
 

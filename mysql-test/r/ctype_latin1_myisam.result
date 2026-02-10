@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #
 # Start of 5.5 tests
 #
@@ -480,24 +481,14 @@ t1	CREATE TABLE `t1` (
   `c1` varchar(3) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
-select sha('a'), hex(sha('a'));
-sha('a')	hex(sha('a'))
-86f7e437faa5a7fce15d1ddcb9eaeaea377667b8	38366637653433376661613561376663653135643164646362396561656165613337373636376238
-create table t1 as select sha('a') as c1;
+select sha2('a',224), hex(sha2('a',224));
+sha2('a',224)	hex(sha2('a',224))
+abd37534c7d9a2efb9465de931cd7055ffdb8879563ae98078d6d6d5	6162643337353334633764396132656662393436356465393331636437303535666664623838373935363361653938303738643664366435
+create table t1 as select sha2('a',224) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(40) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-drop table t1;
-select sha1('a'), hex(sha1('a'));
-sha1('a')	hex(sha1('a'))
-86f7e437faa5a7fce15d1ddcb9eaeaea377667b8	38366637653433376661613561376663653135643164646362396561656165613337373636376238
-create table t1 as select sha1('a') as c1;
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `c1` varchar(40) DEFAULT NULL
+  `c1` varchar(56) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(cast('-1' as signed)));
@@ -2575,14 +2566,6 @@ drop function f1;
 #
 # Bug#54668 User variable assignments get wrong type
 #
-SET @ST_X=sha('a');
-SELECT charset(@ST_X), collation(@ST_X);
-charset(@ST_X)	collation(@ST_X)
-utf8mb4	utf8mb4_0900_ai_ci
-SET @ST_X=sha1('a');
-SELECT charset(@ST_X), collation(@ST_X);
-charset(@ST_X)	collation(@ST_X)
-utf8mb4	utf8mb4_0900_ai_ci
 SET @ST_X=ST_astext(point(1,2));
 SELECT charset(@ST_X), collation(@ST_X);
 charset(@ST_X)	collation(@ST_X)
@@ -2752,6 +2735,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 Note	1003	/* select#1 */ select 'abcdÃ³' AS `abcdÃ³`,_latin1'abcd\xC3\x83\xC2\xB3' AS `abcdÃ³`,_utf8mb3'abcd\xC3\x83\xC2\xB3' AS `abcdó`
+include/rpl/set_gtid_mode_on.inc
 #
 # End of 5.5 tests
 #

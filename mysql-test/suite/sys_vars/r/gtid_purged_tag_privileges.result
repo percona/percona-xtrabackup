@@ -45,4 +45,4 @@ ERROR 42000: Access denied; you need (at least one of) the SUPER or SYSTEM_VARIA
 # Clean-up
 #
 DROP USER test_user;
-include/rpl/set_gtid_mode.inc [OFF on servers 1]
+include/rpl/set_gtid_mode.inc [ON on servers 1]

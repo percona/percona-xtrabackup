@@ -1,0 +1,164 @@
+#WL 11249 SQL engine layer foreign key support
+--echo # FR 6) Triggers defined on the child table during foreign key CASCADE
+--echo #  must not fired.
+--echo # FR 6.1) Test ON DELETE CASCADE do not fire triggers on child table
+CREATE TABLE trg_event(id1 INT);
+CREATE TABLE parent(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE child(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES parent(id1) ON DELETE CASCADE);
+
+--echo # Create triggers on child to insert into a trg_event table
+delimiter //;
+CREATE TRIGGER trg1 BEFORE DELETE ON child
+FOR EACH ROW BEGIN
+    INSERT INTO trg_event VALUES (1);
+END//
+
+CREATE TRIGGER trg2 AFTER DELETE ON child
+FOR EACH ROW BEGIN
+    INSERT INTO trg_event VALUES (2);
+END//
+delimiter ;//
+
+INSERT INTO parent VALUES (10, 10);
+INSERT INTO parent VALUES (20, 20);
+INSERT INTO parent VALUES (30, 30);
+INSERT INTO child VALUES (10, 10);
+INSERT INTO child VALUES (10, 20);
+INSERT INTO child VALUES (20, 10);
+INSERT INTO child VALUES (20, 20);
+DELETE FROM parent WHERE id1 = 30;
+
+--echo # verify triggers are not fired on child table but cascade should succeed
+DELETE FROM parent WHERE id1 = 10;
+SELECT * FROM child;
+SELECT * FROM parent;
+SELECT * FROM trg_event;
+DROP TABLE trg_event;
+DROP TABLE child, parent;
+
+--echo # FR 6.2) Parent Trigger definition containing child table with CASCADE should pass
+CREATE TABLE parent(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE child(idd1 INT PRIMARY KEY, idd2 INT,
+  FOREIGN KEY (idd2) REFERENCES parent(id1) ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO parent VALUES (10, 10);
+INSERT INTO parent VALUES (20, 20);
+INSERT INTO parent VALUES (30, 30);
+INSERT INTO child VALUES (10, 10);
+INSERT INTO child VALUES (15, 10);
+INSERT INTO child VALUES (20, 20);
+INSERT INTO child VALUES (30, 30);
+
+--echo # Create triggers on parent to delete from or update child.
+delimiter //;
+CREATE TRIGGER trg1 BEFORE DELETE ON parent
+FOR EACH ROW BEGIN
+    DELETE FROM child where idd1=OLD.id1;
+END//
+
+CREATE TRIGGER trg2 BEFORE UPDATE ON parent
+FOR EACH ROW BEGIN
+    UPDATE child SET idd1=NEW.id1+10 where idd1=OLD.id1;
+END//
+delimiter ;//
+
+--echo # invoking delete trigger with table containing fk cascade
+DELETE FROM parent where id1 = 10;
+UPDATE parent SET id1 = 40 where id1 = 20;
+SELECT * FROM parent;
+SELECT * FROM child;
+
+DROP TABLE child, parent;
+
+--echo # FR 6.3) Child Trigger definition containing parent table with CASCADE should pass
+CREATE TABLE parent(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE child(idd1 INT PRIMARY KEY, idd2 INT,
+  FOREIGN KEY (idd2) REFERENCES parent(id1) ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO parent VALUES (10, 10);
+INSERT INTO parent VALUES (20, 20);
+INSERT INTO parent VALUES (30, 30);
+INSERT INTO parent VALUES (40, 40);
+INSERT INTO child VALUES (10, 10);
+INSERT INTO child VALUES (20, 20);
+
+--echo # Create triggers on child to insert into, delete from, or update parent.
+delimiter //;
+CREATE TRIGGER trg1 BEFORE INSERT ON child
+FOR EACH ROW BEGIN
+    INSERT INTO parent VALUES(NEW.idd1+100, NEW.idd2+100);
+END//
+
+CREATE TRIGGER trg2 BEFORE DELETE ON child
+FOR EACH ROW BEGIN
+    DELETE FROM parent where id1=OLD.idd2;
+END//
+
+CREATE TRIGGER trg3 BEFORE UPDATE ON child
+FOR EACH ROW BEGIN
+    UPDATE parent SET id1=NEW.idd2+100 where id1=OLD.idd2+10;
+END//
+delimiter ;//
+
+INSERT INTO child values (30, 30);
+
+--echo # invoking delete trigger with table containing fk cascade
+DELETE FROM child where idd2 = 10;
+--echo # invoking update trigger on table containing fk cascade
+UPDATE child SET idd2 = 40 where idd2 = 20;
+SELECT * FROM parent;
+SELECT * FROM child;
+
+DROP TABLE child, parent;
+
+--echo # FR 6.4) Trigger definition containing table with CASCADE should pass
+SET restrict_fk_on_non_standard_key = OFF;
+CREATE TABLE trg_table(id1 INT);
+CREATE TABLE parent(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE child(idd1 INT, idd2 INT,
+  FOREIGN KEY (idd1) REFERENCES parent(id1) ON UPDATE CASCADE ON DELETE CASCADE);
+CREATE TABLE grandchild(idd1 INT, idd2 INT,
+  FOREIGN KEY (idd1) REFERENCES child(idd1) ON UPDATE CASCADE ON DELETE CASCADE);
+SET restrict_fk_on_non_standard_key = ON;
+INSERT INTO parent VALUES (10, 10);
+INSERT INTO parent VALUES (20, 20);
+INSERT INTO parent VALUES (30, 30);
+INSERT INTO child VALUES (10, 10);
+INSERT INTO child VALUES (20, 10);
+INSERT INTO child VALUES (30, 10);
+INSERT INTO grandchild VALUES (10, 10);
+INSERT INTO grandchild VALUES (20, 10);
+INSERT INTO grandchild VALUES (30, 10);
+INSERT INTO trg_table VALUES (10);
+
+delimiter //;
+CREATE TRIGGER trg1 BEFORE DELETE ON trg_table
+FOR EACH ROW BEGIN
+    DELETE FROM parent where id1=20;
+END//
+
+CREATE TRIGGER trg2 AFTER DELETE ON trg_table
+FOR EACH ROW BEGIN
+    UPDATE parent SET id1=40 where id1=10;
+END//
+delimiter ;//
+
+--echo # FR 2.15) Tables with FK constraint must work when they are used in the
+--echo # store program definition
+
+CREATE PROCEDURE test_proc_fk()
+  DELETE FROM parent where id1=30;
+
+--echo # invoking delete trigger with table containing fk cascade
+DELETE FROM trg_table where id1=10;
+SELECT * FROM parent;
+SELECT * FROM child;
+SELECT * FROM grandchild;
+
+--echo # calling procedure which does fk cascade
+CALL test_proc_fk();
+SELECT * FROM parent;
+SELECT * FROM child;
+SELECT * FROM grandchild;
+
+DROP PROCEDURE test_proc_fk;
+DROP TABLE trg_table;
+DROP TABLE grandchild, child, parent;

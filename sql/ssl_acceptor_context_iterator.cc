@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,6 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <algorithm> /* std::min */
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -34,9 +35,9 @@ using std::min;
 class Ssl_acceptor_context_iterator_data {
  public:
   Ssl_acceptor_context_iterator_data() = default;
-  Ssl_acceptor_context_iterator_data(const std::string interface,
-                                     const std::string property,
-                                     const std::string value)
+  Ssl_acceptor_context_iterator_data(const std::string &interface,
+                                     const std::string &property,
+                                     const std::string &value)
       : interface_(interface), property_(property), value_(value) {}
   std::string interface() const { return interface_; }
   std::string property() const { return property_; }
@@ -57,15 +58,15 @@ class Ssl_acceptor_context_iterator {
   Ssl_acceptor_context_iterator(Ssl_acceptor_context_container *context_type) {
     Lock_and_access_ssl_acceptor_context context(context_type);
     const std::string channel_name = context.channel_name();
-    Ssl_acceptor_context_iterator_data first_one(
+    Ssl_acceptor_context_iterator_data const first_one(
         channel_name, "Enabled", context.have_ssl() ? "Yes" : "No");
     data_.push_back(first_one);
     for (Ssl_acceptor_context_property_type type =
              Ssl_acceptor_context_property_type::accept_renegotiates;
          type != Ssl_acceptor_context_property_type::last; ++type) {
-      Ssl_acceptor_context_iterator_data one(channel_name,
-                                             Ssl_ctx_property_name(type),
-                                             context.show_property(type));
+      Ssl_acceptor_context_iterator_data const one(channel_name,
+                                                   Ssl_ctx_property_name(type),
+                                                   context.show_property(type));
       data_.push_back(one);
     }
     /* Now set the iterator to beginning */
@@ -83,8 +84,7 @@ class Ssl_acceptor_context_iterator {
   bool next() {
     if (it_ == data_.cend()) return false;
     ++it_;
-    if (it_ == data_.cend()) return false;
-    return true;
+    return it_ != data_.cend();
   }
 
  private:
@@ -93,8 +93,7 @@ class Ssl_acceptor_context_iterator {
 };
 
 bool init_mysql_main_iterator(property_iterator *it) {
-  Ssl_acceptor_context_iterator *container =
-      new Ssl_acceptor_context_iterator(mysql_main);
+  auto *container = new Ssl_acceptor_context_iterator(mysql_main);
   if (container == nullptr) return false;
   *it = reinterpret_cast<property_iterator>(container);
   return true;
@@ -102,47 +101,41 @@ bool init_mysql_main_iterator(property_iterator *it) {
 
 bool init_mysql_admin_iterator(property_iterator *it) {
   if (mysql_admin == nullptr) return false;
-  Ssl_acceptor_context_iterator *container =
-      new Ssl_acceptor_context_iterator(mysql_admin);
+  auto *container = new Ssl_acceptor_context_iterator(mysql_admin);
   if (container == nullptr) return false;
   *it = reinterpret_cast<property_iterator>(container);
   return true;
 }
 
 void deinit_tls_status_iterator(property_iterator it) {
-  Ssl_acceptor_context_iterator *container =
-      reinterpret_cast<Ssl_acceptor_context_iterator *>(it);
-  if (container != nullptr) delete container;
+  auto *container = reinterpret_cast<Ssl_acceptor_context_iterator *>(it);
+  delete container;
 }
 
 bool get_tls_status(property_iterator it, TLS_channel_property *property) {
-  Ssl_acceptor_context_iterator *container =
-      reinterpret_cast<Ssl_acceptor_context_iterator *>(it);
+  auto *container = reinterpret_cast<Ssl_acceptor_context_iterator *>(it);
   if (container == nullptr || property == nullptr) return false;
 
   Ssl_acceptor_context_iterator_data data;
-  if (container->get(data) == false) return false;
-
-  size_t copy_size;
+  if (!container->get(data)) return false;
 
   /* Copy interface */
-  copy_size = min(data.interface().length(), MAX_CHANNEL_NAME_SIZE);
-  strncpy(property->channel_name, data.interface().c_str(), copy_size);
+  snprintf(property->channel_name, sizeof(property->channel_name), "%s",
+           data.interface().c_str());
 
   /* Copy property name */
-  copy_size = min(data.property().length(), MAX_PROPERTY_NAME_SIZE);
-  strncpy(property->property_name, data.property().c_str(), copy_size);
+  snprintf(property->property_name, sizeof(property->property_name), "%s",
+           data.property().c_str());
 
   /* Copy property value */
-  copy_size = min(data.value().length(), MAX_PROPERTY_VALUE_SIZE);
-  strncpy(property->property_value, data.value().c_str(), copy_size);
+  snprintf(property->property_value, sizeof(property->property_value), "%s",
+           data.value().c_str());
 
   return true;
 }
 
 bool next_tls_status(property_iterator it) {
-  Ssl_acceptor_context_iterator *container =
-      reinterpret_cast<Ssl_acceptor_context_iterator *>(it);
+  auto *container = reinterpret_cast<Ssl_acceptor_context_iterator *>(it);
   if (container == nullptr) return false;
   return container->next();
 }

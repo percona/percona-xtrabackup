@@ -73,17 +73,17 @@ if ($assert_match == '')
   }
 }
 
---let $_ag_assert_count = 0
+--let $_ag_arg_count = 0
 if ($assert_match != '') {
-  --inc $_ag_assert_count
+  --inc $_ag_arg_count
 }
 if ($assert_count != '') {
-  --inc $_ag_assert_count
+  --inc $_ag_arg_count
 }
 if ($assert_count_condition != '') {
-  --inc $_ag_assert_count
+  --inc $_ag_arg_count
 }
-if ($_ag_assert_count != 1) {
+if ($_ag_arg_count != 1) {
   --echo assert_text='$assert_text' assert_match='$assert_match' assert_count='$assert_count' assert_count_condition='$assert_count_condition'
   --die !!!ERROR IN TEST: you must set exactly one of $assert_match, $assert_count or $assert_count_condition
 }

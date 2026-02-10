@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +35,24 @@
 #include "mysql/harness/stdx/expected.h"
 
 using namespace std::string_literals;
+
+#define USE_DLCLOSE 1
+
+// disable dlclose() when built with lsan
+//
+// clang has __has_feature(address_sanitizer)
+// gcc has __SANITIZE_ADDRESS__
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#undef USE_DLCLOSE
+#define USE_DLCLOSE 0
+#endif
+#endif
+
+#if defined(__SANITIZE_ADDRESS__) && __SANITIZE_ADDRESS__ == 1
+#undef USE_DLCLOSE
+#define USE_DLCLOSE 0
+#endif
 
 #ifdef _WIN32
 static std::error_code last_error_code() {
@@ -173,10 +191,12 @@ stdx::expected<void *, std::error_code> DynamicLibrary::symbol(
 }
 
 void DynamicLibrary::unload() {
+#if USE_DLCLOSE
 #ifdef _WIN32
   if (handle_ != nullptr) FreeLibrary(handle_);
 #else
   if (handle_ != nullptr) dlclose(handle_);
+#endif
 #endif
   handle_ = nullptr;
 }

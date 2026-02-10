@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -44,14 +44,15 @@ class Log_consumer {
   /** @return Name of this consumer. */
   virtual const std::string &get_name() const = 0;
 
-  /** @return Maximum LSN up to which this consumer has consumed redo. */
+  /** @return Maximum LSN up to which this consumer has consumed redo.
+  The caller should acquire log.files_mutex. */
   virtual lsn_t get_consumed_lsn() const = 0;
 
   /** Request the log consumer to consume faster.
-  @remarks This is called whenever the redo log consumer
-  is the most lagging one and it is critical to consume
-  the oldest redo log file. */
-  virtual void consumption_requested() = 0;
+  @remarks This is called whenever the redo log consumer is the most lagging one
+  and it is critical to consume up to the request_lsn. The caller has to hold
+  log.files_mutex and log.limits_mutex. */
+  virtual void consumption_requested(lsn_t request_lsn) = 0;
 };
 
 class Log_user_consumer : public Log_consumer {
@@ -68,7 +69,7 @@ class Log_user_consumer : public Log_consumer {
 
   lsn_t get_consumed_lsn() const override;
 
-  void consumption_requested() override;
+  void consumption_requested(lsn_t request_lsn) override;
 
  private:
   /** Name of this consumer (saved value from ctor). */
@@ -87,7 +88,7 @@ class Log_checkpoint_consumer : public Log_consumer {
 
   lsn_t get_consumed_lsn() const override;
 
-  void consumption_requested() override;
+  void consumption_requested(lsn_t request_lsn) override;
 
  private:
   log_t &m_log;

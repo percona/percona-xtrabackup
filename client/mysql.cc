@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -27,16 +27,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 #include "my_config.h"
 
-#include <errno.h>
 #include <fcntl.h>
-#include <inttypes.h>
-#include <math.h>
-#include <signal.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/types.h>
-#include <time.h>
+#include <cerrno>
+#include <cinttypes>
+#include <cmath>
+#include <csignal>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
 
 #include "client/client_query_attributes.h"
 #include "client/include/client_priv.h"
@@ -54,6 +54,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_macros.h"
+#include "my_rdtsc.h"
 #include "mysql/my_loglevel.h"
 #include "mysql/plugin_client_telemetry.h"
 #include "mysql/strings/int2str.h"
@@ -65,6 +66,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include "strmake.h"
 #include "strxmov.h"
 #include "strxnmov.h"
+#include "template_utils.h"
 #include "typelib.h"
 #include "violite.h"
 
@@ -73,7 +75,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #endif
 
 #if defined(USE_LIBEDIT_INTERFACE)
-#include <locale.h>
+#include <clocale>
 #endif
 
 #ifdef HAVE_PWD_H
@@ -143,7 +145,8 @@ static char *server_version = nullptr;
 client_query_attributes *telemetry_client_attrs = nullptr;
 
 /** default set of patterns used for history exclusion filter */
-const static std::string HI_DEFAULTS("*IDENTIFIED*:*PASSWORD*");
+const static std::string HI_DEFAULTS(
+    "*IDENTIFIED*:*PASSWORD*:*https?*/p/?*/n/?*/b/?*/o/*:*ocid1.stream*");
 
 /** used for matching which history lines to ignore */
 static Pattern_matcher ignore_matcher;
@@ -190,6 +193,7 @@ static char *opt_mysql_unix_port = nullptr;
 static char *opt_bind_addr = nullptr;
 static int connect_flag = CLIENT_INTERACTIVE;
 static bool opt_binary_mode = false;
+static bool opt_commands = false;
 static bool opt_connect_expired_password = false;
 static char *current_host;
 static char *dns_srv_name;
@@ -1082,7 +1086,6 @@ static COMMANDS commands[] = {
     {"MBROVERLAPS", 0, nullptr, false, ""},
     {"MBRTOUCHES", 0, nullptr, false, ""},
     {"MBRWITHIN", 0, nullptr, false, ""},
-    {"MD5", 0, nullptr, false, ""},
     {"MID", 0, nullptr, false, ""},
     {"MIN", 0, nullptr, false, ""},
     {"MLINEFROMTEXT", 0, nullptr, false, ""},
@@ -1135,8 +1138,6 @@ static COMMANDS commands[] = {
     {"SUBDATE", 0, nullptr, false, ""},
     {"SIGN", 0, nullptr, false, ""},
     {"SIN", 0, nullptr, false, ""},
-    {"SHA", 0, nullptr, false, ""},
-    {"SHA1", 0, nullptr, false, ""},
     {"SLEEP", 0, nullptr, false, ""},
     {"SOUNDEX", 0, nullptr, false, ""},
     {"SPACE", 0, nullptr, false, ""},
@@ -1203,11 +1204,6 @@ typedef struct _hist_entry {
 } HIST_ENTRY;
 #endif
 
-extern "C" int add_history(const char *command); /* From readline directory */
-extern "C" int read_history(const char *command);
-extern "C" int write_history(const char *command);
-extern "C" HIST_ENTRY *history_get(int num);
-extern "C" int history_length;
 static int not_in_history(const char *line);
 static void initialize_readline(char *name);
 #endif /* HAVE_READLINE */
@@ -1223,9 +1219,8 @@ static void print_table_data_xml(MYSQL_RES *result);
 static void print_tab_data(MYSQL_RES *result);
 static void print_table_data_vertically(MYSQL_RES *result);
 static void print_warnings();
-static ulong start_timer();
-static void end_timer(ulong start_time, char *buff);
-static void mysql_end_timer(ulong start_time, char *buff);
+static void end_timer(ulonglong start_time, char *buff);
+static void mysql_end_timer(ulonglong start_time, char *buff);
 static void nice_time(double sec, char *buff, bool part_second);
 static void kill_query(const char *reason);
 extern "C" void mysql_end(int sig);
@@ -1270,7 +1265,7 @@ inline int get_command_index(char cmd_char) {
 
 static int delimiter_index = -1;
 static int charset_index = -1;
-static bool real_binary_mode = false;
+static bool disable_commands = false;
 
 #ifdef _WIN32
 BOOL windows_ctrl_handler(DWORD fdwCtrlType) {
@@ -1800,6 +1795,9 @@ static struct my_option my_long_options[] = {
     {"column-type-info", OPT_COLUMN_TYPES, "Display column type information.",
      &column_types_flag, &column_types_flag, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
+    {"commands", OPT_MYSQL_COMMANDS,
+     "Enable or disable processing of local mysql commands.", &opt_commands,
+     &opt_commands, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"comments", 'c',
      "Preserve comments. Send comments to the server."
      " The default is --comments (keep comments), disable with "
@@ -2330,7 +2328,7 @@ static int read_and_execute(bool interactive) {
   size_t line_length = 0;
   status.exit_status = 1;
 
-  real_binary_mode = !interactive && opt_binary_mode;
+  disable_commands = !interactive && (opt_binary_mode || !opt_commands);
   for (;;) {
     /* Reset as SIGINT has already got handled. */
     sigint_received = false;
@@ -2341,7 +2339,7 @@ static int read_and_execute(bool interactive) {
         In that case, we need to double check that we have a valid
         line before actually setting line_length to read_length.
         */
-      line = batch_readline(status.line_buff, real_binary_mode);
+      line = batch_readline(status.line_buff, opt_binary_mode);
       if (line) {
         line_length = status.line_buff->read_length;
 
@@ -2349,7 +2347,7 @@ static int read_and_execute(bool interactive) {
           ASCII 0x00 is not allowed appearing in queries if it is not in
           binary mode.
         */
-        if (!real_binary_mode && strlen(line) != line_length) {
+        if (!opt_binary_mode && strlen(line) != line_length) {
           status.exit_status = 1;
           String msg;
           msg.append(
@@ -2532,10 +2530,10 @@ static int read_and_execute(bool interactive) {
 
   /*
     If the function is called by 'source' command, it will return to
-    interactive mode, so real_binary_mode should be false. Otherwise, it will
-    exit the program, it is safe to set real_binary_mode to false.
+    interactive mode, so disable_commands should be false. Otherwise, it will
+    exit the program, it is safe to set disable_commands to false.
   */
-  real_binary_mode = false;
+  disable_commands = false;
   return status.exit_status;
 }
 
@@ -2565,7 +2563,7 @@ static COMMANDS *find_command(char cmd_char) {
     In binary-mode, we disallow all mysql commands except '\C'
     and DELIMITER.
   */
-  if (real_binary_mode) {
+  if (disable_commands) {
     if (cmd_char == 'C') index = charset_index;
   } else
     index = get_command_index(cmd_char);
@@ -2666,7 +2664,7 @@ static COMMANDS *find_command(char *name) {
     this is not a delimiter command, let add_line() take care of
     parsing the row and calling find_command().
   */
-  if ((!real_binary_mode && strstr(name, "\\g")) ||
+  if ((!disable_commands && strstr(name, "\\g")) ||
       (strstr(name, delimiter) &&
        !is_delimiter_command(name, DELIMITER_NAME_LEN)))
     return (COMMANDS *)nullptr;
@@ -2680,7 +2678,7 @@ static COMMANDS *find_command(char *name) {
     len = (uint)strlen(name);
 
   int index = -1;
-  if (real_binary_mode) {
+  if (disable_commands) {
     if (is_delimiter_command(name, len)) index = delimiter_index;
   } else {
     /*
@@ -2861,9 +2859,13 @@ static bool add_line(String &buffer, char *line, size_t line_length,
 
       pos--;
 
-      char *skip_comments_start =
-          skip_over_comments_and_space(buffer.ptr(), buffer.length());
-      com = find_command(skip_comments_start);
+      char *skip_comments_start = nullptr;
+      if (buffer.length()) {
+        skip_comments_start =
+            skip_over_comments_and_space(buffer.ptr(), buffer.length());
+        com = find_command(skip_comments_start);
+      } else
+        com = nullptr;
       if (nullptr != com) {
         trim_leading_comments_and_space(&buffer, skip_comments_start);
         if ((*com->func)(&buffer, buffer.c_ptr()) > 0) return true;  // Quit
@@ -2872,7 +2874,7 @@ static bool add_line(String &buffer, char *line, size_t line_length,
           return true;
       }
       buffer.length(0);
-    } else if (!*ml_comment &&
+    } else if (!*ml_comment && ss_comment != SSC_HINT &&
                (!*in_string &&
                 (inchar == '#' ||
                  (inchar == '-' && pos[1] == '-' &&
@@ -3233,14 +3235,8 @@ You can turn off this feature to get a quicker startup with -A\n\n");
   }
   i = 0;
   while ((table_row = mysql_fetch_row(tables))) {
-    char quoted_table_name[2 * NAME_LEN + 2];
-    char query[2 * NAME_LEN + 100];
-    mysql_real_escape_string_quote(&mysql_handle, quoted_table_name,
-                                   table_row[0], strlen(table_row[0]), '`');
-    snprintf(query, sizeof(query), "SELECT * FROM `%s` LIMIT 0",
-             quoted_table_name);
-    if (!mysql_query(&mysql_handle, query) &&
-        (fields = mysql_store_result(&mysql_handle))) {
+    if ((fields = mysql_list_fields(&mysql_handle, (const char *)table_row[0],
+                                    NullS))) {
       num_fields = mysql_num_fields(fields);
       field_names[i] =
           (char **)hash_mem_root.Alloc(sizeof(char *) * (num_fields * 2 + 1));
@@ -3486,8 +3482,7 @@ static int com_server_help(String *buffer [[maybe_unused]],
   server_cmd = cmd_buf;
 
   if (!status.batch) {
-    old_buffer = *buffer;
-    old_buffer.copy();
+    old_buffer.copy(*buffer);
   }
 
   if (!connected && reconnect()) return 1;
@@ -3575,10 +3570,10 @@ static int com_help(String *buffer [[maybe_unused]],
 
   put_info(
       "\nFor information about MySQL products and services, visit:\n"
-      "   http://www.mysql.com/\n"
+      "   https://www.mysql.com/\n"
       "For developer information, including the MySQL Reference Manual, "
       "visit:\n"
-      "   http://dev.mysql.com/\n"
+      "   https://dev.mysql.com/\n"
       "To buy MySQL Enterprise support, training, or other products, visit:\n"
       "   https://shop.mysql.com/\n",
       INFO_INFO);
@@ -3643,14 +3638,14 @@ static int com_go_impl(String *buffer, char *line [[maybe_unused]]) {
   char buff[200];             /* about 110 chars used so far */
   char time_buff[52 + 3 + 1]; /* time max + space&parens + NUL */
   MYSQL_RES *result;
-  ulong timer, warnings = 0;
+  ulong warnings = 0;
+  ulonglong timer;
   uint error = 0;
   int err = 0;
 
   interrupted_query = false;
   if (!status.batch) {
-    old_buffer = *buffer;  // Save for edit command
-    old_buffer.copy();
+    old_buffer.copy(*buffer);  // Save for edit command
   }
 
   /* Remove garbage for nicer messages */
@@ -3675,7 +3670,7 @@ static int com_go_impl(String *buffer, char *line [[maybe_unused]]) {
     return 0;
   }
 
-  timer = start_timer();
+  timer = my_timer_microseconds();
   executing_query = true;
   error = mysql_real_query_for_lazy(buffer->ptr(), buffer->length(), true);
 
@@ -3888,7 +3883,6 @@ static char *fieldflags2str(uint f) {
   ff2s_check_flag(NO_DEFAULT_VALUE);
   ff2s_check_flag(NUM);
   ff2s_check_flag(PART_KEY);
-  ff2s_check_flag(GROUP);
   ff2s_check_flag(UNIQUE);
   ff2s_check_flag(BINCMP);
   ff2s_check_flag(ON_UPDATE_NOW);
@@ -3941,14 +3935,28 @@ static bool is_binary_field(MYSQL_FIELD *field) {
 
 static void print_as_hex(FILE *output_file, const char *str, ulong len,
                          ulong total_bytes_to_send) {
-  const char *ptr = str, *end = ptr + len;
+  const auto *ptr = pointer_cast<const unsigned char *>(str);
+  const unsigned char *end = ptr + len;
   ulong i;
 
   if (str != nullptr) {
     fprintf(output_file, "0x");
-    for (; ptr < end; ptr++)
-      fprintf(output_file, "%02X",
-              *(static_cast<const uchar *>(static_cast<const void *>(ptr))));
+    ulong remaining = len;
+    static const unsigned char hex_digits[] = "0123456789ABCDEF";
+    unsigned char chunk_buf[64];
+    while (ptr < end) {
+      // write up to 32 input bytes at a time for performance
+      // (up to 64 bytes of hex output)
+      const size_t chunk_input_size = std::min((uint)remaining, 32U);
+      for (size_t j = 0; j < chunk_input_size; j++) {
+        const size_t offset = 2 * j;
+        chunk_buf[offset] = hex_digits[(*ptr >> 4) & 0x0F];
+        chunk_buf[offset + 1] = hex_digits[(*ptr) & 0x0F];
+        ptr++;
+      }
+      fwrite(chunk_buf, 1, 2 * chunk_input_size, output_file);
+      remaining -= chunk_input_size;
+    }
     /* Printed string length: two chars "0x" + two chars for each byte. */
     i = 2 + len * 2;
   } else {
@@ -4005,11 +4013,13 @@ static void print_table_data(MYSQL_RES *result) {
     tee_puts(separator.ptr(), PAGER);
   }
 
+  const uint num_fields = mysql_num_fields(result);
+
   while ((cur = mysql_fetch_row(result))) {
     ulong *lengths = mysql_fetch_lengths(result);
     (void)tee_fputs("| ", PAGER);
     mysql_field_seek(result, 0);
-    for (uint off = 0; off < mysql_num_fields(result); off++) {
+    for (uint off = 0; off < num_fields; off++) {
       const char *buffer;
       uint data_length;
       uint field_max_length;
@@ -4029,31 +4039,33 @@ static void print_table_data(MYSQL_RES *result) {
       field = mysql_fetch_field(result);
       field_max_length = field->max_length;
 
-      /*
-       How many text cells on the screen will this string span?  If it
-       contains multibyte characters, then the number of characters we occupy
-       on screen will be fewer than the number of bytes we occupy in memory.
-
-       We need to find how much screen real-estate we will occupy to know how
-       many extra padding-characters we should send with the printing
-       function.
-      */
-      visible_length = charset_info->cset->numcells(charset_info, buffer,
-                                                    buffer + data_length);
-      extra_padding = (uint)(data_length - visible_length);
-
       if (opt_binhex && is_binary_field(field))
         print_as_hex(PAGER, cur[off], lengths[off], field_max_length);
-      else if (field_max_length > MAX_COLUMN_LENGTH)
-        tee_print_sized_data(buffer, data_length,
-                             MAX_COLUMN_LENGTH + extra_padding, false);
       else {
-        if (num_flag[off] != 0) /* if it is numeric, we right-justify it */
+        /*
+          How many text cells on the screen will this string span?  If it
+          contains multibyte characters, then the number of characters we occupy
+          on screen will be fewer than the number of bytes we occupy in memory.
+
+          We need to find how much screen real-estate we will occupy to know how
+          many extra padding-characters we should send with the printing
+          function.
+        */
+        visible_length = charset_info->cset->numcells(charset_info, buffer,
+                                                      buffer + data_length);
+        extra_padding = (uint)(data_length - visible_length);
+
+        if (field_max_length > MAX_COLUMN_LENGTH)
           tee_print_sized_data(buffer, data_length,
-                               field_max_length + extra_padding, true);
-        else
-          tee_print_sized_data(buffer, data_length,
-                               field_max_length + extra_padding, false);
+                               MAX_COLUMN_LENGTH + extra_padding, false);
+        else {
+          if (num_flag[off] != 0) /* if it is numeric, we right-justify it */
+            tee_print_sized_data(buffer, data_length,
+                                 field_max_length + extra_padding, true);
+          else
+            tee_print_sized_data(buffer, data_length,
+                                 field_max_length + extra_padding, false);
+        }
       }
       tee_fputs(" |", PAGER);
     }
@@ -5519,13 +5531,14 @@ void tee_write(FILE *file, const char *s, size_t slen, int flags) {
 #ifdef _WIN32
   const bool is_console = my_win_is_console_cached(file);
 #endif
+  const bool is_mb = use_mb(charset_info);
   const char *se;
   for (se = s + slen; s < se; s++) {
     const char *t;
 
     if (flags & MY_PRINT_MB) {
       int mblen;
-      if (use_mb(charset_info) && (mblen = my_ismbchar(charset_info, s, se))) {
+      if (is_mb && (mblen = my_ismbchar(charset_info, s, se))) {
 #ifdef _WIN32
         if (is_console)
           my_win_console_write(charset_info, s, mblen);
@@ -5629,15 +5642,6 @@ void tee_putc(int c, FILE *file) {
 #endif
 #endif
 
-static ulong start_timer() {
-#if defined(_WIN32)
-  return clock();
-#else
-  struct tms tms_tmp;
-  return times(&tms_tmp);
-#endif
-}
-
 /**
   Write as many as 52+1 bytes to buff, in the form of a legible duration of
   time.
@@ -5665,16 +5669,19 @@ static void nice_time(double sec, char *buff, bool part_second) {
     buff = my_stpcpy(buff, " min ");
   }
   if (part_second)
-    sprintf(buff, "%.2f sec", sec);
+    sprintf(buff, "%.3f sec", sec);
   else
     sprintf(buff, "%d sec", (int)sec);
 }
 
-static void end_timer(ulong start_time, char *buff) {
-  nice_time((double)(start_timer() - start_time) / CLOCKS_PER_SEC, buff, true);
+static void end_timer(ulonglong start_time, char *buff) {
+  ulonglong end_time = my_timer_microseconds();
+  nice_time((double)(end_time > start_time ? end_time - start_time : 0) /
+                (double)(1000000),
+            buff, true);
 }
 
-static void mysql_end_timer(ulong start_time, char *buff) {
+static void mysql_end_timer(ulonglong start_time, char *buff) {
   buff[0] = ' ';
   buff[1] = '(';
   end_timer(start_time, buff + 2);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,11 +32,12 @@
 
 #include "my_config.h"
 
-#include <errno.h>
 #include <fcntl.h>
-#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <cassert>
+#include <cerrno>
+#include <cstring>
 
 #include "my_dir.h" /* for stat */
 #ifdef HAVE_UNISTD_H
@@ -46,7 +47,6 @@
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
-#include "my_macros.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
 #include "mysys_err.h"

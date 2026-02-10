@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -43,6 +43,7 @@
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/metadata_cache_datatypes.h"
 #include "mysqlrouter/mysql_session.h"
+#include "routing_guidelines/routing_guidelines.h"
 
 /**
  * The metadata class is used to create a pluggable transport layer
@@ -63,7 +64,7 @@ class METADATA_CACHE_EXPORT MetaData {
       mysqlrouter::TargetCluster &target_cluster, const unsigned router_id,
       const metadata_cache::metadata_servers_list_t &metadata_servers,
       bool needs_writable_node, const std::string &clusterset_id,
-      bool whole_topology, std::size_t &instance_id) = 0;
+      std::size_t &instance_id, std::string &routing_guidelines) = 0;
 
   virtual bool update_router_attributes(
       const metadata_cache::metadata_server_t &rw_server,
@@ -71,6 +72,11 @@ class METADATA_CACHE_EXPORT MetaData {
       const metadata_cache::RouterAttributes &router_attributes) = 0;
 
   virtual bool update_router_last_check_in(
+      const metadata_cache::metadata_server_t &rw_server,
+      const unsigned router_id) = 0;
+
+  virtual void report_guideline_name(
+      const std::string &guideline_name,
       const metadata_cache::metadata_server_t &rw_server,
       const unsigned router_id) = 0;
 
@@ -95,6 +101,12 @@ class METADATA_CACHE_EXPORT MetaData {
 
   virtual std::optional<std::chrono::seconds>
   get_periodic_stats_update_frequency() noexcept = 0;
+
+  virtual std::optional<routing_guidelines::Router_info> fetch_router_info(
+      const uint16_t router_id) = 0;
+
+  virtual stdx::expected<std::string, std::error_code>
+  fetch_routing_guidelines_document(const uint16_t router_id) = 0;
 
   MetaData() = default;
   // disable copy as it isn't needed right now. Feel free to enable

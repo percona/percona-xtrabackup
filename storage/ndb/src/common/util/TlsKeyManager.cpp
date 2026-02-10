@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -42,7 +42,7 @@
 TlsKeyManager::TlsKeyManager() { NdbMutex_Init(&m_cert_table_mutex); }
 
 void TlsKeyManager::free_path_strings() {
-  if (m_search_path) delete m_search_path;
+  delete m_search_path;
   if (m_path_string) free(m_path_string);
   m_search_path = nullptr;
   m_path_string = nullptr;
@@ -89,7 +89,7 @@ static constexpr const char *cipher_list =
     "ECDHE-ECDSA-AES128-GCM-SHA256";
 
 static int error_callback(const char *str, size_t, void *vp) {
-  intptr_t r = reinterpret_cast<intptr_t>(vp);
+  auto r = reinterpret_cast<intptr_t>(vp);
   g_eventLogger->error("NDB TLS [%" PRIuPTR "]: %s", r, str);
   return 0;
 }
@@ -296,7 +296,7 @@ int TlsKeyManager::check_server_host_auth(const NodeCertificate &nc,
   /* If the server's certificate is bound to the name "localhost",
      the server's configured HostName must be either "" or "localhost" */
   if (nc.bound_localhost()) {
-    if (strlen(hostname) && strcmp(hostname, "localhost"))
+    if (strlen(hostname) && strcmp(hostname, "localhost") != 0)
       return TlsKeyError::auth2_bad_hostname;
     return 0;
   }
@@ -332,7 +332,7 @@ int TlsKeyManager::check_socket_for_auth(const NdbSocket &socket,
   X509 *cert = socket.peer_certificate();
   if (!cert) return TlsKeyError::auth2_no_cert;
 
-  ClientAuthorization *auth = new ClientAuthorization(cert);
+  auto *auth = new ClientAuthorization(cert);
   Certificate::free(cert);
 
   if (auth->m_cert->bound_hostnames() == 0) {
@@ -407,7 +407,7 @@ int ClientAuthorization::run_check_name(int n) {
 
   bool cmp = compare_list(ai_list);
   freeaddrinfo(ai_list);
-  if (cmp == true) return 0;
+  if (cmp) return 0;
   return TlsKeyError::auth2_bad_hostname;
 }
 

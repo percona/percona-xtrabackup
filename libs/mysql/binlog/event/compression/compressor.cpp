@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,7 +73,7 @@ Compressor::Grow_constraint_t Compressor::get_grow_constraint_hint() const {
 }
 
 Compressor::Grow_constraint_t Compressor::do_get_grow_constraint_hint() const {
-  return Grow_constraint_t();
+  return {};
 }
 
 void Compressor::set_pledged_input_size(Size_t size) {

@@ -77,6 +77,30 @@ t2.x <> 55 AND t2.x <> 56 AND t2.x <> 57 AND t2.x <> 58 AND t2.x <> 59 AND
 t2.x <> 60 AND t2.x <> 61 AND t2.x <> 62 AND t2.x <> 63 AND t2.x <> 64;
 DROP TABLE t;
 
+--echo #
+--echo # BUG#38310980: Assertion hit with test after WL#16701.
+--echo #
+SET @start_value = @@session.secondary_engine_cost_threshold;
+SET secondary_engine_cost_threshold = 1000000;
+
+CREATE TABLE t(x INT) SECONDARY_ENGINE MOCK;
+ALTER TABLE t SECONDARY_LOAD;
+
+DELIMITER |;
+
+SELECT * FROM t;
+UNINSTALL PLUGIN mock;
+SELECT * FROM t;
+DROP TABLE t|
+
+DELIMITER ;|
+
+SET @@session.secondary_engine_cost_threshold = @start_value;
+--disable_query_log
+eval INSTALL PLUGIN mock SONAME '$MOCK_PLUGIN';
+--enable_query_log
+
+
 --disable_query_log
 UNINSTALL PLUGIN mock;
 --enable_query_log

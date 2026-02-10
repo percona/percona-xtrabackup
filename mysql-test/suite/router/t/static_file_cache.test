@@ -1,0 +1,128 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+# Set cache size for files and data
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"responseCache":{"maxCacheSize":200}, "fileCache":{"maxCacheSize":80}}');
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_content_set_enabled=1
+--let $mrs_add_content_set_path=/static
+--source ../include/mrs/content_set/add.inc
+
+--let $mrs_add_content='TEST FILE 1 CONTENT\nEND OF FILE\n'
+--let $mrs_add_content_file_path=/file1
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content='TEST FILE 2 CONTENT\nEND OF FILE\n'
+--let $mrs_add_content_file_path=/file2
+--source ../include/mrs/content_file/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--echo "FR1 - access files from cache"
+--source ../include/mysqlrouter_reset_status.inc
+
+--echo "cache file1, file2"
+--exec $MRS_CLIENT_ARGS --path /svc/static/file1 --response-type RAW --display BODY
+--exec $MRS_CLIENT_ARGS --path /svc/static/file2 --response-type RAW --display BODY
+--source ../include/mysqlrouter_status.inc
+
+--echo "access files from cache"
+--source ../include/mysqlrouter_reset_status.inc
+--exec $MRS_CLIENT_ARGS --path /svc/static/file1 --response-type RAW --display BODY
+--exec $MRS_CLIENT_ARGS --path /svc/static/file2 --response-type RAW --display BODY
+--source ../include/mysqlrouter_status.inc
+
+# restart router
+truncate mysql_rest_service_metadata.router_status;
+--source ../include/mysqlrouter_reset_status.inc
+connect (router_conn,127.0.0.1,root,,test,$ROUTING_STATIC_BIND_PORT);
+--source ../include/mysqlrouter_restart.inc
+
+--echo "FR4 - the cache must be reset when the content_set table changes"
+--echo "update content_set table"
+--source ../include/mysqlrouter_reset_status.inc
+
+--echo "cache file1, file2"
+--exec $MRS_CLIENT_ARGS --path /svc/static/file1 --response-type RAW --display BODY
+--exec $MRS_CLIENT_ARGS --path /svc/static/file2 --response-type RAW --display BODY
+--source ../include/mysqlrouter_status.inc
+
+--echo "access files from cache"
+--source ../include/mysqlrouter_reset_status.inc
+--exec $MRS_CLIENT_ARGS --path /svc/static/file1 --response-type RAW --display BODY
+--exec $MRS_CLIENT_ARGS --path /svc/static/file2 --response-type RAW --display BODY
+--source ../include/mysqlrouter_status.inc
+
+--echo "========================"
+--echo "update content_set table"
+--let $old_request_path =`select request_path from mysql_rest_service_metadata.content_set`
+--let $new_request_path =/newpath
+--disable_warnings
+truncate mysql_rest_service_metadata.router_status;
+--source ../include/mysqlrouter_reset_status.inc
+eval UPDATE `mysql_rest_service_metadata`.`content_set` SET request_path = "$new_request_path";
+--source ../include/mysqlrouter_status.inc
+--source ../include/mysqlrouter_reset_status.inc
+eval UPDATE `mysql_rest_service_metadata`.`content_set` SET request_path = "$old_request_path";
+--enable_warnings
+
+--echo "FR5 - oldest entries in the cache must be expunged to fit when maxCacheSize reduced"
+--source ../include/mysqlrouter_status.inc
+
+--echo "cache file1, file2"
+--source ../include/mysqlrouter_reset_status.inc
+--exec $MRS_CLIENT_ARGS --path /svc/static/file1 --response-type RAW --display BODY
+--exec $MRS_CLIENT_ARGS --path /svc/static/file2 --response-type RAW --display BODY
+--source ../include/mysqlrouter_status.inc
+
+--echo "reduce maxCacheSize"
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"responseCache":{"maxCacheSize":200}, "fileCache":{"maxCacheSize":40}}');
+--source ../include/mysqlrouter_reset_status.inc
+
+--echo "access file2 from cache"
+--exec $MRS_CLIENT_ARGS --path /svc/static/file2 --response-type RAW --display BODY
+--source ../include/mysqlrouter_status.inc
+
+# restart router
+truncate mysql_rest_service_metadata.router_status;
+connect (router_conn1,127.0.0.1,root,,test,$ROUTING_STATIC_BIND_PORT);
+--source ../include/mysqlrouter_restart.inc
+connection default;
+--source ../include/mysqlrouter_reset_status.inc
+
+
+--echo "FR6 - verify status variables"
+--echo "cache file1"
+--exec $MRS_CLIENT_ARGS --path /svc/static/file1 --response-type RAW --display BODY
+--source ../include/mysqlrouter_status.inc
+
+--echo "access file1 from cache"
+--source ../include/mysqlrouter_reset_status.inc
+--exec $MRS_CLIENT_ARGS --path /svc/static/file1 --response-type RAW --display BODY
+--source ../include/mysqlrouter_status.inc
+
+--echo "access file2, file1 will be evicted from cache"
+truncate mysql_rest_service_metadata.router_status;
+--source ../include/mysqlrouter_reset_status.inc
+--exec $MRS_CLIENT_ARGS --path /svc/static/file2 --response-type RAW --display BODY
+--source ../include/mysqlrouter_status.inc
+
+--echo "access file2 from cache"
+--source ../include/mysqlrouter_reset_status.inc
+--exec $MRS_CLIENT_ARGS --path /svc/static/file2 --response-type RAW --display BODY
+--source ../include/mysqlrouter_status.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc
+
+

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -35,12 +35,14 @@
 #include "keyring/keyring_manager.h"
 #include "mock_server_rest_client.h"
 #include "mock_server_testutils.h"
+#include "mysql/harness/destination.h"
 #include "mysql/harness/net_ts/buffer.h"
 #include "mysql/harness/net_ts/internet.h"
 #include "mysql/harness/net_ts/io_context.h"
 #include "mysql/harness/net_ts/socket.h"
 #include "mysql/harness/stdx/expected.h"  // make_unexpected
 #include "mysql/harness/stdx/monitor.h"
+#include "mysql/harness/stdx/ranges.h"
 #include "mysqlrouter/classic_protocol.h"
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/mysql_session.h"
@@ -51,6 +53,7 @@
 #include "router_config.h"
 #include "router_test_helpers.h"
 #include "tcp_port_pool.h"
+#include "test/temp_directory.h"
 
 using mysqlrouter::ClusterType;
 using namespace std::chrono_literals;
@@ -66,8 +69,8 @@ class SocketCloseTest : public RouterComponentTest {
                       const int expected_exitcode,
                       std::chrono::milliseconds wait_for_notify_ready = 30s) {
     auto default_section = get_DEFAULT_defaults();
-    init_keyring(default_section, get_test_temp_dir_name(), router_user,
-                 router_password);
+    init_keyring(default_section, get_test_temp_dir_name(),
+                 {{router_user, "password", router_password}});
     const auto state_file =
         create_state_file(get_test_temp_dir_name(),
                           create_state_file_content("uuid", "", node_ports, 0));
@@ -95,11 +98,15 @@ class SocketCloseTest : public RouterComponentTest {
       if (node_ports.size() < nodes_count) {
         node_ports.push_back(port_pool_.get_next_available());
         node_http_ports.push_back(port_pool_.get_next_available());
+        node_sockets.push_back(mysql_harness::Path(socket_dir_.name())
+                                   .join("mock_" + std::to_string(i) + ".sock")
+                                   .str());
       }
 
       cluster_nodes.push_back(
           &mock_server_spawner().spawn(mock_server_cmdline(tracefile)
                                            .port(node_ports[i])
+                                           .socket(node_sockets[i])
                                            .http_port(node_http_ports[i])
                                            .args()));
     }
@@ -164,12 +171,29 @@ class SocketCloseTest : public RouterComponentTest {
       const std::optional<std::string> &router_socket,
       const std::vector<uint16_t> &destinations,
       const std::string &strategy) const {
+    std::vector<mysql_harness::Destination> dests;
+
+    for (auto node_port : destinations) {
+      dests.emplace_back(mysql_harness::TcpDestination("localhost", node_port));
+    }
+
+    return get_static_routing_section(router_port, router_socket, dests,
+                                      strategy);
+  }
+
+  std::string get_static_routing_section(
+      const std::optional<uint16_t> &router_port,
+      const std::optional<std::string> &router_socket,
+      const std::vector<mysql_harness::Destination> &destinations,
+      const std::string &strategy) const {
     std::string destinations_str;
-    for (size_t i = 0; i < destinations.size(); ++i) {
-      destinations_str += "localhost:" + std::to_string(destinations[i]);
-      if (i != destinations.size() - 1) {
-        destinations_str += ",";
+    for (auto [i, dest] : stdx::views::enumerate(destinations)) {
+      if (i != 0) destinations_str += ",";
+
+      if (dest.is_local()) {
+        destinations_str += "local:";
       }
+      destinations_str += dest.str();
     }
 
     std::vector<std::pair<std::string, std::string>> options{
@@ -336,8 +360,11 @@ class SocketCloseTest : public RouterComponentTest {
     }
   }
 
+  TempDirectory socket_dir_;
+
   std::chrono::milliseconds ttl{100ms};
   std::vector<uint16_t> node_ports, node_http_ports;
+  std::vector<std::string> node_sockets;
   std::vector<ProcessWrapper *> cluster_nodes;
   ProcessWrapper *router;
   std::optional<uint16_t> router_rw_port;
@@ -1356,6 +1383,68 @@ TEST_F(SocketCloseTest, StaticRoundRobinTCPPort) {
 
 #ifndef _WIN32
 
+// TCP port in incoming side, unix-socket to the mock-server.
+TEST_F(SocketCloseTest, StaticRoundRobinTCPPortUnixSocket) {
+  SCOPED_TRACE("// launch cluster with one node");
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(1, "my_port.js"));
+
+  router_rw_port = port_pool_.get_next_available();
+  const auto router_rw_port_str = std::to_string(*router_rw_port);
+
+  std::vector<mysql_harness::Destination> dests;
+  dests.reserve(node_sockets.size());
+
+  for (const auto &socks : node_sockets) {
+    dests.emplace_back(mysql_harness::LocalDestination(socks));
+  }
+
+  const std::string routing_section = get_static_routing_section(
+      router_rw_port, std::nullopt, dests, "round-robin");
+
+  SCOPED_TRACE("// launch the router with static routing configuration");
+  launch_router("", routing_section, EXIT_SUCCESS,
+                /*wait_for_notify_ready=*/30s);
+
+  SCOPED_TRACE("// tcp-port:" + router_rw_port_str + " is used by the router");
+  // check with netstat that the port is used by router.
+  EXPECT_TRUE(wait_for_port_used(*router_rw_port));
+
+  SCOPED_TRACE(
+      "// kill backend and wait until router has released the tcp-port:" +
+      std::to_string(*router_rw_port));
+  EXPECT_NO_THROW(cluster_nodes[0]->send_clean_shutdown_event());
+  EXPECT_NO_THROW(cluster_nodes[0]->wait_for_exit());
+
+  EXPECT_THROW(try_connection("127.0.0.1", *router_rw_port, custom_user,
+                              custom_password),
+               std::runtime_error);
+  EXPECT_TRUE(wait_for_port_unused(*router_rw_port, 120s));
+
+  SCOPED_TRACE("// Restore a cluster node on " + dests[0].str() +
+               " to bring the destination back from "
+               "quarantine.");
+
+  cluster_nodes.push_back(
+      &mock_server_spawner().spawn(mock_server_cmdline("my_port.js")
+                                       .port(node_ports[0])
+                                       .http_port(node_http_ports[0])
+                                       .socket(node_sockets[0])
+                                       .args()));
+
+  set_mock_metadata(
+      node_http_ports[0], "uuid", classic_ports_to_gr_nodes(node_ports), 0,
+      classic_ports_to_cluster_nodes(node_ports), 0, false, "localhost");
+
+  SCOPED_TRACE("// wait until the router binds to the port again.");
+  EXPECT_TRUE(wait_for_port_used(*router_rw_port, 120s));
+
+  try {
+    try_connection("127.0.0.1", *router_rw_port, custom_user, custom_password);
+  } catch (const MySQLSession::Error &e) {
+    FAIL() << e.what();
+  }
+}
+
 TEST_F(SocketCloseTest, StaticRoundRobinUnixSocket) {
   SCOPED_TRACE("// launch cluster with one node");
   ASSERT_NO_FATAL_FAILURE(setup_cluster(1, "my_port.js"));
@@ -1803,13 +1892,16 @@ class FirstAvailableDestMetadataCache
 
 TEST_P(FirstAvailableDestMetadataCache, FirstAvailableDestMetadataCacheTest) {
   const size_t NUM_NODES = 3;
-  SCOPED_TRACE("// launch cluster with 1RW/2RO nodes");
+
+  SCOPED_TRACE("// start cluster [RW, RO, RO]");
+  std::vector<uint16_t> current_cluster_nodes{node_ports};
+
   ASSERT_NO_FATAL_FAILURE(setup_cluster(NUM_NODES, GetParam().tracefile));
 
   router_rw_port = port_pool_.get_next_available();
   router_ro_port = port_pool_.get_next_available();
 
-  SCOPED_TRACE("// launch the router with metadata-cache configuration");
+  SCOPED_TRACE("// start router");
   const std::string metadata_cache_section =
       get_metadata_cache_section(GetParam().cluster_type);
   std::string routing_section = get_metadata_cache_routing_section(
@@ -1823,13 +1915,19 @@ TEST_P(FirstAvailableDestMetadataCache, FirstAvailableDestMetadataCacheTest) {
   EXPECT_TRUE(wait_for_port_used(*router_rw_port));
   EXPECT_TRUE(wait_for_port_used(*router_ro_port));
 
-  SCOPED_TRACE("// Disable both secondary nodes");
-  set_mock_metadata(
-      node_http_ports[0], "uuid", classic_ports_to_gr_nodes({node_ports[0]}), 0,
-      classic_ports_to_cluster_nodes({node_ports[0]}), 0, false, "localhost");
-  EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
+  SCOPED_TRACE("// -all RO [RW, 0, 0]");
 
-  SCOPED_TRACE("// RO socket is not used by the router");
+  const auto primary_http_port = node_http_ports[0];
+
+  current_cluster_nodes = {
+      node_ports[0],
+  };
+
+  set_mock_metadata(node_http_ports[0], "uuid",
+                    classic_ports_to_gr_nodes(current_cluster_nodes), 0,
+                    classic_ports_to_cluster_nodes(current_cluster_nodes), 0,
+                    false, "localhost");
+  EXPECT_TRUE(wait_for_transaction_count_increase(primary_http_port, 4));
   EXPECT_TRUE(wait_for_port_used(*router_rw_port));
   EXPECT_TRUE(wait_for_port_unused(*router_ro_port));
   ASSERT_NO_FATAL_FAILURE(try_connection("127.0.0.1", *router_rw_port,
@@ -1838,50 +1936,70 @@ TEST_P(FirstAvailableDestMetadataCache, FirstAvailableDestMetadataCacheTest) {
                               custom_password),
                std::runtime_error);
 
-  SCOPED_TRACE("// Bring back first RO node");
-  set_mock_metadata(
-      node_http_ports[0], "uuid",
-      classic_ports_to_gr_nodes({node_ports[0], node_ports[1]}), 0,
-      classic_ports_to_cluster_nodes({node_ports[0], node_ports[1]}), 0, false,
-      "localhost");
-  EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
+  SCOPED_TRACE("// +1st RO [RW, RO, 0]");
+  current_cluster_nodes = {
+      node_ports[0],
+      node_ports[1],
+  };
+
+  set_mock_metadata(primary_http_port, "uuid",
+                    classic_ports_to_gr_nodes(current_cluster_nodes), 0,
+                    classic_ports_to_cluster_nodes(current_cluster_nodes), 0,
+                    false, "localhost");
+  EXPECT_TRUE(wait_for_transaction_count_increase(primary_http_port, 4));
   EXPECT_TRUE(wait_for_port_used(*router_rw_port));
   EXPECT_TRUE(wait_for_port_used(*router_ro_port));
 
-  SCOPED_TRACE("// Disable first RO node");
-  set_mock_metadata(
-      node_http_ports[0], "uuid", classic_ports_to_gr_nodes({node_ports[0]}), 0,
-      classic_ports_to_cluster_nodes({node_ports[0]}), 0, false, "localhost");
-  EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
+  SCOPED_TRACE("// -1st RO [RW, 0, 0]");
+  current_cluster_nodes = {
+      node_ports[0],
+  };
+  set_mock_metadata(primary_http_port, "uuid",
+                    classic_ports_to_gr_nodes(current_cluster_nodes), 0,
+                    classic_ports_to_cluster_nodes(current_cluster_nodes), 0,
+                    false, "localhost");
+  EXPECT_TRUE(wait_for_transaction_count_increase(primary_http_port, 4));
   EXPECT_TRUE(wait_for_port_used(*router_rw_port));
   EXPECT_TRUE(wait_for_port_unused(*router_ro_port));
 
-  SCOPED_TRACE("// Bring back second RO node");
-  set_mock_metadata(
-      node_http_ports[0], "uuid",
-      classic_ports_to_gr_nodes({node_ports[0], node_ports[2]}), 0,
-      classic_ports_to_cluster_nodes({node_ports[0], node_ports[2]}), 0, false,
-      "localhost");
-  EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
+  SCOPED_TRACE("// +2nd RO [RW, 0, RO]");
+  current_cluster_nodes = {
+      node_ports[0],
+      node_ports[2],
+  };
+  set_mock_metadata(primary_http_port, "uuid",
+                    classic_ports_to_gr_nodes(current_cluster_nodes), 0,
+                    classic_ports_to_cluster_nodes(current_cluster_nodes), 0,
+                    false, "localhost");
+  EXPECT_TRUE(wait_for_transaction_count_increase(primary_http_port, 4));
   EXPECT_TRUE(wait_for_port_used(*router_rw_port));
   EXPECT_TRUE(wait_for_port_used(*router_ro_port));
 
-  SCOPED_TRACE("// Disable first RO node");
-  set_mock_metadata(
-      node_http_ports[0], "uuid", classic_ports_to_gr_nodes({node_ports[0]}), 0,
-      classic_ports_to_cluster_nodes({node_ports[0]}), 0, false, "localhost");
-  EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
+  SCOPED_TRACE("// -2nd RO [RW, 0, 0]");
+  current_cluster_nodes = {
+      node_ports[0],
+  };
+  set_mock_metadata(primary_http_port, "uuid",
+                    classic_ports_to_gr_nodes(current_cluster_nodes), 0,
+                    classic_ports_to_cluster_nodes(current_cluster_nodes), 0,
+                    false, "localhost");
+  EXPECT_TRUE(wait_for_transaction_count_increase(primary_http_port, 4));
   EXPECT_TRUE(wait_for_port_used(*router_rw_port));
   EXPECT_TRUE(wait_for_port_unused(*router_ro_port));
 
-  SCOPED_TRACE("// Disable primary node");
-  simulate_cluster_node_down(node_ports, node_http_ports[0]);
+  SCOPED_TRACE("// -RW [0, 0, 0]");
+  simulate_cluster_node_down(current_cluster_nodes, primary_http_port);
   EXPECT_TRUE(wait_for_port_unused(*router_rw_port));
   EXPECT_TRUE(wait_for_port_unused(*router_ro_port));
 
-  SCOPED_TRACE("// Bring back all nodes");
-  simulate_cluster_node_up(GetParam().cluster_type, node_ports,
-                           node_http_ports[0]);
+  SCOPED_TRACE("// +all [RW, RO, RO]");
+  current_cluster_nodes = {
+      node_ports[0],
+      node_ports[1],
+      node_ports[2],
+  };
+  simulate_cluster_node_up(GetParam().cluster_type, current_cluster_nodes,
+                           primary_http_port);
   EXPECT_TRUE(wait_for_port_used(*router_rw_port));
   EXPECT_TRUE(wait_for_port_used(*router_ro_port));
   ASSERT_NO_FATAL_FAILURE(try_connection("127.0.0.1", *router_rw_port,
@@ -1993,7 +2111,7 @@ TEST_P(SharedQuarantineSocketClose, cross_plugin_socket_shutdown) {
   EXPECT_TRUE(wait_for_port_unused(bind_port_r1, 120s));
   SCOPED_TRACE(
       "// second routing plugin has closed socket even though there were no "
-      "incoming connections (unless it is using first-available policy)");
+      "incoming connections (unless it is using first-available strategy)");
   EXPECT_EQ(GetParam().is_socket_closed,
             wait_for_port_unused(bind_port_r2, 1s));
 }
@@ -2022,8 +2140,9 @@ TEST_F(SharedQuarantineSocketCloseWithFallback,
   routing_section += get_metadata_cache_routing_section(
       bind_port_r2, std::nullopt, "SECONDARY", "round-robin-with-fallback",
       "r2");
-  routing_section += get_static_routing_section(bind_port_r3, std::nullopt,
-                                                {node_ports[1]}, "round-robin");
+  routing_section += get_static_routing_section(
+      bind_port_r3, std::nullopt, std::vector<uint16_t>{node_ports[1]},
+      "round-robin");
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
   launch_router(metadata_cache_section, routing_section, EXIT_SUCCESS);

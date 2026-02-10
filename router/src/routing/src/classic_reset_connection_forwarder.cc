@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -290,8 +290,7 @@ ResetConnectionForwarder::start_loop() {
     if (auto pool =
             pool_comp.get(ConnectionPoolComponent::default_pool_name())) {
       if (auto ep = connection()->destination_endpoint()) {
-        if (auto conn_res =
-                pool->unstash_mine(mysqlrouter::to_string(*ep), connection())) {
+        if (auto conn_res = pool->unstash_mine(ep->str(), connection())) {
           if (socket_is_alive(*conn_res)) {
             connection()->server_conn() = std::move(*conn_res);
 
@@ -571,7 +570,7 @@ ResetConnectionForwarder::end_loop() {
     // reset the "other" server-side connection too.
     if (connection()->expected_server_mode() ==
         mysqlrouter::ServerMode::ReadOnly) {
-      if (!connection()->read_write_destination_id().empty()) {
+      if (connection()->read_write_destination_id().has_value()) {
         connection()->stash_server_conn();
 
         connection()->expected_server_mode(mysqlrouter::ServerMode::ReadWrite);
@@ -581,7 +580,7 @@ ResetConnectionForwarder::end_loop() {
       }
     } else if (connection()->expected_server_mode() ==
                mysqlrouter::ServerMode::ReadWrite) {
-      if (!connection()->read_only_destination_id().empty()) {
+      if (connection()->read_only_destination_id().has_value()) {
         connection()->stash_server_conn();
 
         connection()->expected_server_mode(mysqlrouter::ServerMode::ReadOnly);
@@ -596,14 +595,14 @@ ResetConnectionForwarder::end_loop() {
     // ... and switch back to the initial expected-server-mode.
     if (connection()->expected_server_mode() ==
         mysqlrouter::ServerMode::ReadOnly) {
-      if (!connection()->read_write_destination_id().empty()) {
+      if (connection()->read_write_destination_id().has_value()) {
         connection()->stash_server_conn();
 
         connection()->expected_server_mode(mysqlrouter::ServerMode::ReadWrite);
       }
     } else if (connection()->expected_server_mode() ==
                mysqlrouter::ServerMode::ReadWrite) {
-      if (!connection()->read_only_destination_id().empty()) {
+      if (connection()->read_only_destination_id().has_value()) {
         connection()->stash_server_conn();
 
         connection()->expected_server_mode(mysqlrouter::ServerMode::ReadOnly);

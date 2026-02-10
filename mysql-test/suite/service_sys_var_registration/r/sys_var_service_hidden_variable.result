@@ -1,0 +1,10 @@
+call mtr.add_suppression("duplicate variable name");
+call mtr.add_suppression("Variable name 'test_component.hidden_int_sys_var' not found");
+INSTALL COMPONENT 'file://component_test_sys_var_service';
+# Test: should return an error.
+SELECT @@test_component.hidden_int_sys_var;
+ERROR HY000: Unknown system variable 'test_component.hidden_int_sys_var'
+include/assert_grep.inc [check for the hidden sys var's value]
+UNINSTALL COMPONENT 'file://component_test_sys_var_service';
+INSTALL COMPONENT 'file://component_test_sys_var_service' SET test_component.hidden_int_sys_var = 55;
+ERROR HY000: Unknown system variable 'test_component.hidden_int_sys_var'

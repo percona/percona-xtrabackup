@@ -51,17 +51,29 @@ INSERT INTO `‚s‚R` VALUES ('–\–\–\ƒ\\•\—\\');
 INSERT INTO `‚s‚R` VALUES ('–\–\–\ƒ\\•\—\\–\–\–\');
 INSERT INTO `‚s‚R` VALUES ('   ƒ\\•\—\\   ');
 
+--sorted_result
 SELECT `‚b‚P`,TRIM(TRAILING '¶' FROM `‚b‚P`) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(LEADING '¶' FROM `‚b‚P`) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(BOTH '¶' FROM `‚b‚P`) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(`‚b‚P`) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(TRAILING '‚©' FROM `‚b‚P`) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(LEADING '‚©' FROM `‚b‚P`) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(BOTH '‚©' FROM `‚b‚P`) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(`‚b‚P`) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(TRAILING '–\' FROM `‚b‚P`) FROM `‚s‚R`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(LEADING '–\' FROM `‚b‚P`) FROM `‚s‚R`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(BOTH '–\' FROM `‚b‚P`) FROM `‚s‚R`;
+--sorted_result
 SELECT `‚b‚P`,TRIM(`‚b‚P`) FROM `‚s‚R`;
 
 DROP TABLE `‚s‚P`;

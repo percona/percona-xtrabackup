@@ -1,0 +1,380 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+delimiter $$;
+CREATE FUNCTION `basic_schema`.`nothing` () RETURNS INTEGER
+BEGIN
+  RETURN 0;
+END;$$
+delimiter ;$$
+
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--let $mrs_add_service_options='{"returnInternalErrorDetails": true}'
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+set @basic_id=@schema_id;
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t1
+--let $mrs_add_db_object_options='{}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t2
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t3
+--let $mrs_add_db_object_options='{"returnInternalErrorDetails": false}'
+--source ../include/mrs/db_object/add.inc
+set @basic_t3_id=@db_object_id;
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=procedure1
+--let $mrs_add_db_object_path=/proc1
+--let $mrs_add_db_object_options='{}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=procedure1
+--let $mrs_add_db_object_path=/proc2
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=procedure1
+--let $mrs_add_db_object_path=/proc3
+--let $mrs_add_db_object_options='{"returnInternalErrorDetails": false}'
+--source ../include/mrs/db_object/add.inc
+set @basic_proc3_id=@db_object_id;
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=nothing
+--let $mrs_add_db_object_path=/func1
+--let $mrs_add_db_object_options='{}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=nothing
+--let $mrs_add_db_object_path=/func2
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=nothing
+--let $mrs_add_db_object_path=/func3
+--let $mrs_add_db_object_options='{"returnInternalErrorDetails": false}'
+--source ../include/mrs/db_object/add.inc
+set @basic_func3_id=@db_object_id;
+
+##
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic2
+--let $mrs_add_schema_options='{"result": {"includeLinks": false}}'
+--source ../include/mrs/db_schema/add.inc
+set @basic2_id=@schema_id;
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t1
+--let $mrs_add_db_object_options='{}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t2
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t3
+--let $mrs_add_db_object_options='{"result": {"includeLinks": true}}'
+--source ../include/mrs/db_object/add.inc
+set @basic2_t3_id=@db_object_id;
+
+--source ../include/mrs/end_object_definition.inc
+
+--echo # no links
+--let $mrs_client_arg_path='/svc/basic2/t1/1'
+--source ../include/mrs/mrs_client.inc
+
+--echo # no links
+--let $mrs_client_arg_path='/svc/basic2/t2/1'
+--source ../include/mrs/mrs_client.inc
+
+--echo # with links
+--let $mrs_client_arg_path='/svc/basic2/t3/1'
+--source ../include/mrs/mrs_client.inc
+
+--echo ### change schema and object options
+--let $mrs_sql_id_variable=@basic2_id
+--let $mrs_modify_options='{"result": {"includeLinks": true}}'
+--source ../include/mrs/db_schema/modify_options.inc
+
+--let $mrs_sql_id_variable=@basic2_t3_id
+--let $mrs_modify_options='{"result": {"includeLinks": false}}'
+--source ../include/mrs/db_object/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # with links schema-true
+--let $mrs_client_arg_path='/svc/basic2/t1/1'
+--source ../include/mrs/mrs_client.inc
+
+--echo # with links schema-true
+--let $mrs_client_arg_path='/svc/basic2/t2/1'
+--source ../include/mrs/mrs_client.inc
+
+--echo # with links object-false
+--let $mrs_client_arg_path='/svc/basic2/t3/1'
+--source ../include/mrs/mrs_client.inc
+
+# drop objects so that 500 responses are triggered
+drop schema basic_schema;
+
+--echo # 500 with error
+--let $mrs_client_arg_path='/svc/basic/t1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--echo # 500 with error
+--let $mrs_client_arg_path='/svc/basic/t2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--echo # no error
+--let $mrs_client_arg_path='/svc/basic/t3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+## check propagation after changes
+
+
+--echo ### change schema options
+--let $mrs_modify_options='{}'
+--let $mrs_sql_id_variable=@basic_id
+--source ../include/mrs/db_schema/modify_options.inc
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # 500 with error
+--let $mrs_client_arg_path='/svc/basic/t1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--echo # 500 with error
+--let $mrs_client_arg_path='/svc/basic/t2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--echo # with no error
+--let $mrs_client_arg_path='/svc/basic/t3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--echo ### change service options
+--let $mrs_modify_options='{"returnInternalErrorDetails": false}'
+--source ../include/mrs/service/modify_options.inc
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # 500 with no error
+--let $mrs_client_arg_path='/svc/basic/t1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--echo # 500 with no error
+--let $mrs_client_arg_path='/svc/basic/t2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--echo # with no error
+--let $mrs_client_arg_path='/svc/basic/t3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--echo ### change object options
+--let $mrs_sql_id_variable=@basic_t3_id
+--let $mrs_modify_options='{"returnInternalErrorDetails": true}'
+--source ../include/mrs/db_object/modify_options.inc
+
+--let $mrs_sql_id_variable=@basic_proc3_id
+--let $mrs_modify_options='{"returnInternalErrorDetails": true}'
+--source ../include/mrs/db_object/modify_options.inc
+
+--let $mrs_sql_id_variable=@basic_func3_id
+--let $mrs_modify_options='{"returnInternalErrorDetails": true}'
+--source ../include/mrs/db_object/modify_options.inc
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # 500 with no error
+--let $mrs_client_arg_path='/svc/basic/t1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func1'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--echo # 500 with no error
+--let $mrs_client_arg_path='/svc/basic/t2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func2'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--echo # with error
+--let $mrs_client_arg_path='/svc/basic/t3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/proc3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/basic/func3'
+--let $mrs_client_arg_expected_status=InternalError
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+create schema basic_schema;
+--source ../include/mrs/cleanup.inc

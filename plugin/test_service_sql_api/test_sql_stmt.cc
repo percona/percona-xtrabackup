@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,8 @@
 
 #include <fcntl.h>
 #include <mysql/plugin.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cstdlib>
 #include <vector>
 
 #include <mysql/components/my_service.h>
@@ -174,15 +174,12 @@ class Table {
     if (!cs_info) {
       WRITE_STR("\t[meta] no charset\n");
       return;
-    } else {
-      WRITE_VAL("\t[meta][charset result] number: %d\n", cs_info->number);
-      WRITE_VAL("\t[meta][charset result] name: %s\n", cs_info->csname);
-      WRITE_VAL("\t[meta][charset result] collation: %s\n",
-                cs_info->m_coll_name);
-      WRITE_VAL("\t[meta][charset result] sort order: %s\n",
-                cs_info->sort_order);
-      WRITE_STR("\n");
     }
+    WRITE_VAL("\t[meta][charset result] number: %d\n", cs_info->number);
+    WRITE_VAL("\t[meta][charset result] name: %s\n", cs_info->csname);
+    WRITE_VAL("\t[meta][charset result] collation: %s\n", cs_info->m_coll_name);
+    WRITE_VAL("\t[meta][charset result] sort order: %s\n", cs_info->sort_order);
+    WRITE_STR("\n");
 
     for (size_t i = 0; i < num_rows; i++) {
       size_t col = 0;
@@ -312,7 +309,7 @@ static void dump_decoded_server_status(const char *prefix, uint server_status) {
 
 static int handle_start_column_metadata(void *pctx, uint num_cols, uint,
                                         const CHARSET_INFO *resultcs) {
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   char buffer[STRING_BUFFER_SIZE];
   WRITE_STR("handle_start_column_metadata\n");
   DBUG_TRACE;
@@ -320,7 +317,7 @@ static int handle_start_column_metadata(void *pctx, uint num_cols, uint,
   DBUG_PRINT("info", ("resultcs->csname: %s", resultcs->csname));
   DBUG_PRINT("info", ("resultcs->m_coll_name: %s", resultcs->m_coll_name));
 
-  ctx->tables.push_back(Table(num_cols, resultcs));
+  ctx->tables.emplace_back(num_cols, resultcs);
   ctx->current_col = 0;
 
   return false;
@@ -328,7 +325,7 @@ static int handle_start_column_metadata(void *pctx, uint num_cols, uint,
 
 static int handle_send_column_metadata(void *pctx, struct st_send_field *field,
                                        const CHARSET_INFO *) {
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   //  char buffer[STRING_BUFFER_SIZE];
   //  WRITE_STR("handle_send_column_metadata\n");
   DBUG_TRACE;
@@ -343,10 +340,10 @@ static int handle_send_column_metadata(void *pctx, struct st_send_field *field,
   DBUG_PRINT("info", ("field->decimals: %d", (int)field->decimals));
   DBUG_PRINT("info", ("field->type: %d", (int)field->type));
 
-  ctx->tables.back().columns.push_back(
-      Column(field->db_name, field->table_name, field->org_table_name,
-             field->col_name, field->org_col_name, field->length,
-             field->charsetnr, field->flags, field->decimals, field->type));
+  ctx->tables.back().columns.emplace_back(
+      field->db_name, field->table_name, field->org_table_name, field->col_name,
+      field->org_col_name, field->length, field->charsetnr, field->flags,
+      field->decimals, field->type);
   ctx->current_col++;
   return false;
 }
@@ -354,7 +351,7 @@ static int handle_send_column_metadata(void *pctx, struct st_send_field *field,
 static int handle_end_column_metadata(void *pctx, uint server_status,
                                       uint warn_count) {
   char buffer[STRING_BUFFER_SIZE];
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   DBUG_TRACE;
   ctx->server_status = server_status;
   ctx->warn_count = warn_count;
@@ -366,7 +363,7 @@ static int handle_end_column_metadata(void *pctx, uint server_status,
 }
 
 static int handle_start_row(void *pctx) {
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   char buffer[STRING_BUFFER_SIZE];
   WRITE_STR("handle_start_row\n");
   DBUG_TRACE;
@@ -375,7 +372,7 @@ static int handle_start_row(void *pctx) {
 }
 
 static int handle_end_row(void *pctx) {
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   char buffer[STRING_BUFFER_SIZE];
   DBUG_TRACE;
   WRITE_STR("handle_end_row\n");
@@ -404,34 +401,33 @@ static ulong get_client_capabilities(void *) {
 }
 
 static int handle_store_null(void *pctx) {
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   //  WRITE_STR("handle_store_null\n");
   DBUG_TRACE;
   const uint col = ctx->current_col;
   ctx->current_col++;
-  ctx->tables.back().columns[col].row_values.push_back("[NULL]");
+  ctx->tables.back().columns[col].row_values.emplace_back("[NULL]");
 
   return false;
 }
 
 static int handle_store_integer(void *pctx, longlong value) {
   char buffer[LARGE_STRING_BUFFER_SIZE];
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   DBUG_TRACE;
   const uint col = ctx->current_col;
   ctx->current_col++;
 
   const size_t len = snprintf(buffer, sizeof(buffer), "%lld", value);
 
-  ctx->tables.back().columns[col].row_values.push_back(
-      std::string(buffer, len));
+  ctx->tables.back().columns[col].row_values.emplace_back(buffer, len);
 
   return false;
 }
 
 static int handle_store_longlong(void *pctx, longlong value, uint is_unsigned) {
   char buffer[LARGE_STRING_BUFFER_SIZE];
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   DBUG_TRACE;
   const uint col = ctx->current_col;
   ctx->current_col++;
@@ -439,8 +435,7 @@ static int handle_store_longlong(void *pctx, longlong value, uint is_unsigned) {
   const size_t len =
       snprintf(buffer, sizeof(buffer), is_unsigned ? "%llu" : "%lld", value);
 
-  ctx->tables.back().columns[col].row_values.push_back(
-      std::string(buffer, len));
+  ctx->tables.back().columns[col].row_values.emplace_back(buffer, len);
 
   return false;
 }
@@ -454,36 +449,34 @@ static const char *test_decimal_as_string(char *buff, const decimal_t *val,
 
 static int handle_store_decimal(void *pctx, const decimal_t *value) {
   char buffer[LARGE_STRING_BUFFER_SIZE]{};
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   DBUG_TRACE;
   const uint col = ctx->current_col;
   ctx->current_col++;
 
   int len = SIZEOF_SQL_STR_VALUE;
   test_decimal_as_string(buffer, value, &len);
-  ctx->tables.back().columns[col].row_values.push_back(
-      std::string(buffer, len));
+  ctx->tables.back().columns[col].row_values.emplace_back(buffer, len);
 
   return false;
 }
 
 static int handle_store_double(void *pctx, double value, uint32) {
   char buffer[LARGE_STRING_BUFFER_SIZE];
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   DBUG_TRACE;
   const uint col = ctx->current_col;
   ctx->current_col++;
 
   const size_t len = snprintf(buffer, sizeof(buffer), "%3.7g", value);
-  ctx->tables.back().columns[col].row_values.push_back(
-      std::string(buffer, len));
+  ctx->tables.back().columns[col].row_values.emplace_back(buffer, len);
 
   return false;
 }
 
 static int handle_store_date(void *pctx, const MYSQL_TIME *value) {
   char buffer[LARGE_STRING_BUFFER_SIZE];
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   DBUG_TRACE;
   const uint col = ctx->current_col;
   ctx->current_col++;
@@ -492,15 +485,14 @@ static int handle_store_date(void *pctx, const MYSQL_TIME *value) {
       snprintf(buffer, sizeof(buffer), "%s%4d-%02d-%02d", value->neg ? "-" : "",
                value->year, value->month, value->day);
 
-  ctx->tables.back().columns[col].row_values.push_back(
-      std::string(buffer, len));
+  ctx->tables.back().columns[col].row_values.emplace_back(buffer, len);
 
   return false;
 }
 
 static int handle_store_time(void *pctx, const MYSQL_TIME *value, uint) {
   char buffer[LARGE_STRING_BUFFER_SIZE];
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   DBUG_TRACE;
   const uint col = ctx->current_col;
   ctx->current_col++;
@@ -509,14 +501,13 @@ static int handle_store_time(void *pctx, const MYSQL_TIME *value, uint) {
       buffer, sizeof(buffer), "%s%02d:%02d:%02d", value->neg ? "-" : "",
       value->day ? (value->day * 24 + value->hour) : value->hour, value->minute,
       value->second);
-  ctx->tables.back().columns[col].row_values.push_back(
-      std::string(buffer, len));
+  ctx->tables.back().columns[col].row_values.emplace_back(buffer, len);
   return false;
 }
 
 static int handle_store_datetime(void *pctx, const MYSQL_TIME *value, uint) {
   char buffer[LARGE_STRING_BUFFER_SIZE];
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   DBUG_TRACE;
   const uint col = ctx->current_col;
   ctx->current_col++;
@@ -526,21 +517,19 @@ static int handle_store_datetime(void *pctx, const MYSQL_TIME *value, uint) {
                value->neg ? "-" : "", value->year, value->month, value->day,
                value->hour, value->minute, value->second);
 
-  ctx->tables.back().columns[col].row_values.push_back(
-      std::string(buffer, len));
+  ctx->tables.back().columns[col].row_values.emplace_back(buffer, len);
 
   return false;
 }
 
 static int handle_store_string(void *pctx, const char *const value,
                                size_t length, const CHARSET_INFO *const) {
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   DBUG_TRACE;
   const uint col = ctx->current_col;
   ctx->current_col++;
 
-  ctx->tables.back().columns[col].row_values.push_back(
-      std::string(value, length));
+  ctx->tables.back().columns[col].row_values.emplace_back(value, length);
 
   return false;
 }
@@ -548,7 +537,7 @@ static int handle_store_string(void *pctx, const char *const value,
 static void handle_ok(void *pctx, uint server_status, uint statement_warn_count,
                       ulonglong affected_rows, ulonglong last_insert_id,
                       const char *const message) {
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   char buffer[STRING_BUFFER_SIZE];
   WRITE_STR("handle_ok\n");
   DBUG_TRACE;
@@ -573,7 +562,7 @@ static void handle_ok(void *pctx, uint server_status, uint statement_warn_count,
 static void handle_error(void *pctx, uint sql_errno, const char *const err_msg,
                          const char *const sqlstate) {
   char buffer[LARGE_STRING_BUFFER_SIZE];
-  Server_context *ctx = (Server_context *)pctx;
+  auto *ctx = (Server_context *)pctx;
   WRITE_STR("handle_error\n");
   DBUG_TRACE;
   /// was setting current_row size to 0...
@@ -713,7 +702,6 @@ static char *fieldflags2str(uint f) {
   ff2s_check_flag(NO_DEFAULT_VALUE);
   ff2s_check_flag(NUM);
   ff2s_check_flag(PART_KEY);
-  ff2s_check_flag(GROUP);
   ff2s_check_flag(UNIQUE);
   ff2s_check_flag(BINCMP);
   ff2s_check_flag(ON_UPDATE_NOW);
@@ -1657,7 +1645,7 @@ static void test_9(MYSQL_SESSION session, void *p) {
       "VERIFY THAT VARIABLES ARE SET AND OUT PRAMETERS WERE NOT TRANSFERED "
       "IN METADATA\n");
 
-  if (ctx.tables.size() != 0) {
+  if (!ctx.tables.empty()) {
     LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
                  "Protocol send the out-parameters to the user");
     return;
@@ -1711,7 +1699,7 @@ static void test_10(MYSQL_SESSION session, void *p) {
       "VERIFY THAT VARIABLES ARE SET AND OUT PRAMETERS WERE NOT TRANSFERED "
       "IN METADATA\n");
 
-  if (ctx.tables.size() != 0) {
+  if (!ctx.tables.empty()) {
     LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
                  "Protocol send the out-parameters to the user");
     return;
@@ -1884,7 +1872,7 @@ struct test_thread_context {
 
 static void *test_sql_threaded_wrapper(void *param) {
   char buffer[STRING_BUFFER_SIZE];
-  struct test_thread_context *context = (struct test_thread_context *)param;
+  auto *context = (struct test_thread_context *)param;
 
   WRITE_SEP();
   WRITE_STR("init thread\n");

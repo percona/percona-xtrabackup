@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -39,7 +39,7 @@ class RouterComponentMetadataTest : public RouterComponentClusterSetTest {
  protected:
   std::string get_metadata_cache_section(
       ClusterType cluster_type = ClusterType::GR_V2,
-      const std::string &ttl = "0.5", const std::string &cluster_name = "test",
+      const std::string &ttl = "0.1", const std::string &cluster_name = "test",
       const std::string &ssl_mode = "");
 
   std::string get_metadata_cache_routing_section(

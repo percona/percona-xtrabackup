@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 Copyright (c) 2009, Google Inc.
 
 This program is free software; you can redistribute it and/or modify
@@ -73,7 +73,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* redo_log_archive_produce */
 #include "log0meb.h"
 
-/* recv_no_ibuf_operations */
+/* recv_recovery_is_on */
 #include "log0recv.h"
 
 /* log_t::X */
@@ -1077,10 +1077,9 @@ Wait_stats log_write_up_to(log_t &log, lsn_t end_lsn, bool flush_to_disk) {
   Note that redo log is actually flushed, because changes to the page
   are caused by applying the redo. */
 
-  if (recv_no_ibuf_operations) {
+  if (recv_recovery_is_on()) {
     /* Recovery is running and no operations on the log files are
-    allowed yet, which is implicitly deduced from the fact, that
-    still ibuf merges are disallowed. */
+    allowed yet. */
     return Wait_stats{0};
   }
 
@@ -2105,12 +2104,14 @@ static void log_writer_write_failed(log_t &log, dberr_t err) {
   const auto file_path =
       log_file_path(log.m_files_ctx, log.m_current_file.m_id);
   switch (err) {
-    case DB_OUT_OF_DISK_SPACE:
-      ib::warn(ER_IB_MSG_LOG_WRITER_WAIT_ON_NEW_LOG_FILE);
+    case DB_OUT_OF_DISK_SPACE: {
+      ib::warn(ER_IB_MSG_LOG_WRITER_WAIT_ON_NEW_LOG_FILE_INFO,
+               srv_redo_log_capacity, srv_redo_log_capacity_used);
       log_writer_mutex_exit(log);
       log_files_wait_for_next_file_available(log);
       log_writer_mutex_enter(log);
       break;
+    }
     default:
       ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_LOG_WRITER_WRITE_FAILED,
                 static_cast<int>(err), file_path.c_str());

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -288,7 +288,8 @@ void Suma::execREAD_CONFIG_REQ(Signal *signal) {
   m_max_sent_gci = 0;       // FIRE_TRIG_ORD -> send
   m_last_complete_gci = 0;  // SUB_GCP_COMPLETE_REP
   m_gcp_complete_rep_count = 0;
-  m_out_of_buffer_gci = 0;
+  m_fully_buffering_after_gci = 0;
+  m_max_fully_acked_gci = UINT64_MAX;
   m_missing_data = false;
 
   c_startup.m_wait_handover = false;
@@ -895,7 +896,7 @@ void Suma::check_wait_handover_timeout(Signal *signal) {
             LogLevel ll;
             ll.setLogLevel(LogLevel::llError, 15);
             g_eventLogger->log(NDB_LE_SubscriptionStatus, signal->theData,
-                               signal->getLength(), getOwnNodeId(), &ll);
+                               signal->getLength(), 0, &ll);
 
             /**
              * Force API_FAILREQ
@@ -1462,6 +1463,7 @@ void Suma::execNODE_FAILREP(Signal *signal) {
   NdbNodeBitmask takeover_nodes;
 
   if (c_nodes_in_nodegroup_mask.overlaps(failed)) {
+    Bucket_mask resend_buckets;
     for (Uint32 i = 0; i < c_no_of_buckets; i++) {
       if (m_active_buckets.get(i))
         continue;
@@ -1484,9 +1486,32 @@ void Suma::execNODE_FAILREP(Signal *signal) {
           int rsp_node = get_responsible_node(i, tmp);
           ndbrequire(rsp_node == getOwnNodeId() ||
                      rsp_node == c_buckets[i].m_switchover_node);
-          start_resend(signal, i);
+          // Calculate m_max_fully_acked_gci for start_resend
+          resend_buckets.set(i);
+          if (c_buckets[i].m_max_acked_gci < m_max_fully_acked_gci) {
+            m_max_fully_acked_gci = c_buckets[i].m_max_acked_gci;
+          }
         }
       } else if (get_responsible_node(i, tmp) == getOwnNodeId()) {
+        // Calculate m_max_fully_acked_gci for start_resend
+        resend_buckets.set(i);
+        if (c_buckets[i].m_max_acked_gci < m_max_fully_acked_gci) {
+          m_max_fully_acked_gci = c_buckets[i].m_max_acked_gci;
+        }
+      }
+    }
+    // Start resend
+    for (Uint32 i = 0; i < c_no_of_buckets; i++) {
+      if (resend_buckets.get(i)) {
+        if (ERROR_INSERTED(13052)) {
+          jam();
+          g_eventLogger->info(
+              "Suma::execNODE_FAILREP cleared error "
+              "insertion 13052 simulating OOB");
+          CLEAR_ERROR_INSERT_VALUE;
+          out_of_buffer(signal);
+        }
+
         start_resend(signal, i);
       }
     }
@@ -3268,10 +3293,26 @@ void Suma::execSUB_START_REQ(Signal *signal) {
     return;
   }
 
+  Uint8 filterInfo = 0;
+  constexpr Uint8 NOLOG = SubStartReq::FILTER_ANYVALUE_MYSQL_NO_LOGGING;
+  constexpr Uint8 NORPL = SubStartReq::FILTER_ANYVALUE_MYSQL_NO_REPLICA_UPDATES;
+  if ((requestInfo & NOLOG) != 0 || (requestInfo & NORPL) != 0) {
+    filterInfo |= Subscriber::FilterInfo::FILTER_ANYVALUE;
+  }
+  constexpr Uint32 S_MASK = SubStartReq::FILTER_ROW_SLICE_COUNT_BITS;
+  constexpr Uint32 S_SHIFT = SubStartReq::FILTER_ROW_SLICE_COUNT_SHIFT;
+  // If requestInfo contains SLICE_COUNT bits then filter row slices
+  Uint8 rowSliceCount = (requestInfo & S_MASK) >> S_SHIFT;
+  if (rowSliceCount > 0) {
+    filterInfo |= Subscriber::FilterInfo::FILTER_ROW_SLICE;
+  }
+
   // setup subscriber record
   subbPtr.p->m_senderRef = subscriberRef;
   subbPtr.p->m_senderData = subscriberData;
   subbPtr.p->m_requestInfo = requestInfo;
+  subbPtr.p->m_filterInfo = filterInfo;
+  subbPtr.p->setFilterRowSlice(requestInfo);
 
   subOpPtr.p->m_opType = SubOpRecord::R_SUB_START_REQ;
   subOpPtr.p->m_subPtrI = subPtr.i;
@@ -3487,10 +3528,11 @@ void Suma::report_sub_start_conf(Signal *signal, Ptr<Subscription> subPtr) {
         conf->senderData = senderData;
         conf->subscriptionId = subPtr.p->m_subscriptionId;
         conf->subscriptionKey = subPtr.p->m_subscriptionKey;
-        conf->firstGCI = Uint32(gci >> 32);
+        conf->firstGCIhi = Uint32(gci >> 32);
         conf->part = SubscriptionData::TableData;
         conf->bucketCount = c_no_of_buckets;
         conf->nodegroup = c_nodeGroup;
+        conf->firstGCIlo = Uint32(gci);
         sendSignal(senderRef, GSN_SUB_START_CONF, signal,
                    SubStartConf::SignalLength, JBB);
 
@@ -4570,6 +4612,7 @@ Uint32 Suma::reformat(Signal *signal, LinearSectionPtr ptr[3],
  */
 void Suma::execFIRE_TRIG_ORD_L(Signal *signal) {
   jamEntry();
+  DBUG_ENTER("Suma::execFIRE_TRIG_ORD_L");
 
   ndbassert(signal->getNoOfSections() == 0);
   Uint32 pageId = signal->theData[0];
@@ -4650,37 +4693,70 @@ bool Suma::applyAnyValueFilters(Uint32 requestInfo, Uint32 anyValue) const {
 
   // No-logging filter
   const bool no_logging =
-      requestInfo & SubStartReq::FILTER_ANYVALUE_MYSQL_NO_LOGGING;
-  if (no_logging && (anyValue == ANYVALUE_NOLOGGING_VALUE)) return true;
+      (requestInfo & SubStartReq::FILTER_ANYVALUE_MYSQL_NO_LOGGING) != 0;
+  if (no_logging && (anyValue == ANYVALUE_NOLOGGING_VALUE)) {
+    jam();
+    return true;
+  }
 
   // No-replica-updates filter
   const bool no_replica_updates =
-      requestInfo & SubStartReq::FILTER_ANYVALUE_MYSQL_NO_REPLICA_UPDATES;
+      (requestInfo & SubStartReq::FILTER_ANYVALUE_MYSQL_NO_REPLICA_UPDATES) !=
+      0;
   if (no_replica_updates && ((anyValue & ANYVALUE_RESERVED_BIT) == 0) &&
-      ((anyValue & ~ANYVALUE_RESERVED_BIT) != 0))
+      ((anyValue & ~ANYVALUE_RESERVED_BIT) != 0)) {
+    jam();
     return true;
+  }
 
   return false;
 }
 
+bool Suma::applyRowSliceFilters(Uint16 count, Uint8 id, Uint32 hash) const {
+  DBUG_PRINT("trace", ("hash=%u part=%u count=%u group=%u(%s)", hash, id, count,
+                       hash % count, hash % count != id ? "out" : "in"));
+  return (hash % count != id);
+}
+
+bool Suma::isFilterEnabled(SubscriberPtr subbPtr, Uint8 filter_bit) const {
+  return (subbPtr.p->m_filterInfo & filter_bit) != 0;
+}
+
 void Suma::sendBatchedSUB_TABLE_DATA(Signal *signal,
                                      const Subscriber_list::Head subscribers,
-                                     LinearSectionPtr lsptr[], Uint32 nptr) {
+                                     LinearSectionPtr lsptr[], Uint32 nptr,
+                                     Uint32 hash) {
   jam();
+  DBUG_ENTER("Suma::sendBatchedSUB_TABLE_DATA");
   SubTableData *data = (SubTableData *)signal->getDataPtrSend();
   ConstLocal_Subscriber_list list(c_subscriberPool, subscribers);
   SubscriberPtr subbPtr;
+  // dividing hash to rebalance distribution of data among active
+  // bucket subscribers with row slice enabled
+  hash /= c_no_of_buckets;
 
   for (list.first(subbPtr); !subbPtr.isNull(); list.next(subbPtr)) {
     jam();
-    data->senderData = subbPtr.p->m_senderData;
 
     // filter anyValue through subscriber options
-    if (applyAnyValueFilters(subbPtr.p->m_requestInfo, data->anyValue))
+    if (isFilterEnabled(subbPtr, Subscriber::FilterInfo::FILTER_ANYVALUE) &&
+        applyAnyValueFilters(subbPtr.p->m_requestInfo, data->anyValue)) {
+      jam();
       continue;
+    }
 
+    // filter row-hash through subscriber options
+    if (isFilterEnabled(subbPtr, Subscriber::FilterInfo::FILTER_ROW_SLICE) &&
+        applyRowSliceFilters(subbPtr.p->m_filterRowSliceCount,
+                             subbPtr.p->m_filterRowSliceId, hash)) {
+      jam();
+      continue;
+    }
+
+    data->senderData = subbPtr.p->m_senderData;
     const Uint32 version =
         getNodeInfo(refToNode(subbPtr.p->m_senderRef)).m_version;
+
     if (ndbd_frag_sub_table_data(version)) {
       jam();
       sendBatchedFragmentedSignal(subbPtr.p->m_senderRef, GSN_SUB_TABLE_DATA,
@@ -4692,6 +4768,8 @@ void Suma::sendBatchedSUB_TABLE_DATA(Signal *signal,
                  SubTableData::SignalLengthWithTransId, JBB, lsptr, nptr);
     }
   }
+
+  DBUG_VOID_RETURN;
 }
 
 void Suma::execFIRE_TRIG_ORD(Signal *signal) {
@@ -4788,9 +4866,8 @@ void Suma::doFIRE_TRIG_ORD(Signal *signal, LinearSectionPtr lsptr[3]) {
   ndbrequire(gci > m_last_complete_gci);
 
   Uint32 tableId = subPtr.p->m_tableId;
-  Uint32 schemaVersion =
-      c_tablePool.getPtr(subPtr.p->m_table_ptrI)->m_schemaVersion;
-
+  Table *tab = c_tablePool.getPtr(subPtr.p->m_table_ptrI);
+  Uint32 schemaVersion = tab->m_schemaVersion;
   Uint32 bucket = hashValue % c_no_of_buckets;
   m_max_seen_gci = (gci > m_max_seen_gci ? gci : m_max_seen_gci);
   /**
@@ -4825,59 +4902,53 @@ void Suma::doFIRE_TRIG_ORD(Signal *signal, LinearSectionPtr lsptr[3]) {
     data->transId1 = transId1;
     data->transId2 = transId2;
 
-    sendBatchedSUB_TABLE_DATA(signal, subPtr.p->m_subscribers, ptr, nptr);
+    sendBatchedSUB_TABLE_DATA(signal, subPtr.p->m_subscribers, ptr, nptr,
+                              hashValue);
   } else {
     jam();
-    constexpr uint buffer_header_sz = 6;
+    constexpr uint buffer_header_sz = Buffer_page::HEADER_SZ;
     Uint32 *dst1 = nullptr;
     Uint32 *dst2 = nullptr;
     Uint32 sz1 = f_trigBufferSize + buffer_header_sz;
     Uint32 sz2 = b_trigBufferSize;
-    Page_pos save_pos = c_buckets[bucket].m_buffer_head;
 
     static_assert(1 + Buffer_page::GCI_SZ32 + buffer_header_sz + SUMA_BUF_SZ <=
                   Buffer_page::DATA_WORDS);
-    if (likely((dst1 = get_buffer_ptr(signal, bucket, gci, sz1, 1)) &&
-               (dst2 = get_buffer_ptr(signal, bucket, gci, sz2, 2)))) {
-      jam();
-      dst1[0] = subPtr.i;
-      dst1[1] = schemaVersion;
-      dst1[2] = (event << 16) | lsptr[0].sz;
-      dst1[3] = any_value;
-      dst1[4] = transId1;
-      dst1[5] = transId2;
-      dst1 += buffer_header_sz;
-      memcpy(dst1, lsptr[0].p, lsptr[0].sz << 2);
-      dst1 += lsptr[0].sz;
-      memcpy(dst1, lsptr[2].p, lsptr[2].sz << 2);
-      ndbrequire(f_trigBufferSize == lsptr[0].sz + lsptr[2].sz);
-      memcpy(dst2, lsptr[1].p, lsptr[1].sz << 2);
-      ndbrequire(b_trigBufferSize == lsptr[1].sz);
-    } else if (dst1 != nullptr) {
-      jam();
-      // Revert first buffer allocation
-      Uint32 first_page_id = save_pos.m_page_id;
 
-      Uint32 page_id;
-      if (first_page_id == RNIL) {
-        jam();
-        page_id = c_buckets[bucket].m_buffer_tail;
-        c_buckets[bucket].m_buffer_tail = RNIL;
-      } else {
-        jam();
-        Buffer_page *first_page = c_page_pool.getPtr(first_page_id);
-        page_id = first_page->m_next_page;
-        first_page->m_next_page = RNIL;
-      }
-      while (page_id != RNIL) {
-        jam();
-        Buffer_page *page = c_page_pool.getPtr(page_id);
-        Uint32 next = page->m_next_page;
-        free_page(page_id, page);
-        page_id = next;
-      }
-      c_buckets[bucket].m_buffer_head = save_pos;
+    if (unlikely(buffering_disabled())) {
+      jam();
+      DBUG_VOID_RETURN;
     }
+
+    dst1 = get_buffer_ptr(signal, bucket, gci, sz1, 1);
+    if (unlikely(buffering_disabled())) {
+      jam();
+      DBUG_VOID_RETURN;
+    }
+
+    dst2 = get_buffer_ptr(signal, bucket, gci, sz2, 2);
+    if (unlikely(buffering_disabled())) {
+      jam();
+      DBUG_VOID_RETURN;
+    }
+
+    ndbrequire(dst1 != nullptr && dst2 != nullptr);
+
+    jam();
+    dst1[0] = subPtr.i;
+    dst1[1] = schemaVersion;
+    dst1[2] = (event << 16) | lsptr[0].sz;
+    dst1[3] = any_value;
+    dst1[4] = transId1;
+    dst1[5] = transId2;
+    dst1[6] = hashValue;
+    dst1 += buffer_header_sz;
+    memcpy(dst1, lsptr[0].p, lsptr[0].sz << 2);
+    dst1 += lsptr[0].sz;
+    memcpy(dst1, lsptr[2].p, lsptr[2].sz << 2);
+    ndbrequire(f_trigBufferSize == lsptr[0].sz + lsptr[2].sz);
+    memcpy(dst2, lsptr[1].p, lsptr[1].sz << 2);
+    ndbrequire(b_trigBufferSize == lsptr[1].sz);
   }
 
   DBUG_VOID_RETURN;
@@ -4933,6 +5004,8 @@ void Suma::checkMaxBufferedEpochs(Signal *signal) {
     subs.getText(buf);
     infoEvent("Disconnecting lagging nodes '%s', epoch %llu", buf,
               gcp.p->m_gci);
+    g_eventLogger->info("SUMA Disconnecting lagging nodes '%s', epoch %llu",
+                        buf, gcp.p->m_gci);
   }
   // Disconnect lagging subscribers waiting for oldest epoch
   for (Uint32 nodeId = 0; nodeId < MAX_NODES; nodeId++) {
@@ -5063,7 +5136,7 @@ void Suma::sendSUB_GCP_COMPLETE_REP(Signal *signal) {
   // Send!
   ndbassert(m_gcp_rep_counter[m_snd_gcp_rep_counter_index].m_cnt ==
             m_gcp_rep_cnt);
-  bool drop = false;
+
   Uint32 flags = m_gcp_rep_counter[m_snd_gcp_rep_counter_index].m_flags |
                  (m_missing_data ? SubGcpCompleteRep::MISSING_DATA : 0);
   if (ERROR_INSERTED(13036)) {
@@ -5092,6 +5165,7 @@ void Suma::sendSUB_GCP_COMPLETE_REP(Signal *signal) {
   /**
    *
    */
+  bool drop = false;
   Bucket_mask dropped_buckets;
   if (!m_switchover_buckets.isclear()) {
     bool starting_unlock = false;
@@ -5123,21 +5197,29 @@ void Suma::sendSUB_GCP_COMPLETE_REP(Signal *signal) {
           jam();
           Bucket *bucket = c_buckets + i;
           Page_pos pos = bucket->m_buffer_head;
-          ndbrequire(pos.m_max_gci < gci);
 
-          Buffer_page *page = c_page_pool.getPtr(pos.m_page_id);
-          g_eventLogger->info("takeover %d", pos.m_page_id);
-          page->m_max_gci_hi = (Uint32)(pos.m_max_gci >> 32);
-          page->m_max_gci_lo = (Uint32)(pos.m_max_gci & 0xFFFFFFFF);
-          ndbassert(pos.m_max_gci != 0);
-          page->m_words_used = pos.m_page_pos;
-          page->m_next_page = RNIL;
-          memset(&bucket->m_buffer_head, 0, sizeof(bucket->m_buffer_head));
-          bucket->m_buffer_head.m_page_id = RNIL;
-          bucket->m_buffer_head.m_page_pos = Buffer_page::DATA_WORDS + 1;
+          /**
+           * Initialize the bucket to signal resend that no more
+           * buffering will take place. Buckets are also initialized
+           * when out-of-buffer release completes. Initialized state
+           * prevails until buffering is resumed.
+           */
+          if (!buffering_disabled() && pos.m_page_id != RNIL) {
+            ndbrequire(pos.m_max_gci < gci);
+            Buffer_page *page = c_page_pool.getPtr(pos.m_page_id);
+            page->m_max_gci_hi = (Uint32)(pos.m_max_gci >> 32);
+            page->m_max_gci_lo = (Uint32)(pos.m_max_gci & 0xFFFFFFFF);
+            ndbassert(pos.m_max_gci != 0);
+            page->m_words_used = pos.m_page_pos;
+            page->m_next_page = RNIL;
+            memset(&bucket->m_buffer_head, 0, sizeof(bucket->m_buffer_head));
+            bucket->m_buffer_head.m_page_id = RNIL;
+            bucket->m_buffer_head.m_page_pos = Buffer_page::DATA_WORDS + 1;
+          }
 
           m_active_buckets.set(i);
           m_gcp_complete_rep_count++;
+          g_eventLogger->info("Takeover for bucket %u is completed", i);
           c_buckets[i].m_state &= ~(Uint32)Bucket::BUCKET_TAKEOVER;
         } else if (state & Bucket::BUCKET_HANDOVER) {
           /**
@@ -5229,6 +5311,13 @@ void Suma::sendSUB_GCP_COMPLETE_REP(Signal *signal) {
          * or we have already sent STOP_ME_CONF, but we have completed
          * the takeover of the peer node's buckets just now.
          */
+      } else if (ERROR_INSERTED(13061)) {
+        jam();
+        g_eventLogger->info(
+            "Takeover provokes OOB and cleared "
+            "error insertion 13061");
+        CLEAR_ERROR_INSERT_VALUE;
+        out_of_buffer(signal);
       }
     }
 
@@ -5320,6 +5409,15 @@ void Suma::sendSUB_GCP_COMPLETE_REP(Signal *signal) {
   if (m_gcp_complete_rep_count && !c_subscriber_nodes.isclear()) {
     CRASH_INSERTION(13033);
 
+    if (ERROR_INSERTED(13062)) {
+      jam();
+      g_eventLogger->info(
+          "sendSUB_GCP_COMPLETE_REP: error insertion 13062 "
+          "not sending GCP_COMPLETE to SUBSCRIBERS, "
+          "but crashing node at %u/%u",
+          gci_hi, gci_lo);
+      CRASH_INSERTION(13062);
+    }
     NodeReceiverGroup rg(API_CLUSTERMGR, c_subscriber_nodes);
     sendSignal(rg, GSN_SUB_GCP_COMPLETE_REP, signal, siglen, JBB);
 
@@ -5338,21 +5436,40 @@ void Suma::sendSUB_GCP_COMPLETE_REP(Signal *signal) {
   /**
    * Add GCP COMPLETE REP to buffer
    */
-  bool subscribers = !c_subscriber_nodes.isclear();
+  const bool subscribers = !c_subscriber_nodes.isclear();
   for (Uint32 i = 0; i < c_no_of_buckets; i++) {
     if (m_active_buckets.get(i)) continue;
 
     if (subscribers || (c_buckets[i].m_state & Bucket::BUCKET_RESEND)) {
-      // Uint32* dst;
-      get_buffer_ptr(signal, i, gci, 0, 0);
+      if (!buffering_disabled()) {
+        get_buffer_ptr(signal, i, gci, 0, 0);
+      } else {
+        jam();
+        break;
+      }
     }
   }
 
-  if (m_out_of_buffer_gci && gci > m_out_of_buffer_gci) {
+  if ((m_fully_buffering_after_gci > 0 &&
+       m_fully_buffering_after_gci < UINT64_MAX) &&
+      gci > m_fully_buffering_after_gci) {
     jam();
-    infoEvent("Reenable event buffer");
-    m_out_of_buffer_gci = 0;
+    infoEvent(
+        "Event buffering resumed. Epochs > %u/%u will be buffered completely.",
+        (Uint32)(gci >> 32), (Uint32)gci);
+
+    // 'gci' will be the lowest resendable epoch after resuming buffering
+    g_eventLogger->info(
+        "SUMA The first fully buffered epoch (%u/%u), "
+        "also flagged as MISSING_DATA, after resuming "
+        "buffering is GCP-completed. "
+        "m_fully_buffering_after %u/%u",
+        (Uint32)(gci >> 32), (Uint32)gci,
+        (Uint32)(m_fully_buffering_after_gci >> 32),
+        (Uint32)m_fully_buffering_after_gci);
+
     m_missing_data = false;
+    enable_normal_resending();
   }
 
   if (unlikely(drop)) {
@@ -5633,10 +5750,23 @@ void Suma::execSUB_GCP_COMPLETE_ACK(Signal *signal) {
   Uint64 gci = gci_lo | (Uint64(gci_hi) << 32);
   m_max_seen_gci = (gci > m_max_seen_gci ? gci : m_max_seen_gci);
 
-  if (ERROR_INSERTED(13037) || ERROR_INSERTED(13052)) {
+  if (ERROR_INSERTED(13037)) {
     jam();
     g_eventLogger->info(
         "Simulating exceeding the MaxBufferedEpochs, ignoring ack");
+    return;
+  }
+  if (ERROR_INSERTED(13052) || ERROR_INSERTED(13060) || ERROR_INSERTED(13061) ||
+      ERROR_INSERTED(13063)) {
+    jam();
+    /**
+     * g_eventLogger->info("Simulating many unacked epochs by ignoring ack "
+     *                 "%u/%u. Not acked epochs %u", gci_hi, gci_lo,
+     *                   c_gcp_list.getCount());
+     *
+     * sendSignalWithDelay(reference(), GSN_SUB_GCP_COMPLETE_ACK, signal, 10,
+     *                   signal->getLength());
+     */
     return;
   }
 
@@ -6335,8 +6465,6 @@ void Suma::execSUMA_HANDOVER_CONF(Signal *signal) {
     tmp.getText(buf);
     infoEvent("Suma: handover from node %u gci: %u buckets: %s (%u)", nodeId,
               gci, buf, c_no_of_buckets);
-    g_eventLogger->info("Suma: handover from node %u gci: %u buckets: %s (%u)",
-                        nodeId, gci, buf, c_no_of_buckets);
     ndbassert(!m_active_buckets.overlaps(tmp));
     m_switchover_buckets.bitOR(tmp);
     ndbrequire(c_startup.m_handover_nodes.get(nodeId));
@@ -6358,8 +6486,6 @@ void Suma::execSUMA_HANDOVER_CONF(Signal *signal) {
     tmp.getText(buf);
     infoEvent("Suma: handover to node %u gci: %u buckets: %s (%u)", nodeId, gci,
               buf, c_no_of_buckets);
-    g_eventLogger->info("Suma: handover to node %u gci: %u buckets: %s (%u)",
-                        nodeId, gci, buf, c_no_of_buckets);
     m_active_buckets.bitANDC(tmp);
     m_switchover_buckets.bitOR(tmp);
     c_startup.m_handover_nodes.clear(nodeId);
@@ -6397,8 +6523,8 @@ Uint32 *Suma::get_buffer_ptr(Signal *signal, Uint32 buck, Uint64 gci, Uint32 sz,
   Bucket *bucket = c_buckets + buck;
   Page_pos pos = bucket->m_buffer_head;
 
-  Buffer_page *page = 0;
-  Uint32 *ptr = 0;
+  Buffer_page *page = nullptr;
+  Uint32 *ptr = nullptr;
 
   if (likely(pos.m_page_id != RNIL)) {
     jam();
@@ -6439,7 +6565,8 @@ Uint32 *Suma::get_buffer_ptr(Signal *signal, Uint32 buck, Uint64 gci, Uint32 sz,
      * 1) save header on last page
      * 2) seize new page
      */
-    static_assert(1 + 6 + SUMA_BUF_SZ + Buffer_page::GCI_SZ32 <=
+    static_assert(1 + Buffer_page::HEADER_SZ + SUMA_BUF_SZ +
+                      Buffer_page::GCI_SZ32 <=
                   Buffer_page::DATA_WORDS);
     Uint32 next;
     if (unlikely((next = seize_page()) == RNIL)) {
@@ -6475,18 +6602,35 @@ Uint32 *Suma::get_buffer_ptr(Signal *signal, Uint32 buck, Uint64 gci, Uint32 sz,
   }
 }
 
+void Suma::disable_buffering() {
+  m_fully_buffering_after_gci = UINT_MAX64;
+
+  infoEvent(
+      "Out of event buffer. Node failure will cause event failures. "
+      "Consider increasing MaxBufferedEpochBytes.");
+
+  g_eventLogger->info(
+      "SUMA Out of event buffer: Disabling buffering. "
+      "m_max_seen_gci %u/%u m_last_complete_gci %u/%u",
+      (Uint32)(m_max_seen_gci >> 32), (Uint32)m_max_seen_gci,
+      Uint32(m_last_complete_gci >> 32), (Uint32)m_last_complete_gci);
+}
+
+bool Suma::buffering_disabled() const {
+  return (m_fully_buffering_after_gci == UINT64_MAX);
+}
+
 void Suma::out_of_buffer(Signal *signal) {
-  Ptr<Gcp_record> gcp;
-  if (m_out_of_buffer_gci) {
+  if (unlikely(buffering_disabled())) {
+    // Out of buffer handling is already going on
+    jam();
     return;
   }
+  disable_buffering();
 
-  m_out_of_buffer_gci = m_last_complete_gci - 1;
-  infoEvent(
-      "Out of event buffer: nodefailure will cause event failures, consider "
-      "increasing MaxBufferedEpochBytes");
   if (!c_gcp_list.isEmpty()) {
     jam();
+    Ptr<Gcp_record> gcp;
     c_gcp_list.first(gcp);
     infoEvent("Highest epoch %llu, oldest epoch %llu", m_max_seen_gci,
               m_last_complete_gci);
@@ -6497,7 +6641,7 @@ void Suma::out_of_buffer(Signal *signal) {
       infoEvent("Pending nodes '%s', epoch %llu", buf, gcp.p->m_gci);
     }
   }
-  m_missing_data = false;
+
   out_of_buffer_release(signal, 0);
 }
 
@@ -6529,13 +6673,46 @@ void Suma::out_of_buffer_release(Signal *signal, Uint32 buck) {
   }
 
   /**
-   * Finished will all release
-   *   prepare for inclusion
+   * Out-of-buffer handling is completed. All buffers are
+   * released. Resume buffering and record the
+   * max known epoch = max(m_max_seen_gci, m_last_complete_gci).
+   *
+   * Max known epoch may be
+   * a) partially buffered if m_max_seen_gci > m_last_complete_gci,
+   * b) fully buffered otherwise
+   * both of which we have not yet seen at this point of resuming
+   * buffering here.
+   *
+   * The first epoch, say X where X > max known epoch, that we complete
+   * is the first epoch that has been fully buffered.
+   * To ensure that event-API gets info on gap, X will
+   * be the last epoch tagged with MISSING_DATA, in
+   * order to cover case b). Therefore it becomes the lowest resendable epoch.
    */
-  m_out_of_buffer_gci = m_max_seen_gci > m_last_complete_gci
-                            ? m_max_seen_gci
-                            : m_last_complete_gci;
-  m_missing_data = false;
+  m_fully_buffering_after_gci = m_max_seen_gci > m_last_complete_gci
+                                    ? m_max_seen_gci
+                                    : m_last_complete_gci;
+
+  for (Uint32 i = 0; i < c_no_of_buckets; i++) {
+    bucket = c_buckets + i;
+    // Check if all the buckets are cleared and nothing is buffered.
+    ndbrequire(tail == RNIL && bucket->m_buffer_head.m_page_id == RNIL);
+
+    /**
+     * After the out of buffer is handled, we should ensure that NO
+     * future resend will find a resend start point that could give an
+     * event stream with partially buffered epoch. Therefore, we move
+     * the buckets' m_max_acked_gci to m_fully_buffering_after_gci
+     * s.t., X, mentioned above, becomes the lowest resendable epoch.
+     */
+    bucket->m_max_acked_gci = m_fully_buffering_after_gci;
+  }
+
+  g_eventLogger->info(
+      "SUMA Out of buffer release completed for all buckets. "
+      "Max seen epoch %u/%u last complete epoch %u/%u",
+      (Uint32)(m_max_seen_gci >> 32), (Uint32)m_max_seen_gci,
+      (Uint32)(m_last_complete_gci >> 32), (Uint32)m_last_complete_gci);
 }
 
 Uint32 Suma::seize_page() {
@@ -6543,9 +6720,10 @@ Uint32 Suma::seize_page() {
     jam();
     CLEAR_ERROR_INSERT_VALUE;
     g_eventLogger->info("Simulating out of event buffer");
-    m_out_of_buffer_gci = m_max_seen_gci;
+    disable_buffering();
   }
-  if (unlikely(m_out_of_buffer_gci)) {
+  if (unlikely(buffering_disabled())) {
+    jam();
     return RNIL;
   }
 loop:
@@ -6603,6 +6781,12 @@ void Suma::free_page(Uint32 page_id, Buffer_page *page) {
 }
 
 void Suma::release_gci(Signal *signal, Uint32 buck, Uint64 gci) {
+  if (unlikely(buffering_disabled())) {
+    jam();
+    // Out of buffer release has already started, so no need to do more
+    return;
+  }
+
   ndbrequire(buck < NO_OF_BUCKETS);
   Bucket *bucket = c_buckets + buck;
   Uint32 tail = bucket->m_buffer_tail;
@@ -6668,87 +6852,194 @@ void Suma::release_gci(Signal *signal, Uint32 buck, Uint64 gci) {
     }
   }
 }
+void Suma::enable_normal_resending() {
+  g_eventLogger->info("Suma: Enabling normal resending");
+  m_max_fully_acked_gci = UINT64_MAX;
+  m_fully_buffering_after_gci = 0;
+}
+
+bool Suma::normal_resendable() const {
+  return (m_fully_buffering_after_gci <= m_max_fully_acked_gci);
+}
 
 static Uint32 g_cnt = 0;
 
 void Suma::start_resend(Signal *signal, Uint32 buck) {
-  g_eventLogger->info("start_resend(%d, ", buck);
-
-  /**
-   * Resend from m_max_acked_gci + 1 until m_max_seen_gci
-   */
+  jam();
   ndbrequire(buck < NO_OF_BUCKETS);
   Bucket *bucket = c_buckets + buck;
   Page_pos pos = bucket->m_buffer_head;
 
-  // Start resending from the epoch that is not yet ack'd
-  const Uint64 min = bucket->m_max_acked_gci + 1;
-
-  // Out of buffer release is ongoing. So don't start resending in order
-  // to avoid sending epochs where part of them are already released.
-  // Inform about the first in-doubt epoch that resending will start from.
-  if (m_out_of_buffer_gci) {
-    signal->theData[0] = NDB_LE_SubscriptionStatus;
-    signal->theData[1] = 2;  // INCONSISTENT;
-    signal->theData[2] = 0;  // Not used
-    signal->theData[3] = (Uint32)min;
-    signal->theData[4] = (Uint32)(min >> 32);
-    sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 5, JBB);
-    m_missing_data = true;
-    return;
-  }
-
-  if (pos.m_page_id == RNIL) {
+  if (normal_resendable() && pos.m_page_id == RNIL) {
     jam();
+    g_eventLogger->info(
+        "SUMA bucket %u resend complete as the bucket is empty and will "
+        "become active. max_acked: %u/%u  max_gci at bucket header : %u/%u",
+        buck, Uint32(bucket->m_max_acked_gci >> 32),
+        Uint32(bucket->m_max_acked_gci), Uint32(pos.m_max_gci >> 32),
+        Uint32(pos.m_max_gci));
     m_active_buckets.set(buck);
     m_gcp_complete_rep_count++;
-    g_eventLogger->info(
-        "empty bucket(RNIL) -> active max_acked: %u/%u max_gci: %u/%u",
-        Uint32(bucket->m_max_acked_gci >> 32), Uint32(bucket->m_max_acked_gci),
-        Uint32(pos.m_max_gci >> 32), Uint32(pos.m_max_gci));
     return;
   }
 
-  Uint64 max = m_max_seen_gci;
-  if (min > max) {
+  // Start resending from the epoch that is not yet ack'd
+  const Uint64 resend_start_gci = bucket->m_max_acked_gci + 1;
+  if (normal_resendable() && resend_start_gci > m_max_seen_gci) {
+    jam();
+    // Everything seen has been sent + acked by subscribers
     ndbrequire(pos.m_page_id == bucket->m_buffer_tail);
+    g_eventLogger->info(
+        "SUMA bucket %u resend complete as nothing unacknowledged "
+        "and will become active. "
+        "resend_start_gci %u/%u resend_end_gci %u/%u",
+        buck, Uint32(resend_start_gci >> 32), Uint32(resend_start_gci),
+        Uint32(m_max_seen_gci >> 32), Uint32(m_max_seen_gci));
     m_active_buckets.set(buck);
     m_gcp_complete_rep_count++;
-    g_eventLogger->info("empty bucket (%u/%u %u/%u) -> active",
-                        Uint32(min >> 32), Uint32(min), Uint32(max >> 32),
-                        Uint32(max));
     return;
   }
 
   g_cnt = 0;
-  bucket->m_state |= (Bucket::BUCKET_TAKEOVER | Bucket::BUCKET_RESEND);
+
+  /**
+   * Mark bucket for takeover on the next epoch boundary.  Don't
+   * takeover now as we have data to re-send and we need data in the
+   * current epoch to be delivered in-order, therefore we must continue to
+   * buffer it so that it is re-sent in order.
+   */
+  bucket->m_state |= (Bucket::BUCKET_TAKEOVER);
   bucket->m_switchover_node = get_responsible_node(buck);
-  bucket->m_switchover_gci = max;
+  bucket->m_switchover_gci = m_max_seen_gci;
 
   ndbassert(!m_active_buckets.get(buck));
   m_switchover_buckets.set(buck);
 
+  // If the lowest resendable epoch is not yet established due to
+  // an out of buffer release handling, do not start resending.
+  if (unlikely(!normal_resendable())) {
+    jam();
+    // Gap in the event stream
+    m_missing_data = true;
+
+    // Inform the incident to the users
+    signal->theData[0] = NDB_LE_SubscriptionStatus;
+    signal->theData[1] = 2;  // INCONSISTENT;
+    signal->theData[2] = 0;  // Not used
+    signal->theData[3] = (Uint32)resend_start_gci;
+    signal->theData[4] = (Uint32)(resend_start_gci >> 32);
+    sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 5, JBB);
+
+    g_eventLogger->info(
+        "SUMA Gap in the event stream. No need to start "
+        "resending. Bucket %u will become active. "
+        "Bucket's max_acked_gci %u/%u max_seen_gci %u/%u",
+        buck, Uint32(bucket->m_max_acked_gci >> 32),
+        Uint32(bucket->m_max_acked_gci), Uint32(m_max_seen_gci >> 32),
+        Uint32(m_max_seen_gci));
+    return;
+  }
+
+  // Start resending from resend_start_gci to m_max_seen_gci, which is
+  // the switchover_gci where resend ends and forwarding starts.
+  bucket->m_state |= Bucket::BUCKET_RESEND;
+
+  g_eventLogger->info("SUMA Start resending bucket %u from %u/%u to %u/%u ",
+                      buck, Uint32(resend_start_gci >> 32),
+                      Uint32(resend_start_gci), Uint32(m_max_seen_gci >> 32),
+                      Uint32(m_max_seen_gci));
+
   signal->theData[0] = SumaContinueB::RESEND_BUCKET;
   signal->theData[1] = buck;
-  signal->theData[2] = (Uint32)(min >> 32);
+  signal->theData[2] = (Uint32)(resend_start_gci >> 32);
   signal->theData[3] = 0;
   signal->theData[4] = 0;
-  signal->theData[5] = (Uint32)(min & 0xFFFFFFFF);
+  signal->theData[5] = (Uint32)(resend_start_gci & 0xFFFFFFFF);
   signal->theData[6] = 0;
   sendSignal(reference(), GSN_CONTINUEB, signal, 7, JBB);
 
-  g_eventLogger->info("min: %u/%u - max: %u/%u) page: %d", Uint32(min >> 32),
-                      Uint32(min), Uint32(max >> 32), Uint32(max),
-                      bucket->m_buffer_tail);
-  ndbrequire(max >= min);
+  ndbrequire(m_max_seen_gci >= resend_start_gci);
 }
 
+#ifdef ERROR_INSERT
+static Uint32 resend_bucket_round = 0;
+#endif
 void Suma::resend_bucket(Signal *signal, Uint32 buck, Uint64 min_gci,
                          Uint32 pos, Uint64 last_gci) {
+  DBUG_ENTER("Suma::resend_bucket");
+
   ndbrequire(buck < NO_OF_BUCKETS);
   Bucket *bucket = c_buckets + buck;
-  Uint32 tail = bucket->m_buffer_tail;
+  g_eventLogger->info("resend_bucket");
 
+#ifdef ERROR_INSERT
+  if (unlikely(ERROR_INSERTED(13060))) {
+    jam();
+    /*
+    // resend_bucket_round accumulates only from the first bucket fiber
+    for (Uint32 i = 0; i < m_switchover_buckets.count(); ++i) {
+      if (m_switchover_buckets.get(buck)) {
+       resend_bucket_round++;
+       break;
+      }
+    }
+    */
+    // Any bucket fiber can add, and thus meeting the condition faster
+    resend_bucket_round++;
+    if (resend_bucket_round == ERROR_INSERT_EXTRA) {
+      jam();
+      g_eventLogger->info(
+          "resend_bucket: cleared error insertion 13060 and "
+          "simulating OOB at round %u",
+          resend_bucket_round);
+      resend_bucket_round = 0;
+      CLEAR_ERROR_INSERT_VALUE;
+      out_of_buffer(signal);
+    }
+  }
+#endif
+
+  /**
+   * Check if out_of_buffer handling began and releasing buffers while
+   * resending took a break (CONTINUEB).
+   */
+  if (unlikely(!normal_resendable())) {
+    jam();
+    // Gap in the event stream
+    m_missing_data = true;
+
+    // Stop resending
+    ndbassert(bucket->m_state & Bucket::BUCKET_RESEND);
+    bucket->m_state &= ~(Uint32)Bucket::BUCKET_RESEND;
+
+    // Ensure bucket take-over :
+    // - either it is waiting to be taken over
+    // - or it has already been taken over.
+    ndbrequire(bucket->m_state & Bucket::BUCKET_TAKEOVER ||
+               m_active_buckets.get(buck));
+
+    g_eventLogger->info(
+        "SUMA Stops resending due to out-of-buffer "
+        "handling while resending. "
+        "Bucket %u will become active. "
+        "Bucket's max_acked_gci %u/%u "
+        "resend-start gci %u/%u ",
+        buck, Uint32(bucket->m_max_acked_gci >> 32),
+        Uint32(bucket->m_max_acked_gci), (Uint32)(min_gci >> 32),
+        (Uint32)(min_gci));
+
+    // Inform the incident
+    signal->theData[0] = NDB_LE_SubscriptionStatus;
+    signal->theData[1] = 2;  // INCONSISTENT;
+    signal->theData[2] = 0;  // Not used
+    signal->theData[3] = (Uint32)(min_gci);
+    signal->theData[4] = (Uint32)(min_gci >> 32);
+    sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 5, JBB);
+
+    return;
+  }
+
+  Uint32 tail = bucket->m_buffer_tail;
   Buffer_page *page = c_page_pool.getPtr(tail);
   Uint64 max_gci = page->m_max_gci_lo | (Uint64(page->m_max_gci_hi) << 32);
   Uint32 next_page = page->m_next_page;
@@ -6872,7 +7163,7 @@ void Suma::resend_bucket(Signal *signal, Uint32 buck, Uint64 min_gci,
       jam();
       ndbrequire(part == 1);
 
-      const uint buffer_header_sz = 6;
+      const uint buffer_header_sz = Buffer_page::HEADER_SZ;
       g_cnt++;
       Uint32 subPtrI = src[0];
       Uint32 schemaVersion = src[1];
@@ -6881,6 +7172,7 @@ void Suma::resend_bucket(Signal *signal, Uint32 buck, Uint64 min_gci,
       Uint32 any_value = src[3];
       Uint32 transId1 = src[4];
       Uint32 transId2 = src[5];
+      Uint32 hashValue = src[6];
       src += buffer_header_sz;
 
       ndbassert(sz - buffer_header_sz >= sz_1);
@@ -6970,7 +7262,8 @@ void Suma::resend_bucket(Signal *signal, Uint32 buck, Uint64 min_gci,
         data->transId1 = transId1;
         data->transId2 = transId2;
 
-        sendBatchedSUB_TABLE_DATA(signal, subPtr.p->m_subscribers, ptr, nptr);
+        sendBatchedSUB_TABLE_DATA(signal, subPtr.p->m_subscribers, ptr, nptr,
+                                  hashValue);
       }
     }
   }
@@ -6997,8 +7290,16 @@ next:
   if (tail == RNIL) {
     jam();
     bucket->m_state &= ~(Uint32)Bucket::BUCKET_RESEND;
+
+    /**
+     * Bucket takeover in sendSUB_GCP_COMPLETE_REP() sets bucket head's
+     * m_page_id and m_next_page to RNIL to inform the resend fiber to
+     * indicate that the swtich_over gci is completed and no more data
+     * will arrive. Resend fiber uses this info to terminate resending.
+     */
     ndbassert(!(bucket->m_state & Bucket::BUCKET_TAKEOVER));
-    g_eventLogger->info("resend done...");
+
+    g_eventLogger->info("SUMA Resend done for bucket %u", buck);
     return;
   }
 
@@ -7009,6 +7310,18 @@ next:
   signal->theData[4] = (Uint32)(last_gci >> 32);
   signal->theData[5] = (Uint32)(min_gci & 0xFFFFFFFF);
   signal->theData[6] = (Uint32)(last_gci & 0xFFFFFFFF);
+
+#ifdef ERROR_INSERT
+  if (ERROR_INSERTED(13061)) {
+    jam();
+    g_eventLogger->info(
+        "resend_bucket: Error insertion 13061 delaying contB"
+        " round %u",
+        resend_bucket_round);
+    delay = true;
+  }
+#endif
+
   if (!delay) {
     jam();
     sendSignal(SUMA_REF, GSN_CONTINUEB, signal, 7, JBB);

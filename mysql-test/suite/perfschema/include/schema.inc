@@ -72,6 +72,7 @@ show create table table_handles;
 show create table table_io_waits_summary_by_index_usage;
 show create table table_io_waits_summary_by_table;
 show create table table_lock_waits_summary_by_table;
+show create table temporary_account_locks;
 show create table threads;
 show create table users;
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2001, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -67,16 +67,16 @@ struct FT_SUPERDOC {
 };
 
 static int FT_SUPERDOC_cmp(const void *, const void *a, const void *b) {
-  const FT_SUPERDOC *p1 = pointer_cast<const FT_SUPERDOC *>(a);
-  const FT_SUPERDOC *p2 = pointer_cast<const FT_SUPERDOC *>(b);
+  const auto *p1 = pointer_cast<const FT_SUPERDOC *>(a);
+  const auto *p2 = pointer_cast<const FT_SUPERDOC *>(b);
   if (p1->doc.dpos < p2->doc.dpos) return -1;
   if (p1->doc.dpos == p2->doc.dpos) return 0;
   return 1;
 }
 
 static int walk_and_match(void *v_word, uint32 count, void *v_aio) {
-  FT_WORD *word = static_cast<FT_WORD *>(v_word);
-  ALL_IN_ONE *aio = static_cast<ALL_IN_ONE *>(v_aio);
+  auto *word = static_cast<FT_WORD *>(v_word);
+  auto *aio = static_cast<ALL_IN_ONE *>(v_aio);
   int subkeys = 0, r;
   uint keylen, doc_cnt;
   FT_SUPERDOC sdoc, *sptr;
@@ -87,7 +87,7 @@ static int walk_and_match(void *v_word, uint32 count, void *v_aio) {
   uchar *keybuff = aio->keybuff;
   MI_KEYDEF *keyinfo = info->s->keyinfo + aio->keynr;
   my_off_t key_root;
-  uint extra = HA_FT_WLEN + info->s->rec_reflength;
+  uint const extra = HA_FT_WLEN + info->s->rec_reflength;
   float tmp_weight;
 
   DBUG_TRACE;
@@ -190,8 +190,8 @@ static int walk_and_match(void *v_word, uint32 count, void *v_aio) {
 }
 
 static int walk_and_copy(void *v_from, uint32, void *v_to) {
-  FT_SUPERDOC *from = static_cast<FT_SUPERDOC *>(v_from);
-  FT_DOC **to = static_cast<FT_DOC **>(v_to);
+  auto *from = static_cast<FT_SUPERDOC *>(v_from);
+  auto **to = static_cast<FT_DOC **>(v_to);
   DBUG_TRACE;
   from->doc.weight += from->tmp_weight * from->word_ptr->weight;
   (*to)->dpos = from->doc.dpos;
@@ -201,8 +201,8 @@ static int walk_and_copy(void *v_from, uint32, void *v_to) {
 }
 
 static int walk_and_push(void *v_from, uint32, void *v_best) {
-  FT_SUPERDOC *from = static_cast<FT_SUPERDOC *>(v_from);
-  QUEUE *best = static_cast<QUEUE *>(v_best);
+  auto *from = static_cast<FT_SUPERDOC *>(v_from);
+  auto *best = static_cast<QUEUE *>(v_best);
   DBUG_TRACE;
   from->doc.weight += from->tmp_weight * from->word_ptr->weight;
   best->elements = std::min(best->elements, uint(ft_query_expansion_limit - 1));
@@ -211,9 +211,9 @@ static int walk_and_push(void *v_from, uint32, void *v_best) {
 }
 
 static int FT_DOC_cmp(void *, uchar *a_arg, uchar *b_arg) {
-  FT_DOC *a = (FT_DOC *)a_arg;
-  FT_DOC *b = (FT_DOC *)b_arg;
-  double c = b->weight - a->weight;
+  auto *a = (FT_DOC *)a_arg;
+  auto *b = (FT_DOC *)b_arg;
+  double const c = b->weight - a->weight;
   return ((c < 0) ? -1 : (c > 0) ? 1 : 0);
 }
 
@@ -223,7 +223,7 @@ FT_INFO *ft_init_nlq_search(MI_INFO *info, uint keynr, uchar *query,
   ALL_IN_ONE aio;
   FT_DOC *dptr;
   st_ft_info_nlq *dlist = nullptr;
-  my_off_t saved_lastpos = info->lastpos;
+  my_off_t const saved_lastpos = info->lastpos;
   struct st_mysql_ftparser *parser;
   MYSQL_FTPARSER_PARAM *ftparser_param;
   DBUG_TRACE;
@@ -240,7 +240,7 @@ FT_INFO *ft_init_nlq_search(MI_INFO *info, uint keynr, uchar *query,
   parser = info->s->keyinfo[keynr].parser;
   if (!(ftparser_param = ftparser_call_initializer(info, keynr, 0))) goto err;
 
-  memset(&wtree, 0, sizeof(wtree));
+  memset((void *)&wtree, 0, sizeof(wtree));
 
   init_tree(&aio.dtree, 0, sizeof(FT_SUPERDOC), &FT_SUPERDOC_cmp, false,
             nullptr, nullptr);
@@ -259,7 +259,7 @@ FT_INFO *ft_init_nlq_search(MI_INFO *info, uint keynr, uchar *query,
                &FT_DOC_cmp, nullptr);
     tree_walk(&aio.dtree, &walk_and_push, &best, left_root_right);
     while (best.elements) {
-      my_off_t docid = ((FT_DOC *)queue_remove(&best, 0))->dpos;
+      my_off_t const docid = ((FT_DOC *)queue_remove(&best, 0))->dpos;
       if (!(*info->read_record)(info, docid, record)) {
         info->update |= HA_STATE_AKTIV;
         ftparser_param->flags = MYSQL_FTFLAGS_NEED_COPY;
@@ -307,8 +307,8 @@ err:
 }
 
 int ft_nlq_read_next(FT_INFO *handler_base, char *record) {
-  st_ft_info_nlq *handler = (st_ft_info_nlq *)handler_base;
-  MI_INFO *info = (MI_INFO *)handler->info;
+  auto *handler = (st_ft_info_nlq *)handler_base;
+  auto *info = (MI_INFO *)handler->info;
 
   // Move to the next document that has a non-zero score.
   while (++handler->curdoc < handler->ndocs &&
@@ -332,10 +332,10 @@ int ft_nlq_read_next(FT_INFO *handler_base, char *record) {
 float ft_nlq_find_relevance(FT_INFO *handler_base,
                             uchar *record [[maybe_unused]],
                             uint length [[maybe_unused]]) {
-  st_ft_info_nlq *handler = (st_ft_info_nlq *)handler_base;
+  auto *handler = (st_ft_info_nlq *)handler_base;
   int a, b, c;
   FT_DOC *docs = handler->doc;
-  my_off_t docid = handler->info->lastpos;
+  my_off_t const docid = handler->info->lastpos;
 
   if (docid == HA_POS_ERROR) return -5.0;
 
@@ -348,20 +348,18 @@ float ft_nlq_find_relevance(FT_INFO *handler_base,
       a = c;
   }
   /* bounds check to avoid accessing unallocated handler->doc  */
-  if (a < handler->ndocs && docs[a].dpos == docid)
-    return (float)docs[a].weight;
-  else
-    return 0.0;
+  if (a < handler->ndocs && docs[a].dpos == docid) return (float)docs[a].weight;
+  return 0.0;
 }
 
 void ft_nlq_close_search(FT_INFO *handler) { my_free(handler); }
 
 float ft_nlq_get_relevance(FT_INFO *handler_base) {
-  st_ft_info_nlq *handler = (st_ft_info_nlq *)handler_base;
+  auto *handler = (st_ft_info_nlq *)handler_base;
   return (float)handler->doc[handler->curdoc].weight;
 }
 
 void ft_nlq_reinit_search(FT_INFO *handler_base) {
-  st_ft_info_nlq *handler = (st_ft_info_nlq *)handler_base;
+  auto *handler = (st_ft_info_nlq *)handler_base;
   handler->curdoc = -1;
 }

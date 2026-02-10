@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,11 +30,10 @@
   @file mysys/my_fstream.cc
 */
 
-#include "my_config.h"
-
-#include <errno.h>
-#include <stdio.h>
-#include <sys/types.h>
+#include <cassert>
+#include <cerrno>
+#include <cstdint>
+#include <cstdio>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -110,7 +109,7 @@ size_t my_fwrite(FILE *stream, const uchar *Buffer, size_t Count, myf MyFlags) {
   seekptr = my_ftell(stream);
   for (;;) {
     errno = 0;
-    size_t written =
+    size_t const written =
         fwrite(pointer_cast<const char *>(Buffer), sizeof(char), Count, stream);
     if (written != Count) {
       set_my_errno(errno);

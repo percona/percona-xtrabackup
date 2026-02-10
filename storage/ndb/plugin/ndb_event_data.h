@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -76,6 +76,7 @@ class Ndb_event_data {
  private:
   void init_stored_columns();
   void init_pk_bitmap();
+  void init_uk();
   TABLE *open_shadow_table(THD *thd, const char *db, const char *table_name,
                            const char *key, const dd::Table *table_def);
 
@@ -94,6 +95,11 @@ class Ndb_event_data {
   // The NDB table have blobs, used for determining if handle_data_get_blobs()
   // need to be called while handling event
   const bool have_blobs;
+
+  // The NDB table has FK relationships
+  bool have_fk;
+  // The NDB table has Unique Keys
+  bool have_uk;
 
   // Bitmap with all stored columns, used as the initial value when determining
   // which attributes are received in an event

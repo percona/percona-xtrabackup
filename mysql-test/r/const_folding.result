@@ -52641,9 +52641,9 @@ s	j
 6	NULL
 EXPLAIN SELECT SUM(i) s, j FROM t  WHERE j != 128 GROUP BY j WITH ROLLUP;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	ALL	NULL	NULL	NULL	NULL	4	100.00	Using filesort
+1	SIMPLE	t	NULL	ALL	NULL	NULL	NULL	NULL	4	75.00	Using where; Using filesort
 Warnings:
-Note	1003	/* select#1 */ select rollup_sum_switcher(sum(`test`.`t`.`i`)) AS `s`,rollup_group_item(`test`.`t`.`j`,0) AS `j` from `test`.`t` where true group by `test`.`t`.`j` with rollup
+Note	1003	/* select#1 */ select rollup_sum_switcher(sum(`test`.`t`.`i`)) AS `s`,rollup_group_item(`test`.`t`.`j`,0) AS `j` from `test`.`t` where (`test`.`t`.`j` is not null) group by `test`.`t`.`j` with rollup
 SELECT SUM(i) s, j FROM t GROUP BY j HAVING j != 128;
 s	j
 3	1

@@ -18,7 +18,7 @@ noauthdb.f1()
 # Connect as noauth - should fail.
 #try to expire password of this plugin user - should warn
 alter user noauth@localhost password expire;
-ERROR HY000: Operation ALTER USER failed for 'noauth'@'localhost'
+ERROR HY000: The selected authentication method mysql_no_login does not support password expiration
 #uninstall plugin and try to login with this plugin user - should return error
 uninstall plugin mysql_no_login;
 # Connect as noauth - should fail.

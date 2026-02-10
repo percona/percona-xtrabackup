@@ -1,0 +1,65 @@
+# Variable server_memory indicates base memory value to be used by the server
+# when auto-tuning default values of configuration parameters
+# Note: Value of 0 implies no limits, read from cgroup/hardware
+# Note: Very small value implies, configurations defaults to minimum value
+
+#
+# show that it's global
+#
+select @@global.server_memory;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+select @@session.server_memory;
+show global variables like 'server_memory';
+show session variables like 'server_memory';
+--disable_warnings
+select * from performance_schema.global_variables where variable_name='server_memory';
+select * from performance_schema.session_variables where variable_name='server_memory';
+--enable_warnings
+
+#
+# show that it's read-only
+#
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set global server_memory=1G;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set session server_memory=1G;
+
+#
+# show that it's non persistent
+#
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set persist server_memory=1G;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set persist_only server_memory=1G;
+
+#
+# Set the option and verify that it is reflected
+#
+--let $restart_parameters=restart: --server-memory=512M
+--source include/restart_mysqld.inc
+
+select @@server_memory;
+
+--disable_warnings
+select * from performance_schema.global_variables where variable_name='server_memory';
+select * from performance_schema.session_variables where variable_name='server_memory';
+--enable_warnings
+
+#
+# Value less than 0 is adjusted to 0
+#
+--let $restart_parameters=restart: --server-memory=512M
+--source include/restart_mysqld.inc
+call mtr.add_suppression("Warning.* option 'server_memory': value -1 adjusted to 0.");
+
+select @@server_memory;
+
+--disable_warnings
+select * from performance_schema.global_variables where variable_name='server_memory';
+select * from performance_schema.session_variables where variable_name='server_memory';
+--enable_warnings
+
+--echo # Cleanup by restart
+--let $restart_parameters=
+--source include/restart_mysqld.inc
+

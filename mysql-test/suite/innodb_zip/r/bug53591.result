@@ -1,3 +1,4 @@
+call mtr.add_suppression("Cannot alter the table .* because the record size will exceed the maximum allowed size for a record .*");
 SET GLOBAL innodb_file_per_table=on;
 set old_alter_table=0;
 CREATE TABLE bug53591(a text charset utf8mb3 not null)

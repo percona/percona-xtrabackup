@@ -1,5 +1,5 @@
-# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
-# 
+# Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
@@ -121,8 +121,11 @@ MACRO(FIND_SYSTEM_SASL)
   IF (SASL_SYSTEM_LIBRARY)
     SET(SASL_LIBRARY ${SASL_SYSTEM_LIBRARY})
     MESSAGE(STATUS "SASL_LIBRARY ${SASL_LIBRARY}")
+    IF(APPLE)
+      SET(SASL_WITHOUT_KERBEROS 1)
+    ENDIF()
   ENDIF()
-ENDMACRO()
+ENDMACRO(FIND_SYSTEM_SASL)
 
 # Lookup and copy all plugins
 #   lib/sasl2/libanonymous.so
@@ -247,7 +250,7 @@ MACRO(FIND_CUSTOM_SASL)
 ENDMACRO()
 
 MACRO(MYSQL_CHECK_SASL)
-  IF(NOT WITH_SASL)
+  IF(NOT WIN32 AND NOT WITH_SASL)
     SET(WITH_SASL "system" CACHE STRING "${WITH_SASL_DOC_STRING}" FORCE)
   ENDIF()
 
@@ -259,7 +262,11 @@ MACRO(MYSQL_CHECK_SASL)
   ENDIF()
 
   IF(WITH_SASL STREQUAL "system")
-    FIND_SYSTEM_SASL()
+    IF(WIN32)
+      MESSAGE(FATAL_ERROR "-DWITH_SASL=system not supported on this platform")
+    ELSE()
+      FIND_SYSTEM_SASL()
+    ENDIF()
   ELSEIF(WITH_SASL_PATH)
     IF(LINUX_STANDALONE OR WIN32)
       FIND_CUSTOM_SASL()
@@ -268,7 +275,9 @@ MACRO(MYSQL_CHECK_SASL)
     ENDIF()
   ELSE()
     RESET_SASL_VARIABLES()
-    MESSAGE(FATAL_ERROR "Could not find SASL")
+    IF(NOT WIN32)
+      MESSAGE(FATAL_ERROR "Could not find SASL")
+    ENDIF()
   ENDIF()
 
   IF(HAVE_SASL_SASL_H AND SASL_LIBRARY)
@@ -276,8 +285,10 @@ MACRO(MYSQL_CHECK_SASL)
     SET(SASL_FOUND TRUE)
   ELSE()
     SET(SASL_FOUND FALSE)
-    # FATAL_ERROR later if WITH_AUTHENTICATION_LDAP == ON
-    MESSAGE(WARNING "Could not find SASL")
+    IF(WITH_SASL)
+      # FATAL_ERROR later if WITH_AUTHENTICATION_LDAP == ON
+      MESSAGE(WARNING "Could not find SASL")
+    ENDIF()
   ENDIF()
 
 ENDMACRO()

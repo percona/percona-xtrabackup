@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,8 @@
 
 #include "my_config.h"
 
-#include <errno.h>
 #include <gtest/gtest.h>
+#include <cerrno>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -38,7 +38,7 @@
 TEST(FileUtilsTest, TellPipe) {
   int pipefd[2];
   EXPECT_EQ(0, pipe(pipefd));
-  my_off_t pos = mysql_file_tell(pipefd[1], MYF(0));
+  my_off_t const pos = mysql_file_tell(pipefd[1], MYF(0));
   EXPECT_EQ(MY_FILEPOS_ERROR, pos);
   EXPECT_EQ(ESPIPE, my_errno());
   EXPECT_EQ(0, close(pipefd[0]));

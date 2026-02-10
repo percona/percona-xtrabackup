@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -66,6 +66,13 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /** The log checkpointer thread routine.
 @param[in,out]	log_ptr		pointer to redo log */
 void log_checkpointer(log_t *log_ptr);
+
+/** Requests a checkpoint written for lsn greater or equal to provided one.
+The log.limits_mutex has to be acquired before it is called, and it is not
+released within this function.
+@param[in,out]  log             redo log
+@param[in]      requested_lsn   provided lsn (checkpoint should be not older) */
+void log_request_checkpoint_low(log_t &log, lsn_t requested_lsn);
 
 /** Checks if log checkpointer thread is active.
 @return true if and only if the log checkpointer thread is active */
@@ -155,11 +162,6 @@ lsn_t log_sync_flush_lsn(log_t &log);
 @param[in, out]  log   redo log
 @param[in]       sync  whether request is sync (function should wait) */
 void log_request_checkpoint(log_t &log, bool sync);
-
-/** Requests a checkpoint written in the next log file (not in the one,
-to which current log.last_checkpoint_lsn belongs to).
-@param[in,out]   log   redo log */
-void log_request_checkpoint_in_next_file(log_t &log);
 
 /** Requests a checkpoint at the current lsn.
 @param[in,out]   log            redo log
@@ -340,8 +342,9 @@ inline void log_free_check() {
 
 /** @{ */
 
-/** Updates log.free_check_limit_lsn in the log. The log_limits_mutex
-must be acquired before a call (unless srv_is_being_started is true).
+/** Updates log.free_check_limit_lsn in the log. The log_files_mutex and
+log_limits_mutex must be acquired before a call (unless srv_is_being_started is
+true).
 @param[in,out]  log   redo log */
 void log_update_limits_low(log_t &log);
 

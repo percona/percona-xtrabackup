@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -37,10 +37,8 @@ SET(test_files
   test_block_clients.cc
   # test_connection.cc
   test_connection_container.cc
-  test_first_available.cc
   test_metadata_cache_group.cc
-  test_next_available.cc
-  test_round_robin.cc
+  test_static_routing.cc
   test_routing.cc
   test_setup_named_socket_service.cc
   test_setup_tcp_service.cc

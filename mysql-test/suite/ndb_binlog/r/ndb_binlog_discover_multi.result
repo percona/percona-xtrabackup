@@ -60,14 +60,14 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 binlog.000003	#	Query	#	#	BEGIN
 binlog.000003	#	Table_map	#	#	table_id: # (test.t1)
 binlog.000003	#	Table_map	#	#	table_id: # (mysql.ndb_apply_status)
-binlog.000003	#	Write_rows	#	#	table_id: #
-binlog.000003	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000003	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+binlog.000003	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000003	#	Query	#	#	COMMIT
 binlog.000003	#	Query	#	#	BEGIN
 binlog.000003	#	Table_map	#	#	table_id: # (test_db.t1)
 binlog.000003	#	Table_map	#	#	table_id: # (mysql.ndb_apply_status)
-binlog.000003	#	Write_rows	#	#	table_id: #
-binlog.000003	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000003	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+binlog.000003	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000003	#	Query	#	#	COMMIT
 binlog.000003	#	Rotate	#	#	binlog.000004;pos=POS
 # Cleanup

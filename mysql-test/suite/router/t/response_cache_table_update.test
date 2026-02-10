@@ -1,0 +1,86 @@
+RESET BINARY LOGS AND GTIDS;
+
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+--echo
+--echo
+--echo ## I. Setup db-object-table with caching enabled
+--echo #
+--echo # 1. Show that response-caching is enabled, and update doesn't invalidate the cache
+--echo # 2. Show that after refering to the same object but by using other criteria/URL,
+--echo #    the cache is missed and object for this new URL is fetched from database.
+--echo #
+
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"responseCache":{"maxCacheSize":100200}}');
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+# options - Enable caching for t2
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/t2
+--let $mrs_add_db_object_options='{"result": {"cacheTimeToLive":15},"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}'
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic/t2/1 --wait-until-status=60 --display none
+
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/basic/t2/?offset=1&limit=1'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+let $mrs_client_arg_payload='
+        {
+            "id": 2,
+            "date": "2000-01-01 00:00:00.000000",
+            "name": "Updated second row",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/basic/t2/2"
+                }
+            ],
+            "comments": "New comment"
+        }
+';
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/basic/t2/2'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/t2/?offset=1&limit=1'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/basic/t2/?q={"name":"Second row"}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_empty.sch
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/t2/?q={"name":"Updated second row"}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+--remove_files_wildcard $MYSQL_TMP_DIR *.json
+--source ../include/mrs/cleanup.inc

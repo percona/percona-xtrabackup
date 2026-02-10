@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 SET @saved_sql_log_bin = @@SESSION.sql_log_bin;
 #
 # CREATE TABLE AS SELECT (CTAS) and foreign key (FK).
@@ -97,6 +98,23 @@ CREATE TABLE innodb_table1 (m INT, n INT,
 FOREIGN KEY (n) REFERENCES t0(f1)) START TRANSACTION;
 ERROR HY000: Foreign key creation is not allowed with CREATE TABLE as SELECT and CREATE TABLE with START TRANSACTION statement.
 #
+# CASE 6 The behavior of CTAS, with sql_log_bin OFF and selecting
+# from a table containing data that fails a foreign key constraint
+#
+SET sql_log_bin = OFF;
+CREATE TABLE parent (f1 INT PRIMARY KEY);
+CREATE TABLE child (f1 INT PRIMARY KEY, f2 INT,
+FOREIGN KEY (f2) REFERENCES parent(f1));
+INSERT INTO parent VALUES (1), (2);
+INSERT Into child VALUES (1,1);
+SET foreign_key_checks=OFF;
+INSERT Into child VALUES (3,3);
+SET foreign_key_checks=ON;
+CREATE TABLE newchild (f1 INT PRIMARY KEY, f2 INT, 
+FOREIGN KEY (f2) REFERENCES parent(f1))
+AS SELECT f1, f2 FROM child;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`newchild`, CONSTRAINT `newchild_ibfk_1` FOREIGN KEY (`f2`) REFERENCES `parent` (`f1`))
+#
 # Bug#35553557 Table creation with foreign key assertion error
 #
 SET sql_log_bin = OFF;
@@ -133,3 +151,6 @@ pk	fk
 DROP TABLE self_referencing_table;
 SET sql_log_bin = @saved_sql_log_bin;
 DROP TABLE t0;
+DROP TABLE child;
+DROP TABLE parent;
+include/rpl/set_gtid_mode_on.inc

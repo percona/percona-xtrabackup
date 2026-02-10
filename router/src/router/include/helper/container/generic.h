@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -80,7 +80,7 @@ bool get_if(const Container &c, Find_if &&find_if,
             const typename Container::value_type *out) {
   auto it = std::find_if(c.begin(), c.end(), std::forward<Find_if>(find_if));
   if (c.end() == it) return false;
-  *out = (*it);
+  if (out) *out = (*it);
   return true;
 }
 
@@ -89,7 +89,7 @@ bool get_if(Container &c, Find_if &&find_if,
             typename Container::value_type *out) {
   auto it = std::find_if(c.begin(), c.end(), std::forward<Find_if>(find_if));
   if (c.end() == it) return false;
-  *out = (*it);
+  if (out) *out = (*it);
   return true;
 }
 
@@ -99,6 +99,13 @@ bool has(const Container &c, Value &&val) {
   auto e = std::end(c);
   auto it = std::find(b, e, std::forward<Value>(val));
   if (e == it) return false;
+  return true;
+}
+
+template <typename Container, typename Find_if>
+bool has_if(const Container &c, Find_if &&find_if) {
+  auto it = std::find_if(c.begin(), c.end(), std::forward<Find_if>(find_if));
+  if (c.end() == it) return false;
   return true;
 }
 

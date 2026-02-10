@@ -1,0 +1,17 @@
+include/group_replication.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection server1]
+
+############################################################
+# 1. Assert that server1 is configured with encryption
+#    enabled by default.
+[connection server1]
+include/assert.inc [Default group_replication_recovery_use_ssl is ON/1]
+include/assert.inc [Default group_replication_ssl_mode is REQUIRED]
+include/assert.inc [SSL is allowed on group_replication_recovery channel]
+
+############################################################
+# 2. Clean up.
+include/group_replication_end.inc

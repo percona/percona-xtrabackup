@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -401,6 +401,11 @@ class Table_impl : public Abstract_table_impl, virtual public Table {
   Partition_leaf_vector *leaf_partitions() override {
     return &m_leaf_partitions;
   }
+
+  Partition *get_leaf_partition(const std::string &part_name) override;
+
+  const Partition *get_leaf_partition(
+      const std::string &part_name) const override;
 
   // non-virtual
   void add_leaf_partition(Partition *p) { m_leaf_partitions.push_back(p); }

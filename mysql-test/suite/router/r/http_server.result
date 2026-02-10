@@ -1,0 +1,62 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+
+
+## I. Handling of HTTP2
+#
+# 1. verify that given resources are available over HTTP/1.1
+# 2. verify that connection is rejected when client tries to speak HTTP/2.0 at connection start
+# 3. verify that connection protocol switch is ignored and connection is handled as HTTP/1.1
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+# Registred DB_OBJECT at path: /svc/basic/t1
+
+#
+# I.1
+GET /svc/basic/t1/1?f=id
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "BCA7CA369AF560DDC280B33A14F1AD164DE47441D149B7D1C748FEBF0D3BABA1"
+    }
+}
+OK
+
+#
+# I.2
+ERROR: eof
+
+
+#
+# I.3
+GET /svc/basic/t1/1?f=id
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "BCA7CA369AF560DDC280B33A14F1AD164DE47441D149B7D1C748FEBF0D3BABA1"
+    }
+}
+OK
+
+# Cleanup
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

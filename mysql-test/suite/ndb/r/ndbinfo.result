@@ -97,9 +97,10 @@ table_id	table_name	comment
 49	certificates	Certificates in current use for TLS connections
 50	threadblock_details	which blocks are run in which threads and some internal state details
 51	transporter_details	detailed transporter status
+52	transactions_full	transactions_full
 SELECT COUNT(*) FROM ndb$tables;
 COUNT(*)
-52
+53
 SELECT * FROM ndb$tables WHERE table_id = 2;
 table_id	table_name	comment	rows_estimate
 2	test	for testing	8000
@@ -151,6 +152,7 @@ table_id	table_name	comment
 49	certificates	Certificates in current use for TLS connections
 50	threadblock_details	which blocks are run in which threads and some internal state details
 51	transporter_details	detailed transporter status
+52	transactions_full	transactions_full
 SELECT * FROM ndb$tables WHERE table_name = 'LOGDESTINATION';
 table_id	table_name	comment	rows_estimate
 SELECT COUNT(*) FROM ndb$tables t, ndb$columns c
@@ -220,6 +222,7 @@ table_id	table_name
 24	threads
 12	threadstat
 13	transactions
+52	transactions_full
 4	transporters
 51	transporter_details
 
@@ -309,6 +312,7 @@ table_id
 49
 50
 51
+52
 
 TRUNCATE ndb$tables;
 ERROR HY000: Table 'ndb$tables' is read only
@@ -476,9 +480,9 @@ CREATE TABLE ndb$test (node_id int, block_number int PRIMARY KEY,
                        index(node_id)) ENGINE = ndbinfo;
 ERROR 42000: Too many keys specified; max 1 keys allowed
 
-## 5) Table with blobs not supported
+## 5) Table with blobs now supported
 CREATE TABLE ndb$test (node_id int, block_number blob) ENGINE = ndbinfo;
-ERROR 42000: The used table type doesn't support BLOB/TEXT columns
+DROP TABLE ndb$test;
 
 ## 6) Table with autoincrement not supported
 CREATE TABLE ndb$test (node_id int AUTO_INCREMENT) ENGINE = ndbinfo;

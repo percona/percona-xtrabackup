@@ -267,6 +267,86 @@ SET @@global.connection_control_min_connection_delay= @saved_min_delay;
 SET @@global.connection_control_max_connection_delay = @saved_value;
 SELECT @@global.connection_control_max_connection_delay;
 
+--echo # Test setting connection_control_exempt_unknown_users to invalid values
+SET @saved_exempt= @@global.connection_control_exempt_unknown_users;
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= -1;
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= 7;
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "YESS";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "ye";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "NOOOOO";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "n";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "ONN";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "offf";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "NO";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= NO;
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "YES";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= YES;
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "no";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "yes";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "FALSE";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "TRUE";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "false";
+SELECT @@global.connection_control_exempt_unknown_users;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.connection_control_exempt_unknown_users= "true";
+SELECT @@global.connection_control_exempt_unknown_users;
+--echo # Test setting connection_control_exempt_unknown_users to valid values
+SET @@global.connection_control_exempt_unknown_users= 0;
+SELECT @@global.connection_control_exempt_unknown_users;
+SET @@global.connection_control_exempt_unknown_users= 1;
+SELECT @@global.connection_control_exempt_unknown_users;
+SET @@global.connection_control_exempt_unknown_users= "OFF";
+SELECT @@global.connection_control_exempt_unknown_users;
+SET @@global.connection_control_exempt_unknown_users= "ON";
+SELECT @@global.connection_control_exempt_unknown_users;
+SET @@global.connection_control_exempt_unknown_users= FALSE;
+SELECT @@global.connection_control_exempt_unknown_users;
+SET @@global.connection_control_exempt_unknown_users= TRUE;
+SELECT @@global.connection_control_exempt_unknown_users;
+SET @@global.connection_control_exempt_unknown_users= "off";
+SELECT @@global.connection_control_exempt_unknown_users;
+SET @@global.connection_control_exempt_unknown_users= "on";
+SELECT @@global.connection_control_exempt_unknown_users;
+SET @@global.connection_control_exempt_unknown_users= false;
+SELECT @@global.connection_control_exempt_unknown_users;
+SET @@global.connection_control_exempt_unknown_users= true;
+SELECT @@global.connection_control_exempt_unknown_users;
+SET @@global.connection_control_exempt_unknown_users= @saved_exempt;
+
 --echo #-----------------------------------------------------------------------
 --echo # Cleanup
 disconnect conn_no_privs;

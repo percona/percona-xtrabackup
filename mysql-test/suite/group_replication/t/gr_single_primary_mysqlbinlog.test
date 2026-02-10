@@ -77,7 +77,7 @@ INSERT INTO test.t1 VALUES (1);
 
 --let $server2_connection_args= --user=root --host=127.0.0.1 --port=$SERVER_MYPORT_2
 --error 1 #ER_OPTION_PREVENTS_STATEMENT
---exec $MYSQL $server2_connection_args -e "source $MYSQLTEST_VARDIR/tmp/mysqlbinlog_grtest.binlog"
+--exec $MYSQL $server2_connection_args --commands -e "source $MYSQLTEST_VARDIR/tmp/mysqlbinlog_grtest.binlog"
 
 # Check no changes in GTID_EXECUTED
 --let $assert_text= GTID_EXECUTED must contain GROUP_UUID:2
@@ -91,7 +91,7 @@ INSERT INTO test.t1 VALUES (1);
 --source include/connection.inc
 
 --let $server1_connection_args= --user=root --host=127.0.0.1 --port=$SERVER_MYPORT_1
---exec $MYSQL $server1_connection_args -e "source $MYSQLTEST_VARDIR/tmp/mysqlbinlog_grtest.binlog"
+--exec $MYSQL $server1_connection_args --commands -e "source $MYSQLTEST_VARDIR/tmp/mysqlbinlog_grtest.binlog"
 
 # Check if data has been applied on server1
 --echo Wait until server1 applies the single row of table t1

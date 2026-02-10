@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -20,6 +20,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
+
+IF (WITH_MYSQL_AI)
+  ADD_COMPILE_DEFINITIONS(MYSQL_AI)
+ENDIF()
 
 SET(MYSQL_SERVER_COMPONENT_SOURCES
   audit_api_message_service_imp.cc
@@ -46,6 +50,8 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   mysql_mutex_service.cc
   mysql_psi_system_service.cc
   mysql_runtime_error.cc
+  mysql_runtime_warning.cc
+  mysql_timestamp_imp.cc
   mysql_rwlock_service.cc
   mysql_server_runnable_imp.cc
   mysql_string_service.cc
@@ -85,6 +91,12 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   mysql_statement_service_imp.cc
   mysql_signal_handler_imp.cc
   applier_metrics_service_imp.cc
+  mysql_library_imp.cc
+  mysql_json_encode_imp.cc
+  mysql_my_thread_imp.cc
+  mysql_file_imp.cc
+  mysql_server_attributes_imp.cc
+  mysql_lock_free_hash_imp.cc
   )
 
 # This static library is used to build mysqld binary and in some unit test cases
@@ -92,9 +104,10 @@ ADD_LIBRARY(mysql_server_component_services STATIC
   ${MYSQL_SERVER_COMPONENT_SOURCES})
 TARGET_COMPILE_DEFINITIONS(mysql_server_component_services
   PRIVATE WITH_MYSQL_COMPONENTS_TEST_DRIVER)
-TARGET_LINK_LIBRARIES(mysql_server_component_services PRIVATE extra::rapidjson)
-TARGET_LINK_LIBRARIES(mysql_server_component_services PRIVATE ext::zlib)
+TARGET_LINK_LIBRARIES(mysql_server_component_services
+  PRIVATE
+  extra::rapidjson
+  ext::zlib
+  extra::unordered_dense
+  )
 ADD_DEPENDENCIES(mysql_server_component_services GenError)
-
-TARGET_INCLUDE_DIRECTORIES(mysql_server_component_services SYSTEM PRIVATE 
-  ${CMAKE_SOURCE_DIR}/extra/unordered_dense/unordered_dense-4.4.0/include)

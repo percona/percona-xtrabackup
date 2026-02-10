@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,7 +36,7 @@
  * increase hash key size.
  **/
 
-#include <assert.h>
+#include <cassert>
 #include "Bitmask.hpp"
 
 #define JAM_FILE_ID 261
@@ -77,7 +77,8 @@ class LHLevel {
   explicit LHLevel(Uint32 size);
 
  private:
-  LHLevel(LHLevel const &);  // Not to be implemented
+  LHLevel(LHLevel const &) = delete;
+
  public:
   void clear();
   bool isEmpty() const;
@@ -121,8 +122,8 @@ class LocalLHLevel : public LHLevel {
   ~LocalLHLevel() { m_src = getSize(); }
 
  private:
-  LocalLHLevel(const LocalLHLevel &);             // Not to be implemented
-  LocalLHLevel &operator=(const LocalLHLevel &);  // Not to be implemented
+  LocalLHLevel(const LocalLHLevel &) = delete;
+  LocalLHLevel &operator=(const LocalLHLevel &) = delete;
   Uint32 &m_src;
 };
 
@@ -139,8 +140,9 @@ class LHLevelRH : public LHLevel {
   ~LHLevelRH() {}
 
  private:
-  LHLevelRH(LHLevelRH const &);             // Not to be implemented
-  LHLevelRH &operator=(LHLevelRH const &);  // Not to be implemented
+  LHLevelRH(LHLevelRH const &) = delete;
+  LHLevelRH &operator=(LHLevelRH const &) = delete;
+
  public:
   LHBits16 reduce(LHBits32 hash_value) const;
   LHBits16 reduceForSplit(LHBits32 hash_value) const;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -176,7 +176,7 @@ bool _mi_read_pack_info(MI_INFO *info, bool fix_keys) {
     goto err0;
   }
   /* Only the first three bytes of magic number are independent of version. */
-  if (memcmp((uchar *)header, (uchar *)myisam_pack_file_magic, 3)) {
+  if (memcmp((uchar *)header, (uchar *)myisam_pack_file_magic, 3) != 0) {
     set_my_errno(HA_ERR_WRONG_IN_RECORD);
     goto err0;
   }
@@ -280,7 +280,7 @@ bool _mi_read_pack_info(MI_INFO *info, bool fix_keys) {
       MYF(MY_HOLD_ON_ERROR));
   /* Fix the table addresses in the tree heads. */
   {
-    ptrdiff_t diff = decode_table - share->decode_tables;
+    ptrdiff_t const diff = decode_table - share->decode_tables;
     share->decode_tables = decode_table;
     for (i = 0; i < trees; i++)
       share->decode_trees[i].table = share->decode_trees[i].table + diff;
@@ -580,7 +580,7 @@ static void fill_quick_table(uint16 *table, uint bits, uint max_bits,
 
 static uint copy_decode_table(uint16 *to_pos, uint offset,
                               uint16 *decode_table) {
-  uint prev_offset = offset;
+  uint const prev_offset = offset;
   DBUG_TRACE;
 
   /* Descent on the left side. */
@@ -926,7 +926,7 @@ static void uf_constant(MI_COLUMNDEF *rec,
 
 static void uf_intervall(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff, uchar *to,
                          uchar *end) {
-  uint field_length = (uint)(end - to);
+  uint const field_length = (uint)(end - to);
   memcpy(to,
          rec->huff_tree->intervalls +
              field_length * decode_pos(bit_buff, rec->huff_tree),
@@ -945,8 +945,8 @@ static void uf_blob(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff, uchar *to,
   if (get_bit(bit_buff))
     memset(to, 0, (end - to));
   else {
-    ulong length = get_bits(bit_buff, rec->space_length_bits);
-    uint pack_length = (uint)(end - to) - portable_sizeof_char_ptr;
+    ulong const length = get_bits(bit_buff, rec->space_length_bits);
+    uint const pack_length = (uint)(end - to) - portable_sizeof_char_ptr;
     if (bit_buff->blob_pos + length > bit_buff->blob_end) {
       bit_buff->error = 1;
       memset(to, 0, (end - to));
@@ -965,7 +965,7 @@ static void uf_varchar1(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff, uchar *to,
   if (get_bit(bit_buff))
     to[0] = 0; /* Zero lengths */
   else {
-    ulong length = get_bits(bit_buff, rec->space_length_bits);
+    ulong const length = get_bits(bit_buff, rec->space_length_bits);
     *to = (uchar)length;
     decode_bytes(rec, bit_buff, to + 1, to + 1 + length);
   }
@@ -976,7 +976,7 @@ static void uf_varchar2(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff, uchar *to,
   if (get_bit(bit_buff))
     to[0] = to[1] = 0; /* Zero lengths */
   else {
-    ulong length = get_bits(bit_buff, rec->space_length_bits);
+    ulong const length = get_bits(bit_buff, rec->space_length_bits);
     int2store(to, (uint16)length);
     decode_bytes(rec, bit_buff, to + 2, to + 2 + length);
   }
@@ -1152,7 +1152,6 @@ static void decode_bytes(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff, uchar *to,
   } while (to != end);
 
   bit_buff->bits = bits;
-  return;
 }
 #endif /* BIT_SAVED == 64 */
 
@@ -1343,7 +1342,7 @@ bool _mi_memmap_file(MI_INFO *info) {
   DBUG_TRACE;
 
   if (!info->s->file_map) {
-    my_off_t data_file_length = share->state.state.data_file_length;
+    my_off_t const data_file_length = share->state.state.data_file_length;
 
     if (myisam_mmap_size != SIZE_T_MAX) {
       mysql_mutex_lock(&THR_LOCK_myisam_mmap);
@@ -1483,17 +1482,17 @@ uint save_pack_length(uint version, uchar *block_buff, ulong length) {
     assert(length <= 0xFFFFFF);
     int3store(block_buff + 1, (ulong)length);
     return 4;
-  } else {
-    int4store(block_buff + 1, (ulong)length);
-    return 5;
   }
+  int4store(block_buff + 1, (ulong)length);
+  return 5;
 }
 
 uint read_pack_length(uint version, const uchar *buf, ulong *length) {
   if (buf[0] < 254) {
     *length = buf[0];
     return 1;
-  } else if (buf[0] == 254) {
+  }
+  if (buf[0] == 254) {
     *length = uint2korr(buf + 1);
     return 3;
   }
@@ -1501,10 +1500,9 @@ uint read_pack_length(uint version, const uchar *buf, ulong *length) {
   {
     *length = uint3korr(buf + 1);
     return 4;
-  } else {
-    *length = uint4korr(buf + 1);
-    return 5;
   }
+  *length = uint4korr(buf + 1);
+  return 5;
 }
 
 uint calc_pack_length(uint version, ulong length) {

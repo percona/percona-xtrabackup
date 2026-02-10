@@ -467,7 +467,7 @@ analyze table t0;
 --echo # support file sizes > 2GB. (ha_myisam::ref_length depends on this and index
 --echo # scan cost estimates depend on ha_myisam::ref_length)
   --replace_result "4,4,4,4,4,4,4" X "4,4,4,4,4,4" X "i6,i7" "i6,i7?" "i6" "i6,i7?"
---replace_regex $elide_costs
+--replace_regex $elide_costs_and_rows
   explain select max(a.key1 + b.key1 + a.key2 + b.key2 + a.key3 + b.key3 + a.key4 + b.key4 + a.key5 + b.key5)
    from t0 as a, t0 as b
    where (a.key1 = 1 and a.key2 = 1 and a.key3 = 1 and a.key4=1 and a.key5=1 and a.key6=1 and a.key7 = 1 or a.key8=1)

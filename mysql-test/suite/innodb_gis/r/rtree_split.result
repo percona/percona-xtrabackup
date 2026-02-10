@@ -1,3 +1,4 @@
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
 create table t1 (c1 int, c2 geometry not null SRID 0, spatial index (c2))engine=innodb;
 insert into t1 values(1, Point(1,1));
 insert into t1 values(2, Point(2,2));

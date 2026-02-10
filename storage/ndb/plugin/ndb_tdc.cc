@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@
   which aren't in use by any thread
 */
 
-bool ndb_tdc_close_cached_tables(void) {
+bool ndb_tdc_close_cached_tables() {
   DBUG_TRACE;
 
   const int res = close_cached_tables(nullptr,  // No need for thd pointer

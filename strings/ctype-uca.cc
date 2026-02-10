@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,7 +36,10 @@
    - No combining marks processing is done
 */
 
+#include <stdlib.h>
+
 #include <algorithm>
+#include <array>
 #include <bitset>
 #include <cassert>
 #include <cstdint>
@@ -954,11 +957,9 @@ const uint16_t *my_uca_contraction2_weight(
   if (!cont_nodes) return nullptr;
 
   if (!cont_nodes->empty()) {
-    std::vector<MY_CONTRACTION>::const_iterator node_it1 =
-        find_contraction_part_in_trie(*cont_nodes, wc1);
+    auto node_it1 = find_contraction_part_in_trie(*cont_nodes, wc1);
     if (node_it1 == cont_nodes->end() || node_it1->ch != wc1) return nullptr;
-    std::vector<MY_CONTRACTION>::const_iterator node_it2 =
-        find_contraction_part_in_trie(node_it1->child_nodes, wc2);
+    auto node_it2 = find_contraction_part_in_trie(node_it1->child_nodes, wc2);
     if (node_it2 != node_it1->child_nodes.end() && node_it2->ch == wc2 &&
         node_it2->is_contraction_tail)
       return node_it2->weight;
@@ -1111,11 +1112,10 @@ const uint16_t *my_uca_scanner::contraction_find(my_wc_t wc0,
 ALWAYS_INLINE
 const uint16_t *my_uca_scanner::previous_context_find(my_wc_t wc0,
                                                       my_wc_t wc1) {
-  std::vector<MY_CONTRACTION>::const_iterator node_it1 =
-      find_contraction_part_in_trie(*uca->contraction_nodes, wc1);
+  auto node_it1 = find_contraction_part_in_trie(*uca->contraction_nodes, wc1);
   if (node_it1 == uca->contraction_nodes->end() || node_it1->ch != wc1)
     return nullptr;
-  std::vector<MY_CONTRACTION>::const_iterator node_it2 =
+  auto node_it2 =
       find_contraction_part_in_trie(node_it1->child_nodes_context, wc0);
   if (node_it2 != node_it1->child_nodes_context.end() && node_it2->ch == wc0) {
     if (uca->version == UCA_V900) {
@@ -1169,8 +1169,8 @@ void uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::my_put_jamo_weights(
     my_wc_t *hangul_jamo, int jamo_cnt) {
   for (int jamoind = 0; jamoind < jamo_cnt; jamoind++) {
     uint16_t *implicit_weight = implicit + jamoind * MY_UCA_900_CE_SIZE;
-    unsigned page = hangul_jamo[jamoind] >> 8;
-    unsigned code = hangul_jamo[jamoind] & 0xFF;
+    unsigned const page = hangul_jamo[jamoind] >> 8;
+    unsigned const code = hangul_jamo[jamoind] & 0xFF;
     const uint16_t *jamo_weight_page = uca->weights[page];
     implicit_weight[0] = UCA900_WEIGHT(jamo_weight_page, 0, code);
     implicit_weight[1] = UCA900_WEIGHT(jamo_weight_page, 1, code);
@@ -1304,7 +1304,7 @@ ALWAYS_INLINE int uca_scanner_any<Mb_wc>::next() {
     my_wc_t wc = 0;
 
     /* Get next code point */
-    int mblen = mb_wc(&wc, sbeg, send);
+    int const mblen = mb_wc(&wc, sbeg, send);
     if (mblen <= 0) {
       ++weight_lv;
       return -1;
@@ -1336,7 +1336,8 @@ ALWAYS_INLINE int uca_scanner_any<Mb_wc>::next() {
           (cweight = previous_context_find(prev_char, wc))) {
         prev_char = 0; /* Clear for the next character */
         return *cweight;
-      } else if (my_uca_can_be_contraction_head(uca->contraction_flags, wc)) {
+      }
+      if (my_uca_can_be_contraction_head(uca->contraction_flags, wc)) {
         /* Check if wc starts a contraction */
         size_t chars_skipped;
         if ((cweight = contraction_find(wc, &chars_skipped))) {
@@ -1348,8 +1349,8 @@ ALWAYS_INLINE int uca_scanner_any<Mb_wc>::next() {
     }
 
     /* Process single code point */
-    unsigned page = wc >> 8;
-    unsigned code = wc & 0xFF;
+    unsigned const page = wc >> 8;
+    unsigned const code = wc & 0xFF;
 
     /* If weight page for wc does not exist, then calculate algoritmically */
     const uint16_t *wpage = uca->weights[page];
@@ -1376,7 +1377,7 @@ inline int uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::more_weight() {
     --num_of_ce_left;
   }
   if (num_of_ce_left != 0) {
-    uint16_t rtn = *wbeg;
+    uint16_t const rtn = *wbeg;
     wbeg += wbeg_stride;
     --num_of_ce_left;
     return rtn; /* return the next weight from expansion     */
@@ -1426,7 +1427,8 @@ uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::handle_ja_contraction_quat_wt() {
     num_of_ce_left = 0;
     if (is_katakana_char(prev_char)) {
       return JA_KATA_QUAT_WEIGHT;
-    } else if (is_hiragana_char(prev_char)) {
+    }
+    if (is_hiragana_char(prev_char)) {
       return JA_HIRA_QUAT_WEIGHT;
     }
   }
@@ -1463,7 +1465,8 @@ uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::handle_ja_common_quat_wt(
     if (is_katakana_char(wc) || is_katakana_iteration(wc) ||
         is_ja_length_mark(wc)) {
       return JA_KATA_QUAT_WEIGHT;
-    } else if (is_hiragana_char(wc) || is_hiragana_iteration(wc)) {
+    }
+    if (is_hiragana_char(wc) || is_hiragana_iteration(wc)) {
       return JA_HIRA_QUAT_WEIGHT;
     }
     return -1;
@@ -1474,14 +1477,14 @@ uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::handle_ja_common_quat_wt(
 // Generic version that can handle any number of levels.
 template <class Mb_wc, int LEVELS_FOR_COMPARE>
 ALWAYS_INLINE int uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::next_raw() {
-  int remain_weight = more_weight();
+  int const remain_weight = more_weight();
   if (remain_weight >= 0) return remain_weight;
 
   do {
     my_wc_t wc = 0;
 
     /* Get next code point */
-    int mblen = mb_wc(&wc, sbeg, send);
+    int const mblen = mb_wc(&wc, sbeg, send);
     if (mblen <= 0) {
       if (LEVELS_FOR_COMPARE == 1) {
         ++weight_lv;
@@ -1526,13 +1529,14 @@ ALWAYS_INLINE int uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::next_raw() {
           (cweight = previous_context_find(prev_char, wc))) {
         // For Japanese kana-sensitive collation.
         if (LEVELS_FOR_COMPARE == 4 && cs->coll_param == &ja_coll_param) {
-          int quat_wt = handle_ja_contraction_quat_wt();
+          int const quat_wt = handle_ja_contraction_quat_wt();
           prev_char = 0;
           if (quat_wt > 0) return quat_wt;
         }
         prev_char = 0; /* Clear for the next code point */
         return *cweight;
-      } else if (my_uca_can_be_contraction_head(uca->contraction_flags, wc)) {
+      }
+      if (my_uca_can_be_contraction_head(uca->contraction_flags, wc)) {
         /* Check if wc starts a contraction */
         size_t chars_skipped;  // Ignored.
         if ((cweight = contraction_find(wc, &chars_skipped))) return *cweight;
@@ -1542,15 +1546,13 @@ ALWAYS_INLINE int uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::next_raw() {
 
     // For Japanese kana-sensitive collation.
     if (LEVELS_FOR_COMPARE == 4 && cs->coll_param == &ja_coll_param) {
-      int quat_wt = handle_ja_common_quat_wt(wc);
-      if (quat_wt == -1)
-        continue;
-      else if (quat_wt)
-        return quat_wt;
+      int const quat_wt = handle_ja_common_quat_wt(wc);
+      if (quat_wt == -1) continue;
+      if (quat_wt) return quat_wt;
     }
     /* Process single code point */
-    unsigned page = wc >> 8;
-    unsigned code = wc & 0xFF;
+    unsigned const page = wc >> 8;
+    unsigned const code = wc & 0xFF;
 
     /* If weight page for wc does not exist, then calculate algoritmically */
     const uint16_t *wpage = uca->weights[page];
@@ -1562,7 +1564,7 @@ ALWAYS_INLINE int uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::next_raw() {
     num_of_ce_left = UCA900_NUM_OF_CE(wpage, code);
   } while (!wbeg[0]); /* Skip ignorable code points */
 
-  uint16_t rtn = *wbeg;
+  uint16_t const rtn = *wbeg;
   wbeg += wbeg_stride;
   --num_of_ce_left;
   return rtn;
@@ -1623,8 +1625,8 @@ ALWAYS_INLINE void uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::for_each_weight(
       */
       uint32_t four_bytes = 0;
       memcpy(&four_bytes, sbeg_local, sizeof(four_bytes));
-      if (((four_bytes + 0x01010101u) & 0x80808080) ||
-          ((four_bytes - 0x20202020u) & 0x80808080))
+      if (((four_bytes + 0x01010101U) & 0x80808080) ||
+          ((four_bytes - 0x20202020U) & 0x80808080))
         break;
       const int s_res0 = ascii_wpage[sbeg_local[0]];
       const int s_res1 = ascii_wpage[sbeg_local[1]];
@@ -1708,10 +1710,8 @@ uint16_t uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::apply_reorder_param(
 
 // See Unicode TR35 section 3.14.1.
 static bool is_tertiary_weight_upper_case(uint16_t weight) {
-  if ((weight >= 0x08 && weight <= 0x0C) || weight == 0x0E || weight == 0x11 ||
-      weight == 0x12 || weight == 0x1D)
-    return true;
-  return false;
+  return (weight >= 0x08 && weight <= 0x0C) || weight == 0x0E ||
+         weight == 0x11 || weight == 0x12 || weight == 0x1D;
 }
 
 template <class Mb_wc, int LEVELS_FOR_COMPARE>
@@ -1831,10 +1831,9 @@ static int my_strnncoll_uca(const CHARSET_INFO *cs, const Mb_wc mb_wc,
 
         // s is now also on the next level. Continue comparison.
         continue;
-      } else {
-        // s is longer than t (and t_prefix isn't set).
-        return 1;
       }
+      // s is longer than t (and t_prefix isn't set).
+      return 1;
     }
 
     if (sscanner.get_weight_level() > current_lv) {
@@ -1852,8 +1851,7 @@ static inline int my_space_weight(const CHARSET_INFO *cs) /* W3-TODO */
 {
   if (cs->uca && cs->uca->version == UCA_V900)
     return UCA900_WEIGHT(cs->uca->weights[0], /*weight_lv=*/0, 0x20);
-  else
-    return cs->uca->weights[0][0x20 * cs->uca->lengths[0]];
+  return cs->uca->weights[0][0x20 * cs->uca->lengths[0]];
 }
 
 /**
@@ -1893,13 +1891,11 @@ static inline uint16_t *my_char_weight_addr(MY_UCA_INFO *uca, my_wc_t wc) {
 static inline uint16_t *my_char_weight_addr_900(MY_UCA_INFO *uca, my_wc_t wc) {
   if (wc > uca->maxchar) return nullptr;
 
-  unsigned page = wc >> 8;
-  unsigned ofst = wc & 0xFF;
+  unsigned const page = wc >> 8;
+  unsigned const ofst = wc & 0xFF;
   uint16_t *weights = uca->weights[page];
-  if (weights)
-    return UCA900_WEIGHT_ADDR(weights, /*level=*/0, ofst);
-  else
-    return nullptr;
+  if (weights) return UCA900_WEIGHT_ADDR(weights, /*level=*/0, ofst);
+  return nullptr;
 }
 
 /*
@@ -2122,8 +2118,8 @@ static int my_uca_charcmp_900(const CHARSET_INFO *cs, my_wc_t wc1,
     return 1;
 
   /* Thoroughly compare all weights */
-  size_t length1 = weight1_ptr[-UCA900_DISTANCE_BETWEEN_LEVELS];
-  size_t length2 = weight2_ptr[-UCA900_DISTANCE_BETWEEN_LEVELS];
+  size_t const length1 = weight1_ptr[-UCA900_DISTANCE_BETWEEN_LEVELS];
+  size_t const length2 = weight2_ptr[-UCA900_DISTANCE_BETWEEN_LEVELS];
 
   for (int level = 0; level < cs->levels_for_compare; ++level) {
     size_t wt_ind1 = 0;
@@ -2290,7 +2286,7 @@ static int my_wildcmp_uca_impl(const CHARSET_INFO *cs, const char *str,
           */
           return 0;
         }
-        int mb_len_wild =
+        int const mb_len_wild =
             mb_wc(cs, &w_wc, pointer_cast<const uint8_t *>(wildstr),
                   pointer_cast<const uint8_t *>(wildend));
         if (mb_len_wild <= 0) return 1;
@@ -2303,8 +2299,9 @@ static int my_wildcmp_uca_impl(const CHARSET_INFO *cs, const char *str,
             match one.
           */
           my_wc_t s_wc;
-          int mb_len = mb_wc(cs, &s_wc, pointer_cast<const uint8_t *>(str),
-                             pointer_cast<const uint8_t *>(str_end));
+          int const mb_len =
+              mb_wc(cs, &s_wc, pointer_cast<const uint8_t *>(str),
+                    pointer_cast<const uint8_t *>(str_end));
           if (mb_len <= 0) return 1;
           str += mb_len;
           continue;
@@ -2317,8 +2314,9 @@ static int my_wildcmp_uca_impl(const CHARSET_INFO *cs, const char *str,
 
       // Skip the escape character ('\') in the pattern if needed.
       if (w_wc == (my_wc_t)escape && wildstr < wildend) {
-        int mb_len = mb_wc(cs, &w_wc, pointer_cast<const uint8_t *>(wildstr),
-                           pointer_cast<const uint8_t *>(wildend));
+        int const mb_len =
+            mb_wc(cs, &w_wc, pointer_cast<const uint8_t *>(wildstr),
+                  pointer_cast<const uint8_t *>(wildend));
         if (mb_len <= 0) return 1;
         wildstr += mb_len;
       }
@@ -2392,8 +2390,9 @@ static int my_strcasecmp_uca(const CHARSET_INFO *cs, const char *s,
       t_wc = uni_plane->page[0][static_cast<uint8_t>(t[0])].tolower;
       t++;
     } else {
-      int res = cs->cset->mb_wc(cs, &t_wc, pointer_cast<const uint8_t *>(t),
-                                pointer_cast<const uint8_t *>(t + 4));
+      int const res =
+          cs->cset->mb_wc(cs, &t_wc, pointer_cast<const uint8_t *>(t),
+                          pointer_cast<const uint8_t *>(t + 4));
       if (res <= 0) return strcmp(s, t);
       t += res;
 
@@ -2546,7 +2545,7 @@ static void my_coll_lexem_init(MY_COLL_LEXEM *lexem, const char *str,
 
 static int lex_cmp(MY_COLL_LEXEM *lexem, const char *pattern,
                    size_t patternlen) {
-  size_t lexemlen = lexem->beg - lexem->prev;
+  size_t const lexemlen = lexem->beg - lexem->prev;
   if (lexemlen < patternlen) return 1; /* Not a prefix */
   return native_strncasecmp(lexem->prev, pattern, patternlen);
 }
@@ -2572,7 +2571,7 @@ static void my_coll_lexem_print_error(MY_COLL_LEXEM *lexem, char *errstr,
                                       const char *col_name) {
   const char *src = lexem->prev;
   // "29" is for a backward compatibility:
-  int src_len = std::min(29, static_cast<int>(lexem->end - lexem->prev));
+  int const src_len = std::min(29, static_cast<int>(lexem->end - lexem->prev));
   errstr[errsize - 1] = '\0';
   snprintf(errstr, errsize - 1, "%s at '%.*s' for COLLATION : %s",
            txt[0] ? txt : "Syntax error", src_len, src, col_name);
@@ -2711,8 +2710,9 @@ static my_coll_lexem_num my_coll_lexem_next(MY_COLL_LEXEM *lexem) {
     {
       CHARSET_INFO *cs = &my_charset_utf8mb3_general_ci;
       my_wc_t wc;
-      int nbytes = cs->cset->mb_wc(cs, &wc, pointer_cast<const uint8_t *>(beg),
-                                   pointer_cast<const uint8_t *>(lexem->end));
+      int const nbytes =
+          cs->cset->mb_wc(cs, &wc, pointer_cast<const uint8_t *>(beg),
+                          pointer_cast<const uint8_t *>(lexem->end));
       if (nbytes > 0) {
         rc = MY_COLL_LEXEM_CHAR;
         beg += nbytes;
@@ -3305,7 +3305,7 @@ static int my_coll_parser_scan_shift_sequence(MY_COLL_RULE_PARSER *p) {
     */
     if (my_coll_parser_curr(p)->term == MY_COLL_LEXEM_EXTEND) {
       my_coll_parser_scan(p);
-      size_t len = my_wstrnlen(p->rule.base, MY_UCA_MAX_EXPANSION);
+      size_t const len = my_wstrnlen(p->rule.base, MY_UCA_MAX_EXPANSION);
       if (!my_coll_parser_scan_character_list(
               p, p->rule.base + len, MY_UCA_MAX_EXPANSION - len, "Expansion"))
         return 0;
@@ -3454,8 +3454,8 @@ static void change_weight_if_case_first(CHARSET_INFO *cs,
                                         size_t curr_len,
                                         size_t tailored_ce_cnt) {
   /* We only need to implement [caseFirst upper] right now. */
-  if (!(cs->coll_param && cs->coll_param->case_first == CASE_FIRST_UPPER &&
-        cs->levels_for_compare == 3))
+  if (!cs->coll_param || cs->coll_param->case_first != CASE_FIRST_UPPER ||
+      cs->levels_for_compare != 3)
     return;
 
   assert(cs->uca->version == UCA_V900);
@@ -3484,10 +3484,10 @@ static void change_weight_if_case_first(CHARSET_INFO *cs,
   my_wc_t *curr = r->curr;
   for (size_t i = 0; i < curr_len; ++i) {
     const uint16_t *from = my_char_weight_addr_900(src, *curr);
-    unsigned page = *curr >> 8;
-    unsigned code = *curr & 0xFF;
+    unsigned const page = *curr >> 8;
+    unsigned const code = *curr & 0xFF;
     curr++;
-    int ce_cnt =
+    int const ce_cnt =
         src->weights[page] ? UCA900_NUM_OF_CE(src->weights[page], code) : 0;
     for (int i_ce = 0; i_ce < ce_cnt; ++i_ce) {
       if (from[i_ce * UCA900_DISTANCE_BETWEEN_WEIGHTS]) origin_pri_cnt++;
@@ -3504,17 +3504,19 @@ static void change_weight_if_case_first(CHARSET_INFO *cs,
   uint16_t case_mask = 0;
   for (size_t curr_ind = 0; curr_ind < curr_len; ++curr_ind) {
     const uint16_t *from = my_char_weight_addr_900(src, *curr);
-    unsigned page = *curr >> 8;
-    unsigned code = *curr & 0xFF;
+    unsigned const page = *curr >> 8;
+    unsigned const code = *curr & 0xFF;
     curr++;
-    int ce_cnt =
+    int const ce_cnt =
         src->weights[page] ? UCA900_NUM_OF_CE(src->weights[page], code) : 0;
     changed_ce = 0;
     for (int i_ce = 0; i_ce < ce_cnt; ++i_ce) {
-      uint16_t primary_weight = from[i_ce * UCA900_DISTANCE_BETWEEN_WEIGHTS];
+      uint16_t const primary_weight =
+          from[i_ce * UCA900_DISTANCE_BETWEEN_WEIGHTS];
       if (primary_weight) {
-        uint16_t case_weight = from[i_ce * UCA900_DISTANCE_BETWEEN_WEIGHTS +
-                                    2 * UCA900_DISTANCE_BETWEEN_LEVELS];
+        uint16_t const case_weight =
+            from[i_ce * UCA900_DISTANCE_BETWEEN_WEIGHTS +
+                 2 * UCA900_DISTANCE_BETWEEN_LEVELS];
         uint16_t *ce_to = nullptr;
         if (is_tertiary_weight_upper_case(case_weight)) {
           if (!case_to_copy)
@@ -3553,7 +3555,7 @@ static void change_weight_if_case_first(CHARSET_INFO *cs,
       case_mask = CASE_FIRST_LOWER_MASK;
     bool skipped_extra_ce = false;
     for (int i = tailored_ce_cnt - 1; i >= 0; --i) {
-      int offset = i * MY_UCA_900_CE_SIZE * to_stride;
+      int const offset = i * MY_UCA_900_CE_SIZE * to_stride;
       if (to[offset] && to[offset] < dst->extra_ce_pri_base) {
         if ((r->before_level == 1 || r->diff[0]) && !skipped_extra_ce) {
           skipped_extra_ce = true;
@@ -3593,8 +3595,8 @@ static size_t my_char_weight_put_900(MY_UCA_INFO *dst, uint16_t *to,
     }
 
     if (!from) {
-      unsigned page = *base >> 8;
-      unsigned code = *base & 0xFF;
+      unsigned const page = *base >> 8;
+      unsigned const code = *base & 0xFF;
       base++;
       base_len--;
       if (dst->weights[page]) {
@@ -3896,10 +3898,10 @@ static bool apply_shift_900(MY_COLL_RULES *rules, MY_COLL_RULE *r, uint16_t *to,
   if (r->before_level == 1)  // Apply "&[before primary]".
     return apply_primary_shift_900(rules, r, to, to_stride, nweights,
                                    last_weight_ptr);
-  else if (r->before_level == 2)  // Apply "[before 2]".
+  if (r->before_level == 2)  // Apply "[before 2]".
     return apply_secondary_shift_900(rules, r, to, to_stride, nweights,
                                      last_weight_ptr);
-  else if (r->before_level == 3)  // Apply "[before 3]".
+  if (r->before_level == 3)  // Apply "[before 3]".
     return apply_tertiary_shift_900(rules, r, to, to_stride, nweights,
                                     last_weight_ptr);
   return false;
@@ -3959,8 +3961,7 @@ static MY_CONTRACTION *add_contraction_to_trie(
   if (r->with_context)  // previous-context contraction
   {
     assert(my_wstrnlen(r->curr, MY_UCA_MAX_CONTRACTION) == 2);
-    std::vector<MY_CONTRACTION>::iterator node_it =
-        find_contraction_part_in_trie(*cont_nodes, r->curr[1]);
+    auto node_it = find_contraction_part_in_trie(*cont_nodes, r->curr[1]);
     if (node_it == cont_nodes->end() || node_it->ch != r->curr[1]) {
       new_node.ch = r->curr[1];
       node_it = cont_nodes->insert(node_it, new_node);
@@ -3975,29 +3976,30 @@ static MY_CONTRACTION *add_contraction_to_trie(
     node_it->is_contraction_tail = true;
     node_it->contraction_len = 2;
     return &(*node_it);
-  } else  // normal contraction
-  {
-    size_t contraction_len = my_wstrnlen(r->curr, MY_UCA_MAX_CONTRACTION);
-    std::vector<MY_CONTRACTION>::iterator node_it;
-    for (size_t ch_ind = 0; ch_ind < contraction_len; ++ch_ind) {
-      node_it = find_contraction_part_in_trie(*cont_nodes, r->curr[ch_ind]);
-      if (node_it == cont_nodes->end() || node_it->ch != r->curr[ch_ind]) {
-        new_node.ch = r->curr[ch_ind];
-        node_it = cont_nodes->insert(node_it, new_node);
-      }
-      cont_nodes = &node_it->child_nodes;
-    }
-    node_it->is_contraction_tail = true;
-    node_it->contraction_len = contraction_len;
-    return &(*node_it);
   }
+  // normal contraction
+  size_t const contraction_len = my_wstrnlen(r->curr, MY_UCA_MAX_CONTRACTION);
+  std::vector<MY_CONTRACTION>::iterator node_it;
+  for (size_t ch_ind = 0; ch_ind < contraction_len; ++ch_ind) {
+    node_it = find_contraction_part_in_trie(*cont_nodes, r->curr[ch_ind]);
+    if (node_it == cont_nodes->end() || node_it->ch != r->curr[ch_ind]) {
+      new_node.ch = r->curr[ch_ind];
+      node_it = cont_nodes->insert(node_it, new_node);
+    }
+    cont_nodes = &node_it->child_nodes;
+  }
+  node_it->is_contraction_tail = true;
+  node_it->contraction_len = contraction_len;
+  return &(*node_it);
 }
 
 static bool apply_one_rule(CHARSET_INFO *cs, MY_COLL_RULES *rules,
                            MY_COLL_RULE *r, int level, MY_UCA_INFO *dst) {
   size_t nweights;
-  size_t nreset = my_coll_rule_reset_length(r); /* Length of reset sequence */
-  size_t nshift = my_coll_rule_shift_length(r); /* Length of shift sequence */
+  size_t const nreset =
+      my_coll_rule_reset_length(r); /* Length of reset sequence */
+  size_t const nshift =
+      my_coll_rule_shift_length(r); /* Length of shift sequence */
   uint16_t *to = nullptr;
   uint16_t *to_num_ce = nullptr;
   size_t to_stride = 0;
@@ -4026,7 +4028,7 @@ static bool apply_one_rule(CHARSET_INFO *cs, MY_COLL_RULES *rules,
         my_char_weight_put(dst, to, to_stride, MY_UCA_MAX_WEIGHT_SIZE - 1,
                            to_num_ce, r, nreset, rules->uca->version);
   } else {
-    my_wc_t pagec = (r->curr[0] >> 8);
+    my_wc_t const pagec = (r->curr[0] >> 8);
     assert(dst->weights[pagec]);
     if (cs->uca && cs->uca->version == UCA_V900) {
       to = my_char_weight_addr_900(dst, r->curr[0]);
@@ -4063,7 +4065,8 @@ static int check_rules(const MY_COLL_RULES *rules, const MY_UCA_INFO *dst,
       snprintf(rules->errmsg->errarg, sizeof(rules->errmsg->errarg), "u%04X",
                (unsigned)r->curr[0]);
       return true;
-    } else if (r->base[0] > src->maxchar) {
+    }
+    if (r->base[0] > src->maxchar) {
       rules->errmsg->errcode = EE_RESET_CHAR_OUT_OF_RANGE;
       snprintf(rules->errmsg->errarg, sizeof(rules->errmsg->errarg), "u%04X",
                (unsigned)r->base[0]);
@@ -4143,12 +4146,9 @@ static inline my_wc_t convert_implicit_to_ch(uint16_t first, uint16_t second) {
                                 # groups
     BBBB = (CP & 0x7FFF) | 0x8000
    */
-  if (first < 0xFB80)
-    return (((first - 0xFB40) << 15) | (second & 0x7FFF));
-  else if (first < 0xFBC0)
-    return (((first - 0xFB80) << 15) | (second & 0x7FFF));
-  else
-    return (((first - 0xFBC0) << 15) | (second & 0x7FFF));
+  if (first < 0xFB80) return (((first - 0xFB40) << 15) | (second & 0x7FFF));
+  if (first < 0xFBC0) return (((first - 0xFB80) << 15) | (second & 0x7FFF));
+  return (((first - 0xFBC0) << 15) | (second & 0x7FFF));
 }
 
 /*
@@ -4185,7 +4185,7 @@ static void modify_all_zh_pages(Reorder_param *reorder_param, MY_UCA_INFO *dst,
       continue;
     for (int off = 0; off < 256; off++) {
       uint16_t *wbeg = UCA900_WEIGHT_ADDR(dst->weights[page], 0, off);
-      int num_of_ce = UCA900_NUM_OF_CE(dst->weights[page], off);
+      int const num_of_ce = UCA900_NUM_OF_CE(dst->weights[page], off);
       for (int ce = 0; ce < num_of_ce; ce++) {
         assert(reorder_param->wt_rec_num == 1);
         if (*wbeg >= reorder_param->wt_rec[0].old_wt_bdy.begin &&
@@ -4193,7 +4193,7 @@ static void modify_all_zh_pages(Reorder_param *reorder_param, MY_UCA_INFO *dst,
           *wbeg = *wbeg + reorder_param->wt_rec[0].new_wt_bdy.begin -
                   reorder_param->wt_rec[0].old_wt_bdy.begin;
         } else if (*wbeg >= 0xFB00) {
-          uint16_t next_wt = *(wbeg + UCA900_DISTANCE_BETWEEN_WEIGHTS);
+          uint16_t const next_wt = *(wbeg + UCA900_DISTANCE_BETWEEN_WEIGHTS);
           if (*wbeg >= 0xFB40 && *wbeg <= 0xFBC1) {  // Han's implicit weight
             /*
               If some characters in DUCET share the same implicit weight, their
@@ -4255,13 +4255,13 @@ static bool init_weight_level(CHARSET_INFO *cs, MY_COLL_RULES *rules, int level,
   for (r = rules->rule, rlast = rules->rule + rules->nrules; r < rlast; r++) {
     if (!r->curr[1]) /* If not a contraction */
     {
-      unsigned pagec = (r->curr[0] >> 8);
+      unsigned const pagec = (r->curr[0] >> 8);
       if (r->base[1]) /* Expansion */
       {
         /* Reserve space for maximum possible length */
         dst->lengths[pagec] = MY_UCA_MAX_WEIGHT_SIZE;
       } else {
-        unsigned pageb = (r->base[0] >> 8);
+        unsigned const pageb = (r->base[0] >> 8);
         if ((r->diff[0] || r->diff[1] || r->diff[2]) &&
             dst->lengths[pagec] < (src->lengths[pageb] + 3)) {
           if ((src->lengths[pageb] + 3) > MY_UCA_MAX_WEIGHT_SIZE)
@@ -4367,7 +4367,7 @@ static Unidata_decomp *get_decomposition(my_wc_t ch) {
   auto comp_func = [](Unidata_decomp x, Unidata_decomp y) {
     return x.charcode < y.charcode;
   };
-  Unidata_decomp to_find = {ch, CHAR_CATEGORY_LU, DECOMP_TAG_NONE, {0}};
+  Unidata_decomp const to_find = {ch, CHAR_CATEGORY_LU, DECOMP_TAG_NONE, {0}};
   Unidata_decomp *decomp = std::lower_bound(
       std::begin(uni_dec), std::end(uni_dec), to_find, comp_func);
   if (decomp == std::end(uni_dec) || decomp->charcode != ch) return nullptr;
@@ -4378,7 +4378,7 @@ static Combining_mark *my_find_combining_mark(my_wc_t code) {
   auto comp_func = [](Combining_mark x, Combining_mark y) {
     return x.charcode < y.charcode;
   };
-  Combining_mark to_find = {code, 0};
+  Combining_mark const to_find = {code, 0};
   return std::lower_bound(std::begin(combining_marks),
                           std::end(combining_marks), to_find, comp_func);
 }
@@ -4538,7 +4538,7 @@ static int my_coll_check_rule_and_inherit(const CHARSET_INFO *cs,
     unless A1 / A2 is already in rule list.
   */
   std::bitset<array_elements(uni_dec)> comp_added;
-  int orig_rule_num = rules->nrules;
+  int const orig_rule_num = rules->nrules;
   for (int i = 0; i < orig_rule_num; ++i) {
     MY_COLL_RULE r = *(rules->rule + i);
     /*
@@ -4610,9 +4610,9 @@ static void my_calc_char_grp_gap_param(CHARSET_INFO *cs, int &rec_ind) {
   Char_grp_info *last_grp = nullptr;
   for (Char_grp_info *info = std::begin(char_grp_infos);
        info < std::end(char_grp_infos); ++info) {
-    for (int ind = 0; ind < UCA_MAX_CHAR_GRP; ++ind) {
-      if (param->reorder_grp[ind] == CHARGRP_NONE) break;
-      if (param->reorder_grp[ind] != info->group) continue;
+    for (auto &ind : param->reorder_grp) {
+      if (ind == CHARGRP_NONE) break;
+      if (ind != info->group) continue;
       if (param->max_weight < info->grp_wt_bdy.end)
         param->max_weight = info->grp_wt_bdy.end;
       /*
@@ -4722,7 +4722,7 @@ static void adjust_japanese_weight(CHARSET_INFO *cs, int rec_ind) {
 static bool my_prepare_coll_param(CHARSET_INFO *cs, MY_COLL_RULES *rules) {
   if (rules->uca->version != UCA_V900 || !cs->coll_param) return false;
 
-  int rec_ind = my_prepare_reorder(cs);
+  int const rec_ind = my_prepare_reorder(cs);
   if (add_normalization_rules(cs, rules)) return true;
 
   if (cs->coll_param == &ja_coll_param) adjust_japanese_weight(cs, rec_ind);
@@ -4896,7 +4896,7 @@ static int my_strnncoll_any_uca(const CHARSET_INFO *cs, const uint8_t *s,
         cs, Mb_wc_utf8mb4(), s, slen, t, tlen, t_is_prefix);
   }
 
-  Mb_wc_through_function_pointer mb_wc(cs);
+  Mb_wc_through_function_pointer const mb_wc(cs);
   return my_strnncoll_uca<uca_scanner_any<decltype(mb_wc)>, 1>(
       cs, mb_wc, s, slen, t, tlen, t_is_prefix);
 }
@@ -4907,7 +4907,7 @@ static int my_strnncollsp_any_uca(const CHARSET_INFO *cs, const uint8_t *s,
     return my_strnncollsp_uca(cs, Mb_wc_utf8mb4(), s, slen, t, tlen);
   }
 
-  Mb_wc_through_function_pointer mb_wc(cs);
+  Mb_wc_through_function_pointer const mb_wc(cs);
   return my_strnncollsp_uca(cs, mb_wc, s, slen, t, tlen);
 }
 
@@ -4916,7 +4916,7 @@ static void my_hash_sort_any_uca(const CHARSET_INFO *cs, const uint8_t *s,
   if (cs->cset->mb_wc == my_mb_wc_utf8mb4_thunk) {
     my_hash_sort_uca(cs, Mb_wc_utf8mb4(), s, slen, n1, n2);
   } else {
-    Mb_wc_through_function_pointer mb_wc(cs);
+    Mb_wc_through_function_pointer const mb_wc(cs);
     my_hash_sort_uca(cs, mb_wc, s, slen, n1, n2);
   }
 }
@@ -4930,7 +4930,7 @@ static size_t my_strnxfrm_any_uca(const CHARSET_INFO *cs, uint8_t *dst,
                            src, srclen, flags);
   }
 
-  Mb_wc_through_function_pointer mb_wc(cs);
+  Mb_wc_through_function_pointer const mb_wc(cs);
   return my_strnxfrm_uca(cs, mb_wc, dst, dstlen, num_codepoints, src, srclen,
                          flags);
 }
@@ -4957,7 +4957,7 @@ static int my_strnncoll_uca_900(const CHARSET_INFO *cs, const uint8_t *s,
     }
   }
 
-  Mb_wc_through_function_pointer mb_wc(cs);
+  Mb_wc_through_function_pointer const mb_wc(cs);
   switch (cs->levels_for_compare) {
     case 1:
       return my_strnncoll_uca<uca_scanner_900<decltype(mb_wc), 1>, 1>(
@@ -5052,7 +5052,7 @@ static void my_hash_sort_uca_900(const CHARSET_INFO *cs, const uint8_t *s,
     }
   }
 
-  Mb_wc_through_function_pointer mb_wc(cs);
+  Mb_wc_through_function_pointer const mb_wc(cs);
   switch (cs->levels_for_compare) {
     case 1:
       return my_hash_sort_uca_900_tmpl<decltype(mb_wc), 1>(cs, mb_wc, s, slen,
@@ -5148,7 +5148,7 @@ static size_t my_strnxfrm_uca_900(const CHARSET_INFO *cs, uint8_t *dst,
             cs, Mb_wc_utf8mb4(), dst, dstlen, src, srclen, flags);
     }
   } else {
-    Mb_wc_through_function_pointer mb_wc(cs);
+    Mb_wc_through_function_pointer const mb_wc(cs);
     switch (cs->levels_for_compare) {
       case 1:
         return my_strnxfrm_uca_900_tmpl<decltype(mb_wc), 1>(
@@ -5203,20 +5203,20 @@ extern "C" {
 static int my_strnncoll_ucs2_uca(const CHARSET_INFO *cs, const uint8_t *s,
                                  size_t slen, const uint8_t *t, size_t tlen,
                                  bool t_is_prefix) {
-  Mb_wc_through_function_pointer mb_wc(cs);
+  Mb_wc_through_function_pointer const mb_wc(cs);
   return my_strnncoll_uca<uca_scanner_any<decltype(mb_wc)>, 1>(
       cs, mb_wc, s, slen, t, tlen, t_is_prefix);
 }
 
 static int my_strnncollsp_ucs2_uca(const CHARSET_INFO *cs, const uint8_t *s,
                                    size_t slen, const uint8_t *t, size_t tlen) {
-  Mb_wc_through_function_pointer mb_wc(cs);
+  Mb_wc_through_function_pointer const mb_wc(cs);
   return my_strnncollsp_uca(cs, mb_wc, s, slen, t, tlen);
 }
 
 static void my_hash_sort_ucs2_uca(const CHARSET_INFO *cs, const uint8_t *s,
                                   size_t slen, uint64_t *n1, uint64_t *n2) {
-  Mb_wc_through_function_pointer mb_wc(cs);
+  Mb_wc_through_function_pointer const mb_wc(cs);
   my_hash_sort_uca(cs, mb_wc, s, slen, n1, n2);
 }
 
@@ -5224,7 +5224,7 @@ static size_t my_strnxfrm_ucs2_uca(const CHARSET_INFO *cs, uint8_t *dst,
                                    size_t dstlen, unsigned num_codepoints,
                                    const uint8_t *src, size_t srclen,
                                    unsigned flags) {
-  Mb_wc_through_function_pointer mb_wc(cs);
+  Mb_wc_through_function_pointer const mb_wc(cs);
   return my_strnxfrm_uca(cs, mb_wc, dst, dstlen, num_codepoints, src, srclen,
                          flags);
 }
@@ -11449,7 +11449,7 @@ static size_t my_strnxfrm_utf8mb4_0900_bin(const CHARSET_INFO *cs
                                            unsigned flags) {
   assert(src);
 
-  size_t weight_len = std::min<size_t>(srclen, dstlen);
+  size_t const weight_len = std::min<size_t>(srclen, dstlen);
   memcpy(dst, src, weight_len);
   if (flags & MY_STRXFRM_PAD_TO_MAXLEN) {
     memset(dst + weight_len, 0, dstlen - weight_len);

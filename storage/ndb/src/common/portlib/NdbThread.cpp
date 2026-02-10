@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -233,7 +233,7 @@ static void *ndb_thread_wrapper(void *_ss) {
 
     {
       void *ret;
-      struct NdbThread *ss = (struct NdbThread *)_ss;
+      auto *ss = (struct NdbThread *)_ss;
       settid(ss);
 
 #ifdef _WIN32
@@ -338,7 +338,7 @@ struct NdbThread *NdbThread_Create(NDB_THREAD_FUNC *p_thread_func,
 #endif
   DBUG_PRINT("info", ("stack_size: %zu", thread_stack_size));
 
-  NdbThread *const tmpThread = (NdbThread *)malloc(sizeof(NdbThread));
+  auto *const tmpThread = (NdbThread *)malloc(sizeof(NdbThread));
   if (tmpThread == nullptr) DBUG_RETURN(nullptr);
 
   DBUG_PRINT("info", ("thread_name: %s", p_thread_name));
@@ -1408,7 +1408,7 @@ int NdbThread_LockCreateCPUSet(const Uint32 *cpu_ids, Uint32 num_cpu_ids,
   Uint32 i;
 #if defined(HAVE_LINUX_SCHEDULING)
   /* Linux */
-  cpu_set_t *cpu_set_ptr = (cpu_set_t *)malloc(sizeof(cpu_set_t));
+  auto *cpu_set_ptr = (cpu_set_t *)malloc(sizeof(cpu_set_t));
 #elif defined(HAVE_CPUSET_SETAFFINITY)
   /* FreeBSD */
   cpuset_t *cpu_set_ptr = (cpuset_t *)malloc(sizeof(cpuset_t));
@@ -1501,7 +1501,6 @@ void NdbThread_UnassignFromCPUSet(struct NdbThread *pThread,
                                   struct NdbCpuSet *cpu_set) {
   (void)pThread;
   (void)cpu_set;
-  return;
 }
 
 int NdbThread_LockCPUSetExclusive(

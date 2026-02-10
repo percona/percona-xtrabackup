@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@
 #ifndef PARSE_MASK_HPP
 #define PARSE_MASK_HPP
 
-#include <ctype.h>
+#include <cctype>
 #include <util/BaseString.hpp>
 #include <util/SparseBitmask.hpp>
 
@@ -56,10 +56,9 @@ class ParseThreadConfiguration {
  public:
   ParseThreadConfiguration(const char *str,
                            const struct ParseEntries *parse_entries,
-                           const unsigned int num_parse_entries,
+                           unsigned int num_parse_entries,
                            const struct ParseParams *parse_params,
-                           const unsigned int num_parse_params,
-                           BaseString &err_msg);
+                           unsigned int num_parse_params, BaseString &err_msg);
   ~ParseThreadConfiguration();
 
   int read_params(ParamValue values[], unsigned int num_values,

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -53,7 +53,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "sql/auth/sql_user_table.h"     /* Acl_table_intact */
 #include "sql/auth/user_table.h"         /* replace_user_table */
 #include "sql/field.h"     /* Field, Field_json, Field_enum, TYPE_OK */
-#include "sql/handler.h"   /* handler, DB_TYPE_NDBCLUSTER, handlerton */
+#include "sql/handler.h"   /* handler, handlerton */
 #include "sql/item_func.h" /* mqh_used */
 #include "sql/iterators/row_iterator.h" /* RowIterator */
 #include "sql/key.h"                    /* key_copy, KEY */
@@ -602,10 +602,8 @@ bool Acl_table_user_writer::setup_table(int &error, bool &builtin_plugin) {
 
       error = m_table->file->ha_index_read_idx_map(
           m_table->record[0], 0, user_key, HA_WHOLE_KEY, HA_READ_KEY_EXACT);
-      assert(m_table->file->ht->db_type == DB_TYPE_NDBCLUSTER ||
-             error != HA_ERR_LOCK_DEADLOCK);
-      assert(m_table->file->ht->db_type == DB_TYPE_NDBCLUSTER ||
-             error != HA_ERR_LOCK_WAIT_TIMEOUT);
+      assert(error != HA_ERR_LOCK_DEADLOCK);
+      assert(error != HA_ERR_LOCK_WAIT_TIMEOUT);
       DBUG_EXECUTE_IF("wl7158_replace_user_table_1",
                       error = HA_ERR_LOCK_DEADLOCK;);
       if (error) {
@@ -730,10 +728,8 @@ Acl_table_op_status Acl_table_user_writer::finish_operation(
     case Acl_table_operation::OP_INSERT: {
       out_error = m_table->file->ha_write_row(m_table->record[0]);  // insert
       assert(out_error != HA_ERR_FOUND_DUPP_KEY);
-      assert(m_table->file->ht->db_type == DB_TYPE_NDBCLUSTER ||
-             out_error != HA_ERR_LOCK_DEADLOCK);
-      assert(m_table->file->ht->db_type == DB_TYPE_NDBCLUSTER ||
-             out_error != HA_ERR_LOCK_WAIT_TIMEOUT);
+      assert(out_error != HA_ERR_LOCK_DEADLOCK);
+      assert(out_error != HA_ERR_LOCK_WAIT_TIMEOUT);
       DBUG_EXECUTE_IF("wl7158_replace_user_table_3",
                       out_error = HA_ERR_LOCK_DEADLOCK;);
       if (out_error) {
@@ -754,10 +750,8 @@ Acl_table_op_status Acl_table_user_writer::finish_operation(
         out_error = m_table->file->ha_update_row(m_table->record[1],
                                                  m_table->record[0]);
         assert(out_error != HA_ERR_FOUND_DUPP_KEY);
-        assert(m_table->file->ht->db_type == DB_TYPE_NDBCLUSTER ||
-               out_error != HA_ERR_LOCK_DEADLOCK);
-        assert(m_table->file->ht->db_type == DB_TYPE_NDBCLUSTER ||
-               out_error != HA_ERR_LOCK_WAIT_TIMEOUT);
+        assert(out_error != HA_ERR_LOCK_DEADLOCK);
+        assert(out_error != HA_ERR_LOCK_WAIT_TIMEOUT);
         DBUG_EXECUTE_IF("wl7158_replace_user_table_2",
                         out_error = HA_ERR_LOCK_DEADLOCK;);
         if (out_error && out_error != HA_ERR_RECORD_IS_THE_SAME) {
@@ -1742,7 +1736,8 @@ void Acl_table_user_reader::read_password_last_changed(ACL_USER &user) {
       if (password_last_changed &&
           memcmp(password_last_changed, INVALID_DATE, sizeof(INVALID_DATE))) {
         String str(password_last_changed, &my_charset_bin);
-        str_to_time_with_warn(&str, &(user.password_last_changed));
+        str_to_datetime_with_warn(&str, &user.password_last_changed,
+                                  TIME_DATETIME_ONLY);
       }
     }
   }
@@ -2256,10 +2251,7 @@ static bool replace_user_metadata(const std::string &json_blob,
     }
     Json_object_ptr patch_obj(
         down_cast<Json_object *>(metadata_patch.release()));
-    if (metadata->cardinality() == 0)
-      metadata->consume(std::move(patch_obj));
-    else
-      metadata->merge_patch(std::move(patch_obj));
+    metadata->merge_patch(std::move(patch_obj));
   }
   Json_wrapper jw(json_dom.get(), true);  // alias == don't take ownership
   json_field->set_notnull();

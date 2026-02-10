@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,7 +57,7 @@ static void BM_Protocol_binary_store_date(size_t num_iterations) {
   SetupProtocolForBenchmark(protocol);
   String *const packet = protocol->get_output_packet();
 
-  const MysqlTime date(2020, 2, 29, 0, 0, 0, 0, false, MYSQL_TIMESTAMP_DATE);
+  const MysqlTime date(2020, 2, 29);
 
   StartBenchmarkTiming();
 
@@ -80,8 +80,7 @@ static void BM_Protocol_binary_store_time(size_t num_iterations) {
   SetupProtocolForBenchmark(protocol);
   String *const packet = protocol->get_output_packet();
 
-  const MysqlTime time(0, 0, 0, 123, 59, 59, 670000, false,
-                       MYSQL_TIMESTAMP_TIME);
+  const Time_val time(false, 123, 59, 59, 670000);
 
   StartBenchmarkTiming();
 
@@ -104,8 +103,7 @@ static void BM_Protocol_binary_store_datetime(size_t num_iterations) {
   SetupProtocolForBenchmark(protocol);
   String *const packet = protocol->get_output_packet();
 
-  const MysqlTime datetime(2020, 2, 29, 23, 59, 59, 670000, false,
-                           MYSQL_TIMESTAMP_DATETIME);
+  const MysqlTime datetime(2020, 2, 29, 23, 59, 59, 670000);
 
   StartBenchmarkTiming();
 
@@ -201,7 +199,7 @@ static void BM_Protocol_text_store_date(size_t num_iterations) {
   SetupProtocolForBenchmark(protocol);
   String *const packet = protocol->get_output_packet();
 
-  const MysqlTime date(2020, 2, 29, 0, 0, 0, 0, false, MYSQL_TIMESTAMP_DATE);
+  const MysqlTime date(2020, 2, 29);
 
   StartBenchmarkTiming();
 
@@ -224,8 +222,7 @@ static void BM_Protocol_text_store_time(size_t num_iterations) {
   SetupProtocolForBenchmark(protocol);
   String *const packet = protocol->get_output_packet();
 
-  const MysqlTime time(0, 0, 0, 123, 59, 59, 670000, false,
-                       MYSQL_TIMESTAMP_TIME);
+  const Time_val time(false, 123, 59, 59, 670000);
 
   StartBenchmarkTiming();
 
@@ -248,8 +245,7 @@ static void BM_Protocol_text_store_datetime(size_t num_iterations) {
   SetupProtocolForBenchmark(protocol);
   String *const packet = protocol->get_output_packet();
 
-  const MysqlTime datetime(2020, 2, 29, 23, 59, 59, 670000, false,
-                           MYSQL_TIMESTAMP_DATETIME);
+  const MysqlTime datetime(2020, 2, 29, 23, 59, 59, 670000);
 
   StartBenchmarkTiming();
 

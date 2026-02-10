@@ -39,18 +39,27 @@ INSERT INTO `£Τ£Έ` VALUES ('¤Ά¤¤¤¦¤¨¤ª'),('¤Ά¤¤¤¦¤¨'),('¤Ά¤¤¤¦'),('¤Ά¤¤'),('¤Ά')
 INSERT INTO `£Τ£Ή` VALUES ('νάνένήνίνΰ'),('νάνένήνί'),('νάνένή'),('νάνέ'),('νά'),('');
 
 #InnoDB
+--sorted_result
 SELECT `£Γ£±`, LPAD(`£Γ£±`,5,'΅') FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, LPAD(`£Γ£±`,5,'£Ψ') FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, LPAD(`£Γ£±`,5,'°Ά') FROM `£Τ£³`;
 
 #MyISAM
+--sorted_result
 SELECT `£Γ£±`, LPAD(`£Γ£±`,5,'΅') FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, LPAD(`£Γ£±`,5,'£Ψ') FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, LPAD(`£Γ£±`,5,'°Ά' ) FROM `£Τ£¶`;
 
 #MEMORY
+--sorted_result
 SELECT `£Γ£±`, LPAD(`£Γ£±`,5,'΅') FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, LPAD(`£Γ£±`,5,'£Ψ') FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, LPAD(`£Γ£±`,5,'°Ά' ) FROM `£Τ£Ή`;
 
 DROP TABLE `£Τ£±`;

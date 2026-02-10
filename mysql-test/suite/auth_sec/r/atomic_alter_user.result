@@ -33,7 +33,7 @@ userZ@%
 ALTER USER userW IDENTIFIED BY 'haha',
 userX IDENTIFIED BY '',
 userV IDENTIFIED BY 'haha';
-ERROR HY000: Operation ALTER USER failed for 'userW'@'%','userV'@'%'
+ERROR HY000: Operation ALTER USER failed for 'userW'@'%' (User account does not exist),'userV'@'%' (User account does not exist)
 # This event sequence pattern MUST NOT be present in binlog: !Q(ALTER USER.*userW.*userX.*userV.*)
 include/rpl/assert_binlog_events.inc
 mysql: [Warning] Using a password on the command line interface can be insecure.
@@ -50,11 +50,13 @@ DELETE FROM mysql.user WHERE user LIKE 'userX';
 include/rpl/save_binlog_file_position.inc
 ALTER USER userY IDENTIFIED BY '',
 userX IDENTIFIED BY 'haha';
-ERROR HY000: Operation ALTER USER failed for 'userX'@'%'
+ERROR HY000: Operation ALTER USER failed for 'userX'@'%' (User account does not exist)
 # Check binlog : Must not have any entry
 # This event sequence pattern MUST NOT be present in binlog: !Q(ALTER USER.*userY.*userX.*)
 include/rpl/assert_binlog_events.inc
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/rpl/save_binlog_file_position.inc
 mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
@@ -67,7 +69,7 @@ userZ@%
 # session's state must not be altered and user should be able to
 # execute other statements without any need to change password.
 ALTER USER root@localhost, userW PASSWORD EXPIRE;
-ERROR HY000: Operation ALTER USER failed for 'userW'@'%'
+ERROR HY000: Operation ALTER USER failed for 'userW'@'%' (User account does not exist)
 # Must succeed
 SELECT user FROM mysql.user;
 user
@@ -115,6 +117,8 @@ Note	3162	Authorization ID 'userX'@'%' does not exist.
 # This event sequence pattern MUST be present in binlog: !Q(ALTER USER.*userX.*userY.*)
 include/rpl/assert_binlog_events.inc
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/rpl/save_binlog_file_position.inc
 # Case 3 : Current session's password must be expired
 GRANT ALL ON *.* TO userY;

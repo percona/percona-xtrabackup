@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 set binlog_format=mixed;
 Warnings:
 Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
@@ -139,3 +140,4 @@ a	b
 2	init+con1
 DROP PROCEDURE p1;
 DROP TABLE t1, t2;
+include/rpl/set_gtid_mode_on.inc

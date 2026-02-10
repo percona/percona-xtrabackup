@@ -157,10 +157,10 @@ ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 4326), 100, 6)
 {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4326"}}, "type": "Point", "coordinates": [11.0, 10.0]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 0), 100, 5);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 0), 100, 5)
-{"bbox": [10.0, 11.0, 10.0, 11.0], "type": "Point", "coordinates": [10.0, 11.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "bbox": [10.0, 11.0, 10.0, 11.0], "type": "Point", "coordinates": [10.0, 11.0]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 0), 100, 2);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 0), 100, 2)
-{"type": "Point", "coordinates": [10.0, 11.0]}
+{"crs": {"type": "name", "properties": {"name": "MySQL:0"}}, "type": "Point", "coordinates": [10.0, 11.0]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", -1), 100, 4);
 ERROR 22003: SRID value is out of range in 'st_geomfromtext'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", -1000), 100, 6);
@@ -174,7 +174,7 @@ ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 0), 0, 0)
 {"type": "Point", "coordinates": [10.0, 11.0]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 0), 4, 7);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 0), 4, 7)
-{"bbox": [10.1235, 11.1235, 10.1235, 11.1235], "type": "Point", "coordinates": [10.1235, 11.1235]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "bbox": [10.1235, 11.1235, 10.1235, 11.1235], "type": "Point", "coordinates": [10.1235, 11.1235]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 0), 10, 0);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 0), 10, 0)
 {"type": "Point", "coordinates": [10.123456789, 11.123456789]}
@@ -204,22 +204,22 @@ ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.123456789012345678
 {"bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 2);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 2)
-{"type": "Point", "coordinates": [10.123456789, 11.123456789]}
+{"crs": {"type": "name", "properties": {"name": "MySQL:0"}}, "type": "Point", "coordinates": [10.123456789, 11.123456789]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 3);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 3)
-{"bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
+{"crs": {"type": "name", "properties": {"name": "MySQL:0"}}, "bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 4);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 4)
-{"type": "Point", "coordinates": [10.123456789, 11.123456789]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [10.123456789, 11.123456789]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 5);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 5)
-{"bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 6);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 6)
-{"type": "Point", "coordinates": [10.123456789, 11.123456789]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [10.123456789, 11.123456789]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 7);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, 7)
-{"bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "0"), 100, 1);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "0"), 100, 1)
 {"bbox": [10.0, 11.0, 10.0, 11.0], "type": "Point", "coordinates": [10.0, 11.0]}
@@ -239,25 +239,25 @@ ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 0), "0", 1)
 {"bbox": [10.0, 11.0, 10.0, 11.0], "type": "Point", "coordinates": [10.0, 11.0]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 0), "4", 2);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 0), "4", 2)
-{"type": "Point", "coordinates": [10.1235, 11.1235]}
+{"crs": {"type": "name", "properties": {"name": "MySQL:0"}}, "type": "Point", "coordinates": [10.1235, 11.1235]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 0), "10", 3);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 0), "10", 3)
-{"bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
+{"crs": {"type": "name", "properties": {"name": "MySQL:0"}}, "bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), "10000", 4);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), "10000", 4)
-{"type": "Point", "coordinates": [10.123456789012346, 11.123456789012346]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [10.123456789012346, 11.123456789012346]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), "1000000", 5);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), "1000000", 5)
-{"bbox": [10.123456789012346, 11.123456789012346, 10.123456789012346, 11.123456789012346], "type": "Point", "coordinates": [10.123456789012346, 11.123456789012346]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "bbox": [10.123456789012346, 11.123456789012346, 10.123456789012346, 11.123456789012346], "type": "Point", "coordinates": [10.123456789012346, 11.123456789012346]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), "2147483647", 6);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), "2147483647", 6)
-{"type": "Point", "coordinates": [10.123456789012346, 11.123456789012346]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [10.123456789012346, 11.123456789012346]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), (CAST(20 AS CHAR)), 7);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), (CAST(20 AS CHAR)), 7)
-{"bbox": [10.123456789012346, 11.123456789012346, 10.123456789012346, 11.123456789012346], "type": "Point", "coordinates": [10.123456789012346, 11.123456789012346]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "bbox": [10.123456789012346, 11.123456789012346, 10.123456789012346, 11.123456789012346], "type": "Point", "coordinates": [10.123456789012346, 11.123456789012346]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, (CAST(7 AS CHAR)));
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.1234567890123456789 11.1234567890123456789)", 0), 10, (CAST(7 AS CHAR)))
-{"bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "bbox": [10.123456789, 11.123456789, 10.123456789, 11.123456789], "type": "Point", "coordinates": [10.123456789, 11.123456789]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", " 4326.34 "), 100, 1);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", " 4326.34 "), 100, 1)
 {"bbox": [11.0, 10.0, 11.0, 10.0], "type": "Point", "coordinates": [11.0, 10.0]}
@@ -265,12 +265,12 @@ Warnings:
 Warning	1292	Truncated incorrect INTEGER value: ' 4326.34 '
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "*&$%4326"), 100, 2);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "*&$%4326"), 100, 2)
-{"type": "Point", "coordinates": [10.0, 11.0]}
+{"crs": {"type": "name", "properties": {"name": "MySQL:0"}}, "type": "Point", "coordinates": [10.0, 11.0]}
 Warnings:
 Warning	1292	Truncated incorrect INTEGER value: '*&$%4326'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 0), "12.34", 3);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 0), "12.34", 3)
-{"bbox": [10.0, 11.0, 10.0, 11.0], "type": "Point", "coordinates": [10.0, 11.0]}
+{"crs": {"type": "name", "properties": {"name": "MySQL:0"}}, "bbox": [10.0, 11.0, 10.0, 11.0], "type": "Point", "coordinates": [10.0, 11.0]}
 Warnings:
 Warning	1292	Truncated incorrect INTEGER value: '12.34'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 4326), "*&$%$123", 4);
@@ -3066,18 +3066,18 @@ ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(1.7976931348623
 POINT(0 0)
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("LINESTRING(30 10, 10 30, 40 40)"), 10, 4)));
 ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("LINESTRING(30 10, 10 30, 40 40)"), 10, 4)))
-LINESTRING(10 30,30 10,40 40)
+LINESTRING(30 10,10 30,40 40)
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("LINESTRING(0 0, 0 10, 10 10, 10 0)"), 10, 5)));
 ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("LINESTRING(0 0, 0 10, 10 10, 10 0)"), 10, 5)))
-LINESTRING(0 0,10 0,10 10,0 10)
+LINESTRING(0 0,0 10,10 10,10 0)
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("POLYGON((30 10, 40 40, 20 40, 10 20,30 10))"), 20, 6)));
 ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("POLYGON((30 10, 40 40, 20 40, 10 20,30 10))"), 20, 6)))
-POLYGON((10 30,40 40,40 20,20 10,10 30))
+POLYGON((30 10,40 40,20 40,10 20,30 10))
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("POLYGON((35 10, 45 45, 15 40, 10 20, 35 10),"
                                     "(20 30, 35 35, 30 20,20 30))"), 20, 7)));
 ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("POLYGON((35 10, 45 45, 15 40, 10 20, 35 10),"
                                     "(20 30, 35 35, 30 20,20 30))"), 20, 7)))
-POLYGON((10 35,45 45,40 15,20 10,10 35),(30 20,35 35,20 30,30 20))
+POLYGON((35 10,45 45,15 40,10 20,35 10),(20 30,35 35,30 20,20 30))
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("MULTIPOINT(10 40, 40 30, 20 20, 30 10)"))));
 ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("MULTIPOINT(10 40, 40 30, 20 20, 30 10)"))))
 MULTIPOINT((40 10),(30 40),(20 20),(10 30))
@@ -3982,15 +3982,15 @@ INSERT INTO geojson (geojson_value) VALUES
 SELECT ST_AsText(ST_GeomFromGeoJSON(geojson_value)) FROM geojson;
 ST_AsText(ST_GeomFromGeoJSON(geojson_value))
 POINT(10 11)
-POINT(66.231 -1.324)
-POINT(-23.001 98.344)
+POINT(-1.324 66.231)
+POINT(98.344 -23.001)
 POINT(0 0)
 SELECT ST_SRID(ST_GeomFromGeoJSON(geojson_value)) FROM geojson;
 ST_SRID(ST_GeomFromGeoJSON(geojson_value))
 4326
-4326
-4326
-4326
+0
+0
+0
 DROP TABLE geojson;
 #
 # Bug#21384048 ASSERTION FAILED: N >= 0 && N <= 308
@@ -4267,3 +4267,130 @@ SELECT JSON_ARRAY(ST_ASGEOJSON(ST_GEOMFROMTEXT('')), 1);
 ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT JSON_ARRAY(ST_ASGEOJSON(0x00), 1);
 ERROR 22023: Invalid GIS data provided to function st_asgeojson.
+#
+# WL#16929: Include CRS URN in implicit JSON representation of geometries
+#
+SELECT JSON_OBJECT('geom', ST_GeomFromText('POINT(1 2)'));
+JSON_OBJECT('geom', ST_GeomFromText('POINT(1 2)'))
+{"geom": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}}
+SELECT CAST(ST_GeomFromText('POINT(1 2)') AS JSON);
+CAST(ST_GeomFromText('POINT(1 2)') AS JSON)
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}
+SELECT JSON_SET('{}', '$.geom', ST_GeomFromText('POINT(1 2)'));
+JSON_SET('{}', '$.geom', ST_GeomFromText('POINT(1 2)'))
+{"geom": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}}
+SELECT JSON_INSERT('{}', '$.geom', ST_GeomFromText('POINT(1 2)'));
+JSON_INSERT('{}', '$.geom', ST_GeomFromText('POINT(1 2)'))
+{"geom": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}}
+SELECT JSON_ARRAY_APPEND('[]', '$', ST_GeomFromText('POINT(1 2)'));
+JSON_ARRAY_APPEND('[]', '$', ST_GeomFromText('POINT(1 2)'))
+[{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}]
+SELECT JSON_OBJECT('geom', ST_GeomFromText('POINT(1 2)', 0));
+JSON_OBJECT('geom', ST_GeomFromText('POINT(1 2)', 0))
+{"geom": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}}
+SELECT CAST(ST_GeomFromText('POINT(1 2)', 0) AS JSON);
+CAST(ST_GeomFromText('POINT(1 2)', 0) AS JSON)
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}
+SELECT JSON_SET('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 0));
+JSON_SET('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 0))
+{"geom": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}}
+SELECT JSON_INSERT('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 0));
+JSON_INSERT('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 0))
+{"geom": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}}
+SELECT JSON_ARRAY_APPEND('[]', '$', ST_GeomFromText('POINT(1 2)', 0));
+JSON_ARRAY_APPEND('[]', '$', ST_GeomFromText('POINT(1 2)', 0))
+[{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}]
+SELECT JSON_OBJECT('geom', ST_GeomFromText('POINT(1 2)', 3857));
+JSON_OBJECT('geom', ST_GeomFromText('POINT(1 2)', 3857))
+{"geom": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3857"}}, "type": "Point", "coordinates": [1.0, 2.0]}}
+SELECT CAST(ST_GeomFromText('POINT(1 2)', 3857) AS JSON);
+CAST(ST_GeomFromText('POINT(1 2)', 3857) AS JSON)
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3857"}}, "type": "Point", "coordinates": [1.0, 2.0]}
+SELECT JSON_SET('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 3857));
+JSON_SET('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 3857))
+{"geom": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3857"}}, "type": "Point", "coordinates": [1.0, 2.0]}}
+SELECT JSON_INSERT('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 3857));
+JSON_INSERT('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 3857))
+{"geom": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3857"}}, "type": "Point", "coordinates": [1.0, 2.0]}}
+SELECT JSON_ARRAY_APPEND('[]', '$', ST_GeomFromText('POINT(1 2)', 3857));
+JSON_ARRAY_APPEND('[]', '$', ST_GeomFromText('POINT(1 2)', 3857))
+[{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3857"}}, "type": "Point", "coordinates": [1.0, 2.0]}]
+SELECT ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 2);
+ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 2)
+{"crs": {"type": "name", "properties": {"name": "MySQL:0"}}, "type": "Point", "coordinates": [1.0, 2.0]}
+SELECT ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 2);
+ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 2)
+{"crs": {"type": "name", "properties": {"name": "MySQL:0"}}, "type": "Point", "coordinates": [1.0, 2.0]}
+SELECT ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 4);
+ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 4)
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}
+SELECT ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 4);
+ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 4)
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}
+SELECT ST_SRID(ST_GeomFromGeoJSON('{"type": "Point", "coordinates": [1, 2]}'));
+ST_SRID(ST_GeomFromGeoJSON('{"type": "Point", "coordinates": [1, 2]}'))
+4326
+SELECT ST_SRID(ST_GeomFromGeoJSON(
+'{"crs": {"type": "name", "properties": '
+                 '{"name": "MySQL:0"}}, '
+                 '"type": "Point", "coordinates": [1, 2]}'));
+ST_SRID(ST_GeomFromGeoJSON(
+'{"crs": {"type": "name", "properties": '
+                 '{"name": "MySQL:0"}}, '
+                 '"type": "Point", "coordinates": [1, 2]}'))
+0
+SELECT ST_SRID(ST_GeomFromGeoJSON(
+'{"crs": {"type": "name", "properties": '
+                 '{"name": "urn:ogc:def:crs:MySQL::0"}}, '
+                 '"type": "Point", "coordinates": [1, 2]}'));
+ST_SRID(ST_GeomFromGeoJSON(
+'{"crs": {"type": "name", "properties": '
+                 '{"name": "urn:ogc:def:crs:MySQL::0"}}, '
+                 '"type": "Point", "coordinates": [1, 2]}'))
+0
+SELECT ST_GeomFromGeoJSON(
+'{"crs": {"type": "name", "properties": '
+                 '{"name": "MySQL:1"}}, '
+                 '"type": "Point", "coordinates": [1, 2]}');
+ERROR HY000: Invalid GeoJSON data provided to function st_geomfromgeojson
+SELECT ST_GeomFromGeoJSON(
+'{"crs": {"type": "name", "properties": '
+                 '{"name": "urn:ogc:def:crs:MySQL::1"}}, '
+                 '"type": "Point", "coordinates": [1, 2]}');
+ERROR HY000: Invalid GeoJSON data provided to function st_geomfromgeojson
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 2)));
+ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 2)))
+0
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 4)));
+ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 4)))
+0
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 2)));
+ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 2)))
+0
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 4)));
+ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 4)))
+0
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 3857), 0, 2)));
+ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 3857), 0, 2)))
+3857
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 3857), 0, 4)));
+ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 3857), 0, 4)))
+3857
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 4326), 0, 2)));
+ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 4326), 0, 2)))
+4326
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 4326), 0, 4)));
+ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 4326), 0, 4)))
+4326
+SELECT ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)') AS JSON)));
+ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)') AS JSON)))
+0
+SELECT ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)', 0) AS JSON)));
+ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)', 0) AS JSON)))
+0
+SELECT ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)', 3857) AS JSON)));
+ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)', 3857) AS JSON)))
+3857
+SELECT ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)', 4326) AS JSON)));
+ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)', 4326) AS JSON)))
+4326

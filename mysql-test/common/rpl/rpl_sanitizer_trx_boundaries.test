@@ -1,0 +1,85 @@
+# ==== PURPOSE ====
+#
+# This test validates that relay log sanitizer correctly parses transaction
+# boundaries and replica is able to synchronize with the source's GTID
+# executed
+#
+# ==== IMPLEMENTATION ====
+#
+# This test
+#
+# T1.
+#     Test steps:
+#
+#     1. On server_1: Generate transaction. Rotate binary log file and run
+#        the input query
+#     2. Copy generated binlog into the server_2 data directory
+#     3. Create channel to replicate from binary logs
+#     4. Wait for expected gtid set on server_2
+#     5. Clean up
+#
+#     Test pass conditions:
+#
+#     - Applier applies binlog files without errors (GTID executed set matches
+#       expected GTID set)
+
+--echo
+--echo #
+--echo # STAGE: Test query : $test_query
+--echo #
+--echo
+
+--echo
+--echo # a) On server_1: generate two transactions. Spread them between
+--echo #    different binary log files.
+--echo
+
+CREATE TABLE t (a INT);
+INSERT INTO t VALUES (NULL), (NULL), (NULL);
+FLUSH BINARY LOGS;
+--eval $test_query
+
+--source include/rpl/save_server_position.inc
+
+--echo
+--echo # b) Copy generated binlog into the server_2 data directory
+--echo
+
+--copy_file $server_1_datadir/master-bin.000001 $server_2_datadir/slave-relay-bin-ch.000001
+--copy_file $server_1_datadir/master-bin.000002 $server_2_datadir/slave-relay-bin-ch.000002
+--copy_file $server_1_datadir/master-bin.index $server_2_datadir/slave-relay-bin-ch.index
+--exec perl -pi.bak -e "s/master-bin/slave-relay-bin-ch/g" $server_2_datadir/slave-relay-bin-ch.index
+
+--echo
+--echo # c) Create channel to replicate from binary logs
+--echo
+
+--let $rpl_connection_name= server_2
+--source include/connection.inc
+
+CHANGE REPLICATION SOURCE TO RELAY_LOG_FILE='slave-relay-bin-ch.000001', RELAY_LOG_POS=4, SOURCE_HOST='dummy', SOURCE_USER='root' FOR CHANNEL 'ch';
+START REPLICA SQL_THREAD FOR CHANNEL 'ch';
+
+--echo
+--echo # d) Wait for expected gtid set on server_2
+--echo
+
+--source include/rpl/sync_with_saved.inc
+
+--echo
+--echo # e) Clean up
+--echo
+
+--let $rpl_channel_name= 'ch'
+--source include/rpl/stop_replica.inc
+--let $rpl_channel_name=
+RESET REPLICA ALL FOR CHANNEL 'ch';
+RESET BINARY LOGS AND GTIDS;
+DROP TABLE IF EXISTS t;
+--remove_file $server_2_datadir/slave-relay-bin-ch.index.bak
+
+--let $rpl_connection_name= server_1
+--source include/connection.inc
+
+RESET BINARY LOGS AND GTIDS;
+DROP TABLE IF EXISTS t;

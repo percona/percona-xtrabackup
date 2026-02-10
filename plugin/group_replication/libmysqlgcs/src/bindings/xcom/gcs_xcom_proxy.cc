@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -94,7 +94,7 @@ bool Gcs_xcom_proxy_impl::xcom_client_get_event_horizon(
       xcom_input_try_push_and_get_reply(data);
   std::unique_ptr<Gcs_xcom_input_queue::Reply> reply = future.get();
   bool const processable_reply =
-      (reply.get() != nullptr && reply->get_payload() != nullptr);
+      (reply != nullptr && reply->get_payload() != nullptr);
   if (processable_reply) {
     bool const reply_ok = (reply->get_payload()->cli_err == REQUEST_OK);
     if (reply_ok) {
@@ -137,7 +137,7 @@ bool Gcs_xcom_proxy_impl::xcom_client_set_leaders(
       xcom_input_try_push_and_get_reply(data);
   std::unique_ptr<Gcs_xcom_input_queue::Reply> reply = future.get();
   bool const processable_reply =
-      (reply.get() != nullptr && reply->get_payload() != nullptr);
+      (reply != nullptr && reply->get_payload() != nullptr);
 
   bool successful = false;
   if (processable_reply) {
@@ -161,7 +161,7 @@ bool Gcs_xcom_proxy_impl::xcom_client_get_leaders(uint32_t gid,
       xcom_input_try_push_and_get_reply(data);
   std::unique_ptr<Gcs_xcom_input_queue::Reply> reply = future.get();
   bool const processable_reply =
-      (reply.get() != nullptr && reply->get_payload() != nullptr);
+      (reply != nullptr && reply->get_payload() != nullptr);
   if (processable_reply) {
     bool const reply_ok = (reply->get_payload()->cli_err == REQUEST_OK);
     if (reply_ok) {
@@ -426,8 +426,8 @@ node_address *Gcs_xcom_proxy_impl::new_node_address_uuid(unsigned int n,
 
 enum_gcs_error Gcs_xcom_proxy_impl::xcom_wait_for_condition(
     My_xp_cond_impl &condition, My_xp_mutex_impl &condition_lock,
-    std::function<bool(void)> need_to_wait,
-    std::function<const std::string(int res)> condition_event) {
+    const std::function<bool(void)> &need_to_wait,
+    const std::function<const std::string(int res)> &condition_event) {
   enum_gcs_error ret = GCS_OK;
   struct timespec ts;
   int res = 0;
@@ -444,7 +444,7 @@ enum_gcs_error Gcs_xcom_proxy_impl::xcom_wait_for_condition(
   if (res != 0) {
     // There was an error
     ret = GCS_NOK;
-    std::string error_string = condition_event(res);
+    std::string const error_string = condition_event(res);
     if (res == ETIMEDOUT) {
       MYSQL_GCS_LOG_ERROR("Timeout while waiting for " << error_string << "!")
     } else if (res == EINVAL) {
@@ -498,9 +498,8 @@ enum_gcs_error Gcs_xcom_proxy_impl::xcom_wait_exit() {
   auto event_string = [](int res) {
     if (res == ETIMEDOUT) {
       return "the group communication engine to exit";
-    } else {
-      return "group communication engine to exit";
     }
+    return "group communication engine to exit";
   };
   return xcom_wait_for_condition(
       m_cond_xcom_exit, m_lock_xcom_exit, [this]() { return !m_is_xcom_exit; },
@@ -538,9 +537,9 @@ void Gcs_xcom_proxy_impl::xcom_wait_for_xcom_comms_status_change(int &status) {
     return "the group communication engine's communications status to change";
   };
 
-  enum_gcs_error res = xcom_wait_for_condition(m_cond_xcom_comms_status,
-                                               m_lock_xcom_comms_status,
-                                               wait_cond, event_string);
+  enum_gcs_error const res = xcom_wait_for_condition(m_cond_xcom_comms_status,
+                                                     m_lock_xcom_comms_status,
+                                                     wait_cond, event_string);
 
   m_lock_xcom_comms_status.lock();
   if (res != GCS_OK) {
@@ -661,7 +660,7 @@ bool Gcs_xcom_proxy_impl::xcom_client_force_config(node_list *nl,
       xcom_input_try_push_and_get_reply(data);
   std::unique_ptr<Gcs_xcom_input_queue::Reply> reply = future.get();
   bool const processable_reply =
-      (reply.get() != nullptr && reply->get_payload() != nullptr);
+      (reply != nullptr && reply->get_payload() != nullptr);
 
   bool successful = false;
   if (processable_reply) {
@@ -766,7 +765,7 @@ static bool convert_synode_set_to_synode_array(
   if (to.synode_no_array_val == nullptr) goto end;
   to.synode_no_array_len = nr_synodes;
 
-  for (auto &gcs_synod : synode_set) {
+  for (const auto &gcs_synod : synode_set) {
     to.synode_no_array_val[index] = gcs_synod.get_synod();
     index++;
   }

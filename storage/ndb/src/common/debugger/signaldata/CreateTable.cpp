@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,7 @@ bool printCREATE_TABLE_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const CreateTableReq *sig = (const CreateTableReq *)theData;
+  const auto *sig = (const CreateTableReq *)theData;
   fprintf(output, " clientRef: 0x%x", sig->clientRef);
   fprintf(output, " clientData: %u", sig->clientData);
   fprintf(output, " requestInfo: %x", sig->requestInfo);
@@ -47,7 +47,7 @@ bool printCREATE_TABLE_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const CreateTableConf *sig = (const CreateTableConf *)theData;
+  const auto *sig = (const CreateTableConf *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " clientData: %u", sig->clientData);
   fprintf(output, " transId: 0x%x", sig->transId);
@@ -65,7 +65,7 @@ bool printCREATE_TABLE_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const CreateTableRef *sig = (const CreateTableRef *)theData;
+  const auto *sig = (const CreateTableRef *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " clientData: %u", sig->clientData);
   fprintf(output, " transId: 0x%x", sig->transId);

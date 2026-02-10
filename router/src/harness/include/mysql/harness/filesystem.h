@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -118,7 +118,7 @@ class HARNESS_EXPORT Path {
    * Construct a path
    *
    * @param path Non-empty string denoting the path.
-   * @throws std::invalid_argument
+   * @throws std::invalid_argument If "path" is not a valid path.
    */
   Path(std::string path);
 
@@ -220,6 +220,16 @@ class HARNESS_EXPORT Path {
   Path basename() const;
 
   /**
+   * Get the extention of the file.
+   *
+   * The returned extension consists of last `dot` and the extension shortcut.
+   * In case of file name that doesn't contain extension, then result is empty.
+   *
+   * @returns an string containing the extension.
+   */
+  std::string extension() const;
+
+  /**
    * Append a path component to the current path.
    *
    * This function will append a path component to the path using the
@@ -287,6 +297,11 @@ class HARNESS_EXPORT Path {
    * source file.
    */
   static const char *const root_directory;
+
+  /**
+   * Extension separator string.
+   */
+  static const char *const extension_separator;
 
   operator bool() const noexcept { return is_set(); }
 
@@ -633,6 +648,25 @@ void HARNESS_EXPORT make_file_readonly(const std::string &file_name);
  */
 
 void HARNESS_EXPORT check_file_access_rights(const std::string &file_name);
+
+/** @brief Copy contents of one file to another.
+ *
+ * Exception thrown if open, create read or write operation fails.
+ */
+void HARNESS_EXPORT copy_file(const std::string &from, const std::string &to);
+
+/**
+ * renames file.
+ *
+ * The function will overwrite the 'to' file if already exists.
+ *
+ * @param from old filename
+ * @param to   new filename
+ *
+ * @returns stdx::expected<void, std::error_code>
+ */
+stdx::expected<void, std::error_code> HARNESS_EXPORT
+rename_file(const std::string &from, const std::string &to);
 
 }  // namespace mysql_harness
 

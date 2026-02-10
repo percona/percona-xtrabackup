@@ -1,0 +1,1444 @@
+RESET BINARY LOGS AND GTIDS;
+
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v3_or_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+create schema test_schema;
+use test_schema;
+create table test_schema.tbl (id int primary key);
+insert into test_schema.tbl values (1), (2), (3), (4), (5);
+create procedure test_schema.sp() begin end;
+create function test_schema.fn() returns int return 42;
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=test_schema
+--let $mrs_add_schema_path=/db
+--let $mrs_add_schema_auth=1
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=tbl
+--let $mrs_add_db_object_path=/tbl
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=sp
+--let $mrs_add_db_object_path=/sp
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=fn
+--let $mrs_add_db_object_path=/fn
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_schema=test_schema
+--let $mrs_add_schema_path=/db2
+--let $mrs_add_schema_auth=1
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=tbl
+--let $mrs_add_db_object_path=/tbl
+--source ../include/mrs/db_object/add.inc
+
+
+--let $mrs_add_service_path="/svc2"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=test_schema
+--let $mrs_add_schema_path=/db
+--let $mrs_add_schema_auth=1
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=tbl
+--let $mrs_add_db_object_path=/tbl
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=sp
+--let $mrs_add_db_object_path=/sp
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=fn
+--let $mrs_add_db_object_path=/fn
+--source ../include/mrs/db_object/add.inc
+
+#FR6-2
+--let $mrs_add_service_path="/svc3"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=test_schema
+--let $mrs_add_schema_path=/db
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=tbl
+--let $mrs_add_db_object_path=/tbl
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=sp
+--let $mrs_add_db_object_path=/sp
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=fn
+--let $mrs_add_db_object_path=/fn
+--source ../include/mrs/db_object/add.inc
+
+# create roles
+--let $mrs_add_role_caption=Nothing
+--source ../include/mrs/role/add.inc
+#
+--let $mrs_add_role_caption=Svc2Only
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc2
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,CREATE,UPDATE,DELETE
+--source ../include/mrs/role/grant_privilege.inc
+#
+--let $mrs_add_role_caption=AnySvc
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,CREATE,UPDATE,DELETE
+--source ../include/mrs/role/grant_privilege.inc
+#
+--let $mrs_add_role_caption=TablesOnly
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=/t*
+--let $mrs_grant_privilege_crud_operations=READ,CREATE,UPDATE,DELETE
+--source ../include/mrs/role/grant_privilege.inc
+#
+# also tests ? wildcard in endpoint
+--let $mrs_add_role_caption=TableInsertOnly
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=/t?l
+--let $mrs_grant_privilege_crud_operations=CREATE
+--source ../include/mrs/role/grant_privilege.inc
+#
+--let $mrs_add_role_caption=TableReadOnly
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=/t*
+--let $mrs_grant_privilege_crud_operations=READ
+--source ../include/mrs/role/grant_privilege.inc
+#
+--let $mrs_add_role_caption=FR6_2Role
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc3
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ
+--source ../include/mrs/role/grant_privilege.inc
+#
+--let $mrs_add_role_caption=RSvcUSvc2
+--source ../include/mrs/role/add.inc
+# also covers ? wildcard matching in schema
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=/d?
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ
+--source ../include/mrs/role/grant_privilege.inc
+# also covers ? wildcard matching in service
+--let $mrs_grant_privilege_service_path=/s?c2
+--let $mrs_grant_privilege_schema_path=/?b
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=UPDATE
+--source ../include/mrs/role/grant_privilege.inc
+#
+--let $mrs_add_role_caption=read_only
+--let $mrs_sql_id_variable=@parent_role_id0
+--source ../include/mrs/role/add.inc
+--let $mrs_sql_role_id_variable=@parent_role_id0
+--let $mrs_grant_privilege_crud_operations=READ
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=read_update
+--let $mrs_add_role_derived_from_role_id=@parent_role_id0
+--let $mrs_sql_id_variable=@parent_role_id1
+--source ../include/mrs/role/add.inc
+--let $mrs_sql_role_id_variable=@parent_role_id1
+--let $mrs_grant_privilege_crud_operations=UPDATE
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=read_insert
+--let $mrs_add_role_derived_from_role_id=@parent_role_id1
+--let $mrs_sql_id_variable=@parent_role_id2
+--source ../include/mrs/role/add.inc
+--let $mrs_sql_role_id_variable=@parent_role_id2
+--let $mrs_grant_privilege_crud_operations=CREATE
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=all
+--let $mrs_add_role_derived_from_role_id=@parent_role_id2
+--source ../include/mrs/role/add.inc
+--let $mrs_grant_privilege_crud_operations=DELETE
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--source ../include/mrs/role/grant_privilege.inc
+# circular role
+--let $mrs_add_role_caption=circ
+--let $mrs_sql_id_variable=@parent_role_id
+--source ../include/mrs/role/add.inc
+--let $mrs_grant_privilege_crud_operations=READ
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=ular
+--let $mrs_add_role_derived_from_role_id=@parent_role_id
+--source ../include/mrs/role/add.inc
+
+--let $mrs_add_role_caption=loopy
+--let $mrs_add_role_derived_from_role_id=@role_id
+--source ../include/mrs/role/add.inc
+--let $mrs_grant_privilege_crud_operations=READ
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--source ../include/mrs/role/grant_privilege.inc
+
+# create users
+--let $k_password_pwd='JEEkMDA1JGI2amJJam9BZmdNS1kwWlFJVUVRZmg1d2UxVT0kVHVkYUQvandPNHB4QSttSVZQT2Q2\nQTlna1g2OUEyMVVpWEl4ajdrcG1Taz0='
+
+--let $mrs_add_auth_app=any_service_auth
+--let $mrs_add_auth_registered_users_only=1
+--let $mrs_add_auth_vendor=MRS
+--let $mrs_add_auth_services=('/svc', '/svc2')
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_user_ext_uid="USER0"
+--let $mrs_add_user_name='nobody'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=Nothing
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="USER1"
+--let $mrs_add_user_name='AanySvc'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=AnySvc
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="USER2"
+--let $mrs_add_user_name='Asvc2Only'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=Svc2Only
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="USER3"
+--let $mrs_add_user_name='AtablesOnly'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=TablesOnly
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="USER4"
+--let $mrs_add_user_name='AinsertOnly'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=TableInsertOnly
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="USER5"
+--let $mrs_add_user_name='AreadOnly'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=TableReadOnly
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="RSvcUSvc2"
+--let $mrs_add_user_name='RSvcUSvc2'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=RSvcUSvc2
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="read_only"
+--let $mrs_add_user_name='read_only'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=read_only
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="read_update"
+--let $mrs_add_user_name='read_update'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=read_update
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="read_insert"
+--let $mrs_add_user_name='read_insert'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=read_insert
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="all"
+--let $mrs_add_user_name='all'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=all
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="ular"
+--let $mrs_add_user_name='ular'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=ular
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="circ"
+--let $mrs_add_user_name='circ'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=circ
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="loopy"
+--let $mrs_add_user_name='loopy'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=loopy
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_auth_app=svc_auth
+--let $mrs_add_auth_registered_users_only=1
+--let $mrs_add_auth_vendor=MRS
+--let $mrs_add_auth_services=('/svc')
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_user_ext_uid="BUSER1"
+--let $mrs_add_user_name='BanySvc'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=AnySvc
+--source ../include/mrs/user/add.inc
+
+# account is for svc but trying to grant for svc2
+--let $mrs_add_user_ext_uid="BUSER2"
+--let $mrs_add_user_name='Bsvc2Only'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=Svc2Only
+--source ../include/mrs/user/add.inc
+
+# account is for svc but has grants for svc3
+--let $mrs_add_user_ext_uid="FR6User"
+--let $mrs_add_user_name='FR6User'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=FR6_2Role
+--source ../include/mrs/user/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+set @tmp=(select id from mysql_rest_service_metadata.mrs_role where caption='ular' limit 1);
+update mysql_rest_service_metadata.mrs_role set derived_from_role_id=@tmp where caption='circ';
+
+# Begin tests
+#############
+
+## Not authenticated
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=401
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=401
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=401
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/tbl/1'
+--let $mrs_client_arg_expected_status=401
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/1'
+--let $mrs_client_arg_expected_status=401
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=401
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=401
+--source ../include/mrs/mrs_client.inc
+
+## No privileges
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'any_service_auth' --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u nobody
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/tbl/1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## All privs
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'any_service_auth' --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u AanySvc
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc/db/tbl/10'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/10'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+#
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 20}'
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 20}'
+--let $mrs_client_arg_path='/svc2/db/tbl/20'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc2/db/tbl/20'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/sp'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/fn'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## All on svc2
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'any_service_auth' --session-type jwt
+  -t PUT
+  --path /svc2/authentication/login
+  -u Asvc2Only
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/sp'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/fn'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+#
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 20}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 20}'
+--let $mrs_client_arg_path='/svc/db/tbl/20'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/20'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## Has grants on /svc3 but the authapp is for svc. otoh /svc3 requires no auth
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'svc_auth' --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u FR6User
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc3/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 50}'
+--let $mrs_client_arg_path='/svc3/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 50}'
+--let $mrs_client_arg_path='/svc3/db/tbl/50'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc3/db/tbl/50'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc3/db/sp'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc3/db/fn'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## RSvcUSvc2 - read on /svc and update on /svc2 - get on /svc ok, get on /svc2 fail
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app any_service_auth --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u RSvcUSvc2
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 50}'
+--let $mrs_client_arg_path='/svc/db/tbl/50'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 50}'
+--let $mrs_client_arg_path='/svc2/db/tbl/50'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## All tbl on any svc
+
+# account is valid in both svc and svc2, so it should be authenticatable through either
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'any_service_auth' --session-type jwt
+  -t PUT
+  --path /svc2/authentication/login
+  -u AtablesOnly
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+#
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 20}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 20}'
+--let $mrs_client_arg_path='/svc/db/tbl/20'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/20'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+## Read only on tables
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'any_service_auth' --session-type jwt
+  -t PUT
+  --path /svc2/authentication/login
+  -u AreadOnly
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+#
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 20}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 20}'
+--let $mrs_client_arg_path='/svc/db/tbl/20'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/20'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## Insert only on tables
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app any_service_auth --session-type jwt
+  -t PUT
+  --path /svc2/authentication/login
+  -u AinsertOnly
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+#
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 20}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 20}'
+--let $mrs_client_arg_path='/svc/db/tbl/20'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/20'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## AnySvc on account thats not valid on svc2
+
+# returns 400 but test client doesnt like it
+#exec $MRS_CLIENT_ARGS
+#  -a scram_post --auth-app svc_auth --session-type jwt
+#  -t PUT
+#   --path /svc2/authentication/login
+#  -u BanySvc
+#  -p pwd
+#  --expected-status 400
+#  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app svc_auth --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u BanySvc
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/sp'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/fn'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+#
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 30}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 30}'
+--let $mrs_client_arg_path='/svc/db/tbl/30'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/30'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+## account is for svc but has grants only for svc2.. login should pass but deny requests
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app svc_auth --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u Bsvc2Only
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+# has grants on svc2 but the account is not for svc2
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc2/db/tbl/10'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/sp'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc2/db/fn'
+--let $mrs_client_arg_expected_status=401
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# account is for svc but does not have grants on svc
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 30}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 30}'
+--let $mrs_client_arg_path='/svc/db/tbl/30'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/30'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## Derived roles
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app any_service_auth --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u read_only
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc/db/tbl/10'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/10'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app any_service_auth --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u read_update
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 10}'
+--let $mrs_client_arg_path='/svc/db/tbl/10'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/10'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app any_service_auth --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u read_insert
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 11}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 11}'
+--let $mrs_client_arg_path='/svc/db/tbl/11'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/11'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app any_service_auth --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u all
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"id": 12}'
+--let $mrs_client_arg_path='/svc/db/tbl'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"id": 12}'
+--let $mrs_client_arg_path='/svc/db/tbl/12'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/db/tbl/12'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/sp'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_path='/svc/db/fn'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# login with circular roles (just that it doesnt break)
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"username":"circ", "nonce":"something", "authApp":"any_service_auth"}'
+--let $mrs_client_arg_path='/svc/authentication/login'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"username":"ular", "nonce":"something", "authApp":"any_service_auth"}'
+--let $mrs_client_arg_path='/svc/authentication/login'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"username":"loopy", "nonce":"something", "authApp":"any_service_auth"}'
+--let $mrs_client_arg_path='/svc/authentication/login'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc
+drop schema test_schema;
+remove_file $MYSQL_TMP_DIR/user_session.dat;

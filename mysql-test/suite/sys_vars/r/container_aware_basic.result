@@ -1,0 +1,28 @@
+select @@container_aware;
+@@container_aware
+0
+select @@global.container_aware;
+@@global.container_aware
+0
+select @@session.container_aware;
+ERROR HY000: Variable 'container_aware' is a GLOBAL variable
+show global variables like 'container_aware';
+Variable_name	Value
+container_aware	OFF
+show session variables like 'container_aware';
+Variable_name	Value
+container_aware	OFF
+select * from performance_schema.global_variables where variable_name='container_aware';
+VARIABLE_NAME	VARIABLE_VALUE
+container_aware	OFF
+select * from performance_schema.session_variables where variable_name='container_aware';
+VARIABLE_NAME	VARIABLE_VALUE
+container_aware	OFF
+set global container_aware=1;
+ERROR HY000: Variable 'container_aware' is a read only variable
+set session container_aware=1;
+ERROR HY000: Variable 'container_aware' is a read only variable
+set persist container_aware=1;
+ERROR HY000: Variable 'container_aware' is a read only variable
+set persist_only container_aware=1;
+ERROR HY000: Variable 'container_aware' is a non persistent read only variable

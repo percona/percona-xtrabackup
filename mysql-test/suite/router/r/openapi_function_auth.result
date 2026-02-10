@@ -1,0 +1,1065 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `func_schema` - created
+CREATE USER user_valid@'%' IDENTIFIED BY 'pwd';
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+CREATE USER user2@'%' IDENTIFIED BY 'secretpass2';
+CREATE USER user3@'%' IDENTIFIED BY 'secretpass3';
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/func
+# Registered MRS ROLE: NoRead
+# Registered MRS Role Grant: /svc * * => DELETE
+# Registered MRS ROLE: RU
+# Registered MRS Role Grant: /svc * * => READ,UPDATE
+# Registered MRS ROLE: RC
+# Registered MRS Role Grant: /svc * * => READ,CREATE
+# Registred AUTH APP at path: /svc
+# Registred MRS USER: 'user1'
+# Registred MRS USER: 'user2'
+# Registred MRS USER: 'user3'
+# Registred DB_OBJECT at path: /svc/func/nothing
+SET @db_object_id_func=@db_object_id;
+
+
+## I. Function DB Object requires authentication, user is not authenticated,
+##    OpenAPI does not contain description for the function.
+#
+# 1. At service level
+# 2. At schema level
+# 3. At object level
+#
+#
+## II. Function DB Object requires authentication, user is authenticated,
+##     OpenAPI does contains description for the function.
+#
+# 1. At service level
+# 2. At schema level
+# 3. At object level
+#
+#
+## III. User without READ privilege could not access OpenAPI spec
+#
+# 1. At service level
+# 2. At schema level
+# 3. At object level
+#
+#
+## IV. User without UPDATE privilege
+#
+# 1. At service level
+# 2. At schema level
+# 3. At object level
+#
+#
+## IV. User with READ and UPDATE privileges
+#
+# 1. At service level
+# 2. At schema level
+# 3. At object level
+#
+#
+
+#
+# I.1
+GET /svc/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {},
+    "components": {
+        "schemas": {},
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# I.2
+GET /svc/func/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {},
+    "components": {
+        "schemas": {},
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# I.3
+GET /svc/func/open-api-catalog/nothing
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+
+#
+# II.1
+GET /svc/authentication/login
+
+OK
+GET /svc/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/func/nothing": {
+            "put": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "func_schema_nothing": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# II.2
+GET /svc/authentication/login
+
+OK
+GET /svc/func/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/func/nothing": {
+            "put": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "func_schema_nothing": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# II.3
+GET /svc/authentication/login
+
+OK
+GET /svc/func/open-api-catalog/nothing
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/func/nothing": {
+            "put": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "func_schema_nothing": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}
+OK
+
+#
+# III.1
+GET /svc/authentication/login
+
+OK
+GET /svc/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {},
+    "components": {
+        "schemas": {},
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# III.2
+GET /svc/authentication/login
+
+OK
+GET /svc/func/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {},
+    "components": {
+        "schemas": {},
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# III.3
+GET /svc/authentication/login
+
+OK
+GET /svc/func/open-api-catalog/nothing
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+
+#
+# IV.1
+GET /svc/authentication/login
+
+OK
+GET /svc/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/func/nothing": {
+            "post": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "func_schema_nothing": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# IV.2
+GET /svc/authentication/login
+
+OK
+GET /svc/func/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/func/nothing": {
+            "post": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "func_schema_nothing": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# IV.3
+GET /svc/authentication/login
+
+OK
+GET /svc/func/open-api-catalog/nothing
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/func/nothing": {
+            "post": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "func_schema_nothing": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}
+OK
+
+#
+# V.1
+GET /svc/authentication/login
+
+OK
+GET /svc/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/func/nothing": {
+            "put": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "func_schema_nothing": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# V.2
+GET /svc/authentication/login
+
+OK
+GET /svc/func/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/func/nothing": {
+            "put": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "func_schema_nothing": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# V.3
+GET /svc/authentication/login
+
+OK
+GET /svc/func/open-api-catalog/nothing
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/func/nothing": {
+            "put": {
+                "summary": "Call nothing function",
+                "tags": [
+                    "func_schema functions"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/func_schema_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "func_schema_nothing": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}
+OK
+DROP USER user_valid@'%';
+drop user user1@'%';
+drop user user2@'%';
+drop user user3@'%';
+DROP SCHEMA func_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

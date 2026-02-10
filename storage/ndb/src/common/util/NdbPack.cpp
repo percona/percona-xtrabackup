@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -54,7 +54,7 @@ void NdbPack::Error::set_error(const Error &e2) const {
 // NdbPack::Endian
 
 void NdbPack::Endian::convert(void *ptr, Uint32 len) {
-  Uint8 *p = (Uint8 *)ptr;
+  auto *p = (Uint8 *)ptr;
   for (Uint32 i = 0; i < len / 2; i++) {
     Uint32 j = len - i - 1;
     Uint8 tmp = p[i];
@@ -74,44 +74,44 @@ struct Ndb_pack_type_info {
 };
 
 static const Ndb_pack_type_info g_ndb_pack_type_info[] = {
-    {0, 0, 0, 0, 0},  // NDB_TYPE_UNDEFINED
-    {1, 1, 0, 0, 1},  // NDB_TYPE_TINYINT
-    {1, 1, 0, 0, 1},  // NDB_TYPE_TINYUNSIGNED
-    {1, 2, 0, 0, 1},  // NDB_TYPE_SMALLINT
-    {1, 2, 0, 0, 1},  // NDB_TYPE_SMALLUNSIGNED
-    {1, 3, 0, 0, 1},  // NDB_TYPE_MEDIUMINT
-    {1, 3, 0, 0, 1},  // NDB_TYPE_MEDIUMUNSIGNED
-    {1, 4, 0, 0, 1},  // NDB_TYPE_INT
-    {1, 4, 0, 0, 1},  // NDB_TYPE_UNSIGNED
-    {1, 8, 0, 0, 1},  // NDB_TYPE_BIGINT
-    {1, 8, 0, 0, 1},  // NDB_TYPE_BIGUNSIGNED
-    {1, 4, 0, 0, 1},  // NDB_TYPE_FLOAT
-    {1, 8, 0, 0, 1},  // NDB_TYPE_DOUBLE
-    {1, 0, 0, 0, 0},  // NDB_TYPE_OLDDECIMAL
-    {1, 0, 0, 1, 0},  // NDB_TYPE_CHAR
-    {1, 0, 1, 1, 0},  // NDB_TYPE_VARCHAR
-    {1, 0, 0, 0, 0},  // NDB_TYPE_BINARY
-    {1, 0, 1, 0, 0},  // NDB_TYPE_VARBINARY
-    {1, 8, 0, 0, 0},  // NDB_TYPE_DATETIME
-    {1, 3, 0, 0, 0},  // NDB_TYPE_DATE
-    {0, 0, 0, 0, 0},  // NDB_TYPE_BLOB
-    {0, 0, 0, 1, 0},  // NDB_TYPE_TEXT
-    {0, 0, 0, 0, 0},  // NDB_TYPE_BIT
-    {1, 0, 2, 1, 0},  // NDB_TYPE_LONGVARCHAR
-    {1, 0, 2, 0, 0},  // NDB_TYPE_LONGVARBINARY
-    {1, 3, 0, 0, 0},  // NDB_TYPE_TIME
-    {1, 1, 0, 0, 0},  // NDB_TYPE_YEAR
-    {1, 4, 0, 0, 0},  // NDB_TYPE_TIMESTAMP
-    {1, 0, 0, 0, 0},  // NDB_TYPE_OLDDECIMALUNSIGNED
-    {1, 0, 0, 0, 0},  // NDB_TYPE_DECIMAL
-    {1, 0, 0, 0, 0},  // NDB_TYPE_DECIMALUNSIGNED
+    {false, 0, 0, false, false},  // NDB_TYPE_UNDEFINED
+    {true, 1, 0, false, true},    // NDB_TYPE_TINYINT
+    {true, 1, 0, false, true},    // NDB_TYPE_TINYUNSIGNED
+    {true, 2, 0, false, true},    // NDB_TYPE_SMALLINT
+    {true, 2, 0, false, true},    // NDB_TYPE_SMALLUNSIGNED
+    {true, 3, 0, false, true},    // NDB_TYPE_MEDIUMINT
+    {true, 3, 0, false, true},    // NDB_TYPE_MEDIUMUNSIGNED
+    {true, 4, 0, false, true},    // NDB_TYPE_INT
+    {true, 4, 0, false, true},    // NDB_TYPE_UNSIGNED
+    {true, 8, 0, false, true},    // NDB_TYPE_BIGINT
+    {true, 8, 0, false, true},    // NDB_TYPE_BIGUNSIGNED
+    {true, 4, 0, false, true},    // NDB_TYPE_FLOAT
+    {true, 8, 0, false, true},    // NDB_TYPE_DOUBLE
+    {true, 0, 0, false, false},   // NDB_TYPE_OLDDECIMAL
+    {true, 0, 0, true, false},    // NDB_TYPE_CHAR
+    {true, 0, 1, true, false},    // NDB_TYPE_VARCHAR
+    {true, 0, 0, false, false},   // NDB_TYPE_BINARY
+    {true, 0, 1, false, false},   // NDB_TYPE_VARBINARY
+    {true, 8, 0, false, false},   // NDB_TYPE_DATETIME
+    {true, 3, 0, false, false},   // NDB_TYPE_DATE
+    {false, 0, 0, false, false},  // NDB_TYPE_BLOB
+    {false, 0, 0, true, false},   // NDB_TYPE_TEXT
+    {false, 0, 0, false, false},  // NDB_TYPE_BIT
+    {true, 0, 2, true, false},    // NDB_TYPE_LONGVARCHAR
+    {true, 0, 2, false, false},   // NDB_TYPE_LONGVARBINARY
+    {true, 3, 0, false, false},   // NDB_TYPE_TIME
+    {true, 1, 0, false, false},   // NDB_TYPE_YEAR
+    {true, 4, 0, false, false},   // NDB_TYPE_TIMESTAMP
+    {true, 0, 0, false, false},   // NDB_TYPE_OLDDECIMALUNSIGNED
+    {true, 0, 0, false, false},   // NDB_TYPE_DECIMAL
+    {true, 0, 0, false, false},   // NDB_TYPE_DECIMALUNSIGNED
     /*
      * Fractional time types are varsized.
      * There is no size validation yet.
      */
-    {1, 0, 0, 0, 0},  // NDB_TYPE_TIME2      (3+(0-3) bytes)
-    {1, 0, 0, 0, 0},  // NDB_TYPE_DATETIME2  (5+(0-3) bytes)
-    {1, 0, 0, 0, 0}   // NDB_TYPE_TIMESTAMP2 (4+(0-3) bytes)
+    {true, 0, 0, false, false},  // NDB_TYPE_TIME2      (3+(0-3) bytes)
+    {true, 0, 0, false, false},  // NDB_TYPE_DATETIME2  (5+(0-3) bytes)
+    {true, 0, 0, false, false}   // NDB_TYPE_TIMESTAMP2 (4+(0-3) bytes)
 };
 
 static const int g_ndb_pack_type_info_cnt =
@@ -417,7 +417,7 @@ int NdbPack::DataC::cmp(const DataC &d2, Uint32 cnt, Uint32 &num_eq) const {
 
 int NdbPack::Data::add(const void *data, Uint32 *len_out) {
   assert(data != nullptr);
-  const Uint8 *item = (const Uint8 *)data;
+  const auto *item = (const Uint8 *)data;
   const Uint32 i = m_cnt;  // item index
   if (unlikely(i >= m_spec.m_cnt)) {
     set_error(DataCntOverflow, __LINE__);
@@ -441,7 +441,7 @@ int NdbPack::Data::add(const void *data, Uint32 *len_out) {
 }
 
 int NdbPack::Data::add(const void *data, Uint32 cnt, Uint32 *len_out) {
-  const Uint8 *data_ptr = (const Uint8 *)data;
+  const auto *data_ptr = (const Uint8 *)data;
   Uint32 len_tot = 0;
   for (Uint32 i = 0; i < cnt; i++) {
     Uint32 len;
@@ -1295,7 +1295,7 @@ void Tdata::finalize() {
   ll3("create: " << m_data);
   chk1((int)m_data.get_full_len() == m_packLen);
   {
-    const Uint8 *p = (const Uint8 *)m_data.get_full_buf();
+    const auto *p = (const Uint8 *)m_data.get_full_buf();
     chk1(p[0] + (p[1] << 8) == m_packLen - 2);
   }
 }
@@ -1545,7 +1545,7 @@ struct Tboundlist {
     m_cnt = bound_cnt == -1 ? Max : bound_cnt;
     int i;
     for (i = 0; i < m_cnt; i++) {
-      Tdata *tdata = new Tdata(tspec, true, 0);
+      auto *tdata = new Tdata(tspec, true, 0);
       m_tbound[i] = new Tbound(*tdata);
     }
   }
@@ -1622,7 +1622,7 @@ static void testdesc(const Tdata &tdata) {
   ll3("testdesc: " << tdata);
   const Tspec &tspec = tdata.m_tspec;
   const NdbPack::Data &data = tdata.m_data;
-  const Uint8 *buf_old = (const Uint8 *)data.get_full_buf();
+  const auto *buf_old = (const Uint8 *)data.get_full_buf();
   const Uint32 varBytes = data.get_var_bytes();
   // const Uint32 nullMaskLen = tspec.m_spec.get_nullmask_len(false);
   const Uint32 dataLen = data.get_data_len();
@@ -1698,7 +1698,7 @@ static void testconvert(const Tdata &tdata) {
   int i;
   for (i = 0; i < 10; i++) {
     int k = getrandom(3);  // assumes Endian::Value 0,1,2
-    NdbPack::Endian::Value v = (NdbPack::Endian::Value)k;
+    auto v = (NdbPack::Endian::Value)k;
     chk2(data_new.convert(v) == 0, data_new);
     if (v == NdbPack::Endian::Native || v == NdbPack::Endian::get_endian()) {
       num_eq = ~(Uint32)0;
@@ -1782,8 +1782,6 @@ static void testrun() {
     testcmp(tboundlist, tdatalist);
   }
 }
-
-extern void NdbOut_Init();
 
 static int testmain() {
   ndb_init();

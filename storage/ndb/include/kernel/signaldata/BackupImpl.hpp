@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -276,13 +276,15 @@ class BackupFragmentRef {
   friend bool printBACKUP_FRAGMENT_REF(FILE *, const Uint32 *, Uint32, Uint16);
 
  public:
-  static constexpr Uint32 SignalLength = 5;
+  static constexpr Uint32 SignalLength = 6;
 
  private:
   Uint32 backupId;
   Uint32 backupPtr;
   Uint32 errorCode;
   Uint32 nodeId;
+  Uint32 tableId;
+  Uint32 fragmentNo;
 };
 
 class BackupFragmentConf {
@@ -384,20 +386,24 @@ class StopBackupConf {
   friend class Backup;
 
   /**
-   * Reciver(s)
+   * Receiver(s)
    */
   friend class BackupMaster;
+  friend class BackupProxy;
 
   friend bool printSTOP_BACKUP_CONF(FILE *, const Uint32 *, Uint32, Uint16);
 
  public:
-  static constexpr Uint32 SignalLength = 4;
+  static constexpr Uint32 SignalLength_LowOnly_9_6_0 = 4;
+  static constexpr Uint32 SignalLength = 6;
 
  private:
   Uint32 backupId;
   Uint32 backupPtr;
-  Uint32 noOfLogBytes;
-  Uint32 noOfLogRecords;
+  Uint32 noOfLogBytesLow;
+  Uint32 noOfLogRecordsLow;
+  Uint32 noOfLogBytesHigh;
+  Uint32 noOfLogRecordsHigh;
 };
 
 class BackupStatusReq {

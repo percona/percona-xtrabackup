@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -67,7 +67,7 @@ TEST_F(GcsXComNetworking, SockProbeInvalid) {
       .WillOnce(Return(-1));
 
   std::map<std::string, int> out_value;
-  bool result = get_local_addresses(m_sock_probe_mock, out_value);
+  bool const result = get_local_addresses(m_sock_probe_mock, out_value);
 
   ASSERT_TRUE(result);
 }
@@ -84,13 +84,13 @@ TEST_F(GcsXComNetworking, NoInterfaces) {
       .WillOnce(Return(0));
 
   std::map<std::string, int> out_value;
-  bool result = get_local_addresses(m_sock_probe_mock, out_value);
+  bool const result = get_local_addresses(m_sock_probe_mock, out_value);
 
   ASSERT_TRUE(result);
 }
 
 TEST_F(GcsXComNetworking, ErrorRetrievingSockaddr) {
-  std::string if_name("interface");
+  std::string const if_name("interface");
 
   EXPECT_CALL(m_sock_probe_mock, init_sock_probe(_))
       .Times(1)
@@ -116,14 +116,14 @@ TEST_F(GcsXComNetworking, ErrorRetrievingSockaddr) {
       .WillOnce(Return(const_cast<char *>(if_name.c_str())));
 
   std::map<std::string, int> out_value;
-  bool result = get_local_addresses(m_sock_probe_mock, out_value);
+  bool const result = get_local_addresses(m_sock_probe_mock, out_value);
 
   ASSERT_TRUE(result);
 }
 
 TEST_F(GcsXComNetworking, ResolveAllIPV6) {
   std::vector<std::pair<sa_family_t, std::string>> out_value;
-  bool retval = resolve_all_ip_addr_from_hostname("::1", out_value);
+  bool const retval = resolve_all_ip_addr_from_hostname("::1", out_value);
 
   ASSERT_FALSE(retval);
 }

@@ -411,3 +411,42 @@ PRIMARY(a) - OrderedIndex
 -- AutoIncrement info
 AutoIncrement: 17
 drop table test.t3;
+Show embedded-metadata behaviour
+sys/def/SYSTAB_0 has no embedded metadata
+-- SYSTAB_0 --
+Version: Any
+Fragment type: HashMapPartition
+K Value: 6
+Min load factor: 78
+Max load factor: 80
+Temporary table: no
+Number of attributes: 2
+Number of primary keys: 1
+Length of frm data: XXX
+Max Rows: 0
+Row Checksum: 1
+Row GCI: 1
+SingleUserMode: 2
+ForceVarPart: 0
+PartitionCount: 8
+FragmentCount: 8
+PartitionBalance: FOR_RP_BY_LDM
+ExtraRowGciBits: 0
+ExtraRowAuthorBits: 0
+TableStatus: Retrieved
+Table options:
+HashMap: DEFAULT-HASHMAP-3840-8
+-- Attributes --
+SYSKEY_0 Unsigned PRIMARY KEY DISTRIBUTION KEY AT=FIXED ST=MEMORY
+NEXTID Bigunsigned NOT NULL AT=FIXED ST=MEMORY
+-- Indexes -- 
+PRIMARY KEY(SYSKEY_0) - UniqueHashIndex
+-- Embedded metadata
+Packed len : 0
+
+mysql/def/ndb_apply_status has embedded frm
+include/assert_grep.inc [Version 1 embedded metadata (frm)]
+User table has SDI with creating mysqld version
+create table test.user_tab(a int primary key, b varchar(50) default 'Hello', c blob, d json) engine=ndb;
+include/assert_grep.inc [SDI contains MySQL Server version]
+drop table test.user_tab;

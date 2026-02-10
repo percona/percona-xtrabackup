@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 #include <ndb_opts.h>
 #include <portlib/ndb_daemon.h>
 #include <kernel/NodeBitmask.hpp>
+#include "portlib/NdbTimestamp.h"
 #include "portlib/ssl_applink.h"
 #include "util/ndb_openssl_evp.h"
 
@@ -79,6 +80,7 @@ static struct my_option my_long_options[] = {
     NdbStdOpt::connect_retries,      // used
     NdbStdOpt::tls_search_path,
     NdbStdOpt::mgm_tls,
+    NdbStdOpt::log_timestamps,
     NDB_STD_OPT_DEBUG{"core-file", NDB_OPT_NOSHORT, "Write core on errors.",
                       &opt_core, nullptr, nullptr, GET_BOOL, NO_ARG,
                       OPT_WANT_CORE_DEFAULT, 0, 0, nullptr, 0, nullptr},
@@ -159,19 +161,6 @@ int real_main(int argc, char **argv) {
   Ndb_opts::release();  // because ndbd can fork and call real_main() again
   Ndb_opts opts(argc, argv, my_long_options, load_default_groups);
 
-  // Print to stdout/console
-  g_eventLogger->createConsoleHandler();
-
-#ifdef _WIN32
-  /* Output to Windows event log */
-  g_eventLogger->createEventLogHandler("MySQL Cluster Data Node Daemon");
-#endif
-
-  g_eventLogger->setCategory("ndbd");
-
-  // Turn on max loglevel for startup messages
-  g_eventLogger->m_logLevel.setLogLevel(LogLevel::llStartUp, 15);
-
   opts.set_usage_funcs(short_usage_sub);
 
 #ifndef NDEBUG
@@ -200,6 +189,32 @@ int real_main(int argc, char **argv) {
   if (ho_error != 0) {
     exit(ho_error);
   }
+
+  switch (opt_ndb_log_timestamps) {
+    case 0: /* legacy */
+      NdbTimestamp_SetDefaultStringFormat(
+          NdbTimestampStringFormat::LegacyFormat);
+      break;
+    case 1: /* utc */
+      NdbTimestamp_SetDefaultStringFormat(NdbTimestampStringFormat::Iso8601Utc);
+      break;
+    case 2: /* system */
+      NdbTimestamp_SetDefaultStringFormat(
+          NdbTimestampStringFormat::Iso8601SystemTime);
+      break;
+    default:
+      abort();  // unreachable
+  }
+
+  // Print to stdout/console
+  g_eventLogger->createConsoleHandler();
+
+#ifdef _WIN32
+  /* Output to Windows event log */
+  g_eventLogger->createEventLogHandler("MySQL Cluster Data Node Daemon");
+#endif
+
+  g_eventLogger->setCategory("ndbd");
 
   if (opt_no_daemon || opt_foreground) {
     // --nodaemon or --forground implies --daemon=0

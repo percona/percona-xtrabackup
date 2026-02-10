@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,12 @@
 #ifndef DD_VIEW_INCLUDED
 #define DD_VIEW_INCLUDED
 
+#include "sql/dd/string_type.h"
+
 struct MEM_ROOT;
 class THD;
 class Table_ref;
+enum class enum_view_type;
 
 namespace dd {
 class Schema;
@@ -96,5 +99,13 @@ bool update_view_status(THD *thd, const char *schema_name,
                         const char *view_name, bool status,
                         bool commit_dd_changes);
 
+/**
+ * @brief Get the view type from type stored in DD table.
+ *
+ * @param  dd_view_type    View type stored in the DD table.
+ *
+ * @return enum_view_type  view type.
+ */
+enum_view_type get_sql_view_type(String_type dd_view_type);
 }  // namespace dd
 #endif  // DD_VIEW_INCLUDED

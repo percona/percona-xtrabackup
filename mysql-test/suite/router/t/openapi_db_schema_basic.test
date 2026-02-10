@@ -1,0 +1,51 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+--source ../include/schema/pk_types_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+--source ../include/test/test_openapi_object_structure.inc
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Show that GET /<service>/<schema>/open-api-catalog works and lists OpenAPI
+--echo ##    description for all REST Objects from the given REST Schema.
+--echo #
+--echo # 1. Check schema with REST Objects using different CRUD methods
+--echo #
+--echo #
+--echo # 2. Check schema with REST Objects using all supported types.
+--echo #
+--echo #
+--echo # #. Check schema with REST Objects using different types as PKs
+--echo #
+--echo #
+
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/crud_operations/open-api-catalog/'
+--let $mrs_client_arg_exclude_json_pointer=/components/schemas/basic_schema_table3/properties/ctimestamp/example,components/schemas/basic_schema_table3/properties/cdatetime/example,/components/schemas/basic_schema_table2/properties/date/example,/components/schemas/basic_schema_view1/properties/date/example
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_arg_path='/svc/different_types/open-api-catalog/'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.3
+--let $mrs_client_arg_path='/svc/different_types_as_pk/open-api-catalog/'
+--let $mrs_client_arg_exclude_json_pointer=components/schemas/pk_types_schema_t_timestamp/properties/id/example
+
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

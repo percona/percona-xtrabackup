@@ -334,7 +334,10 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 #ifdef PROTOBUF_TAILCALL
 #error PROTOBUF_TAILCALL was previously defined
 #endif
+// Bug in the gcc implementation of clang::musttail
+// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=119376
 #if __has_cpp_attribute(clang::musttail) && !defined(__arm__) &&      \
+    defined(__clang__) && \
     !defined(_ARCH_PPC) && !defined(__wasm__) &&                      \
     !(defined(_MSC_VER) && defined(_M_IX86)) && !defined(__i386__) && \
     !(defined(__NDK_MAJOR__) && __NDK_MAJOR <= 24)

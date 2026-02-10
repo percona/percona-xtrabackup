@@ -6,7 +6,7 @@ CREATE ROLE roleX;
 include/rpl/save_binlog_file_position.inc
 # Case 1 : Execute CREATE ROLE for existing users
 CREATE ROLE userZ, roleZ, userX, roleX;
-ERROR HY000: Operation CREATE ROLE failed for 'userX'@'%','roleX'@'%'
+ERROR HY000: Operation CREATE ROLE failed for 'userX'@'%' (User account already exists),'roleX'@'%' (User account already exists)
 # Must not show entries for userZ and roleZ
 SELECT user FROM mysql.user WHERE user LIKE 'user%';
 user

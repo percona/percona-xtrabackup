@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -28,9 +28,7 @@
 #include <map>
 #include <string_view>
 
-namespace http {
-namespace base {
-namespace method {
+namespace http::base::method {
 
 key_type from_string(const std::string_view &method) {
   using namespace std::string_view_literals;
@@ -64,6 +62,4 @@ pos_type from_string_to_post(const std::string_view &method) {
   return result->second;
 }
 
-}  // namespace method
-}  // namespace base
-}  // namespace http
+}  // namespace http::base::method

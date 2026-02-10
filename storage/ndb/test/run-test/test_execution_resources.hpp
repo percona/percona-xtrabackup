@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -42,11 +42,11 @@ class TestExecutionResources {
   const char *const LIBMYSQLCLIENT_DYLIB = "libmysqlclient.dylib";
   const char *const LIBMYSQLCLIENT_SO = "libmysqlclient.so";
 
-  bool registerExecutable(std::string exe, bool isRequired = true);
+  bool registerExecutable(const std::string &exe, bool isRequired = true);
 
-  bool registerLibrary(std::string lib, bool isRequired = true);
+  bool registerLibrary(const std::string &lib, bool isRequired = true);
 
-  bool setRequired(std::string resource);
+  bool setRequired(const std::string &resource);
 
   bool loadPaths(const char *prefix0, const char *prefix1 = nullptr,
                  std::vector<std::string> *error = nullptr,
@@ -102,15 +102,15 @@ class TestExecutionResources {
   bool setPath(Resource &resource, int prefix, std::vector<std::string> *error,
                std::vector<std::string> *info);
 
-  std::string find_path(std::string name, int prefix, bool returnFolder);
+  std::string find_path(const std::string &name, int prefix, bool returnFolder);
 
-  void reportNonRequired(std::string exe, const char *prefix,
+  void reportNonRequired(const std::string &exe, const char *prefix,
                          std::vector<std::string> *msgs);
 
-  void reportRequired(std::string exe, const char *prefix,
+  void reportRequired(const std::string &exe, const char *prefix,
                       std::vector<std::string> *msgs);
 
-  std::string getPath(std::string name, int prefix = 0);
+  std::string getPath(const std::string &name, int prefix = 0);
 };
 
 #endif  // TEST_EXECUTION_RESOURCES_HPP_

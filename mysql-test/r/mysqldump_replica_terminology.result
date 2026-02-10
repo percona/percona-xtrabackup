@@ -50,6 +50,7 @@ include/assert_grep.inc [Check for SOURCE_LOG_POS]
 # Test application of dumps with either terminology
 # Old terminology is no longer accepted
 [connection slave]
+RESET BINARY LOGS AND GTIDS;
 include/assert.inc ["CHANGE REPLICATION SOURCE set the valid position"]
 #
 # Mid test cleanup
@@ -118,6 +119,7 @@ include/rpl/stop_replica.inc
 [connection master]
 INSERT INTO mysqldump_test_db.t1 VALUES (3);
 [connection slave]
+RESET BINARY LOGS AND GTIDS;
 #
 # Cleanup
 include/restore_sysvars.inc

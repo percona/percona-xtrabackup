@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@
 
 #include "Logger.hpp"
 
-#include <time.h>
+#include <ctime>
 
 #include <ConsoleLogHandler.hpp>
 #include <FileLogHandler.hpp>
@@ -42,7 +42,8 @@
 
 #include <BufferedLogHandler.hpp>
 
-#include <portlib/ndb_localtime.h>
+#include "portlib/NdbTimestamp.h"
+#include "util/require.h"
 
 const char *Logger::LoggerLevelNames[] = {"ON      ", "DEBUG   ", "INFO    ",
                                           "WARNING ", "ERROR   ", "CRITICAL",
@@ -77,7 +78,7 @@ class InternalLogListHandler : public LogHandler {
    * Here we pass the message to all bound in LogHandlers
    */
   void append(const char *pCategory, Logger::LoggerLevel level,
-              const char *pMsg, time_t now) override {
+              const char *pMsg, const std::timespec *now) override {
     Guard g(m_listMutex);
 
     LogHandler *pHandler = nullptr;
@@ -120,7 +121,7 @@ class InternalLogListHandler : public LogHandler {
 
  protected:
   void writeHeader(const char * /*pCategory*/, Logger::LoggerLevel /*level*/,
-                   time_t /*now*/) override {}
+                   const std::timespec * /*now*/) override {}
   void writeMessage(const char * /*pMsg*/) override {}
   void writeFooter() override {}
 
@@ -243,7 +244,7 @@ void Logger::startAsync(unsigned buffer_kb) {
   Guard g(m_log_mutex);
 
   if (m_internalBufferedHandler == nullptr) {
-    BufferedLogHandler *blh =
+    auto *blh =
         new BufferedLogHandler(m_internalLogListHandler,
                                false, /* m_internalLogListHandler not owned */
                                m_pCategory, buffer_kb);
@@ -385,8 +386,8 @@ void Logger::log(LoggerLevel logLevel, const char *pMsg, va_list ap) const {
   if (m_logLevels[LL_ON] && m_logLevels[logLevel]) {
     char buf[MAX_LOG_MESSAGE_SIZE];
     BaseString::vsnprintf(buf, sizeof(buf), pMsg, ap);
-    time_t now = ::time((time_t *)nullptr);
-    m_logHandler->append(m_pCategory, logLevel, buf, now);
+    std::timespec now = NdbTimestamp_GetCurrentTime();
+    m_logHandler->append(m_pCategory, logLevel, buf, &now);
   }
 }
 
@@ -396,31 +397,18 @@ void Logger::setRepeatFrequency(unsigned val) {
 }
 
 Logger::Timestamp::Timestamp() {
-  Logger::format_timestamp(time(nullptr), buff, TsLen);
+  std::timespec now = NdbTimestamp_GetCurrentTime();
+  Logger::format_timestamp(&now, buff, TsLen);
 }
 
-void Logger::format_timestamp(const time_t epoch, char *str, size_t len) {
+void Logger::format_timestamp(const std::timespec *epoch, char *str,
+                              size_t len) {
   assert(len > 0);  // Assume buffer has size
 
   // convert to local timezone
-  tm tm_buf;
-  if (ndb_localtime_r(&epoch, &tm_buf) == nullptr) {
-    // Failed to convert to local timezone.
-    // Fill with bogus time stamp value in order
-    // to ensure buffer can be safely printed
-    strncpy(str, "2001-01-01 00:00:00", len);
-    str[len - 1] = 0;
-    return;
-  }
-
-  // Print the broken down time in timestamp format
-  // to the string buffer
-  BaseString::snprintf(
-      str, len, "%d-%.2d-%.2d %.2d:%.2d:%.2d", tm_buf.tm_year + 1900,
-      tm_buf.tm_mon + 1,  // month is [0,11]. +1 -> [1,12]
-      tm_buf.tm_mday, tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
-  str[len - 1] = 0;
-  return;
+  int nb = NdbTimestamp_GetAsString(
+      {str, len}, NdbTimestampStringFormat::DefaultFormat, epoch, nullptr);
+  require(nb > 0);
 }
 
 #ifdef TEST_LOGGER
@@ -449,7 +437,8 @@ class Ndb_log_consumer : public NdbApiLogConsumer {
   void log(LogLevel level, const char *category, const char *message) override {
     char timestamp[64];
     std::ofstream ofs(filename);
-    Logger::format_timestamp(time(nullptr), timestamp, sizeof(timestamp));
+    std::timespec now = NdbTimestamp_GetCurrentTime();
+    Logger::format_timestamp(&now, timestamp, sizeof(timestamp));
     ofs << timestamp << " [" << category << "]"
         << " [" << level << "] " << message << std::endl;
     ofs.close();
@@ -465,11 +454,13 @@ TAPTEST(logger) {
       ofs.close();
     };
 
+    const int timestamp_length = NdbTimestamp_GetDefaultStringFormatLength();
+    constexpr int category_length = 13;  // [EventLogger]
     auto getLastLogMsg = [&](const std::string &fileName, bool clear = true) {
       std::ifstream ifs(fileName);
       std::stringstream ss;
       // Remove date + Category
-      ifs.seekg(34);
+      ifs.seekg(timestamp_length + 1 + category_length + 1);
       ss << ifs.rdbuf();
       ifs.close();
       if (clear) {
@@ -485,9 +476,9 @@ TAPTEST(logger) {
 
     static const std::string file = "file.log";
 #ifdef _WIN32
-    static constexpr int async_wait_time_ms = 150;
+    static constexpr int async_wait_time_ms = 250;
 #else
-    static constexpr int async_wait_time_ms = 50;
+    static constexpr int async_wait_time_ms = 100;
 #endif
     clearFile(file);
 
@@ -507,7 +498,8 @@ TAPTEST(logger) {
       g_eventLogger->info("[SYNC] message #%d", i);
       const std::string expected_msg =
           "INFO     -- [SYNC] message #" + std::to_string(i);
-      OK(getLastLogMsg(file) == expected_msg);
+      const std::string last_msg = getLastLogMsg(file);
+      OK(last_msg == expected_msg);
     }
 
     // Async
@@ -593,8 +585,8 @@ TAPTEST(logger) {
     const std::string fileB = "fileB.log";
     const std::string fileC = "fileC.log";
 
-    Ndb_log_consumer *log_consumer1 = new Ndb_log_consumer(fileB.c_str());
-    Ndb_log_consumer *log_consumer2 = new Ndb_log_consumer(fileC.c_str());
+    auto *log_consumer1 = new Ndb_log_consumer(fileB.c_str());
+    auto *log_consumer2 = new Ndb_log_consumer(fileC.c_str());
 
     g_eventLogger->close();
     clearFile(fileA);

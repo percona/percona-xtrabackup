@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,18 +41,18 @@ class NdbDir {
     ~Iterator();
 
     int open(const char *path);
-    void close(void);
+    void close();
 
     /*
       Return the next regular file or NULL if no more file found
     */
-    const char *next_file(void);
+    const char *next_file();
 
     /*
       Return the next entry(file, dir, symlink etc.) or NULL if no
       more entries found
     */
-    const char *next_entry(void);
+    const char *next_entry();
   };
 
   class Temp {
@@ -62,23 +62,23 @@ class NdbDir {
    public:
     Temp();
     ~Temp();
-    const char *path(void) const;
+    const char *path() const;
   };
 
-  static mode_t u_r(void);
-  static mode_t u_w(void);
-  static mode_t u_x(void);
-  static mode_t u_rwx(void) { return (u_r() | u_w() | u_x()); }
+  static mode_t u_r();
+  static mode_t u_w();
+  static mode_t u_x();
+  static mode_t u_rwx() { return (u_r() | u_w() | u_x()); }
 
-  static mode_t g_r(void);
-  static mode_t g_w(void);
-  static mode_t g_x(void);
-  static mode_t g_rwx(void) { return (g_r() | g_w() | g_x()); }
+  static mode_t g_r();
+  static mode_t g_w();
+  static mode_t g_x();
+  static mode_t g_rwx() { return (g_r() | g_w() | g_x()); }
 
-  static mode_t o_r(void);
-  static mode_t o_w(void);
-  static mode_t o_x(void);
-  static mode_t o_rwx(void) { return (o_r() | o_w() | o_x()); }
+  static mode_t o_r();
+  static mode_t o_w();
+  static mode_t o_x();
+  static mode_t o_rwx() { return (o_r() | o_w() | o_x()); }
 
   /*
     Create directory

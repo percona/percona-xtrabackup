@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -42,6 +42,7 @@ ADD_DEPENDENCIES(mysqlxclient GenError)
 
 TARGET_LINK_LIBRARIES(mysqlxclient PUBLIC ext::lz4 ext::zstd ext::zlib)
 TARGET_LINK_LIBRARIES(mysqlxclient PUBLIC ${MYSQLX_PROTOCOL_FULL_LIB})
+TARGET_LINK_LIBRARIES(mysqlxclient PRIVATE mysys)
 TARGET_INCLUDE_DIRECTORIES(mysqlxclient SYSTEM PUBLIC
   ${MYSQLX_PROJECT_DIR}/client/
   ${CMAKE_CURRENT_BINARY_DIR})

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2024, Oracle and/or its affiliates.
+Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -63,6 +63,7 @@ void first_page_t::init(Btree_multi::Page_load *page_load) {
   ut_ad(page_load->is_leaf());
   ut_ad(page_load->get_page_no() != FIL_NULL);
   ut_ad(m_mtr == nullptr);
+  m_blocks.clear();
 
   m_page_load = page_load;
   m_block = page_load->get_block();

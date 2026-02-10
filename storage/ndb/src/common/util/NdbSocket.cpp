@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -369,25 +369,24 @@ ssize_t NdbSocket::ssl_writev(const struct iovec *vec, int nvec) const {
 
   if (nvec == 1 || vec[0].iov_len > MaxSingleBuffer) {
     return ssl_send((const char *)vec[0].iov_base, vec[0].iov_len);
-  } else {
-    // Pack iovec's into buff[], first iovec will always fit.
-    char buff[MaxTlsRecord];
-    size_t buff_len = vec[0].iov_len;
-    memcpy(buff, vec[0].iov_base, buff_len);
-
-    // Pack more iovec's into remaining buff[] space
-    for (int i = 1; i < nvec && buff_len < MaxTlsRecord; i++) {
-      const struct iovec &v = vec[i];
-      size_t cpy_len = v.iov_len;
-      if (buff_len + cpy_len > MaxTlsRecord) {
-        // Do a partial copy of last iovec[]
-        cpy_len = MaxTlsRecord - buff_len;
-      }
-      memcpy(buff + buff_len, v.iov_base, cpy_len);
-      buff_len += cpy_len;
-    }
-    return ssl_send(buff, buff_len);
   }
+  // Pack iovec's into buff[], first iovec will always fit.
+  char buff[MaxTlsRecord];
+  size_t buff_len = vec[0].iov_len;
+  memcpy(buff, vec[0].iov_base, buff_len);
+
+  // Pack more iovec's into remaining buff[] space
+  for (int i = 1; i < nvec && buff_len < MaxTlsRecord; i++) {
+    const struct iovec &v = vec[i];
+    size_t cpy_len = v.iov_len;
+    if (buff_len + cpy_len > MaxTlsRecord) {
+      // Do a partial copy of last iovec[]
+      cpy_len = MaxTlsRecord - buff_len;
+    }
+    memcpy(buff + buff_len, v.iov_base, cpy_len);
+    buff_len += cpy_len;
+  }
+  return ssl_send(buff, buff_len);
 }
 
 /* Functions for socket_io.cpp
@@ -503,7 +502,7 @@ int NdbSocket::ssl_readln(int timeout, int *elapsed, char *buf, int len,
       return reader.length();
     }
 
-  } while (!(reader.error() || (*elapsed >= timeout)));
+  } while (!reader.error() && (*elapsed < timeout));
 
   Debug_Log("ssl_readln => -1 [ELAPSED: %d]", *elapsed);
   if (*elapsed >= timeout) return 0;

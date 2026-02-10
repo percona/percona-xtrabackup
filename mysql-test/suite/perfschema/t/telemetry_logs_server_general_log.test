@@ -1,0 +1,110 @@
+################################################################################
+# Test exporting general log via telemetry logs service functionality using test component.
+################################################################################
+
+--source include/have_server_telemetry_logs.inc
+--source include/have_no_telemetry_component.inc
+--source include/not_parallel.inc
+--source include/no_ps_protocol.inc
+
+--echo #########
+--echo # SETUP #
+--echo #########
+
+call mtr.add_suppression("Test message #33");
+
+# Make test deteministic by controlling built-in loggers
+UPDATE performance_schema.setup_loggers SET level='none';
+
+# Install required components.
+INSTALL COMPONENT 'file://component_test_server_telemetry_logs_export';
+INSTALL COMPONENT 'file://component_test_server_telemetry_logs_client';
+
+SET @old_general_log_state = @@global.general_log;
+SET @old_log_output=       @@global.log_output;
+SET @old_long_query_time=  @@session.long_query_time;
+SET GLOBAL log_output="TABLE";
+
+SET @@global.general_log = ON;
+SET @@session.sql_log_off = OFF;
+
+--echo ##############
+--echo # Operations #
+--echo ##############
+
+--echo # List available loggers
+SELECT * FROM performance_schema.setup_loggers;
+
+--echo # No message should not be logged by OTEL logger when level = none
+UPDATE performance_schema.setup_loggers SET level='none';
+SELECT * FROM performance_schema.setup_loggers;
+
+TRUNCATE TABLE mysql.general_log;
+
+--disable_result_log
+select 1;
+--enable_result_log
+
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 THREAD_ID 4 SERVER_ID
+select * from mysql.general_log;
+
+--echo # General log gets logged by OTEL logger when level = info
+UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log';
+--disable_result_log
+select 2;
+--enable_result_log
+UPDATE performance_schema.setup_loggers SET level='none';
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 THREAD_ID 4 SERVER_ID
+select * from mysql.general_log;
+
+--echo # General log gets logged by OTEL logger regardless of legacy log_output setting
+SET GLOBAL log_output="NONE";
+
+UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log';
+--disable_result_log
+select 3;
+--enable_result_log
+UPDATE performance_schema.setup_loggers SET level='none';
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 THREAD_ID 4 SERVER_ID
+select * from mysql.general_log;
+
+--echo # General log does not expose secrets within the OTEL logger
+SET GLOBAL log_output="TABLE";
+UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log';
+--disable_result_log
+CREATE USER u1@localhost IDENTIFIED BY 'abcd';
+--enable_result_log
+UPDATE performance_schema.setup_loggers SET level='none';
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 THREAD_ID 4 SERVER_ID
+select * from mysql.general_log;
+
+--echo # General log gets logged by OTEL logger even if general log disabled
+SET @@global.general_log = OFF;
+
+UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log';
+--disable_result_log
+select 4;
+--enable_result_log
+UPDATE performance_schema.setup_loggers SET level='none';
+--replace_column 1 TIMESTAMP 2 USER_HOST 3 THREAD_ID 4 SERVER_ID
+select * from mysql.general_log;
+
+--echo ###########
+--echo # CLEANUP #
+--echo ###########
+
+DROP USER u1@localhost;
+SET @@global.general_log = @old_general_log_state;
+SET @@global.log_output = @old_log_output;
+set @@session.long_query_time = @old_long_query_time;
+TRUNCATE TABLE mysql.general_log;
+TRUNCATE TABLE mysql.slow_log;
+
+UNINSTALL COMPONENT 'file://component_test_server_telemetry_logs_client';
+UNINSTALL COMPONENT 'file://component_test_server_telemetry_logs_export';
+
+let $MYSQLD_DATADIR= `select @@datadir`;
+--echo Component logs (OTEL logger) should log only one entry:
+--replace_regex /[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z/TIMESTAMP/
+cat_file $MYSQLD_DATADIR/test_server_telemetry_logs_component.log;
+remove_file $MYSQLD_DATADIR/test_server_telemetry_logs_component.log;

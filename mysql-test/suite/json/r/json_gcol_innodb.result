@@ -420,10 +420,10 @@ SELECT SQL_BIG_RESULT table1.json_varchar255_utf8_key AS field1, count(*)
 FROM t1 AS table1 LEFT JOIN t1 AS table2 ON table1.pk <= table2.pk
 GROUP  BY field1;
 field1	count(*)
-{"col_varchar_255_utf8_key": "up"}	3
-{"col_varchar_255_utf8_key": "q"}	9
 {"col_varchar_255_utf8_key": "b"}	4
 {"col_varchar_255_utf8_key": "tgzvsj"}	5
+{"col_varchar_255_utf8_key": "q"}	9
+{"col_varchar_255_utf8_key": "up"}	3
 Warnings:
 Warning	1235	This version of MySQL doesn't yet support 'sorting of non-scalar JSON values'
 DROP TABLE t1;

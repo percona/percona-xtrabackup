@@ -1,3 +1,6 @@
+include/suppress_messages.inc
+# Connection 1 suppresses message <Failed to compress the gtid_executed table>.
+# Connection 1 suppresses message <Failed to save the set of Global Transaction Identifiers>.
 #########################################################
 # WL#6599: New data dictionary and I_S.
 # 
@@ -167,8 +170,13 @@ ENABLED_ROLES
 ENGINES
 EVENTS
 FILES
+JSON_DUALITY_VIEWS
+JSON_DUALITY_VIEW_COLUMNS
+JSON_DUALITY_VIEW_LINKS
+JSON_DUALITY_VIEW_TABLES
 KEYWORDS
 KEY_COLUMN_USAGE
+LIBRARIES
 OPTIMIZER_TRACE
 PARAMETERS
 PARTITIONS
@@ -181,6 +189,7 @@ ROLE_COLUMN_GRANTS
 ROLE_ROUTINE_GRANTS
 ROLE_TABLE_GRANTS
 ROUTINES
+ROUTINE_LIBRARIES
 SCHEMATA
 SCHEMATA_EXTENSIONS
 SCHEMA_PRIVILEGES
@@ -224,12 +233,12 @@ count(*) = IF(@@lower_case_table_names = 0, 5, 11)
 # This is because the collation of the column is different. On trunk,
 # it is utf8_general_ci. With the global DD, it is the collation of the
 # underlying column, which depends on l_c_t_n. For l_c_t_n == 0, this
-# is utf8_bin.
+# is utf8mb3_bin.
 #########################################################
 # Issue WL#6599/HLS/6i): I_S schema/table name in WHERE clause should
 #                        collate like mysql.tables.name.
 #########################################################
-# lctn=0 will have table_name as utf8_bin, so we do not match
+# lctn=0 will have table_name as utf8mb3_bin, so we do not match
 # capital information_schema name.
 SELECT COUNT(*)+IF(@@lower_case_table_names=0, 1, 0) FROM
 INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='INFORMATION_SCHEMA' AND
@@ -290,6 +299,18 @@ DROP TABLE t1;
 # mysqldump tool.
 #########################################################
 CREATE DATABASE test1;
+SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;
+SET @@SESSION.SQL_LOG_BIN= 0;
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ 'GTID_SET';
+SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;
+SET @@SESSION.SQL_LOG_BIN= 0;
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ 'GTID_SET';
+SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;
+SET @@SESSION.SQL_LOG_BIN= 0;
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ 'GTID_SET';
+SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;
+SET @@SESSION.SQL_LOG_BIN= 0;
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ 'GTID_SET';
 # Following statements should pass as INFORMATION_SCHEMA db is not used.
 DROP DATABASE test1;
 ########################################################################

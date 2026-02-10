@@ -1,0 +1,94 @@
+# Verify handling of HTTP request/response logging.
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Create service with option that enables HTTP request/response tracing
+--echo #
+--echo # 1. verify that its unused on production routers,
+--echo # 2. verify that HTTP request/reponse are logged on development routers.
+--echo #
+--echo #
+
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--let $mrs_add_service_options='{"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}'
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--echo
+--echo #
+--echo # I.1
+
+--let $mrs_client_arg_path='/svc/basic/tab/1'
+--let $mrs_client_arg_display=none
+--source ../include/mrs/mrs_client.inc
+
+# Lets wait for router to write some statistics to MRS schema,
+# this should generate several different log-entries.
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--let $grep_pattern = .*INFO .*HTTP Request.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--source ../include/pattern_not_in_file.inc
+
+--echo
+--echo #
+--echo # I.2
+
+--write_file $MYSQL_TMP_DIR/extra_router_config.cnf
+[mysql_rest_service]
+developer=my_user
+EOF
+
+--connect (router_conn,127.0.0.1,root,,test,$ROUTING_STATIC_BIND_PORT)
+--replace_regex /restart: (.*\/)*/restart: %PARAMETERS%/
+--let $router_restart_parameters= restart: -a $MYSQL_TMP_DIR/extra_router_config.cnf
+--source ../include/mysqlrouter_restart.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--let $mrs_client_arg_path='/svc/basic/tab/1'
+--let $mrs_client_arg_wait_until_status=60
+--let $mrs_client_arg_display=none
+--source ../include/mrs/mrs_client.inc
+
+--let $grep_pattern = .*INFO .*HTTP Request.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--source ../include/wait_for_pattern_in_file.inc
+
+--echo
+--echo #
+--echo # Cleanup
+
+--let $restart_parameters= restart:
+--source ../include/mysqlrouter_restart.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+--connection default
+
+# Next step makes sure that we are synced with HTTP state (all endpoints are exposed).
+# Its needed for cleanup.
+--let $mrs_client_arg_path='/svc/basic/tab/1'
+--let $mrs_client_arg_wait_until_status=60
+--let $mrs_client_arg_display=none
+--source ../include/mrs/mrs_client.inc
+
+remove_file $MYSQL_TMP_DIR/extra_router_config.cnf;
+--source ../include/mrs/cleanup.inc

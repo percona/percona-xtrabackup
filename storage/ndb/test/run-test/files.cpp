@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,7 @@
 #include "atrt.hpp"
 #include "portlib/ndb_compiler.h"
 
-static bool generate_my_cnf(BaseString mycnf, atrt_config &config);
+static bool generate_my_cnf(const BaseString &mycnf, atrt_config &config);
 static bool create_directory(const char *path);
 static bool delete_file_if_exists(const char *path);
 static bool copy_file(const char *src, const char *dst);
@@ -128,7 +128,7 @@ static void printfile(FILE *out, Properties &props, const char *section, ...) {
 #define pclose _pclose
 #endif
 
-static bool generate_my_cnf(BaseString mycnf, atrt_config &config) {
+static bool generate_my_cnf(const BaseString &mycnf, atrt_config &config) {
   FILE *out = fopen(mycnf.c_str(), "a+");
   if (out == NULL) {
     g_logger.error("Failed to open %s for append", mycnf.c_str());

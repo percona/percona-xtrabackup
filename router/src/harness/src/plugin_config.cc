@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,14 +25,10 @@
 
 #include "mysql/harness/plugin_config.h"
 
-#include <stdexcept>
-
 #ifndef _WIN32
 #include <sys/un.h>
 #include <unistd.h>
 #endif
-
-#include "tcp_address.h"
 
 namespace mysql_harness {
 
@@ -81,12 +77,11 @@ std::optional<std::string> BasePluginConfig::get_option_string_(
     }
 
     return value;
-  } else {
-    try {
-      return value = section->get(option);
-    } catch (const mysql_harness::bad_option &) {
-      return {};
-    }
+  }
+  try {
+    return value = section->get(option);
+  } catch (const mysql_harness::bad_option &) {
+    return {};
   }
 }
 

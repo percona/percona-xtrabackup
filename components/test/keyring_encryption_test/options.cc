@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -101,11 +101,8 @@ bool get_one_option(int optid, const struct my_option *, char *) {
 }
 
 static bool check_options_for_sanity() {
-  if (Options::s_component_dir == nullptr || !*Options::s_component_dir ||
-      Options::s_keyring == nullptr || !*Options::s_keyring) {
-    return false;
-  }
-  return true;
+  return !(Options::s_component_dir == nullptr || !*Options::s_component_dir ||
+           Options::s_keyring == nullptr || !*Options::s_keyring);
 }
 
 static bool get_options(int argc, char **argv, int &exit_code) {
@@ -114,7 +111,7 @@ static bool get_options(int argc, char **argv, int &exit_code) {
     return false;
   }
 
-  if (check_options_for_sanity() == false) return false;
+  if (!check_options_for_sanity()) return false;
 
   return true;
 }

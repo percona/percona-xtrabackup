@@ -1,0 +1,130 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/functions_schema.sql
+
+## Test starts here
+--echo
+--echo
+--echo ## I.1 Verify how FUNCTIONS are represented using the OpenAPI in case when:
+--echo # - no arguments are used as input
+--echo # - one argument is used as input
+--echo # - two arguments are used as input
+--echo #
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=func_schema
+--let $mrs_add_schema_path=/func
+--source ../include/mrs/db_schema/add.inc
+
+# No arguments
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=nothing
+--let $mrs_add_db_object_path=/nothing
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_modify_name=result
+--let $mrs_modify_columns=result
+--let $mrs_modify_fields=my_result
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+# One argument
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_char
+--let $mrs_add_db_object_path=/move_char
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_modify_name=result
+--let $mrs_modify_columns=result
+--let $mrs_modify_fields=my_result
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+# Two arguments
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=func_sum
+--let $mrs_add_db_object_path=/sum
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_modify_name=result
+--let $mrs_modify_columns=result
+--let $mrs_modify_fields=my_result
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+--let $mrs_add_service_path="/svc2"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+if ($mrs_schema_version>2)
+{
+  --disable_query_log
+  --disable_result_log
+  UPDATE `mysql_rest_service_metadata`.`service` SET name="" WHERE url_context_root="/svc";
+  UPDATE `mysql_rest_service_metadata`.`service` SET name="" WHERE url_context_root="/svc2";
+  --enable_query_log
+  --enable_result_log
+}
+
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## Verify open-api-catalog for MRS function Object
+--echo #
+--echo ## I. Get OpenAPI at different levels
+--echo #
+--echo # 1. service level
+--echo # 2. schema level
+--echo # 3. object level.
+--echo #
+--echo #
+--echo ## II. Cross service
+--echo #
+--echo # 1. Check that spec is not leaked between services
+--echo #
+--echo #
+
+
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_arg_path='/svc/func/open-api-catalog/'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # I.3
+--let $mrs_client_arg_path='/svc/func/open-api-catalog/sum'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # 2.1
+--let $mrs_client_arg_path='/svc2/open-api-catalog/'
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,7 @@
 #include <map>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "my_io.h"
 #include "plugin/x/tests/driver/connector/connection_manager.h"
@@ -77,6 +78,8 @@ class Execution_context {
   const Console &m_console;
   Macro_container m_macros;
   std::map<std::string, std::vector<xcl::Column_metadata>> m_stored_metadata;
+  std::vector<std::string> m_debug_stmt;
+  std::string m_debug;
 
   xcl::XSession *session() { return m_connection->active_xsession(); }
 

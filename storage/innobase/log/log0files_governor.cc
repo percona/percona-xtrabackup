@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -1281,7 +1281,18 @@ static Log_files_governor_iteration_result log_files_governor_iteration_low(
       has possibly already consumed what we wanted to request.
       Such spurious claims / requests are not considered dangerous. */
       if (auto *consumer = log_consumer_get_oldest(log, oldest_needed_lsn)) {
-        consumer->consumption_requested();
+        ut_a(!log.m_files.empty());
+        /* LOG_FILE_HDR_SIZE bytes of next file are not counted in the lsn
+        sequence, but the LOG_BLOCK_HDR_SIZE bytes of the first log data
+        block are counted. Because oldest_file->m_end_lsn %
+        OS_FILE_LOG_BLOCK_SIZE == 0, we need to add LOG_BLOCK_HDR_SIZE to
+        build a proper lsn (pointing on data byte). */
+        const auto next_file_lsn =
+            log.m_files.begin()->m_end_lsn + LOG_BLOCK_HDR_SIZE;
+        if (next_file_lsn <= log_get_lsn(log)) {
+          IB_mutex_guard limits_lock{&log.limits_mutex, UT_LOCATION_HERE};
+          consumer->consumption_requested(next_file_lsn);
+        }
       }
     }
 

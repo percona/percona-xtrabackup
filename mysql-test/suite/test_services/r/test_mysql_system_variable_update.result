@@ -578,9 +578,9 @@ super_read_only	reason	testing
 SELECT @@global.offline_mode;
 @@global.offline_mode
 1
-# Validate new user session gets rejected with a custom message (not including reason, but includes user name)
+# Validate new user (no privileges to change offline_mode) session gets rejected with a generic message
 connect(localhost,user1,,test,SOURCE_PORT,SOURCE_SOCKET);
-ERROR HY000: The server is currently in offline mode since TIMESTAMP, set by user root
+ERROR HY000: The server is currently in offline mode
 # Iterate all attributes for "offline_mode"
 SELECT test_get_global_variable_attributes(NULL, "offline_mode", NULL);
 test_get_global_variable_attributes(NULL, "offline_mode", NULL)

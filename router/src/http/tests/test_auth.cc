@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -97,8 +97,9 @@ class ChallengeTest
                      std::vector<std::pair<std::string, std::string>>>> {};
 
 TEST_P(ChallengeTest, to_string) {
-  HttpAuthChallenge challenge(std::get<1>(GetParam()), std::get<2>(GetParam()),
-                              std::get<3>(GetParam()));
+  HttpAuthChallenge const challenge(std::get<1>(GetParam()),
+                                    std::get<2>(GetParam()),
+                                    std::get<3>(GetParam()));
   EXPECT_EQ(challenge.str(), std::get<0>(GetParam()));
 }
 

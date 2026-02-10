@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <example_services.h>
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/service_implementation.h>
-#include <stddef.h>
+#include <cstddef>
 
 #include "mysql/components/services/registry.h"
 

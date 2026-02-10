@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -644,27 +644,6 @@ struct row_prebuilt_t {
   row is visited. */
   bool m_stop_tuple_found;
 
- private:
-  /** Set to true iff we are inside read_range_first() or read_range_next() */
-  bool m_is_reading_range;
-
- public:
-  bool is_reading_range() const { return m_is_reading_range; }
-
-  class row_is_reading_range_guard_t : private ut::bool_scope_guard_t {
-   public:
-    explicit row_is_reading_range_guard_t(row_prebuilt_t &prebuilt)
-        : ut::bool_scope_guard_t(prebuilt.m_is_reading_range) {}
-  };
-
-  row_is_reading_range_guard_t get_is_reading_range_guard() {
-    /* We implement row_is_reading_range_guard_t as a simple bool_scope_guard_t
-    because we trust that scopes are never nested and thus we don't need to
-    count their "openings" and "closings", so we assert that.*/
-    ut_ad(!m_is_reading_range);
-    return row_is_reading_range_guard_t(*this);
-  }
-
   byte row_id[DATA_ROW_ID_LEN];
   /*!< if the clustered index was
   generated, the row id of the
@@ -835,11 +814,15 @@ struct row_prebuilt_t {
   table index tree. In this case, it could be split, but no shrink. */
   bool m_temp_tree_modified;
 
+  bool has_gcol() const { return m_mysql_table->has_gcol(); }
+
   /** The MySQL table object */
   TABLE *m_mysql_table;
 
   /** The MySQL handler object. */
   ha_innobase *m_mysql_handler;
+
+  THD *m_thd;
 
   /** limit value to avoid fts result overflow */
   ulonglong m_fts_limit;
@@ -912,9 +895,8 @@ struct row_prebuilt_t {
   /** @return true iff the operation can skip concurrency ticket. */
   bool skip_concurrency_ticket() const;
 
-  /** It is unsafe to copy this struct, and moving it would be non-trivial,
-  because we want to keep in sync with row_is_reading_range_guard_t. Therefore
-  it is much safer/easier to just forbid such operations.  */
+  /** It is unsafe to copy this struct, and we don't need to move it.
+  Therefore it is much safer/easier to just forbid such operations. */
   row_prebuilt_t(row_prebuilt_t const &) = delete;
   row_prebuilt_t &operator=(row_prebuilt_t const &) = delete;
   row_prebuilt_t &operator=(row_prebuilt_t &&) = delete;
@@ -931,35 +913,43 @@ struct SysIndexCallback {
   virtual void operator()(mtr_t *mtr, btr_pcur_t *pcur) noexcept = 0;
 };
 
-/** Get the updated parent field value from the update vector for the
-given col_no.
-@param[in]      foreign         foreign key information
-@param[in]      update          updated parent vector.
-@param[in]      col_no          base column position of the child table to check
-@return updated field from the parent update vector, else NULL */
-dfield_t *innobase_get_field_from_update_vector(dict_foreign_t *foreign,
-                                                upd_t *update, uint32_t col_no);
-
 /** Get the computed value by supplying the base column values.
 @param[in,out]  row             the data row
 @param[in]      col             virtual column
-@param[in]      index           index on the virtual column
+@param[in]      table           the table on which the virtual column is
+                                defined
 @param[in,out]  local_heap      heap memory for processing large data etc.
 @param[in,out]  heap            memory heap that copies the actual index row
-@param[in]      ifield          index field
 @param[in]      thd             MySQL thread handle
 @param[in,out]  mysql_table     mysql table object
+@param[in]      ifield          metadata for secondary index field into which
+                                the computed value is to be materialized,
+                                nullptr if not applicable
 @param[in]      old_table       during ALTER TABLE, this is the old table
-                                or NULL.
-@param[in]      parent_update   update vector for the parent row
-@param[in]      foreign         foreign key information
-@return the field filled with computed value, or NULL if just want
-to store the value in passed in "my_rec" */
+                                or nullptr.
+@param[in]      row_update      update vector for the row, supersedes row
+                                values
+@return the field filled with computed value, or nullptr on failure */
 dfield_t *innobase_get_computed_value(
-    const dtuple_t *row, const dict_v_col_t *col, const dict_index_t *index,
-    mem_heap_t **local_heap, mem_heap_t *heap, const dict_field_t *ifield,
-    THD *thd, TABLE *mysql_table, const dict_table_t *old_table,
-    upd_t *parent_update, dict_foreign_t *foreign);
+    const dtuple_t *row, const dict_v_col_t *col, const dict_table_t *table,
+    mem_heap_t **local_heap, mem_heap_t *heap, THD *thd, TABLE *mysql_table,
+    const dict_field_t *ifield = nullptr,
+    const dict_table_t *old_table = nullptr, upd_t *row_update = nullptr);
+
+/** This is similar to the function innobase_get_computed_value(), but for
+stored generated columns (gcol).
+@param[in,out] row    data tuple object.
+@param[in]     col        stored gcol
+@param[in]     table      table on which the stored gcol is defined
+@param[in,out] heap      heap used for evaluating gcol
+@param[in]     thd    MySQL thread handle
+@param[in]     mysql_table  MySQL table object.
+@return the field filled with computed value or nullptr on failure */
+dfield_t *innobase_compute_stored_gcol(const dtuple_t *row,
+                                       const dict_s_col_t &col,
+                                       const dict_table_t *table,
+                                       mem_heap_t *heap, THD *thd,
+                                       TABLE *mysql_table);
 
 /** Parse out multi-values from a MySQL record
 @param[in]      mysql_table     MySQL table structure

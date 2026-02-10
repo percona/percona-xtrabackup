@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,7 @@ bool printSCHEMA_TRANS_BEGIN_REQ(FILE *output, const Uint32 *theData,
     return false;
   }
 
-  const SchemaTransBeginReq *sig = (const SchemaTransBeginReq *)theData;
+  const auto *sig = (const SchemaTransBeginReq *)theData;
   fprintf(output, " clientRef: 0x%x", sig->clientRef);
   fprintf(output, " transId: 0x%x", sig->transId);
   fprintf(output, " requestInfo: 0x%x", sig->requestInfo);
@@ -46,7 +46,7 @@ bool printSCHEMA_TRANS_BEGIN_CONF(FILE *output, const Uint32 *theData,
     return false;
   }
 
-  const SchemaTransBeginConf *sig = (const SchemaTransBeginConf *)theData;
+  const auto *sig = (const SchemaTransBeginConf *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " transId: 0x%x", sig->transId);
   fprintf(output, " transKey: %u", sig->transKey);
@@ -61,7 +61,7 @@ bool printSCHEMA_TRANS_BEGIN_REF(FILE *output, const Uint32 *theData,
     return false;
   }
 
-  const SchemaTransBeginRef *sig = (const SchemaTransBeginRef *)theData;
+  const auto *sig = (const SchemaTransBeginRef *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " transId: 0x%x", sig->transId);
   fprintf(output, "\n");
@@ -80,7 +80,7 @@ bool printSCHEMA_TRANS_END_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const SchemaTransEndReq *sig = (const SchemaTransEndReq *)theData;
+  const auto *sig = (const SchemaTransEndReq *)theData;
   fprintf(output, " clientRef: 0x%x", sig->clientRef);
   fprintf(output, " transId: 0x%x", sig->transId);
   fprintf(output, " requestInfo: 0x%x", sig->requestInfo);
@@ -98,7 +98,7 @@ bool printSCHEMA_TRANS_END_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const SchemaTransEndConf *sig = (const SchemaTransEndConf *)theData;
+  const auto *sig = (const SchemaTransEndConf *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " transId: 0x%x", sig->transId);
   fprintf(output, "\n");
@@ -112,7 +112,7 @@ bool printSCHEMA_TRANS_END_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const SchemaTransEndRef *sig = (const SchemaTransEndRef *)theData;
+  const auto *sig = (const SchemaTransEndRef *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " transId: 0x%x", sig->transId);
   fprintf(output, "\n");
@@ -131,7 +131,7 @@ bool printSCHEMA_TRANS_END_REP(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const SchemaTransEndRep *sig = (const SchemaTransEndRep *)theData;
+  const auto *sig = (const SchemaTransEndRep *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " transId: 0x%x", sig->transId);
   fprintf(output, "\n");

@@ -152,7 +152,7 @@ INSERT INTO dd_check_table(t)
 INSERT INTO dd_check_table(t)
   SELECT CONCAT(id, '-', name, '-',
     IFNULL(options, 'NULL'), '-',
-    IFNULL(INSERT(se_private_data, 
+    IFNULL(INSERT(se_private_data,
              INSTR(se_private_data, 'server_version'),
              20, 'server_version=x'),
       'NULL'),
@@ -373,6 +373,18 @@ INSERT INTO dd_published_schema
 INSERT INTO dd_published_schema
   VALUES('90000', 1,
     'ef7f041211ae273122471bec470459f852c72d53d00832b8ab4c51697acf9872');
+INSERT INTO dd_published_schema
+  VALUES('90200', 0,
+    '5415a58136cdced035b195994cb452b90fa502bf3a37d90d454d84243eafb6c1');
+INSERT INTO dd_published_schema
+  VALUES('90200', 1,
+    'bab8c1820f40ff7c8a8ff6776962b9e90605918637bd5345789ed703fa911fc3');
+INSERT INTO dd_published_schema
+  VALUES('90500', 0,
+    '1d90fc6269b2b4241a357c6af818e5639021249f7ce213ec8d6445bc6a2000e5');
+INSERT INTO dd_published_schema
+  VALUES('90500', 1,
+    '74da9e2f339801697f9daef2635d24c6d3bf982365d4b06dd67bd8b578e1ac1c');
 --sorted_result
 SELECT IFNULL(CONCAT('The schema checksum corresponds to DD version ',
                      version, '.'),

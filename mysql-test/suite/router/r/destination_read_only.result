@@ -1,0 +1,27 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+create database test_schema;
+create table test_schema.tab(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+insert into test_schema.tab values(1, "Andresh");
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/test_schema
+# Registred DB_OBJECT at path: /svc/test_schema/tab
+# Wait until MySQLRouter fetches db-object.
+GET /svc/test_schema/tab
+Ok(200)
+# Set the server to super_read_only, wait for the REST service to return 404
+SET GLOBAL super_read_only = 1;
+GET /svc/test_schema/tab
+Not Found(404)
+# Clear the super_read_only, wait for the REST service to become available again
+SET GLOBAL super_read_only = 0;
+SET GLOBAL read_only = 0;
+GET /svc/test_schema/tab
+Ok(200)
+DROP SCHEMA test_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

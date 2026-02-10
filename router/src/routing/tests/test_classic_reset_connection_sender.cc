@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -43,13 +43,13 @@ TEST(ResetConnectionSenderTest, sender) {
   conf.net_buffer_length = 16 * 1024;
   conf.connect_timeout = 10;
   conf.client_connect_timeout = 10;
-  conf.bind_address = mysql_harness::TCPAddress{"", 3306};
+  conf.bind_address = mysql_harness::TcpDestination{"", 3306};
 
-  MySQLRoutingContext mock_ctx{conf, "name", {}, {}};
+  MySQLRoutingContext mock_ctx{conf, "name", {}, {}, nullptr};
 
   auto conn = MysqlRoutingClassicConnectionBase::create(
       mock_ctx,  // ctx
-      nullptr,   // RouteDestination
+      nullptr,   // DestinationManager
       std::make_unique<TcpConnection>(net::ip::tcp::socket(io_ctx),
                                       net::ip::tcp::endpoint{}),
       nullptr,  // client-routing-connection

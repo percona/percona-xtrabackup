@@ -1,0 +1,83 @@
+--echo
+--echo # Test enable_secondary_engine_statistics system variable.
+--echo
+SET @my_enable_secondary_engine_statistics =
+    @@session.enable_secondary_engine_statistics;
+SET @global_enable_secondary_engine_statistics =
+    @@global.enable_secondary_engine_statistics;
+
+# Check the default value
+SELECT @global_enable_secondary_engine_statistics;
+
+--echo # Test with an invalid argument.
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@enable_secondary_engine_statistics = INVALID;
+SELECT @@enable_secondary_engine_statistics;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@enable_secondary_engine_statistics = "INVALID";
+SELECT @@enable_secondary_engine_statistics;
+--error ER_WRONG_TYPE_FOR_VAR
+SET @@enable_secondary_engine_statistics = 12.45;
+SELECT @@enable_secondary_engine_statistics;
+--echo # Test with integer arguments.
+SET @@enable_secondary_engine_statistics = 0;
+SELECT @@enable_secondary_engine_statistics;
+SET @@enable_secondary_engine_statistics = 1;
+SELECT @@enable_secondary_engine_statistics;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@enable_secondary_engine_statistics = 2;
+SELECT @@enable_secondary_engine_statistics;
+SET @@enable_secondary_engine_statistics = "OFF";
+SELECT @@enable_secondary_engine_statistics;
+SET @@enable_secondary_engine_statistics = "ON";
+SELECT @@enable_secondary_engine_statistics;
+SET @@enable_secondary_engine_statistics = OFF;
+SELECT @@enable_secondary_engine_statistics;
+SET @@enable_secondary_engine_statistics = ON;
+SELECT @@enable_secondary_engine_statistics;
+
+SET @@enable_secondary_engine_statistics = DEFAULT;
+SELECT @@enable_secondary_engine_statistics;
+
+SELECT @@global.enable_secondary_engine_statistics,
+       @@session.enable_secondary_engine_statistics;
+SET @@global.enable_secondary_engine_statistics = OFF;
+SELECT @@global.enable_secondary_engine_statistics,
+       @@session.enable_secondary_engine_statistics;
+
+SELECT @@session.enable_secondary_engine_statistics, VARIABLE_VALUE
+FROM performance_schema.session_variables
+WHERE VARIABLE_NAME='enable_secondary_engine_statistics';
+
+SELECT @@global.enable_secondary_engine_statistics, VARIABLE_VALUE
+FROM performance_schema.global_variables
+WHERE VARIABLE_NAME='enable_secondary_engine_statistics';
+
+SET @@session.enable_secondary_engine_statistics = OFF;
+SELECT @@enable_secondary_engine_statistics =
+       @@session.enable_secondary_engine_statistics;
+
+--error ER_PARSE_ERROR
+SET local.enable_secondary_engine_statistics = OFF;
+--error ER_UNKNOWN_TABLE
+SELECT local.enable_secondary_engine_statistics;
+--error ER_PARSE_ERROR
+SET session.enable_secondary_engine_statistics = OFF;
+--error ER_UNKNOWN_TABLE
+SELECT session.enable_secondary_engine_statistics;
+--error ER_BAD_FIELD_ERROR
+SELECT enable_secondary_engine_statistics;
+
+SET @@session.enable_secondary_engine_statistics =
+    @my_enable_secondary_engine_statistics;
+SET @@global.enable_secondary_engine_statistics =
+    @global_enable_secondary_engine_statistics;
+
+SET @orig = @@global.enable_secondary_engine_statistics;
+SELECT @orig;
+
+# Confirm that we can change the value
+SET GLOBAL enable_secondary_engine_statistics = FALSE;
+SELECT @@global.enable_secondary_engine_statistics;
+SET GLOBAL enable_secondary_engine_statistics = TRUE;
+SELECT @@global.enable_secondary_engine_statistics;

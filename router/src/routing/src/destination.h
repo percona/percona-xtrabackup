@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,27 +26,27 @@
 #ifndef ROUTING_DESTINATION_INCLUDED
 #define ROUTING_DESTINATION_INCLUDED
 
-#include <atomic>
 #include <cstdint>
 #include <list>
 #include <mutex>
 #include <optional>
 #include <string>
-#include <system_error>
 #include <vector>
 
+#include "context.h"
 #include "my_compiler.h"  // MY_ATTRIBUTE
+#include "mysql/harness/destination.h"
 #include "mysql/harness/net_ts/io_context.h"
 #include "mysqlrouter/datatypes.h"
 #include "mysqlrouter/destination.h"
-#include "mysqlrouter/destination_status_types.h"
+#include "mysqlrouter/destination_nodes_state_notifier.h"
 #include "mysqlrouter/routing.h"
 #include "protocol/protocol.h"
-#include "tcp_address.h"
+#include "routing_guidelines/routing_guidelines.h"
 
 namespace mysql_harness {
 class PluginFuncEnv;
-}
+}  // namespace mysql_harness
 
 // first argument is the new set of the allowed nodes
 // second argument is a set of nodes that can be used for new connections
@@ -72,226 +72,50 @@ using StopSocketAcceptorCallback = std::function<void()>;
 // md refresh.
 using MetadataRefreshCallback =
     std::function<void(const bool, const AllowedNodes &)>;
-// Callback argument is a destination we want to check, value returned is
-// true if the destination is quarantined, false otherwise.
-using QueryQuarantinedDestinationsCallback =
-    std::function<bool(const mysql_harness::TCPAddress &)>;
 
-/** @class DestinationNodesStateNotifier
- *
- * Allows the obervers to register for notifications on the change in the state
- * of the destination nodes.
- */
-class DestinationNodesStateNotifier {
- public:
-  /** @brief Registers the callback for notification on the change in the
-   *         state if the destination nodes.
-   *
-   * @param clb callback that should be called
-   * @return identifier of the inserted callback, can be used to unregister
-   *         the callback
-   */
-  AllowedNodesChangeCallbacksListIterator
-  register_allowed_nodes_change_callback(
-      const AllowedNodesChangedCallback &clb);
-
-  /** @brief Unregisters the callback registered with
-   * register_allowed_nodes_change_callback().
-   *
-   * @param it  iterator returned by the call to
-   * register_allowed_nodes_change_callback()
-   */
-  void unregister_allowed_nodes_change_callback(
-      const AllowedNodesChangeCallbacksListIterator &it);
-
-  /**
-   * Registers the callback for notification that the routing socket acceptor
-   * should accept new connections.
-   *
-   * @param clb callback that should be called
-   */
-  void register_start_router_socket_acceptor(
-      const StartSocketAcceptorCallback &clb);
-
-  /**
-   * Unregisters the callback registered with
-   * register_start_router_socket_acceptor().
-   */
-  void unregister_start_router_socket_acceptor();
-
-  /**
-   * Registers the callback for notification that the routing socket acceptor
-   * should stop accepting new connections.
-   *
-   * @param clb callback that should be called
-   */
-  void register_stop_router_socket_acceptor(
-      const StopSocketAcceptorCallback &clb);
-
-  /**
-   * Unregisters the callback registered with
-   * register_stop_router_socket_acceptor().
-   */
-  void unregister_stop_router_socket_acceptor();
-
-  /**
-   * Registers a callback that is going to be used on metadata refresh
-   *
-   * @param callback Callback that will be called on each metadata refresh.
-   */
-  void register_md_refresh_callback(const MetadataRefreshCallback &callback);
-
-  /**
-   * Unregisters the callback registered with
-   * register_md_refresh_callback().
-   */
-  void unregister_md_refresh_callback();
-
-  /**
-   * Registers a callback that could be used for checking if the provided
-   * destination candidate is currently quarantined.
-   *
-   * @param clb Callback to query unreachable destinations.
-   */
-  void register_query_quarantined_destinations(
-      const QueryQuarantinedDestinationsCallback &clb);
-
-  /**
-   * Unregisters the callback registered with
-   * register_query_quarantined_destinations().
-   */
-  void unregister_query_quarantined_destinations();
-
- protected:
-  AllowedNodesChangeCallbacksList allowed_nodes_change_callbacks_;
-  MetadataRefreshCallback md_refresh_callback_;
-  StartSocketAcceptorCallback start_router_socket_acceptor_callback_;
-  StopSocketAcceptorCallback stop_router_socket_acceptor_callback_;
-  QueryQuarantinedDestinationsCallback query_quarantined_destinations_callback_;
-  mutable std::mutex allowed_nodes_change_callbacks_mtx_;
-  mutable std::mutex md_refresh_callback_mtx_;
-  mutable std::mutex socket_acceptor_handle_callbacks_mtx;
-  mutable std::mutex query_quarantined_destinations_callback_mtx_;
-};
-
-/** @class RouteDestination
+/** @class DestinationManager
  * @brief Manage destinations for a Connection Routing
  *
  * This class manages destinations which are used in Connection Routing.
  * A destination is usually a MySQL Server and is stored using the IP
  * or hostname together with the TCP port (defaulting to 3306 for classic
  * protocol or to 33060 for x protocol).
- *
- * RouteDestination is meant to be a base class and used to inherite and
- * create class which change the behavior. For example, the `get_next()`
- * method is usually changed to get the next server in the list.
  */
-class RouteDestination : public DestinationNodesStateNotifier {
+class DestinationManager : public DestinationNodesStateNotifier {
  public:
-  using AddrVector = std::vector<mysql_harness::TCPAddress>;
+  using DestVector = std::vector<mysql_harness::Destination>;
 
   /** @brief Default constructor
    *
-   * @param io_ctx context for IO operations
-   * @param protocol Protocol for the destination, defaults to value returned
-   *        by Protocol::get_default()
+   * @param io_ctx IO context
+   * @param routing_ctx Routing context
    */
-  RouteDestination(net::io_context &io_ctx,
-                   Protocol::Type protocol = Protocol::get_default())
-      : io_ctx_(io_ctx), protocol_(protocol) {}
+  DestinationManager(net::io_context &io_ctx, MySQLRoutingContext &routing_ctx)
+      : io_ctx_{io_ctx}, routing_ctx_{routing_ctx} {}
 
   /** @brief Destructor */
-  virtual ~RouteDestination() = default;
+  virtual ~DestinationManager() = default;
 
-  RouteDestination(const RouteDestination &other) = delete;
-  RouteDestination(RouteDestination &&other) = delete;
-  RouteDestination &operator=(const RouteDestination &other) = delete;
-  RouteDestination &operator=(RouteDestination &&other) = delete;
+  DestinationManager(const DestinationManager &other) = delete;
+  DestinationManager(DestinationManager &&other) = delete;
+  DestinationManager &operator=(const DestinationManager &other) = delete;
+  DestinationManager &operator=(DestinationManager &&other) = delete;
 
-  /** @brief Return our routing strategy
-   */
-  virtual routing::RoutingStrategy get_strategy() = 0;
+  virtual void connect_status(std::error_code ec) = 0;
 
-  /** @brief Adds a destination
-   *
-   * Adds a destination using the given address and port number.
-   *
-   * @param dest destination address
-   */
-  virtual void add(const mysql_harness::TCPAddress dest);
-
-  /** @overload */
-  virtual void add(const std::string &address, uint16_t port);
-
-  /** @brief Removes a destination
-   *
-   * Removes a destination using the given address and port number.
-   *
-   * @param address IP or name
-   * @param port Port number
-   */
-  virtual void remove(const std::string &address, uint16_t port);
-
-  /** @brief Gets destination based on address and port
-   *
-   * Gets destination base on given address and port and returns a pair
-   * with the information.
-   *
-   * Raises std::out_of_range when the combination of address and port
-   * is not in the list of destinations.
-   *
-   * This function can be used to check whether given destination is in
-   * the list.
-   *
-   * @param address IP or name
-   * @param port Port number
-   * @return an instance of mysql_harness::TCPAddress
-   */
-  virtual mysql_harness::TCPAddress get(const std::string &address,
-                                        uint16_t port);
-
-  /** @brief Removes all destinations
-   *
-   * Removes all destinations from the list.
-   */
-  virtual void clear();
-
-  /** @brief Gets the number of destinations
-   *
-   * Gets the number of destinations currently in the list.
-   *
-   * @return Number of destinations as size_t
-   */
-  size_t size() noexcept;
-
-  /** @brief Returns whether there are destinations
-   *
-   * @return whether the destination is empty
-   */
-  virtual bool empty() const noexcept { return destinations_.empty(); }
-
-  /** @brief Start the destination threads (if any)
+  /** @brief Start the destination manager
    *
    * @param env pointer to the PluginFuncEnv object
    */
-  virtual void start(const mysql_harness::PluginFuncEnv *env);
-
-  AddrVector::iterator begin() { return destinations_.begin(); }
-
-  AddrVector::const_iterator begin() const { return destinations_.begin(); }
-
-  AddrVector::iterator end() { return destinations_.end(); }
-
-  AddrVector::const_iterator end() const { return destinations_.end(); }
-
-  virtual AddrVector get_destinations() const;
+  virtual void start(const mysql_harness::PluginFuncEnv *env) = 0;
 
   /**
-   * get destinations to connect() to.
+   * Set up destination manager, prepare the destinations.
    *
-   * destinations are in order of preference.
+   * @return error code on failure
    */
-  virtual Destinations destinations() = 0;
+  virtual stdx::expected<void, std::error_code> init_destinations(
+      const routing_guidelines::Session_info &session_info) = 0;
 
   virtual mysqlrouter::ServerMode purpose() const {
     return mysqlrouter::ServerMode::Unavailable;
@@ -302,30 +126,74 @@ class RouteDestination : public DestinationNodesStateNotifier {
    *
    * should be called after connecting to all destinations failed.
    *
-   * @param dests previous destinations.
-   *
-   * @returns new destinations, if there are any.
+   * @retval true refresh suceeded, there are destinations that could be used.
+   * @retval false refresh failed, there are no destinations that could be used.
    */
-  virtual std::optional<Destinations> refresh_destinations(
-      const Destinations &dests);
+  virtual bool refresh_destinations(
+      const routing_guidelines::Session_info &) = 0;
 
   /**
    * Trigger listening socket acceptors state handler based on the destination
    * type.
    */
-  virtual void handle_sockets_acceptors() {}
+  virtual void handle_sockets_acceptors() = 0;
+
+  /**
+   * Get destination that should be used for connection attempt.
+   *
+   * It uses routing strategies and internal information (last used indexes,
+   * failed attempt information) for destination selection.
+   *
+   * @return Destination candidate used for connection attempt.
+   */
+  virtual std::unique_ptr<Destination> get_next_destination(
+      const routing_guidelines::Session_info &) = 0;
+
+  /**
+   * Get destination that was selected as a destination candidate.
+   */
+  virtual std::unique_ptr<Destination> get_last_used_destination() const = 0;
+
+  /**
+   * Get addresses of all nodes that are a possible destination candidates.
+   */
+  virtual std::vector<mysql_harness::Destination> get_destination_candidates()
+      const = 0;
+
+  /**
+   * Check if routing guidelines uses $.session.rand as a match criterion.
+   */
+  bool routing_guidelines_session_rand_used() const {
+    if (!routing_ctx_.get_routing_guidelines()) return false;
+    return routing_ctx_.get_routing_guidelines()->session_rand_used();
+  }
+
+  /**
+   * Get information about this given Router instance.
+   */
+  routing_guidelines::Router_info get_router_info() const {
+    return routing_ctx_.get_router_info();
+  }
+
+  /**
+   * Check if there are read-write destinations that could be used.
+   */
+  virtual bool has_read_write() const = 0;
+
+  /**
+   * Check if there are read-only destinations that could be used.
+   */
+  virtual bool has_read_only() const = 0;
 
  protected:
-  /** @brief List of destinations */
-  AddrVector destinations_;
-
-  /** @brief Mutex for updating destinations and iterator */
-  std::mutex mutex_update_;
+  const MySQLRoutingContext &get_routing_context() const {
+    return routing_ctx_;
+  }
 
   net::io_context &io_ctx_;
-
-  /** @brief Protocol for the destination */
-  Protocol::Type protocol_;
+  MySQLRoutingContext &routing_ctx_;
+  std::mutex state_mtx_;
+  std::error_code last_ec_;
 };
 
 #endif  // ROUTING_DESTINATION_INCLUDED

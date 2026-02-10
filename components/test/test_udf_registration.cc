@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -21,11 +21,11 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/service_implementation.h>
 #include <mysql/components/services/udf_registration.h>
-#include <stdbool.h>
+#include <cassert>
+
 #include <list>
 #include <string>
 
@@ -74,7 +74,7 @@ class udf_list {
   bool unregister() {
     udf_list_t delete_set;
     /* try to unregister all of the udfs */
-    for (auto udf : set) {
+    for (const auto &udf : set) {
       int was_present = 0;
       if (!mysql_service_udf_registration->udf_unregister(udf.c_str(),
                                                           &was_present) ||
@@ -83,7 +83,7 @@ class udf_list {
     }
 
     /* remove the unregistered ones from the list */
-    for (auto udf : delete_set) set.remove(udf);
+    for (const auto &udf : delete_set) set.remove(udf);
 
     /* success: empty set */
     if (set.empty()) return false;

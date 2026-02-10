@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -102,6 +102,10 @@ uint Ndb_local_connection::execute_query(const std::string &sql_query) {
     // catch some SQL parse errors in debug
     assert(result != ER_PARSE_ERROR && result != ER_EMPTY_QUERY);
   }
+  // Reset indicator for "microseconds used in query", thus avoiding that
+  // subsequent queries continue to write fractional microseconds to the binlog
+  m_thd->query_start_usec_used = false;
+
   return result;
 }
 

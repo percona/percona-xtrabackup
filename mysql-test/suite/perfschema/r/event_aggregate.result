@@ -1,3 +1,5 @@
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 "================== Step 1 =================="
 call dump_thread();
 username	status
@@ -7329,3 +7331,5 @@ root	1	1
 execute dump_hosts;
 HOST	CURRENT_CONNECTIONS	TOTAL_CONNECTIONS
 localhost	2	2
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

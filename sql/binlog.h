@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -218,6 +218,11 @@ class MYSQL_BIN_LOG : public TC_LOG {
   inline uint get_sync_period() { return *sync_period_ptr; }
 
  public:
+  /**
+    Wait until the number of prepared XIDs are zero.
+   */
+  void wait_for_prep_xids();
+
   /*
     This is used to start writing to a new log file. The difference from
     new_file() is locking. new_file_without_locking() does not acquire

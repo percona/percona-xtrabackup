@@ -466,14 +466,14 @@ Grants for foo@%
 GRANT SELECT, INSERT, UPDATE, CREATE USER ON *.* TO `foo`@`%` WITH GRANT OPTION
 REVOKE SELECT, UPDATE ON `secret_db`.* FROM `foo`@`%`
 [connection foo_master]
-# Should fail because foo cannot remove SELECT priv on bar
+# Should fail because foo cannot remove UPDATE priv on bar
 REVOKE ALL ON *.* FROM bar;
 ERROR HY000: Access denied for AuthId `foo`@`%` to database 'secret_db'.
-GRANT SELECT ON `secret_db`.* TO foo;
+GRANT UPDATE ON `secret_db`.* TO foo;
 SHOW GRANTS FOR foo;
 Grants for foo@%
 GRANT SELECT, INSERT, UPDATE, CREATE USER ON *.* TO `foo`@`%` WITH GRANT OPTION
-REVOKE UPDATE ON `secret_db`.* FROM `foo`@`%`
+REVOKE SELECT ON `secret_db`.* FROM `foo`@`%`
 [connection foo_master]
 # Should work because restriction on foo is different from bar
 REVOKE ALL ON *.* FROM bar;
@@ -512,6 +512,8 @@ INSERT INTO normal_db.t1 values (1,2), (3,4);
 CREATE TEMPORARY TABLE mysql.db_copy AS SELECT * FROM mysql.db;
 DELETE FROM mysql.db WHERE host='%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE USER ''@'%', ''@'';
 GRANT SELECT ON *.* TO ''@'%' WITH GRANT OPTION;
 REVOKE SELECT ON pr_db.* FROM ''@'%';
@@ -554,6 +556,8 @@ DROP USER foo@localhost,''@'%';
 DELETE FROM mysql.db;
 INSERT INTO mysql.db SELECT * FROM mysql.db_copy;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 DROP TABLE mysql.db_copy;
 #
 # 12. Hybrid scenarios
@@ -1231,6 +1235,8 @@ GRANT SELECT, INSERT ON *.* TO `bar`@`%`
 REVOKE SELECT, INSERT ON `mysql`.* FROM `bar`@`%`
 INSERT INTO mysql.db(user,host, db, Insert_priv) VALUES('bar', '%', 'mysql', 'Y');
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW GRANTS FOR bar;
 Grants for bar@%
 GRANT SELECT, INSERT ON *.* TO `bar`@`%`
@@ -1318,8 +1324,85 @@ REVOKE SELECT ON *.* FROM foo;
 DROP USER foo;
 DROP DATABASE `db_1`;
 DROP DATABASE `db%1`;
+--------------- Test related to wildcard grants end here. ---------------
+
 -------------------------------------------------------------------------
-Test related to wildcard grants end here.
+Tests related to Bug 37570206 - REVOKE EXECUTE from a user throws ERROR
+3879 (HY000): Access denied *
+-------------------------------------------------------------------------
+CREATE USER bug37570206_user;
+CREATE USER bug37570206_admin;
+CREATE DATABASE bug37570206_db;
+GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE SELECT, EXECUTE ON bug37570206_db.* FROM bug37570206_admin;
+GRANT SELECT, EXECUTE ON *.* TO bug37570206_user;
+SHOW GRANTS FOR bug37570206_user;
+Grants for bug37570206_user@%
+GRANT SELECT, EXECUTE ON *.* TO `bug37570206_user`@`%`
+REVOKE SELECT, EXECUTE ON `bug37570206_db`.* FROM `bug37570206_user`@`%`
+# Must succeed
+REVOKE SELECT, EXECUTE ON *.* FROM bug37570206_user;
+SHOW GRANTS FOR bug37570206_user;
+Grants for bug37570206_user@%
+GRANT USAGE ON *.* TO `bug37570206_user`@`%`
+REVOKE ALL ON *.* FROM bug37570206_admin, bug37570206_user;
+GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE SELECT ON bug37570206_db.* FROM bug37570206_admin;
+GRANT SELECT, EXECUTE ON *.* TO bug37570206_user;
+REVOKE SELECT, EXECUTE ON bug37570206_db.* FROM bug37570206_user;
+# Must succeed
+REVOKE SELECT, EXECUTE ON *.* FROM bug37570206_user;
+GRANT SELECT, EXECUTE ON *.* TO bug37570206_user;
+REVOKE SELECT, EXECUTE ON bug37570206_db.* FROM bug37570206_user;
+REVOKE SELECT, EXECUTE ON mysql.* FROM bug37570206_user;
+# Must succeed
+REVOKE SELECT, EXECUTE ON *.* FROM bug37570206_user;
+GRANT SELECT ON bug37570206_db.* TO bug37570206_admin;
+GRANT SELECT, EXECUTE ON *.* TO bug37570206_user;
+REVOKE SELECT, EXECUTE ON bug37570206_db.* FROM bug37570206_user;
+# Must succeed
+REVOKE SELECT, EXECUTE ON *.* FROM bug37570206_user;
+REVOKE ALL ON *.* FROM bug37570206_admin, bug37570206_user;
+GRANT SELECT, INSERT, UPDATE ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE SELECT, INSERT ON bug37570206_db.* FROM bug37570206_admin;
+GRANT SELECT, EXECUTE, DELETE ON *.* TO bug37570206_user;
+REVOKE SELECT, EXECUTE ON bug37570206_db.* FROM bug37570206_user;
+# Must succeed
+REVOKE SELECT ON *.* FROM bug37570206_user;
+REVOKE ALL ON *.* FROM bug37570206_admin, bug37570206_user;
+GRANT ALL ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE INSERT ON bug37570206_db.* FROM bug37570206_admin;
+GRANT SELECT, INSERT ON *.* TO bug37570206_user;
+REVOKE INSERT ON bug37570206_db.* FROM bug37570206_user;
+# Must succeed
+REVOKE ALL ON *.* FROM bug37570206_user;
+REVOKE ALL ON *.* FROM bug37570206_admin, bug37570206_user;
+GRANT SELECT, INSERT, UPDATE ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE SELECT, INSERT ON bug37570206_db.* FROM bug37570206_admin;
+GRANT SELECT, EXECUTE, DELETE ON *.* TO bug37570206_user;
+# Must fail
+REVOKE SELECT ON *.* FROM bug37570206_user;
+ERROR HY000: Access denied for AuthId `bug37570206_admin`@`%` to database 'bug37570206_db'.
+REVOKE DELETE ON bug37570206_db.* FROM bug37570206_user;
+# Must fail
+REVOKE SELECT ON *.* FROM bug37570206_user;
+ERROR HY000: Access denied for AuthId `bug37570206_admin`@`%` to database 'bug37570206_db'.
+REVOKE ALL ON *.* FROM bug37570206_admin, bug37570206_user;
+GRANT ALL ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE SELECT, INSERT ON bug37570206_db.* FROM bug37570206_admin;
+GRANT SELECT, UPDATE, DELETE, INSERT ON *.* TO bug37570206_user;
+# Must fail
+REVOKE ALL ON *.* FROM bug37570206_user;
+ERROR HY000: Access denied for AuthId `bug37570206_admin`@`%` to database 'bug37570206_db'.
+REVOKE INSERT ON bug37570206_db.* FROM bug37570206_user;
+# Must fail
+REVOKE ALL ON *.* FROM bug37570206_user;
+ERROR HY000: Access denied for AuthId `bug37570206_admin`@`%` to database 'bug37570206_db'.
+DROP USER bug37570206_admin, bug37570206_user;
+DROP DATABASE bug37570206_db;
+-------------------------------------------------------------------------
+Tests related to Bug 37570206 - REVOKE EXECUTE from a user throws ERROR
+3879 (HY000): Access denied * end here
 -------------------------------------------------------------------------
 DROP DATABASE pr_db;
 DROP DATABASE normal_db;
@@ -1375,6 +1458,8 @@ CREATE USER bar;
 GRANT SELECT ON *.* TO bar;
 UPDATE mysql.user SET user_attributes = '{"Restrictions": [{"Database": "mysql", "Privileges": ["SELECT"]}]}' WHERE USER = 'bar';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW VARIABLES LIKE 'partial_revokes';
 Variable_name	Value
 partial_revokes	ON

@@ -1,0 +1,95 @@
+--echo #
+--echo # Bug 36342348 - MVCC is broken for small partial update of blob
+--echo #
+
+CREATE TABLE t1
+( pkey int not null auto_increment,
+  j json,
+  primary key (pkey)) engine=innodb row_format=dynamic;
+
+SHOW CREATE TABLE t1;
+INSERT INTO t1(j) values
+ (JSON_ARRAY(REPEAT("MySQL", 40), REPEAT("BlobPartialUpdate", 512)));
+
+--echo # Connection con0:
+connect (con0,localhost,root,,);
+set transaction_isolation = 'REPEATABLE-READ';
+start transaction;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+--disable_result_log
+select json_extract(j, '$[0]') into @var_0 from t1 where pkey = 1;
+--enable_result_log
+
+--echo # Doing partial update of length=60: (MVCC in undo)
+--echo # Connection default:
+connection default;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+start transaction;
+update t1 set j = json_set(j, '$[0]', REPEAT("InnoDB", 10)) where pkey = 1;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+commit;
+
+--echo # Connection con1:
+connect (con1,localhost,root,,);
+set transaction_isolation = 'REPEATABLE-READ';
+start transaction;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+--disable_result_log
+select @var_1 := json_extract(j, '$[0]') from t1 where pkey = 1;
+--enable_result_log
+
+--echo # Doing partial update of length=140: (MVCC in blob)
+--echo # Connection default:
+connection default;
+start transaction;
+update t1 set j = json_set(j, '$[0]', REPEAT("PolarDB", 20)) where pkey = 1;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+commit;
+
+--echo # Doing partial update of length=70: (MVCC in undo)
+--echo # Connection default:
+connection default;
+start transaction;
+update t1 set j = json_set(j, '$[0]', REPEAT("abcde", 14)) where pkey = 1;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+commit;
+
+--echo # Doing partial update of length=200: (MVCC in blob)
+--echo # Connection default:
+connection default;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+start transaction;
+update t1 set j = json_set(j, '$[0]', REPEAT("fungo", 40)) where pkey = 1;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+commit;
+
+--echo # Doing partial update of length=90: (MVCC in undo)
+--echo # Connection default:
+connection default;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+start transaction;
+update t1 set j = json_set(j, '$[0]', REPEAT("abcde", 18)) where pkey = 1;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+commit;
+
+--echo # Connection con0:
+connection con0;
+--echo ## Result should be
+select @var_0;
+--echo ## but in actual, it is
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+commit;
+
+--echo # Connection con1:
+connection con1;
+--echo ## Result should be
+select @var_1;
+--echo ## but in actual, it is
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+commit;
+
+--echo # Connection default:
+connection default;
+drop table t1;
+disconnect con0;
+disconnect con1;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -44,7 +44,7 @@ using service_implementation::keys_metadata_iterator_next;
 
 DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::init,
                    (my_h_keyring_keys_metadata_iterator * forward_iterator)) {
-  keyring_file_component_option_usage_set();
+  ++opt_option_tracker_usage_file_keyring;
   std::unique_ptr<Iterator<Data>> it;
   const bool retval =
       init_keys_metadata_iterator_template<Keyring_file_backend>(
@@ -102,7 +102,7 @@ DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::get,
                    (my_h_keyring_keys_metadata_iterator forward_iterator,
                     char *data_id, size_t data_id_length, char *auth_id,
                     size_t auth_id_length)) {
-  keyring_file_component_option_usage_set();
+  ++opt_option_tracker_usage_file_keyring;
   std::unique_ptr<Iterator<Data>> it;
   it.reset(reinterpret_cast<Iterator<Data> *>(forward_iterator));
   const bool retval = keys_metadata_get_template<Keyring_file_backend>(

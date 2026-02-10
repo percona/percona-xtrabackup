@@ -218,6 +218,11 @@ SELECT c1, COUNT(DISTINCT(c2)) FROM lob_table GROUP BY c1;
 --echo # Count of Created_tmp_disk_tables is not changed due to Bug#36845804
 CALL print_status_variables('session');
 # Test the PFS session status table as well
+# Hypergraph has a different plan for the performance schema query. It
+# creates an additonal temp table because VARIABLE_VALUE is considered
+# a blob field and therefore needs row-ids to sort which forces
+# the additional temp table.
+--skip_if_hypergraph
 SELECT VARIABLE_NAME, VARIABLE_VALUE
     FROM performance_schema.session_status WHERE
     VARIABLE_NAME LIKE 'Created_tmp%tables' OR
@@ -317,6 +322,11 @@ SELECT MIN(c), MAX(c), AVG(c) FROM cte;
 --echo # min(tmp_table_size, max_heap_table_size). It fallsback to on-disk
 --echo # TempTable_count_hit_max_ram must remain unaffected.
 CALL print_status_variables('session');
+# Hypergraph has a different plan for the performance schema query. It
+# creates an additonal temp table because VARIABLE_VALUE is considered
+# a blob field and therefore needs row-ids to sort which forces
+# the additional temp table.
+--skip_if_hypergraph
 SELECT VARIABLE_NAME, VARIABLE_VALUE
     FROM performance_schema.session_status WHERE
     VARIABLE_NAME LIKE 'Created_tmp%tables' OR

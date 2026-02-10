@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -157,16 +157,6 @@ the system tablespace, the temporary tablespace, or an undo tablespace.
 @param[in]      rseg_id         slot number of the rseg within this tablespace
 @return page number of the rollback segment header page created */
 page_no_t trx_rseg_create(space_id_t space_id, ulint rseg_id);
-
-/** Build a list of unique undo tablespaces found in the TRX_SYS page.
-Do not count the system tablespace. The vector will be sorted on space id.
-@param[in,out]  spaces_to_open          list of undo tablespaces found. */
-void trx_rseg_get_n_undo_tablespaces(Space_Ids *spaces_to_open);
-
-/** Upgrade the TRX_SYS page so that it no longer tracks rsegs in undo
-tablespaces other than the system tablespace.  Add these tablespaces to
-undo::spaces and put FIL_NULL in the slots in TRX_SYS.*/
-void trx_rseg_upgrade_undo_tablespaces();
 
 /** Create the file page for the rollback segment directory in an undo
 tablespace. This function is called just after an undo tablespace is

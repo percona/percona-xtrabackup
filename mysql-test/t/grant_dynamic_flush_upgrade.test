@@ -25,10 +25,13 @@ SELECT GRANTEE, PRIVILEGE_TYPE, IS_GRANTABLE FROM INFORMATION_SCHEMA.USER_PRIVIL
 --let $restart_parameters = restart:
 --source include/restart_mysqld.inc
 
---echo # Success criteria: should contain 8 rows: 5 for root and 5 for wl14303
+--echo # Success criteria: should contain 8 rows: 4 for root and 4 for wl14303
 SELECT GRANTEE, PRIVILEGE_TYPE, IS_GRANTABLE FROM INFORMATION_SCHEMA.USER_PRIVILEGES
   WHERE PRIVILEGE_TYPE LIKE 'FLUSH_%' ORDER BY 1,2,3;
 DROP USER wl14303@localhost, wl14303_no_reload@localhost;
+
+--echo # re-grant FLUSH_PRIVILEGES since it is not granted at upgrade
+GRANT FLUSH_PRIVILEGES ON *.* TO root@localhost WITH GRANT OPTION;
 
 --echo # Cleanup
 --source include/mysql_upgrade_cleanup.inc

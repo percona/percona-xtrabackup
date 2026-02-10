@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -138,12 +138,12 @@ inline bool TransientPool<T, Slot_size>::seize(Ptr<T> &p) {
   p.p = new (slot.p) T;
   if (unlikely(!Magic::match(p.p->m_magic, T::TYPE_ID))) {
     g_eventLogger->info(
-        "Magic::match failed in %s: "
+        "Magic::match failed in TransientPool<>::seize: "
         "type_id %08x rg %u tid %u: "
         "slot_size %u: ptr.i %u: ptr.p %p: "
         "magic %08x expected %08x",
-        __func__, T::TYPE_ID, GET_RG(T::TYPE_ID), GET_TID(T::TYPE_ID),
-        Slot_size, p.i, p.p, p.p->m_magic, Magic::make(T::TYPE_ID));
+        T::TYPE_ID, GET_RG(T::TYPE_ID), GET_TID(T::TYPE_ID), Slot_size, p.i,
+        p.p, p.p->m_magic, Magic::make(T::TYPE_ID));
     require(Magic::match(p.p->m_magic, T::TYPE_ID));
   }
   return true;

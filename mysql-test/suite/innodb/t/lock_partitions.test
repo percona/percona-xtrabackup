@@ -126,3 +126,91 @@ SELECT LOCK_DATA
 COMMIT;
 
 DROP TABLE t;
+
+# Test for range-based SELECT FOR UPDATE
+# Note - If the optimizer decides to perform a full scan instead of
+# a range scan, all scanned rows will be locked. The test uses
+# FORCE INDEX to ensure a range scan.
+
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+CREATE TABLE t (
+  i INT NOT NULL PRIMARY KEY
+) ENGINE=INNODB
+PARTITION BY RANGE(i) (
+  PARTITION p0 VALUES LESS THAN (11),
+  PARTITION p1 VALUES LESS THAN MAXVALUE);
+
+-- delimiter //
+CREATE PROCEDURE check_locks_and_rollback()
+BEGIN
+  SELECT partition_name, lock_mode, lock_status, lock_type, lock_data
+    FROM performance_schema.data_locks
+    WHERE object_schema="test" AND OBJECT_NAME='t'
+    ORDER BY partition_name, lock_type, lock_data;
+  ROLLBACK;
+END //
+
+CREATE PROCEDURE check_locks_le(n INT)
+BEGIN
+  SELECT i FROM t FORCE INDEX (PRIMARY) WHERE i <= n FOR UPDATE;
+  CALL check_locks_and_rollback();
+END //
+
+CREATE PROCEDURE check_locks_gt(n INT)
+BEGIN
+  SELECT i FROM t FORCE INDEX (PRIMARY) WHERE i > n FOR UPDATE;
+  CALL check_locks_and_rollback();
+END //
+
+CREATE PROCEDURE check_locks_between(a INT, b INT)
+BEGIN
+  SELECT i FROM t FORCE INDEX (PRIMARY) WHERE i BETWEEN a AND b FOR UPDATE;
+  CALL check_locks_and_rollback();
+END //
+-- delimiter ;
+
+INSERT INTO t VALUES (1), (2), (3), (7), (11), (13), (17), (19);
+
+SET @save_autocommit= @@autocommit;
+SET autocommit= 0;
+
+CALL check_locks_le(2);
+CALL check_locks_between(0, 3);
+CALL check_locks_between(2, 3);
+CALL check_locks_between(0, 17);
+CALL check_locks_between(3, 17);
+CALL check_locks_between(3, 21);
+CALL check_locks_between(12, 21);
+
+SET autocommit= @save_autocommit;
+
+DROP TABLE t;
+
+CREATE TABLE t (
+  i INT NOT NULL PRIMARY KEY
+) ENGINE=INNODB
+PARTITION BY HASH(i)
+  PARTITIONS 2;
+
+INSERT INTO t VALUES (1), (2), (3), (4), (6), (7), (8), (9), (10);
+
+SET @save_autocommit= @@autocommit;
+SET autocommit= 0;
+
+CALL check_locks_le(2);
+CALL check_locks_between(0, 3);
+CALL check_locks_between(2, 3);
+CALL check_locks_between(2, 6);
+CALL check_locks_between(0, 17);
+CALL check_locks_between(3, 17);
+CALL check_locks_between(3, 12);
+CALL check_locks_gt(9);
+
+SET autocommit= @save_autocommit;
+
+DROP PROCEDURE check_locks_le;
+DROP PROCEDURE check_locks_gt;
+DROP PROCEDURE check_locks_between;
+DROP PROCEDURE check_locks_and_rollback;
+DROP TABLE t;

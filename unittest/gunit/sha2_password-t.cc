@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -568,8 +568,8 @@ TEST_F(SHA256_digestTest, Caching_sha2_password_generate_sha2_multi_hash) {
                                               DEFAULT_STORED_DIGEST_ROUNDS);
   std::string digest;
   ASSERT_TRUE(caching_sha2_password.generate_sha2_multi_hash(
-                  plaintext_buffer_arthur, salt_buffer_arthur, &digest, 5000) ==
-              false);
+                  plaintext_buffer_arthur, salt_buffer_arthur, digest,
+                  ROUNDS_DEFAULT) == false);
   ASSERT_TRUE(digest == digest_string1);
 
   /*Try with random salt */
@@ -586,8 +586,8 @@ TEST_F(SHA256_digestTest, Caching_sha2_password_generate_sha2_multi_hash) {
       digest_string1.find('$', 3 + CRYPT_SALT_LENGTH) + 1, std::string::npos);
 
   ASSERT_TRUE(caching_sha2_password.generate_sha2_multi_hash(
-                  plaintext_buffer_arthur, salt_buffer_arthur, &digest, 5000) ==
-              false);
+                  plaintext_buffer_arthur, salt_buffer_arthur, digest,
+                  ROUNDS_DEFAULT) == false);
   ASSERT_TRUE(digest == digest_string1);
 }
 
@@ -595,7 +595,7 @@ TEST_F(SHA256_digestTest,
        Caching_sha2_password_authenticate_fast_authenticate) {
   Caching_sha2_password caching_sha2_password(nullptr,
                                               DEFAULT_STORED_DIGEST_ROUNDS);
-  std::string serialized_string[MAX_PASSWORDS];
+  std::string_view serialized_string[MAX_PASSWORDS];
   Digest_info digest_type = Digest_info::SHA256_DIGEST;
   std::string digest;
   std::string salt;
@@ -615,9 +615,12 @@ TEST_F(SHA256_digestTest,
   digest.assign(digest_buffer_arthur, STORED_SHA256_DIGEST_LENGTH);
   salt.assign(salt_buffer_arthur);
   plaintext.assign(plaintext_buffer_arthur);
-  ASSERT_TRUE(caching_sha2_password.serialize(serialized_string[0], digest_type,
-                                              salt, digest,
-                                              iterations) == false);
+
+  std::string serialized;
+  ASSERT_TRUE(caching_sha2_password.serialize(serialized, digest_type, salt,
+                                              digest, iterations) == false);
+  serialized_string[0] = serialized;
+
   ASSERT_TRUE(caching_sha2_password
                   .authenticate(auth_id_arthur, serialized_string, plaintext)
                   .first == false);
@@ -637,9 +640,11 @@ TEST_F(SHA256_digestTest,
       0x52, 0x33, 0x5a, 0x2e, 0x78, 0x70, 0x4c, 0x4f, 0x57, 0x3a};
 
   digest.assign(digest_buffer_arthur_ic, STORED_SHA256_DIGEST_LENGTH);
-  ASSERT_TRUE(caching_sha2_password.serialize(serialized_string[0], digest_type,
-                                              salt, digest,
-                                              iterations) == false);
+
+  ASSERT_TRUE(caching_sha2_password.serialize(serialized, digest_type, salt,
+                                              digest, iterations) == false);
+  serialized_string[0] = serialized;
+
   ASSERT_TRUE(caching_sha2_password
                   .authenticate(auth_id_arthur, serialized_string, plaintext)
                   .first == true);
@@ -658,9 +663,10 @@ TEST_F(SHA256_digestTest,
   salt.assign(salt_buffer_marvin);
   plaintext.assign(plaintext_buffer_marvin);
 
-  ASSERT_TRUE(caching_sha2_password.serialize(serialized_string[0], digest_type,
-                                              salt, digest,
-                                              iterations) == false);
+  ASSERT_TRUE(caching_sha2_password.serialize(serialized, digest_type, salt,
+                                              digest, iterations) == false);
+  serialized_string[0] = serialized;
+
   ASSERT_TRUE(caching_sha2_password
                   .authenticate(auth_id_marvin, serialized_string, plaintext)
                   .first == false);
@@ -683,9 +689,10 @@ TEST_F(SHA256_digestTest,
   salt.assign(salt_buffer_zaphod);
   plaintext.assign(plaintext_buffer_zaphod);
 
-  ASSERT_TRUE(caching_sha2_password.serialize(serialized_string[0], digest_type,
-                                              salt, digest,
-                                              iterations) == false);
+  ASSERT_TRUE(caching_sha2_password.serialize(serialized, digest_type, salt,
+                                              digest, iterations) == false);
+  serialized_string[0] = serialized;
+
   ASSERT_TRUE(caching_sha2_password
                   .authenticate(auth_id_zaphod, serialized_string, plaintext)
                   .first == false);
@@ -742,7 +749,7 @@ TEST_F(SHA256_digestTest,
 TEST_F(SHA256_digestTest, Caching_sha2_password_authenticate_sanity) {
   Caching_sha2_password caching_sha2_password(nullptr,
                                               DEFAULT_STORED_DIGEST_ROUNDS);
-  std::string serialized_string[MAX_PASSWORDS];
+  std::string_view serialized_string[MAX_PASSWORDS];
   std::string plaintext;
 
   std::string auth_id_arthur("'arthur'@'dent.com'");

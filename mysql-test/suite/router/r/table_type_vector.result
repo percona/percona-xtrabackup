@@ -1,0 +1,181 @@
+RESET BINARY LOGS AND GTIDS;
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+CREATE TABLE test.vec(
+id INTEGER AUTO_INCREMENT PRIMARY KEY,
+v VECTOR);
+INSERT INTO test.vec(v)
+VALUES(STRING_TO_VECTOR('[0]')),
+(STRING_TO_VECTOR('[1,2]')),
+(STRING_TO_VECTOR('[0,2]')),
+(NULL);
+
+
+## I. Verify JSON encoding of VECTOR, returned in FEED response
+#
+# 1. Verify JSON response containing array of numbers generated from type VECTOR
+#    returning single object.
+# 2. Verify JSON response containing array of numbers generated from types VECTOR
+#    returning multiple objects.
+# 3. Verify that object can be updated with different array of numbers and response
+#    contains same data.
+# 4. Verify that objects can be filtered using VECTOR column using array of numbers.
+#
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/test
+# Registred DB_OBJECT at path: /svc/test/vec
+
+#
+# I.1
+GET /svc/test/vec/2
+{
+    "v": [
+        1.0,
+        2.0
+    ]
+}
+OK
+
+#
+# I.2
+GET /svc/test/vec
+{
+    "items": [
+        {
+            "v": [
+                0.0
+            ]
+        },
+        {
+            "v": [
+                1.0,
+                2.0
+            ]
+        },
+        {
+            "v": [
+                0.0,
+                2.0
+            ]
+        },
+        {
+            "v": null
+        }
+    ]
+}
+OK
+
+#
+# I.3
+PUT /svc/test/vec/2 (payload-size:20)
+{
+    "v": [
+        2.0,
+        2.3
+    ],
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/vec/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "D2E7D7CFF9D68F223F6D1CE50A58CF2A84A2F242BC26E4C8106E8BDB2F448FBF",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/test/vec/2 (payload-size:18)
+{
+    "v": [
+        0.0,
+        3.0
+    ],
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/vec/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "366E17CD1A9DA2CB8EB330BC3468B17AF0182FBF53EFCDBB93BC2AD06F5FD7ED",
+        "gtid": "GTID"
+    }
+}
+OK
+
+#
+# I.4
+GET /svc/test/vec/?q=%7B%22v%22:%5B0%5D%7D
+{
+    "items": [
+        {
+            "v": [
+                0.0
+            ],
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/vec/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "A49488A4ED984981D3AB33493AFCBB9DCDA3837BA82D8531C855BB8461400778"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/vec/"
+        }
+    ]
+}
+OK
+GET /svc/test/vec/?q=%7B%22v%22:%5B0,3%5D%7D
+{
+    "items": [
+        {
+            "v": [
+                0.0,
+                3.0
+            ],
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/vec/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "366E17CD1A9DA2CB8EB330BC3468B17AF0182FBF53EFCDBB93BC2AD06F5FD7ED"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/vec/"
+        }
+    ]
+}
+OK
+DROP TABLE test.vec;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

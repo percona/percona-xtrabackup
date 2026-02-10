@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -36,7 +36,7 @@ GR_decompress::GR_decompress(
     case GR_compress::enum_compression_type::ZSTD_COMPRESSION:
     default: {
       m_compressor_name.assign("Zstandard");
-      mysql::binlog::event::compression::type compression_type_aux =
+      mysql::binlog::event::compression::type const compression_type_aux =
           mysql::binlog::event::compression::ZSTD;
       auto decomp =
           mysql::binlog::event::compression::Factory::build_decompressor(
@@ -52,7 +52,7 @@ GR_decompress::GR_decompress(
 
     case GR_compress::enum_compression_type::NO_COMPRESSION: {
       m_compressor_name.assign("No Compression");
-      mysql::binlog::event::compression::type compression_type_aux =
+      mysql::binlog::event::compression::type const compression_type_aux =
           mysql::binlog::event::compression::NONE;
       auto decomp =
           mysql::binlog::event::compression::Factory::build_decompressor(

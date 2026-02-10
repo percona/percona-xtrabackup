@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,21 +21,21 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
-#include <errno.h>
+#include <cassert>
+#include <cerrno>
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
 #endif
 #ifndef _WIN32
-#include <inttypes.h>
+#include <cinttypes>
 #endif
-#include <limits.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <climits>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #ifdef _MSC_VER
 #include <stdint.h>
 #endif
@@ -624,8 +624,8 @@ static synode_no add_event_horizon(synode_no s) {
    Set node group
 */
 void set_group(uint32_t id) {
-  IFDBG(D_NONE, FN; STRLIT("changing group id of global variables ");
-        NDBG((unsigned long)id, lu););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("changing group id of global variables ");
+             NDBG((unsigned long)id, lu););
   /*	set_group_id(id); */
   current_message.group_id = id;
   executed_msg.group_id = id;
@@ -680,7 +680,7 @@ synode_no incr_synode(synode_no synode) {
     ret.node = 0;
     ret.msgno++;
   }
-  /* 	IFDBG(D_NONE, FN; SYCEXP(synode); SYCEXP(ret)); */
+  /* 	XCOM_IFDBG(D_NONE, FN; SYCEXP(synode); SYCEXP(ret)); */
   return ret; /* Change this if we change message number type */
 }
 
@@ -697,7 +697,7 @@ synode_no decr_synode(synode_no synode) {
 #endif
 
 static void skip_value(pax_msg *p) {
-  IFDBG(D_NONE, FN; SYCEXP(p->synode));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(p->synode));
   p->op = learn_op;
   p->msg_type = no_op;
 }
@@ -722,16 +722,16 @@ static int ignoresig(int) { return 0; }
 #endif
 
 static int recently_active(pax_machine *p) {
-  IFDBG(D_NONE, FN; SYCEXP(p->synode); STRLIT(" op "); PTREXP(p);
-        STRLIT(p->learner.msg ? pax_op_to_str(p->learner.msg->op) : "NULL");
-        NDBG(p->last_modified, f); NDBG(task_now(), f));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(p->synode); STRLIT(" op "); PTREXP(p); STRLIT(
+                 p->learner.msg ? pax_op_to_str(p->learner.msg->op) : "NULL");
+             NDBG(p->last_modified, f); NDBG(task_now(), f));
   return p->last_modified != 0.0 &&
          (p->last_modified + BUILD_TIMEOUT + median_time()) > task_now();
 }
 
 static inline int finished(pax_machine *p) {
-  IFDBG(D_NONE, FN; SYCEXP(p->synode); STRLIT(" op "); PTREXP(p);
-        STRLIT(p->learner.msg ? pax_op_to_str(p->learner.msg->op) : "NULL"););
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(p->synode); STRLIT(" op "); PTREXP(p); STRLIT(
+                 p->learner.msg ? pax_op_to_str(p->learner.msg->op) : "NULL"););
   return p->learner.msg && (p->learner.msg->op == learn_op ||
                             p->learner.msg->op == tiny_learn_op);
 }
@@ -739,14 +739,16 @@ static inline int finished(pax_machine *p) {
 int pm_finished(pax_machine *p) { return finished(p); }
 
 static inline int accepted(pax_machine *p) {
-  IFDBG(D_NONE, FN; SYCEXP(p->synode); STRLIT(" op "); PTREXP(p);
-        STRLIT(p->acceptor.msg ? pax_op_to_str(p->acceptor.msg->op) : "NULL"););
+  XCOM_IFDBG(
+      D_NONE, FN; SYCEXP(p->synode); STRLIT(" op "); PTREXP(p);
+      STRLIT(p->acceptor.msg ? pax_op_to_str(p->acceptor.msg->op) : "NULL"););
   return p->acceptor.msg && p->acceptor.msg->op != initial_op;
 }
 
 static inline int accepted_noop(pax_machine *p) {
-  IFDBG(D_NONE, FN; SYCEXP(p->synode); STRLIT(" op "); PTREXP(p);
-        STRLIT(p->acceptor.msg ? pax_op_to_str(p->acceptor.msg->op) : "NULL"););
+  XCOM_IFDBG(
+      D_NONE, FN; SYCEXP(p->synode); STRLIT(" op "); PTREXP(p);
+      STRLIT(p->acceptor.msg ? pax_op_to_str(p->acceptor.msg->op) : "NULL"););
   return accepted(p) && p->acceptor.msg->msg_type == no_op;
 }
 
@@ -788,7 +790,8 @@ static inline int majority(bit_set const *nodeset, site_def const *s, int all,
 #endif
   node_no max = max_check(s);
 
-  /* IFDBG(D_NONE, FN; NDBG(max,lu); NDBG(all,d); NDBG(delay,d); NDBG(force,d));
+  /* XCOM_IFDBG(D_NONE, FN; NDBG(max,lu); NDBG(all,d); NDBG(delay,d);
+   * NDBG(force,d));
    */
 
   /* Count nodes that has answered */
@@ -819,8 +822,8 @@ static inline int majority(bit_set const *nodeset, site_def const *s, int all,
      answer. */
 
   if (force) {
-    IFDBG(D_NONE, FN; STRLIT("force majority"); NDBG(ok, u); NDBG(max, u);
-          NDBG(get_maxnodes(forced_config), u));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("force majority"); NDBG(ok, u); NDBG(max, u);
+               NDBG(get_maxnodes(forced_config), u));
     return ok == get_maxnodes(forced_config);
   } else {
 /* Have now seen answer from all live nodes */
@@ -831,7 +834,7 @@ static inline int majority(bit_set const *nodeset, site_def const *s, int all,
 #else
     retval = all ? ok == max : ok > max / 2 || (ARBITRATOR_HACK && (2 == max));
 #endif
-    /* 	IFDBG(D_NONE, FN; NDBG(max,lu); NDBG(all,d); NDBG(delay,d);
+    /* 	XCOM_IFDBG(D_NONE, FN; NDBG(max,lu); NDBG(all,d); NDBG(delay,d);
      * NDBG(retval,d)); */
     return retval;
   }
@@ -847,7 +850,7 @@ static int prep_majority(site_def const *site, pax_machine const *p) {
   assert(p);
   assert(p->proposer.prep_nodeset);
   assert(p->proposer.msg);
-  /* IFDBG(D_NONE, FN; BALCEXP(p->proposer.bal)); */
+  /* XCOM_IFDBG(D_NONE, FN; BALCEXP(p->proposer.bal)); */
   ok = majority(p->proposer.prep_nodeset, site, IS_CONS_ALL(p),
                 p->proposer.bal.cnt <= 1,
                 p->proposer.msg->force_delivery || p->force_delivery);
@@ -861,7 +864,7 @@ static int prop_majority(site_def const *site, pax_machine const *p) {
   assert(p);
   assert(p->proposer.prop_nodeset);
   assert(p->proposer.msg);
-  /* IFDBG(D_NONE, FN; BALCEXP(p->proposer.bal)); */
+  /* XCOM_IFDBG(D_NONE, FN; BALCEXP(p->proposer.bal)); */
   ok = majority(p->proposer.prop_nodeset, site, IS_CONS_ALL(p),
                 p->proposer.bal.cnt <= 1,
                 p->proposer.msg->force_delivery || p->force_delivery);
@@ -890,7 +893,7 @@ static synode_no last_delivered_msg = NULL_SYNODE;
 synode_no get_last_delivered_msg() { return last_delivered_msg; }
 
 void init_xcom_base() {
-  IFDBG(D_NONE, FN);
+  XCOM_IFDBG(D_NONE, FN);
   xcom_shutdown = 0;
   current_message = null_synode;
   executed_msg = null_synode;
@@ -914,11 +917,11 @@ void init_xcom_base() {
 
   /** Reset lsn */
   initialize_lsn(0);
-  IFDBG(D_NONE, FN);
+  XCOM_IFDBG(D_NONE, FN);
 }
 
 static void init_tasks() {
-  IFDBG(D_NONE, FN);
+  XCOM_IFDBG(D_NONE, FN);
   set_task(&boot, nullptr);
   set_task(&net_boot, nullptr);
   set_task(&net_recover, nullptr);
@@ -930,7 +933,7 @@ static void init_tasks() {
   set_task(&alive_t, nullptr);
   set_task(&sweeper, nullptr);
   set_task(&cache_task, nullptr);
-  IFDBG(D_NONE, FN);
+  XCOM_IFDBG(D_NONE, FN);
 }
 
 /* Initialize the xcom thread */
@@ -957,7 +960,7 @@ void xcom_thread_init() {
 /* Empty the proposer input queue */
 static void empty_prop_input_queue() {
   empty_msg_channel(&prop_input_queue);
-  IFDBG(D_NONE, FN; STRLIT("prop_input_queue empty"));
+  XCOM_IFDBG(D_NONE, FN; STRLIT("prop_input_queue empty"));
 }
 
 static void empty_synode_number_pool() {
@@ -968,18 +971,18 @@ static void empty_synode_number_pool() {
 
 /* De-initialize the xcom thread */
 void xcom_thread_deinit() {
-  IFDBG(D_BUG, FN; STRLIT("Empty proposer input queue"));
+  XCOM_IFDBG(D_BUG, FN; STRLIT("Empty proposer input queue"));
   empty_prop_input_queue();
-  IFDBG(D_BUG, FN; STRLIT("Empty synode number pool"));
+  XCOM_IFDBG(D_BUG, FN; STRLIT("Empty synode number pool"));
   empty_synode_number_pool();
-  IFDBG(D_BUG, FN; STRLIT("Empty link free list"));
+  XCOM_IFDBG(D_BUG, FN; STRLIT("Empty link free list"));
   empty_link_free_list();
-  IFDBG(D_BUG, FN; STRLIT("De-initialize cache"));
+  XCOM_IFDBG(D_BUG, FN; STRLIT("De-initialize cache"));
   deinit_cache();
   garbage_collect_servers();
-  IFDBG(D_BUG, FN; STRLIT("De-initialize network cache"));
+  XCOM_IFDBG(D_BUG, FN; STRLIT("De-initialize network cache"));
   deinit_network_cache();
-  IFDBG(D_BUG, FN; STRLIT("De-initialize xcom_interface"));
+  XCOM_IFDBG(D_BUG, FN; STRLIT("De-initialize xcom_interface"));
   deinit_xcom_interface();
 }
 
@@ -1054,7 +1057,7 @@ static void dbg_proposers() {
 #endif
 
 static void set_proposer_startpoint() {
-  IFDBG(D_NONE, FN; STRLIT("changing current message"));
+  XCOM_IFDBG(D_NONE, FN; STRLIT("changing current message"));
   if (synode_gt(max_synode, get_current_message())) {
     if (max_synode.msgno <= 1)
       set_current_message(first_free_synode_local(max_synode));
@@ -1370,7 +1373,7 @@ int local_server(task_arg arg) {
         /* purecov: end */
       } else if (ep->nr_read < 0) {
         /* purecov: begin inspected */
-        IFDBG(D_NONE, FN; NDBG64(ep->nr_read));
+        XCOM_IFDBG(D_NONE, FN; NDBG64(ep->nr_read));
         G_WARNING(
             "local_server: error reading from the signalling connection?");
         ep->signaling_connection_error = true;
@@ -1429,8 +1432,8 @@ int local_server(task_arg arg) {
     }
   }
   FINALLY
-  IFDBG(D_BUG, FN; STRLIT(" shutdown "); NDBG(ep->rfd.fd, d);
-        NDBG(task_now(), f));
+  XCOM_IFDBG(D_BUG, FN; STRLIT(" shutdown "); NDBG(ep->rfd.fd, d);
+             NDBG(task_now(), f));
   /* Close the signalling connection. */
   if (!ep->signaling_connection_error) {
     if (input_signal_connection_pipe != nullptr &&
@@ -1445,7 +1448,7 @@ int local_server(task_arg arg) {
   }
 
   unchecked_replace_pax_msg(&ep->request_pax_msg, nullptr);
-  IFDBG(D_NONE, FN; NDBG(xcom_shutdown, d));
+  XCOM_IFDBG(D_NONE, FN; NDBG(xcom_shutdown, d));
   TASK_END;
 }
 
@@ -1459,7 +1462,7 @@ static int paxos_timer_task(task_arg arg [[maybe_unused]]);
 int xcom_taskmain2(xcom_port listen_port) {
   init_xcom_transport(listen_port);
 
-  IFDBG(D_BUG, FN; STRLIT("enter taskmain"));
+  XCOM_IFDBG(D_BUG, FN; STRLIT("enter taskmain"));
   ignoresig(SIGPIPE);
 
   {
@@ -1473,9 +1476,9 @@ int xcom_taskmain2(xcom_port listen_port) {
         net_manager.start_active_network_provider();
     if (error_starting_network_provider) {
       /* purecov: begin inspected */
-      g_critical("Unable to start %s Network Provider",
-                 Communication_stack_to_string::to_string(
-                     net_manager.get_running_protocol()));
+      G_FATAL("Unable to start %s Network Provider",
+              Communication_stack_to_string::to_string(
+                  net_manager.get_running_protocol()));
       if (xcom_comms_cb) {
         xcom_comms_cb(XCOM_COMMS_ERROR);
       }
@@ -1493,7 +1496,7 @@ int xcom_taskmain2(xcom_port listen_port) {
       {
         if (pipe(pipe_signal_connections) == -1) {
           /* purecov: begin inspected */
-          g_critical("Unable to start local signaling mechanism");
+          G_FATAL("Unable to start local signaling mechanism");
           if (xcom_comms_cb) {
             xcom_comms_cb(XCOM_COMMS_ERROR);
           }
@@ -1529,7 +1532,7 @@ int xcom_taskmain2(xcom_port listen_port) {
       xcom_comms_cb(XCOM_COMMS_OK);
     }
 
-    IFDBG(D_NONE, FN; STRLIT("Creating tasks"));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Creating tasks"));
 
     task_new(incoming_connection_task, int_arg(tcp_fd.val), "tcp_server",
              XCOM_THREAD_DEBUG);
@@ -1541,7 +1544,8 @@ int xcom_taskmain2(xcom_port listen_port) {
 
     init_time_queue();
     task_new(paxos_timer_task, null_arg, "paxos_timer_task", XCOM_THREAD_DEBUG);
-    IFDBG(D_BUG, FN; STRLIT("XCOM is listening on "); NPUT(listen_port, d));
+    XCOM_IFDBG(D_BUG, FN; STRLIT("XCOM is listening on ");
+               NPUT(listen_port, d));
   }
 
 #ifdef XCOM_STANDALONE
@@ -1561,8 +1565,8 @@ cleanup:
 
   xcom_thread_deinit();
 
-  IFDBG(D_BUG, FN; STRLIT(" exit "); NDBG(xcom_dbg_stack_top, d);
-        NDBG((unsigned)xcom_debug_mask, x));
+  XCOM_IFDBG(D_BUG, FN; STRLIT(" exit "); NDBG(xcom_dbg_stack_top, d);
+             NDBG((unsigned)xcom_debug_mask, x));
   xcom_debug_mask = 0;
   xcom_dbg_stack_top = 0;
   if (input_signal_connection_pipe != nullptr) {
@@ -1616,8 +1620,9 @@ static pax_msg *create_read(site_def const *site, pax_msg *p) {
 
 static int skip_msg(pax_msg *p) {
   prepare(p, skip_op);
-  IFDBG(D_NONE, FN; STRLIT("skipping message "); SYCEXP(p->synode));
+  XCOM_IFDBG(D_NONE, FN; STRLIT("skipping message "); SYCEXP(p->synode));
   p->msg_type = no_op;
+  cfg_app_get_storage_statistics()->add_empty_proposal_round();
   return send_to_all(p, "skip_msg");
 }
 
@@ -1626,7 +1631,7 @@ static void brand_app_data(pax_msg *p) {
   while (a) {
     a->app_key = p->synode;
     a->group_id = p->synode.group_id;
-    IFDBG(D_NONE, FN; PTREXP(a); SYCEXP(p->synode); SYCEXP(a->app_key));
+    XCOM_IFDBG(D_NONE, FN; PTREXP(a); SYCEXP(p->synode); SYCEXP(a->app_key));
     a = a->next;
   }
 }
@@ -1677,7 +1682,7 @@ static void init_learn_msg(pax_msg *p) {
 }
 
 static int send_learn_msg(site_def const *site, pax_msg *p) {
-  IFDBG(D_NONE, FN; dbg_bitset(p->receivers, get_maxnodes(site)););
+  XCOM_IFDBG(D_NONE, FN; dbg_bitset(p->receivers, get_maxnodes(site)););
   return send_to_all_site(site, p, "learn_msg");
 }
 /* purecov: end */
@@ -1703,8 +1708,8 @@ static int send_tiny_learn_msg(site_def const *site, pax_msg *p) {
 
 void prepare_push_3p(site_def const *site, pax_machine *p, pax_msg *msg,
                      synode_no msgno, pax_msg_type msg_type) {
-  IFDBG(D_NONE, FN; SYCEXP(msgno); NDBG(p->proposer.bal.cnt, d);
-        NDBG(p->acceptor.promise.cnt, d));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(msgno); NDBG(p->proposer.bal.cnt, d);
+             NDBG(p->acceptor.promise.cnt, d));
   BIT_ZERO(p->proposer.prep_nodeset);
   p->proposer.bal.node = get_nodeno(site);
   {
@@ -1721,7 +1726,7 @@ void prepare_push_2p(site_def const *site, pax_machine *p) {
   assert(p->proposer.msg);
 
   BIT_ZERO(p->proposer.prop_nodeset);
-  IFDBG(D_NONE, FN; SYCEXP(p->synode));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(p->synode));
   p->proposer.bal.cnt = 0;
   p->proposer.bal.node = get_nodeno(site);
   p->proposer.msg->proposal = p->proposer.bal;
@@ -1747,8 +1752,8 @@ static void push_msg_3p(site_def const *site, pax_machine *p, pax_msg *msg,
   prepare_push_3p(site, p, msg, msgno, msg_type);
   assert(p->proposer.msg);
   prepare_msg(msg);
-  IFDBG(D_NONE, FN; BALCEXP(msg->proposal); SYCEXP(msgno); STRLIT(" op ");
-        STRLIT(pax_op_to_str(msg->op)));
+  XCOM_IFDBG(D_NONE, FN; BALCEXP(msg->proposal); SYCEXP(msgno); STRLIT(" op ");
+             STRLIT(pax_op_to_str(msg->op)));
 }
 
 /* Brand client message with unique ID */
@@ -1758,12 +1763,12 @@ static void brand_client_msg(pax_msg *msg, synode_no msgno) {
 }
 
 void xcom_send(app_data_ptr a, pax_msg *msg) {
-  IFDBG(D_NONE, FN; PTREXP(a); SYCEXP(a->app_key); SYCEXP(msg->synode));
+  XCOM_IFDBG(D_NONE, FN; PTREXP(a); SYCEXP(a->app_key); SYCEXP(msg->synode));
   msg->a = a;
   msg->op = client_msg;
   {
     msg_link *link = msg_link_new(msg, VOID_NODE_NO);
-    IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_pax_msg(msg)));
+    XCOM_IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_pax_msg(msg)));
     channel_put(&prop_input_queue, &link->l);
   }
 }
@@ -1867,17 +1872,17 @@ static void dump_xcom_node_names(site_def const *site) {
 #endif
 
 void site_install_action(site_def *site, cargo_type operation) {
-  IFDBG(D_NONE, FN; NDBG(get_nodeno(get_site_def()), u));
+  XCOM_IFDBG(D_NONE, FN; NDBG(get_nodeno(get_site_def()), u));
   assert(site->event_horizon);
   if (group_mismatch(site->start, max_synode) ||
       synode_gt(site->start, max_synode))
     set_max_synode(site->start);
   site->nodeno = xcom_find_node_index(&site->nodes);
   push_site_def(site);
-  IFDBG(D_NONE, dump_xcom_node_names(site));
-  IFDBG(D_BUG, FN; SYCEXP(site->start); SYCEXP(site->boot_key);
-        NUMEXP(site->max_active_leaders));
-  IFDBG(D_BUG, FN; COPY_AND_FREE_GOUT(dbg_site_def(site)));
+  XCOM_IFDBG(D_NONE, dump_xcom_node_names(site));
+  XCOM_IFDBG(D_BUG, FN; SYCEXP(site->start); SYCEXP(site->boot_key);
+             NUMEXP(site->max_active_leaders));
+  XCOM_IFDBG(D_BUG, FN; COPY_AND_FREE_GOUT(dbg_site_def(site)));
   set_group(get_group_id(site));
   if (get_maxnodes(get_site_def())) {
     update_servers(site, operation);
@@ -1889,10 +1894,10 @@ void site_install_action(site_def *site, cargo_type operation) {
       ", configured event horizon=%" PRIu32 ", my node identifier is %u",
       SY_MEM(site->start), SY_MEM(site->boot_key), site->event_horizon,
       get_nodeno(site));
-  IFDBG(D_NONE, FN; NDBG(get_nodeno(site), u));
-  IFDBG(D_NONE, FN; SYCEXP(site->start); SYCEXP(site->boot_key);
-        NDBG(site->install_time, f));
-  IFDBG(D_NONE, FN; NDBG(get_nodeno(site), u));
+  XCOM_IFDBG(D_NONE, FN; NDBG(get_nodeno(site), u));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(site->start); SYCEXP(site->boot_key);
+             NDBG(site->install_time, f));
+  XCOM_IFDBG(D_NONE, FN; NDBG(get_nodeno(site), u));
   ADD_DBG(
       D_BASE, add_event(EVENT_DUMP_PAD, string_arg("nodeno"));
       add_event(EVENT_DUMP_PAD, uint_arg(get_nodeno(site)));
@@ -1936,7 +1941,7 @@ static bool leaders_set_by_client(site_def const *site) {
 
 static site_def *create_site_def_with_start(app_data_ptr a, synode_no start) {
   site_def *site = new_site_def();
-  IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(&a->body.app_u_u.nodes)););
+  XCOM_IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(&a->body.app_u_u.nodes)););
   init_site_def(a->body.app_u_u.nodes.node_list_len,
                 a->body.app_u_u.nodes.node_list_val, site);
   site->start = start;
@@ -1989,7 +1994,7 @@ site_def *install_node_group(app_data_ptr a) {
 
 void set_max_synode(synode_no synode) {
   max_synode = synode; /* Track max synode number */
-  IFDBG(D_BASE, FN; STRLIT("new "); SYCEXP(max_synode));
+  XCOM_IFDBG(D_BASE, FN; STRLIT("new "); SYCEXP(max_synode));
   activate_sweeper();
 }
 
@@ -2003,9 +2008,9 @@ static int is_busy(synode_no s) {
 }
 
 bool_t match_my_msg(pax_msg *learned, pax_msg *mine) {
-  IFDBG(D_NONE, FN; PTREXP(learned->a);
-        if (learned->a) SYCEXP(learned->a->unique_id); PTREXP(mine->a);
-        if (mine->a) SYCEXP(mine->a->unique_id););
+  XCOM_IFDBG(D_NONE, FN; PTREXP(learned->a);
+             if (learned->a) SYCEXP(learned->a->unique_id); PTREXP(mine->a);
+             if (mine->a) SYCEXP(mine->a->unique_id););
   if (learned->a && mine->a) { /* Both have app data, see if data is mine */
     return synode_eq(learned->a->unique_id, mine->a->unique_id);
   } else if (!(learned->a || mine->a)) { /* None have app data, anything goes */
@@ -2034,7 +2039,7 @@ static uint64_t assign_lsn() {
     initialize_lsn(max_synode.msgno);
   }
   lsn++;
-  IFDBG(D_EXEC, NDBG64(lsn));
+  XCOM_IFDBG(D_EXEC, NDBG64(lsn));
   return lsn;
 }
 
@@ -2151,10 +2156,10 @@ static inline int too_far(synode_no s) {
   return s.msgno >= threshold;
 }
 
-#define GOTO(x)                                 \
-  {                                             \
-    IFDBG(D_NONE, STRLIT("goto "); STRLIT(#x)); \
-    goto x;                                     \
+#define GOTO(x)                                      \
+  {                                                  \
+    XCOM_IFDBG(D_NONE, STRLIT("goto "); STRLIT(#x)); \
+    goto x;                                          \
   }
 
 static inline int is_view(cargo_type x) { return x == view_msg; }
@@ -2225,8 +2230,8 @@ static node_no remote_synode_allocator(site_def *site, app_data const &a) {
                      task_now())) {  // Found leader, send request
       pax_msg *p =
           pax_msg_new(current_message, site);  // Message number does not matter
-      IFDBG(D_CONS, FN; STRLIT("sending request "); NUMEXP(i);
-            SYCEXP(current_message));
+      XCOM_IFDBG(D_CONS, FN; STRLIT("sending request "); NUMEXP(i);
+                 SYCEXP(current_message));
       p->op = synode_request;
       send_server_msg(site, i, p);
       distributor = (i + 1) % maxnodes;
@@ -2248,8 +2253,8 @@ static node_no remote_synode_allocator(site_def *site, app_data const &a) {
         if (!too_far(synode)) {
           // We will grab this number, advance current_message
           set_current_message(incr_synode(synode));
-          IFDBG(D_CONS, FN; STRLIT("grab message "); SYCEXP(synode);
-                SYCEXP(current_message));
+          XCOM_IFDBG(D_CONS, FN; STRLIT("grab message "); SYCEXP(synode);
+                     SYCEXP(current_message));
           synode_number_pool.put(synode, synode_allocation_type::global);
         }
       }
@@ -2265,7 +2270,7 @@ static bool check_delivery_timeout(site_def *site, double start_propose,
       (start_propose + a->expiry_time) < task_now() && !enough_live_nodes(site);
   if (retval) {
     DBGOUT_ASSERT(check_lsn(a), STRLIT("NULL lsn"));
-    IFDBG(D_NONE, FN; STRLIT("timeout -> delivery_failure"));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("timeout -> delivery_failure"));
     deliver_to_app(NULL, a, delivery_failure);
   }
   return retval;
@@ -2275,6 +2280,8 @@ static bool check_delivery_timeout(site_def *site, double start_propose,
 static int reserve_synode_number(synode_allocation_type *synode_allocation,
                                  site_def **site, synode_no *msgno,
                                  int *remote_retry, app_data *a,
+                                 double start_propose [[maybe_unused]],
+                                 int self [[maybe_unused]],
                                  synode_reservation_status *ret) {
   *ret = synode_reservation_status::number_ok;  // Optimistic, will be reset if
                                                 // necessary
@@ -2283,15 +2290,18 @@ static int reserve_synode_number(synode_allocation_type *synode_allocation,
   ENV_INIT
   END_ENV_INIT
   END_ENV;
+#if TASK_DBUG_ON
+  node_no allocator_node;
+#endif
 
   TASK_BEGIN
   do {
     *synode_allocation = synode_allocation_type::todo;
-    IFDBG(D_CONS, FN; SYCEXP(current_message));
+    XCOM_IFDBG(D_CONS, FN; SYCEXP(current_message));
     *site = find_site_def_rw(current_message);
     if (is_leader(*site)) {  // Use local synode allocator
       *msgno = local_synode_allocator(current_message);
-      IFDBG(D_CONS, FN; SYCEXP(outer_ep->msgno));
+      XCOM_IFDBG(D_CONS, FN; SYCEXP(*msgno));
       *synode_allocation = synode_allocation_type::local;
     } else {  // Cannot use local, try remote
               // Get synode number from another leader
@@ -2304,15 +2314,15 @@ static int reserve_synode_number(synode_allocation_type *synode_allocation,
           TASK_RETURN(synode_reservation_status::no_nodes);
         }
 #if TASK_DBUG_ON
-        node_no allocator_node =
+        allocator_node =
 #endif
             remote_synode_allocator(get_site_def_rw(),
                                     *a);  // Send request for synode, use
                                           // latest config
         if (*remote_retry > 10) {
-          IFDBG(D_BUG, FN; NUMEXP(outer_ep->self); NUMEXP(allocator_node);
-                SYCEXP(executed_msg); SYCEXP(current_message);
-                SYCEXP(outer_ep->msgno); SYCEXP(get_site_def_rw()->start));
+          XCOM_IFDBG(D_BUG, FN; NUMEXP(self); NUMEXP(allocator_node);
+                     SYCEXP(executed_msg); SYCEXP(current_message);
+                     SYCEXP(*msgno); SYCEXP(get_site_def_rw()->start));
         }
         if (synode_number_pool.empty()) {  // Only wait if still empty
           TIMED_TASK_WAIT(&synode_number_pool.queue,
@@ -2321,27 +2331,33 @@ static int reserve_synode_number(synode_allocation_type *synode_allocation,
         (*remote_retry)++;
       }
       std::tie(*msgno, *synode_allocation) = synode_number_pool.get();
-      IFDBG(D_CONS, FN; SYCEXP(outer_ep->msgno));
+      XCOM_IFDBG(D_CONS, FN; SYCEXP(*msgno));
     }
 
-    // Update site to match synode
-    *site = proposer_site = find_site_def_rw(*msgno);
+    // Update node set get the latest state
+    if (is_view(a->body.c_t)) {
+      free_node_set(&a->body.app_u_u.present);
+      a->body.app_u_u.present = detector_node_set(*site);
+    }
 
     // Set the global current message for all number allocators
     set_current_message(incr_synode(*msgno));
 
     while (too_far(*msgno)) { /* Too far ahead of executor */
       TIMED_TASK_WAIT(&exec_wait, 0.2);
-      IFDBG(D_NONE, FN; SYCEXP(ep->msgno); TIMECEXP(ep->start_propose);
-            TIMECEXP(outer_ep->client_msg->p->a->expiry_time);
-            TIMECEXP(task_now()); NDBG(enough_live_nodes(outer_ep->site), d));
+      XCOM_IFDBG(D_NONE, FN; SYCEXP(*msgno); TIMECEXP(start_propose);
+                 TIMECEXP(a->expiry_time); TIMECEXP(task_now());
+                 NDBG(enough_live_nodes(*site), d));
 #ifdef DELIVERY_TIMEOUT
-      if (check_delivery_timeout(outer_ep->site, outer_ep->start_propose,
-                                 outer_ep->client_msg->p->a)) {
-        TASK_RETURN(delivery_timeout);
+      if (check_delivery_timeout(*site, start_propose, a)) {
+        TASK_RETURN(synode_reservation_status::delivery_timeout);
       }
 #endif
     }
+
+    // Update site to match synode
+    *site = proposer_site = find_site_def_rw(*msgno);
+
     // Filter out busy or ignored message numbers
   } while (is_busy(*msgno) || ignore_message(*msgno, *site, "proposer_task"));
   FINALLY
@@ -2389,15 +2405,15 @@ static int proposer_task(task_arg arg) {
   ep->remote_retry = 0;
   ep->synode_allocation = synode_allocation_type::todo;
   add_proposer_synode(ep->self, &ep->msgno);
-  IFDBG(D_NONE, FN; NDBG(ep->self, d); NDBG(task_now(), f));
+  XCOM_IFDBG(D_NONE, FN; NDBG(ep->self, d); NDBG(task_now(), f));
 
   while (!xcom_shutdown) { /* Loop until no more work to do */
     /* Wait for client message */
     assert(!ep->client_msg);
     CHANNEL_GET(&prop_input_queue, &ep->client_msg, msg_link);
     prop_started++;
-    IFDBG(D_NONE, FN; PTREXP(ep->client_msg->p->a); STRLIT("extracted ");
-          SYCEXP(ep->client_msg->p->a->app_key));
+    XCOM_IFDBG(D_NONE, FN; PTREXP(ep->client_msg->p->a); STRLIT("extracted ");
+               SYCEXP(ep->client_msg->p->a->app_key));
 
     /* Grab rest of messages in queue as well, but never batch config messages,
      * which need a unique number */
@@ -2445,8 +2461,8 @@ static int proposer_task(task_arg arg) {
                                             * cargo_type_to_str(ep->client_msg->p->a->body.c_t), */
         /* 	cargo_type_to_str(atmp->body.c_t)); */
         ep->client_msg->p->a = atmp;
-        IFDBG(D_NONE, FN; PTREXP(ep->client_msg->p->a); STRLIT("extracted ");
-              SYCEXP(ep->client_msg->p->a->app_key));
+        XCOM_IFDBG(D_NONE, FN; PTREXP(ep->client_msg->p->a);
+                   STRLIT("extracted "); SYCEXP(ep->client_msg->p->a->app_key));
       }
     } else {
       // Add an extra message in statistics for control messages like
@@ -2479,7 +2495,8 @@ static int proposer_task(task_arg arg) {
     /* Find a free slot */
     TASK_CALL(reserve_synode_number(&ep->synode_allocation, &ep->site,
                                     &ep->msgno, &ep->remote_retry,
-                                    ep->client_msg->p->a, &reservation_status));
+                                    ep->client_msg->p->a, ep->start_propose,
+                                    ep->self, &reservation_status));
 
     // Check result of reservation
     if (reservation_status == synode_reservation_status::no_nodes) {
@@ -2495,8 +2512,8 @@ static int proposer_task(task_arg arg) {
     if (!ep->site || get_nodeno(ep->site) == VOID_NODE_NO) {
       /* Give up */
       DBGOUT_ASSERT(check_lsn(ep->client_msg->p->a), STRLIT("NULL lsn"));
-      IFDBG(D_NONE, FN; STRLIT("delivery_failure "); SYCEXP(ep->msgno);
-            PTREXP(ep->site); NDBG(get_nodeno(ep->site), u));
+      XCOM_IFDBG(D_NONE, FN; STRLIT("delivery_failure "); SYCEXP(ep->msgno);
+                 PTREXP(ep->site); NDBG(get_nodeno(ep->site), u));
       deliver_to_app(nullptr, ep->client_msg->p->a, delivery_failure);
       GOTO(next);
     }
@@ -2508,8 +2525,8 @@ static int proposer_task(task_arg arg) {
 
       TASK_CALL(wait_for_cache(&ep->p, ep->msgno, 60));
       if (!ep->p) {
-        G_MESSAGE("Could not get a pax_machine for msgno %lu. Retrying",
-                  (unsigned long)ep->msgno.msgno);
+        G_INFO("Could not get a pax_machine for msgno %lu. Retrying",
+               (unsigned long)ep->msgno.msgno);
         goto retry_new;
       }
 
@@ -2525,7 +2542,7 @@ static int proposer_task(task_arg arg) {
       assert(ep->client_msg->p);
       replace_pax_msg(&ep->p->proposer.msg, clone_pax_msg(ep->client_msg->p));
       if (ep->p->proposer.msg == nullptr) {
-        g_critical(
+        G_FATAL(
             "Node %u has run out of memory while sending a message and "
             "will now exit.",
             get_nodeno(proposer_site));
@@ -2538,9 +2555,10 @@ static int proposer_task(task_arg arg) {
       /* Create the prepare message */
       unchecked_replace_pax_msg(&ep->prepare_msg,
                                 pax_msg_new(ep->msgno, ep->site));
-      IFDBG(D_NONE, FN; PTREXP(ep->client_msg->p->a); STRLIT("pushing ");
-            SYCEXP(ep->msgno));
-      IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_app_data(ep->prepare_msg->a)));
+      XCOM_IFDBG(D_NONE, FN; PTREXP(ep->client_msg->p->a); STRLIT("pushing ");
+                 SYCEXP(ep->msgno));
+      XCOM_IFDBG(D_NONE, FN;
+                 COPY_AND_FREE_GOUT(dbg_app_data(ep->prepare_msg->a)));
 
       /* Use 3 phase algorithm if threephase is set or we are forcing or we have
          already accepted something, which may happen if another node has timed
@@ -2566,7 +2584,8 @@ static int proposer_task(task_arg arg) {
         TIMED_TASK_WAIT(&ep->p->rv, ep->delay = wakeup_delay(ep->delay));
         if (!synode_eq(ep->msgno, ep->p->synode) ||
             ep->p->proposer.msg == nullptr) {
-          IFDBG(D_NONE, FN; STRLIT("detected stolen state machine, retry"););
+          XCOM_IFDBG(D_NONE, FN;
+                     STRLIT("detected stolen state machine, retry"););
           /* unlock_pax_machine(ep->p); */
           GOTO(retry_new); /* Need to break out of both loops,
                                                   and we have no "exit named
@@ -2578,8 +2597,8 @@ static int proposer_task(task_arg arg) {
           double now = task_now();
 #ifdef DELIVERY_TIMEOUT
           if ((ep->start_propose + ep->client_msg->p->a->expiry_time) < now) {
-            IFDBG(D_NONE, FN; STRLIT("timeout when pushing ");
-                  SYCEXP(ep->msgno); SYCEXP(executed_msg));
+            XCOM_IFDBG(D_NONE, FN; STRLIT("timeout when pushing ");
+                       SYCEXP(ep->msgno); SYCEXP(executed_msg));
             /* Proposing a no-op here is a last ditch effort to cancel the
             failed message. If any of the currently reachable nodes have
             participated in the failed consensus round, it is equivalent to
@@ -2593,7 +2612,7 @@ static int proposer_task(task_arg arg) {
             matches what we tell MCM about the outcome. */
             propose_noop(ep->msgno, ep->p);
             DBGOUT_ASSERT(check_lsn(ep->client_msg->p->a), STRLIT("NULL lsn"));
-            IFDBG(D_NONE, FN; STRLIT("timeout -> delivery_failure"));
+            XCOM_IFDBG(D_NONE, FN; STRLIT("timeout -> delivery_failure"));
             deliver_to_app(ep->p, ep->client_msg->p->a, delivery_failure);
             unlock_pax_machine(ep->p);
             GOTO(next);
@@ -2601,11 +2620,11 @@ static int proposer_task(task_arg arg) {
 #endif
           if ((ep->start_push + ep->delay) <= now) {
             PAX_MSG_SANITY_CHECK(ep->p->proposer.msg);
-            IFDBG(D_NONE, FN; STRLIT("retry pushing "); SYCEXP(ep->msgno));
-            IFDBG(D_NONE, FN;
-                  COPY_AND_FREE_GOUT(dbg_app_data(ep->prepare_msg->a)););
-            IFDBG(D_NONE, BALCEXP(ep->p->proposer.bal);
-                  BALCEXP(ep->p->acceptor.promise));
+            XCOM_IFDBG(D_NONE, FN; STRLIT("retry pushing "); SYCEXP(ep->msgno));
+            XCOM_IFDBG(D_NONE, FN;
+                       COPY_AND_FREE_GOUT(dbg_app_data(ep->prepare_msg->a)););
+            XCOM_IFDBG(D_NONE, BALCEXP(ep->p->proposer.bal);
+                       BALCEXP(ep->p->acceptor.promise));
             push_msg_3p(ep->site, ep->p, ep->prepare_msg, ep->msgno, normal);
             ep->start_push = now;
           }
@@ -2615,12 +2634,13 @@ static int proposer_task(task_arg arg) {
          but it may not be the value we tried to push,
          so loop until we have a successful push. */
       unlock_pax_machine(ep->p);
-      IFDBG(D_NONE, FN; STRLIT(" found finished message "); SYCEXP(ep->msgno);
-            STRLIT("seconds since last push ");
-            NPUT(task_now() - ep->start_push, f); STRLIT("ep->client_msg ");
-            COPY_AND_FREE_GOUT(dbg_pax_msg(ep->client_msg->p)););
-      IFDBG(D_NONE, FN; STRLIT("ep->p->learner.msg ");
-            COPY_AND_FREE_GOUT(dbg_pax_msg(ep->p->learner.msg)););
+      XCOM_IFDBG(D_NONE, FN; STRLIT(" found finished message ");
+                 SYCEXP(ep->msgno); STRLIT("seconds since last push ");
+                 NPUT(task_now() - ep->start_push, f);
+                 STRLIT("ep->client_msg ");
+                 COPY_AND_FREE_GOUT(dbg_pax_msg(ep->client_msg->p)););
+      XCOM_IFDBG(D_NONE, FN; STRLIT("ep->p->learner.msg ");
+                 COPY_AND_FREE_GOUT(dbg_pax_msg(ep->p->learner.msg)););
       if (match_my_msg(ep->p->learner.msg, ep->client_msg->p)) {
         break;
       } else
@@ -2640,20 +2660,22 @@ static int proposer_task(task_arg arg) {
     cfg_app_get_storage_statistics()->set_last_proposal_time(proposal_end_time);
     cfg_app_get_storage_statistics()->add_proposal_time(time_to_propose);
 
-    IFDBG(D_NONE, FN; STRLIT("completed ep->msgno "); SYCEXP(ep->msgno);
-          NDBG(used, f); NDBG(median_time(), f);
-          STRLIT("seconds since last push "); NDBG(now - ep->start_push, f););
-    IFDBG(D_NONE, FN; STRLIT("ep->client_msg ");
-          COPY_AND_FREE_GOUT(dbg_pax_msg(ep->client_msg->p)););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("completed ep->msgno "); SYCEXP(ep->msgno);
+               NDBG(used, f); NDBG(median_time(), f);
+               STRLIT("seconds since last push ");
+               NDBG(now - ep->start_push, f););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("ep->client_msg ");
+               COPY_AND_FREE_GOUT(dbg_pax_msg(ep->client_msg->p)););
     if (ep->p) {
-      IFDBG(D_NONE, FN; STRLIT("ep->p->learner.msg ");
-            COPY_AND_FREE_GOUT(dbg_pax_msg(ep->p->learner.msg)););
+      XCOM_IFDBG(D_NONE, FN; STRLIT("ep->p->learner.msg ");
+                 COPY_AND_FREE_GOUT(dbg_pax_msg(ep->p->learner.msg)););
     }
     msg_link_delete(&ep->client_msg);
   }
   }
   FINALLY
-  IFDBG(D_BUG, FN; STRLIT("exit "); NDBG(ep->self, d); NDBG(task_now(), f));
+  XCOM_IFDBG(D_BUG, FN; STRLIT("exit "); NDBG(ep->self, d);
+             NDBG(task_now(), f));
   if (ep->p) {
     unlock_pax_machine(ep->p);
   }
@@ -2661,8 +2683,8 @@ static int proposer_task(task_arg arg) {
   if (ep->client_msg) { /* If we get here with a client message, we have
                                              failed to deliver */
     DBGOUT_ASSERT(check_lsn(ep->client_msg->p->a), STRLIT("NULL lsn"));
-    IFDBG(D_NONE, FN;
-          STRLIT("undelivered message at task end -> delivery_failure"));
+    XCOM_IFDBG(D_NONE, FN;
+               STRLIT("undelivered message at task end -> delivery_failure"));
     deliver_to_app(ep->p, ep->client_msg->p->a, delivery_failure);
     msg_link_delete(&ep->client_msg);
   }
@@ -2721,7 +2743,7 @@ static site_def *update_site(site_def *site, node_set const *ns,
 
 void execute_msg(site_def *site, pax_machine *pma, pax_msg *p) {
   app_data_ptr a = p->a;
-  IFDBG(D_EXEC, FN; COPY_AND_FREE_GOUT(dbg_pax_msg(p)););
+  XCOM_IFDBG(D_EXEC, FN; COPY_AND_FREE_GOUT(dbg_pax_msg(p)););
   if (a) {
     switch (a->body.c_t) {
       case unified_boot_type:
@@ -2731,8 +2753,8 @@ void execute_msg(site_def *site, pax_machine *pma, pax_msg *p) {
       case remove_node_type:
         break;
       case app_type:
-        IFDBG(D_NONE, FN; STRLIT(" learner.msg ");
-              COPY_AND_FREE_GOUT(dbg_pax_msg(pma->learner.msg)););
+        XCOM_IFDBG(D_NONE, FN; STRLIT(" learner.msg ");
+                   COPY_AND_FREE_GOUT(dbg_pax_msg(pma->learner.msg)););
         /* DBGOUT_ASSERT(check_lsn(a), STRLIT("NULL lsn")); */
         deliver_to_app(pma, a, delivery_ok);
         break;
@@ -2741,8 +2763,8 @@ void execute_msg(site_def *site, pax_machine *pma, pax_msg *p) {
          * This ensures deterministic behaviour in groups with some members
          * running previous XCom instances.
          */
-        IFDBG(D_EXEC, FN; STRLIT(" global view ");
-              COPY_AND_FREE_GOUT(dbg_pax_msg(pma->learner.msg)););
+        XCOM_IFDBG(D_EXEC, FN; STRLIT(" global view ");
+                   COPY_AND_FREE_GOUT(dbg_pax_msg(pma->learner.msg)););
         if (site && site->global_node_set.node_set_len ==
                         a->body.app_u_u.present.node_set_len) {
           if ((p->force_delivery != 0) &&
@@ -2774,7 +2796,7 @@ void execute_msg(site_def *site, pax_machine *pma, pax_msg *p) {
          * create a new site to deterministically ignore the channel of leaders
          * that may be dead. */
         site_def *latest_site = get_site_def_rw();
-        IFDBG(
+        XCOM_IFDBG(
             D_EXEC, FN; PTREXP(latest_site); if (latest_site) {
               NUMEXP(latest_site->nodes.node_list_len);
               NUMEXP(latest_site->global_node_set.node_set_len);
@@ -2803,10 +2825,10 @@ void execute_msg(site_def *site, pax_machine *pma, pax_msg *p) {
           site_def *new_config = update_site(
               latest_site, &a->body.app_u_u.present, a->app_key, getstart(a));
           if (new_config) {
-            IFDBG(D_EXEC, FN; PTREXP(new_config);
-                  NUMEXP(new_config->nodes.node_list_len);
-                  NUMEXP(new_config->global_node_set.node_set_len);
-                  SYCEXP(a->app_key); SYCEXP(new_config->start););
+            XCOM_IFDBG(D_EXEC, FN; PTREXP(new_config);
+                       NUMEXP(new_config->nodes.node_list_len);
+                       NUMEXP(new_config->global_node_set.node_set_len);
+                       SYCEXP(a->app_key); SYCEXP(new_config->start););
             site_install_action(new_config, a->body.c_t);
             analyze_leaders(new_config);
           }
@@ -2816,7 +2838,7 @@ void execute_msg(site_def *site, pax_machine *pma, pax_msg *p) {
         break;
     }
   }
-  IFDBG(D_NONE, FN; SYCEXP(p->synode));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(p->synode));
 }
 
 static void read_missing_values(int n);
@@ -2831,7 +2853,7 @@ static void propose_missing_values(int n);
  * one node needs the result, they will get it all when the consensus round
  * finishes. */
 static void find_value(site_def const *site, unsigned int *wait, int n) {
-  IFDBG(D_NONE, FN; NDBG(*wait, d));
+  XCOM_IFDBG(D_NONE, FN; NDBG(*wait, d));
 
   if (get_nodeno(site) == VOID_NODE_NO) {
     read_missing_values(n);
@@ -2849,7 +2871,7 @@ static void find_value(site_def const *site, unsigned int *wait, int n) {
 }
 #else
 static void find_value(site_def const *site, unsigned int *wait, int n) {
-  IFDBG(D_NONE, FN; NDBG(*wait, d));
+  XCOM_IFDBG(D_NONE, FN; NDBG(*wait, d));
 
   if (get_nodeno(site) == VOID_NODE_NO) {
     read_missing_values(n);
@@ -2906,8 +2928,8 @@ int get_xcom_message(pax_machine **p, synode_no msgno, int n) {
       handle_skip(ep->site, *p, msg);
       break;
     }
-    IFDBG(D_NONE, FN; STRLIT(" not finished "); SYCEXP(msgno); PTREXP(*p);
-          NDBG(ep->wait, u); SYCEXP(msgno));
+    XCOM_IFDBG(D_NONE, FN; STRLIT(" not finished "); SYCEXP(msgno); PTREXP(*p);
+               NDBG(ep->wait, u); SYCEXP(msgno));
     if (get_maxnodes(ep->site) > 1 && iamthegreatest(ep->site) &&
         ep->site->global_node_set.node_set_val &&
         !ep->site->global_node_set.node_set_val[msgno.node] &&
@@ -2922,8 +2944,8 @@ int get_xcom_message(pax_machine **p, synode_no msgno, int n) {
   }
 
   FINALLY
-  IFDBG(D_NONE, FN; SYCEXP(msgno); PTREXP(*p); NDBG(ep->wait, u);
-        SYCEXP(msgno));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(msgno); PTREXP(*p); NDBG(ep->wait, u);
+             SYCEXP(msgno));
   TASK_END;
 }
 #else
@@ -2952,13 +2974,13 @@ int get_xcom_message(pax_machine **p, synode_no msgno, int n) {
       handle_skip(ep->site, *p, msg);
       break;
     }
-    IFDBG(D_NONE, FN; STRLIT("before find_value"); SYCEXP(msgno); PTREXP(*p);
-          NDBG(ep->wait, u); SYCEXP(msgno));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("before find_value"); SYCEXP(msgno);
+               PTREXP(*p); NDBG(ep->wait, u); SYCEXP(msgno));
     find_value(ep->site, &ep->wait, n);
-    IFDBG(D_NONE, FN; STRLIT("after find_value"); SYCEXP(msgno); PTREXP(*p);
-          NDBG(ep->wait, u); SYCEXP(msgno));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("after find_value"); SYCEXP(msgno);
+               PTREXP(*p); NDBG(ep->wait, u); SYCEXP(msgno));
     ep->delay = wakeup_delay(ep->delay);
-    IFDBG(D_NONE, FN; NDBG(ep->delay, f));
+    XCOM_IFDBG(D_NONE, FN; NDBG(ep->delay, f));
     TIMED_TASK_WAIT(&(*p)->rv, ep->delay);
     *p = get_cache(msgno);
     dump_debug_exec_state();
@@ -2970,11 +2992,11 @@ int get_xcom_message(pax_machine **p, synode_no msgno, int n) {
 #endif
 
 synode_no set_executed_msg(synode_no msgno) {
-  IFDBG(D_EXEC, FN; STRLIT("changing executed_msg from "); SYCEXP(executed_msg);
-        STRLIT(" to "); SYCEXP(msgno));
+  XCOM_IFDBG(D_EXEC, FN; STRLIT("changing executed_msg from ");
+             SYCEXP(executed_msg); STRLIT(" to "); SYCEXP(msgno));
   if (group_mismatch(msgno, current_message) ||
       synode_gt(msgno, current_message)) {
-    IFDBG(D_EXEC, FN; STRLIT("changing current message"));
+    XCOM_IFDBG(D_EXEC, FN; STRLIT("changing current message"));
     set_current_message(first_free_synode_local(msgno));
   }
 
@@ -2991,15 +3013,15 @@ static synode_no first_free_synode_local(synode_no msgno) {
   if (!site) {
     /* purecov: begin deadcode */
     site = get_site_def();
-    IFDBG(D_NONE, FN; PTREXP(site); SYCEXP(msgno));
+    XCOM_IFDBG(D_NONE, FN; PTREXP(site); SYCEXP(msgno));
     assert(get_group_id(site) != 0);
     /* purecov: end */
   }
   if (get_group_id(site) == 0) {
-    IFDBG(D_NONE, FN; PTREXP(site); SYCEXP(msgno));
+    XCOM_IFDBG(D_NONE, FN; PTREXP(site); SYCEXP(msgno));
     if (site) {
-      IFDBG(D_NONE, FN; SYCEXP(site->boot_key); SYCEXP(site->start);
-            COPY_AND_FREE_GOUT(dbg_site_def(site)));
+      XCOM_IFDBG(D_NONE, FN; SYCEXP(site->boot_key); SYCEXP(site->start);
+                 COPY_AND_FREE_GOUT(dbg_site_def(site)));
     }
   }
   assert(get_group_id(site) != 0);
@@ -3013,15 +3035,15 @@ static synode_no first_free_synode_local(synode_no msgno) {
 }
 
 synode_no set_current_message(synode_no msgno) {
-  IFDBG(D_PROPOSE, FN; STRLIT("changing current_message from ");
-        SYCEXP(current_message); STRLIT(" to "); SYCEXP(msgno));
+  XCOM_IFDBG(D_PROPOSE, FN; STRLIT("changing current_message from ");
+             SYCEXP(current_message); STRLIT(" to "); SYCEXP(msgno));
   return current_message = msgno;
 }
 
 static void update_max_synode(pax_msg *p);
 
 #if TASK_DBUG_ON
-static void perf_dbg(int *_n, int *_old_n, double *_old_t) [[maybe_unused]];
+[[maybe_unused]] static void perf_dbg(int *_n, int *_old_n, double *_old_t);
 static void perf_dbg(int *_n, int *_old_n, double *_old_t) {
   int n = *_n;
   int old_n = *_old_n;
@@ -3029,7 +3051,7 @@ static void perf_dbg(int *_n, int *_old_n, double *_old_t) {
 
   if (!IS_XCOM_DEBUG_WITH(XCOM_DEBUG_TRACE)) return;
 
-  IFDBG(D_NONE, FN; SYCEXP(executed_msg));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(executed_msg));
   if (!(n % 5000)) {
     GET_GOUT;
     NDBG(get_nodeno(get_site_def()), u);
@@ -3059,8 +3081,8 @@ static void perf_dbg(int *_n, int *_old_n, double *_old_t) {
 static inline int match_leader(char const *addr, leader_array const leaders) {
   u_int i;
   for (i = 0; i < leaders.leader_array_len; i++) {
-    IFDBG(D_BASE, FN; NUMEXP(i); NUMEXP(leaders.leader_array_len); STREXP(addr);
-          STREXP(leaders.leader_array_val[i].address));
+    XCOM_IFDBG(D_BASE, FN; NUMEXP(i); NUMEXP(leaders.leader_array_len);
+               STREXP(addr); STREXP(leaders.leader_array_val[i].address));
     if (strcmp(addr, leaders.leader_array_val[i].address) == 0) return 1;
   }
   return 0;
@@ -3118,7 +3140,8 @@ void analyze_leaders(site_def *site) {
   }
   free(site->dispatch_table);
 
-  IFDBG(D_BUG, FN; STRLIT("free "); PTREXP(site); PTREXP(site->dispatch_table));
+  XCOM_IFDBG(D_BUG, FN; STRLIT("free "); PTREXP(site);
+             PTREXP(site->dispatch_table));
   // Do not work as synode allocator if not active leader. ???
   if (get_nodeno(site) != VOID_NODE_NO &&
       site->active_leader[get_nodeno(site)]) {
@@ -3126,15 +3149,16 @@ void analyze_leaders(site_def *site) {
   } else {
     site->dispatch_table = secondary_dispatch_table();
   }
-  IFDBG(D_BUG, FN; STRLIT("allocate "); PTREXP(site);
-        PTREXP(site->dispatch_table));
+  XCOM_IFDBG(D_BUG, FN; STRLIT("allocate "); PTREXP(site);
+             PTREXP(site->dispatch_table));
 
   for (u_int i = 0; i < get_maxnodes(site); i++) {
-    IFDBG(D_BUG, FN; NUMEXP(i); PTREXP(site); NUMEXP(site->found_leaders);
-          NUMEXP(site->max_active_leaders); NUMEXP(alive_node(site, i));
-          SYCEXP(site->start); STREXP(site->nodes.node_list_val[i].address);
-          if (site->active_leader[i]) STRLIT(" says YES");
-          else STRLIT(" says NO"));
+    XCOM_IFDBG(D_BUG, FN; NUMEXP(i); PTREXP(site); NUMEXP(site->found_leaders);
+               NUMEXP(site->max_active_leaders); NUMEXP(alive_node(site, i));
+               SYCEXP(site->start);
+               STREXP(site->nodes.node_list_val[i].address);
+               if (site->active_leader[i]) STRLIT(" says YES");
+               else STRLIT(" says NO"));
   }
 }
 
@@ -3154,7 +3178,7 @@ int is_active_leader(node_no x, site_def *site) {
   }
 #if 0
   if (site->active_leader == NULL || x > site->nodes.node_list_len - 1)
-    IFDBG(D_BUG, FN; PTREXP(site->active_leader); NUMEXP(x);
+    XCOM_IFDBG(D_BUG, FN; PTREXP(site->active_leader); NUMEXP(x);
           NUMEXP(site->nodeno); NUMEXP(site->nodes.node_list_len););
 #endif
   return site->active_leader[x];
@@ -3179,15 +3203,15 @@ node_no found_active_leaders(site_def *site) {
 static inline int ignore_message(synode_no x, site_def *site,
                                  char const *dbg [[maybe_unused]]) {
   int retval = !is_active_leader(x.node, site);
-  IFDBG(D_BASE, STRLIT(dbg); STRLIT(" "); FN; SYCEXP(x); NUMEXP(retval));
+  XCOM_IFDBG(D_BASE, STRLIT(dbg); STRLIT(" "); FN; SYCEXP(x); NUMEXP(retval));
   return retval;
 }
 
 /* Check if this node is a leader */
 static inline bool is_leader(site_def *site) {
   bool retval = site && is_active_leader(site->nodeno, site);
-  IFDBG(D_BASE, FN; PTREXP(site); if (site) NUMEXP(site->nodeno);
-        NUMEXP(retval));
+  XCOM_IFDBG(D_BASE, FN; PTREXP(site); if (site) NUMEXP(site->nodeno);
+             NUMEXP(retval));
   return retval;
 }
 
@@ -3240,20 +3264,21 @@ static synode_no compute_delay(synode_no start,
 static void inform_removed(int index, int all) {
   site_def **sites = nullptr;
   uint32_t site_count = 0;
-  IFDBG(D_NONE, FN; NEXP(index, d));
+  XCOM_IFDBG(D_NONE, FN; NEXP(index, d));
   get_all_site_defs(&sites, &site_count);
   while (site_count > 1 && index >= 0 && (uint32_t)(index + 1) < site_count) {
     site_def *s = sites[index];
     site_def *ps = sites[index + 1];
 
     /* Compute diff and push messages */
-    IFDBG(D_NONE, FN; NDBG(index, d); PTREXP(s); if (s) SYCEXP(s->boot_key);
-          PTREXP(ps); if (ps) SYCEXP(ps->boot_key));
+    XCOM_IFDBG(D_NONE, FN; NDBG(index, d); PTREXP(s);
+               if (s) SYCEXP(s->boot_key); PTREXP(ps);
+               if (ps) SYCEXP(ps->boot_key));
 
     if (s && ps) {
       node_no i = 0;
-      IFDBG(D_NONE, FN; SYCEXP(s->boot_key); SYCEXP(s->start);
-            SYCEXP(ps->boot_key); SYCEXP(ps->start));
+      XCOM_IFDBG(D_NONE, FN; SYCEXP(s->boot_key); SYCEXP(s->start);
+                 SYCEXP(ps->boot_key); SYCEXP(ps->start));
       for (i = 0; i < ps->nodes.node_list_len; i++) { /* Loop over prev site */
         if (ps->nodeno != i &&
             !node_exists(&ps->nodes.node_list_val[i], &s->nodes)) {
@@ -3534,8 +3559,10 @@ site_def *handle_add_node(app_data_ptr a) {
 
     site_def const *old_site = get_site_def();
     site_def *site = clone_site_def(old_site);
-    IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(&a->body.app_u_u.nodes)););
-    IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(&a->body.app_u_u.nodes)););
+    XCOM_IFDBG(D_NONE, FN;
+               COPY_AND_FREE_GOUT(dbg_list(&a->body.app_u_u.nodes)););
+    XCOM_IFDBG(D_NONE, FN;
+               COPY_AND_FREE_GOUT(dbg_list(&a->body.app_u_u.nodes)););
     ADD_DBG(D_BASE, add_event(EVENT_DUMP_PAD, string_arg("a->app_key"));
             add_synode_event(a->app_key););
     assert(old_site);
@@ -3749,8 +3776,8 @@ bool_t handle_event_horizon(app_data_ptr a) {
     xcom_event_horizon new_event_horizon = a->body.app_u_u.event_horizon;
     const site_def *latest_config = get_site_def();
     site_def *new_config = clone_site_def(latest_config);
-    IFDBG(D_NONE, FN; NDBG(new_event_horizon, u));
-    IFDBG(D_NONE, FN; NDBG(new_event_horizon, u));
+    XCOM_IFDBG(D_NONE, FN; NDBG(new_event_horizon, u));
+    XCOM_IFDBG(D_NONE, FN; NDBG(new_event_horizon, u));
     ADD_DBG(D_BASE, add_event(EVENT_DUMP_PAD, string_arg("a->app_key"));
             add_synode_event(a->app_key););
     assert(get_site_def());
@@ -3764,7 +3791,7 @@ bool_t handle_event_horizon(app_data_ptr a) {
 }
 
 static bool_t handle_max_leaders(site_def *new_config, app_data_ptr a) {
-  IFDBG(D_BASE, FN; NUMEXP(a->body.app_u_u.max_leaders));
+  XCOM_IFDBG(D_BASE, FN; NUMEXP(a->body.app_u_u.max_leaders));
   assert(new_config);
   new_config->max_active_leaders = a->body.app_u_u.max_leaders;
   set_start_and_boot(new_config, a);
@@ -3796,8 +3823,8 @@ static void move_leader_array(leader_array *target, leader_array *source) {
 }
 
 static bool_t handle_set_leaders(site_def *new_config, app_data_ptr a) {
-  IFDBG(D_BASE, FN; NUMEXP(a->body.app_u_u.leaders.leader_array_len);
-        NUMEXP(new_config->max_active_leaders));
+  XCOM_IFDBG(D_BASE, FN; NUMEXP(a->body.app_u_u.leaders.leader_array_len);
+             NUMEXP(new_config->max_active_leaders));
   assert(new_config);
   /* Steal the leaders from a */
   move_leader_array(&new_config->leaders, &a->body.app_u_u.leaders);
@@ -3845,7 +3872,7 @@ bool_t handle_leaders(app_data_ptr a) {
 }
 
 void terminate_and_exit() {
-  IFDBG(D_NONE, FN;);
+  XCOM_IFDBG(D_NONE, FN;);
   ADD_DBG(D_FSM, add_event(EVENT_DUMP_PAD, string_arg("terminating"));)
   XCOM_FSM(x_fsm_terminate, int_arg(0)); /* Tell xcom to stop */
   XCOM_FSM(x_fsm_exit, int_arg(0));      /* Tell xcom to exit */
@@ -3859,7 +3886,7 @@ static inline int is_empty_site(site_def const *s) {
 site_def *handle_remove_node(app_data_ptr a) {
   site_def const *old_site = get_site_def();
   site_def *site = clone_site_def(old_site);
-  IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(&a->body.app_u_u.nodes)));
+  XCOM_IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(&a->body.app_u_u.nodes)));
   ADD_DBG(D_BASE, add_event(EVENT_DUMP_PAD, string_arg("a->app_key"));
           add_synode_event(a->app_key);
           add_event(EVENT_DUMP_PAD, string_arg("nodeno"));
@@ -4142,7 +4169,7 @@ struct execute_context {
 };
 
 static void dump_exec_state(execute_context *xc [[maybe_unused]],
-                            long dbg [[maybe_unused]]);
+                            xcom_dbg_type dbg [[maybe_unused]]);
 static int x_check_exit(execute_context *xc);
 static int x_check_execute_inform(execute_context *xc);
 static void x_fetch(execute_context *xc);
@@ -4213,10 +4240,10 @@ static void setup_exit_handling(execute_context *xc, site_def *site) {
     /* Note where we switch to execute and inform removed nodes */
     delay_until = xc->exit_synode;
 
-    IFDBG(D_EXEC, FN; SYCEXP(delay_until); SYCEXP(executed_msg);
-          SYCEXP(max_synode));
-    IFDBG(D_EXEC, FN; SYCEXP(xc->exit_synode); SYCEXP(executed_msg);
-          SYCEXP(max_synode));
+    XCOM_IFDBG(D_EXEC, FN; SYCEXP(delay_until); SYCEXP(executed_msg);
+               SYCEXP(max_synode));
+    XCOM_IFDBG(D_EXEC, FN; SYCEXP(xc->exit_synode); SYCEXP(executed_msg);
+               SYCEXP(max_synode));
 
     /* Note that we will exit */
     xc->exit_flag = 1;
@@ -4265,7 +4292,7 @@ static void x_fetch(execute_context *xc) {
         xc->state = x_terminate;
         return;
       }
-      IFDBG(D_EXEC, FN; STRLIT("new config "); SYCEXP(site->boot_key););
+      XCOM_IFDBG(D_EXEC, FN; STRLIT("new config "); SYCEXP(site->boot_key););
 
       if (xc->exit_flag == 0) {
         /* We have not yet set the exit trigger */
@@ -4273,7 +4300,8 @@ static void x_fetch(execute_context *xc) {
       }
     }
   } else {
-    IFDBG(D_EXEC, FN; SYCEXP(executed_msg); SYCEXP(get_site_def()->boot_key));
+    XCOM_IFDBG(D_EXEC, FN; SYCEXP(executed_msg);
+               SYCEXP(get_site_def()->boot_key));
   }
   /* Check for exit and increment executed_msg */
   x_check_increment_fetch(xc);
@@ -4282,8 +4310,8 @@ static void x_fetch(execute_context *xc) {
 /* Push messages to nodes that have been removed.
    Signal switch to execute when nothing left to push by returning 1 */
 static int x_check_execute_inform(execute_context *xc) {
-  IFDBG(D_EXEC, FN; SYCEXP(fifo_front()); SYCEXP(executed_msg);
-        SYCEXP(xc->exit_synode); NDBG(xc->exit_flag, d));
+  XCOM_IFDBG(D_EXEC, FN; SYCEXP(fifo_front()); SYCEXP(executed_msg);
+             SYCEXP(xc->exit_synode); NDBG(xc->exit_flag, d));
   if (fifo_empty()) {
     return 1;
   } else if (!synode_lt(executed_msg, fifo_front())) {
@@ -4341,8 +4369,9 @@ static void x_check_increment_execute(execute_context *xc) {
 static void x_execute(execute_context *xc) {
   site_def *x_site = find_site_def_rw(delivered_msg);
 
-  IFDBG(D_EXEC, FN; SYCEXP(delivered_msg); SYCEXP(delivered_msg);
-        SYCEXP(executed_msg); SYCEXP(xc->exit_synode); NDBG(xc->exit_flag, d));
+  XCOM_IFDBG(D_EXEC, FN; SYCEXP(delivered_msg); SYCEXP(delivered_msg);
+             SYCEXP(executed_msg); SYCEXP(xc->exit_synode);
+             NDBG(xc->exit_flag, d));
   if (!is_cached(delivered_msg)) {
 /* purecov: begin deadcode */
 #ifdef TASK_EVENT_TRACE
@@ -4356,9 +4385,9 @@ static void x_execute(execute_context *xc) {
     if ((xc->p)->learner.msg->msg_type != no_op) {
       /* Avoid delivery after start if we should exit */
       if (xc->exit_flag == 0 || synode_lt(delivered_msg, xc->delivery_limit)) {
-        IFDBG(D_EXEC, FN; STRLIT("executing "); SYCEXP(delivered_msg);
-              SYCEXP(executed_msg); SYCEXP(xc->delivery_limit);
-              NDBG(xc->exit_flag, d));
+        XCOM_IFDBG(D_EXEC, FN; STRLIT("executing "); SYCEXP(delivered_msg);
+                   SYCEXP(executed_msg); SYCEXP(xc->delivery_limit);
+                   NDBG(xc->exit_flag, d));
         last_delivered_msg = delivered_msg;
         execute_msg(find_site_def_rw(delivered_msg), xc->p, xc->p->learner.msg);
       }
@@ -4369,7 +4398,7 @@ static void x_execute(execute_context *xc) {
     garbage_collect_servers();
   }
 #if defined(TASK_DBUG_ON) && TASK_DBUG_ON
-  IFDBG(D_EXEC, perf_dbg(&xc->n, &xc->old_n, &xc->old_t));
+  XCOM_IFDBG(D_EXEC, perf_dbg(&xc->n, &xc->old_n, &xc->old_t));
 #endif
   /* Check for exit and increment delivered_msg */
   x_check_increment_execute(xc);
@@ -4378,14 +4407,14 @@ static void x_execute(execute_context *xc) {
 static execute_context *debug_xc;
 
 static void dump_exec_state(execute_context *xc [[maybe_unused]],
-                            long dbg [[maybe_unused]]) {
-  IFDBG(dbg, FN; SYCEXP(executed_msg); SYCEXP(delivered_msg);
-        SYCEXP(max_synode); SYCEXP(last_delivered_msg); NDBG(delay_fifo.n, d);
-        NDBG(delay_fifo.front, d); NDBG(delay_fifo.rear, d);
-        SYCEXP(fifo_front()); SYCEXP(xc->exit_synode);
-        SYCEXP(xc->delivery_limit); NDBG(xc->exit_flag, d);
-        NDBG(xc->inform_index, d); NDBG(prop_started, d);
-        NDBG(prop_finished, d););
+                            xcom_dbg_type dbg [[maybe_unused]]) {
+  XCOM_IFDBG(dbg, FN; SYCEXP(executed_msg); SYCEXP(delivered_msg);
+             SYCEXP(max_synode); SYCEXP(last_delivered_msg);
+             NDBG(delay_fifo.n, d); NDBG(delay_fifo.front, d);
+             NDBG(delay_fifo.rear, d); SYCEXP(fifo_front());
+             SYCEXP(xc->exit_synode); SYCEXP(xc->delivery_limit);
+             NDBG(xc->exit_flag, d); NDBG(xc->inform_index, d);
+             NDBG(prop_started, d); NDBG(prop_finished, d););
 }
 
 static void dump_debug_exec_state() {
@@ -4405,7 +4434,7 @@ static int executor_task(task_arg arg [[maybe_unused]]) {
   END_ENV_INIT
   END_ENV;
   /* xcom_debug_mask = D_BUG; */
-  IFDBG(D_EXEC, FN; NDBG(stack->sp->state, d); SYCEXP(executed_msg););
+  XCOM_IFDBG(D_EXEC, FN; NDBG(stack->sp->state, d); SYCEXP(executed_msg););
   TASK_BEGIN
   ep->xc.p = nullptr;
   ep->xc.n = 0;
@@ -4432,16 +4461,18 @@ static int executor_task(task_arg arg [[maybe_unused]]) {
      new state.
   */
   while (!xcom_shutdown && ep->xc.state != nullptr) {
-    IFDBG(D_EXEC, FN; STRLIT(get_fp_name(ep->xc.state)););
+    XCOM_IFDBG(D_EXEC, FN; STRLIT(get_fp_name(ep->xc.state)););
     if (ep->xc.state == x_fetch) { /* Special case because of task macros */
       if (ignore_message(executed_msg, executor_site, "executor_task")) {
-        IFDBG(D_EXEC, FN; STRLIT("ignoring message "); SYCEXP(executed_msg));
+        XCOM_IFDBG(D_EXEC, FN; STRLIT("ignoring message ");
+                   SYCEXP(executed_msg));
         x_check_increment_fetch(&ep->xc); /* Just increment past losers */
       } else {
-        IFDBG(D_EXEC, FN; STRLIT("fetching message "); SYCEXP(executed_msg));
+        XCOM_IFDBG(D_EXEC, FN; STRLIT("fetching message ");
+                   SYCEXP(executed_msg));
         TASK_CALL(get_xcom_message(&ep->xc.p, executed_msg, FIND_MAX));
-        IFDBG(D_EXEC, FN; STRLIT("got message "); SYCEXP(ep->xc.p->synode);
-              COPY_AND_FREE_GOUT(dbg_app_data(ep->xc.p->learner.msg->a)));
+        XCOM_IFDBG(D_EXEC, FN; STRLIT("got message "); SYCEXP(ep->xc.p->synode);
+                   COPY_AND_FREE_GOUT(dbg_app_data(ep->xc.p->learner.msg->a)));
         x_fetch(&ep->xc);
       }
     } else {
@@ -4455,7 +4486,7 @@ static int executor_task(task_arg arg [[maybe_unused]]) {
   dump_exec_state(&ep->xc, D_EXEC);
 
 #ifndef NO_DELAYED_TERMINATION
-  IFDBG(D_EXEC, FN; STRLIT("delayed terminate and exit"));
+  XCOM_IFDBG(D_EXEC, FN; STRLIT("delayed terminate and exit"));
 
   /* Wait to allow messages to propagate */
   TASK_DELAY(TERMINATE_DELAY);
@@ -4466,8 +4497,8 @@ static int executor_task(task_arg arg [[maybe_unused]]) {
 
   FINALLY
   dump_exec_state(&ep->xc, D_EXEC);
-  IFDBG(D_BUG, FN; STRLIT(" shutdown "); SYCEXP(executed_msg);
-        NDBG(task_now(), f));
+  XCOM_IFDBG(D_BUG, FN; STRLIT(" shutdown "); SYCEXP(executed_msg);
+             NDBG(task_now(), f));
   TASK_END;
 }
 
@@ -4539,7 +4570,7 @@ static int sweeper_task(task_arg arg [[maybe_unused]]) {
 #endif
     ADD_DBG(D_NONE, add_event(EVENT_DUMP_PAD, string_arg("sweeper ready"));
             add_synode_event(executed_msg););
-    /*		IFDBG(D_NONE, FN; STRLIT("ready to run ");   */
+    /*		XCOM_IFDBG(D_NONE, FN; STRLIT("ready to run ");   */
     /*			SYCEXP(executed_msg); SYCEXP(max_synode);
      * SYCEXP(ep->find));
      */
@@ -4575,7 +4606,7 @@ static int sweeper_task(task_arg arg [[maybe_unused]]) {
             add_event(EVENT_DUMP_PAD, int_arg(finished(pm)));
             add_event(EVENT_DUMP_PAD, string_arg("pm->acceptor.msg"));
             add_event(EVENT_DUMP_PAD, void_arg(pm->acceptor.msg)););
-        /* IFDBG(D_NONE, FN; dbg_pax_machine(pm)); */
+        /* XCOM_IFDBG(D_NONE, FN; dbg_pax_machine(pm)); */
         if (!is_busy_machine(pm) && pm->acceptor.promise.cnt == 0 &&
             !pm->acceptor.msg && !finished(pm)) {
           ADD_DBG(
@@ -4590,7 +4621,7 @@ static int sweeper_task(task_arg arg [[maybe_unused]]) {
               !ignore_message(ep->find, config, "sweeper_task")) {
             broadcast_noop(ep->find, pm);
           }
-          IFDBG(D_NONE, FN; STRLIT("skipping "); SYCEXP(ep->find));
+          XCOM_IFDBG(D_NONE, FN; STRLIT("skipping "); SYCEXP(ep->find));
         }
       }
       ep->find = incr_msgno(ep->find);
@@ -4603,8 +4634,8 @@ static int sweeper_task(task_arg arg [[maybe_unused]]) {
     }
   }
   FINALLY
-  IFDBG(D_BUG, FN; STRLIT(" shutdown sweeper "); SYCEXP(executed_msg);
-        NDBG(task_now(), f));
+  XCOM_IFDBG(D_BUG, FN; STRLIT(" shutdown sweeper "); SYCEXP(executed_msg);
+             NDBG(task_now(), f));
   TASK_END;
 }
 
@@ -4619,7 +4650,7 @@ static double wakeup_delay(double old) {
   if (0.0 == old) {
     double m = median_time();
     double const fuzz = 5.0;
-    IFDBG(D_BUG, FN; NDBG(m, f));
+    XCOM_IFDBG(D_BUG, FN; NDBG(m, f));
     // Guard against unreasonable estimates of median consensus time
     if (m <= 0.0) m = minimum_threshold;
     if (m > maximum_threshold / fuzz) m = (maximum_threshold / fuzz) / 2.0;
@@ -4632,14 +4663,14 @@ static double wakeup_delay(double old) {
     double const low = maximum_threshold / 2.0;
     retval = low + xcom_drand48() * (maximum_threshold - low);
   }
-  IFDBG(D_BUG, FN; NDBG(retval, f));
+  XCOM_IFDBG(D_BUG, FN; NDBG(retval, f));
   return retval;
 }
 
 static site_def const *init_noop(synode_no find, pax_machine *p) {
   /* Prepare to send a noop */
   site_def const *site = find_site_def(find);
-  IFDBG(D_NONE, FN; SYCEXP(find); SYCEXP(executed_msg));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(find); SYCEXP(executed_msg));
   assert(!too_far(find));
   replace_pax_msg(&p->proposer.msg, pax_msg_new(find, site));
   assert(p->proposer.msg);
@@ -4651,7 +4682,8 @@ static void propose_noop(synode_no find, pax_machine *p) {
   site_def const *site = init_noop(find, p);
   pax_msg *clone = clone_pax_msg(p->proposer.msg);
   if (clone != nullptr) {
-    IFDBG(D_CONS, FN; SYCEXP(find));
+    XCOM_IFDBG(D_CONS, FN; SYCEXP(find));
+    cfg_app_get_storage_statistics()->add_empty_proposal_round();
     push_msg_3p(site, p, clone, find, no_op);
   } else {
     /* purecov: begin inspected */
@@ -4663,7 +4695,7 @@ static void propose_noop(synode_no find, pax_machine *p) {
 #if 0
 static void propose_noop_2p(synode_no find, pax_machine *p) {
   site_def const *site = init_noop(find, p);
-  IFDBG(D_CONS, FN; SYCEXP(find));
+  XCOM_IFDBG(D_CONS, FN; SYCEXP(find));
   push_msg_2p(site, p);
 }
 #endif
@@ -4672,7 +4704,8 @@ static void send_read(synode_no find) {
   /* Prepare to send a read_op */
   site_def const *site = find_site_def(find);
 
-  IFDBG(D_NONE, FN; NDBG(get_maxnodes(site), u); NDBG(get_nodeno(site), u););
+  XCOM_IFDBG(D_NONE, FN; NDBG(get_maxnodes(site), u);
+             NDBG(get_nodeno(site), u););
   ADD_DBG(D_CONS, add_event(EVENT_DUMP_PAD, string_arg("find"));
           add_synode_event(find); add_event(EVENT_DUMP_PAD, string_arg("site"));
           add_event(EVENT_DUMP_PAD, void_arg((void *)find_site_def_rw(find)));
@@ -4685,10 +4718,10 @@ static void send_read(synode_no find) {
       pax_msg *pm = pax_msg_new(find, site);
       ref_msg(pm);
       create_read(site, pm);
-      IFDBG(D_NONE, FN; SYCEXP(find););
+      XCOM_IFDBG(D_NONE, FN; SYCEXP(find););
 
-      IFDBG(D_NONE, FN; NDBG(get_maxnodes(site), u); NDBG(get_nodeno(site), u);
-            PTREXP(pm));
+      XCOM_IFDBG(D_NONE, FN; NDBG(get_maxnodes(site), u);
+                 NDBG(get_nodeno(site), u); PTREXP(pm));
 /* send_server_msg(site, find.node, pm); */
 #if 0
 			send_to_others(site, pm, "send_read");
@@ -4716,8 +4749,9 @@ static void send_read(synode_no find) {
 static int ok_to_propose(pax_machine *p) {
   int retval = (is_forcing_node(p) || !recently_active(p)) && !finished(p) &&
                !is_busy_machine(p);
-  IFDBG(D_NONE, FN; NDBG(p->synode.node, u); NDBG(recently_active(p), d);
-        NDBG(finished(p), d); NDBG(is_busy_machine(p), d); NDBG(retval, d));
+  XCOM_IFDBG(D_NONE, FN; NDBG(p->synode.node, u); NDBG(recently_active(p), d);
+             NDBG(finished(p), d); NDBG(is_busy_machine(p), d);
+             NDBG(retval, d));
   return retval;
 }
 
@@ -4726,7 +4760,7 @@ static void read_missing_values(int n) {
   synode_no end = max_synode;
   int i = 0;
 
-  IFDBG(D_NONE, FN; SYCEXP(find); SYCEXP(end));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(find); SYCEXP(end));
   if (synode_gt(executed_msg, max_synode) ||
       synode_eq(executed_msg, null_synode))
     return;
@@ -4740,8 +4774,9 @@ static void read_missing_values(int n) {
             add_event(EVENT_DUMP_PAD, int_arg(finished(p)));
             add_event(EVENT_DUMP_PAD, string_arg("busy "));
             add_event(EVENT_DUMP_PAD, int_arg(is_busy_machine(p))););
-    IFDBG(D_NONE, FN; SYCEXP(find); SYCEXP(end); NDBG(recently_active(p), d);
-          NDBG(finished(p), d); NDBG(is_busy_machine(p), d));
+    XCOM_IFDBG(D_NONE, FN; SYCEXP(find); SYCEXP(end);
+               NDBG(recently_active(p), d); NDBG(finished(p), d);
+               NDBG(is_busy_machine(p), d));
     if (!recently_active(p) && !finished(p) && !is_busy_machine(p)) {
       send_read(find);
     }
@@ -4755,21 +4790,21 @@ static void propose_missing_values(int n) {
   synode_no end = max_synode;
   int i = 0;
 
-  IFDBG(D_NONE, FN; NDBG(get_maxnodes(get_site_def()), u); SYCEXP(find);
-        SYCEXP(end));
+  XCOM_IFDBG(D_NONE, FN; NDBG(get_maxnodes(get_site_def()), u); SYCEXP(find);
+             SYCEXP(end));
   if (synode_gt(executed_msg, max_synode) ||
       synode_eq(executed_msg, null_synode))
     return;
 
-  IFDBG(D_NONE, FN; SYCEXP(find); SYCEXP(end));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(find); SYCEXP(end));
   i = 0;
   while (!synode_gt(find, end) && i < n && !too_far(find)) {
     pax_machine *p = force_get_cache(find);
     if (wait_forced_config) {
       force_pax_machine(p, 1);
     }
-    IFDBG(D_NONE, FN; NDBG(ok_to_propose(p), d); TIMECEXP(task_now());
-          TIMECEXP(p->last_modified); SYCEXP(find));
+    XCOM_IFDBG(D_NONE, FN; NDBG(ok_to_propose(p), d); TIMECEXP(task_now());
+               TIMECEXP(p->last_modified); SYCEXP(find));
     site_def *site = find_site_def_rw(find);
     if (get_nodeno(site) == VOID_NODE_NO) break;
     if (!ignore_message(find, site, "propose_missing_values") &&
@@ -4820,7 +4855,7 @@ bool_t safe_app_data_copy(pax_msg **target, app_data_ptr source) {
 static pax_msg *create_learn_msg_for_ignorant_node(pax_machine *p, pax_msg *pm,
                                                    synode_no synode) {
   CREATE_REPLY(pm);
-  IFDBG(D_NONE, FN; SYCEXP(synode));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(synode));
   reply->synode = synode;
   reply->proposal = p->learner.msg->proposal;
   reply->msg_type = p->learner.msg->msg_type;
@@ -4840,9 +4875,9 @@ static void teach_ignorant_node(site_def const *site, pax_machine *p,
 /* Handle incoming read */
 static void handle_read(site_def const *site, pax_machine *p,
                         linkage *reply_queue, pax_msg *pm) {
-  IFDBG(D_NONE, FN; BALCEXP(pm->proposal); BALCEXP(p->acceptor.promise);
-        if (p->acceptor.msg) BALCEXP(p->acceptor.msg->proposal);
-        STRLIT("type "); STRLIT(pax_msg_type_to_str(pm->msg_type)));
+  XCOM_IFDBG(D_NONE, FN; BALCEXP(pm->proposal); BALCEXP(p->acceptor.promise);
+             if (p->acceptor.msg) BALCEXP(p->acceptor.msg->proposal);
+             STRLIT("type "); STRLIT(pax_msg_type_to_str(pm->msg_type)));
 
   if (finished(p)) { /* We have learned a value */
     teach_ignorant_node(site, p, pm, pm->synode, reply_queue);
@@ -4856,11 +4891,11 @@ static pax_msg *create_ack_prepare_msg(pax_machine *p, pax_msg *pm,
   if (accepted(p)) { /* We have accepted a value */
     reply->proposal = p->acceptor.msg->proposal;
     reply->msg_type = p->acceptor.msg->msg_type;
-    IFDBG(D_NONE, FN; STRLIT(" already accepted value "); SYCEXP(synode));
+    XCOM_IFDBG(D_NONE, FN; STRLIT(" already accepted value "); SYCEXP(synode));
     reply->op = ack_prepare_op;
     safe_app_data_copy(&reply, p->acceptor.msg->a);
   } else {
-    IFDBG(D_NONE, FN; STRLIT(" no value synode "); SYCEXP(synode));
+    XCOM_IFDBG(D_NONE, FN; STRLIT(" no value synode "); SYCEXP(synode));
     reply->op = ack_prepare_empty_op;
   }
   return reply;
@@ -4869,14 +4904,15 @@ static pax_msg *create_ack_prepare_msg(pax_machine *p, pax_msg *pm,
 pax_msg *handle_simple_prepare(pax_machine *p, pax_msg *pm, synode_no synode) {
   pax_msg *reply = nullptr;
   if (finished(p)) { /* We have learned a value */
-    IFDBG(D_NONE, FN; SYCEXP(synode); BALCEXP(pm->proposal);
-          NDBG(finished(p), d));
+    XCOM_IFDBG(D_NONE, FN; SYCEXP(synode); BALCEXP(pm->proposal);
+               NDBG(finished(p), d));
     reply = create_learn_msg_for_ignorant_node(p, pm, synode);
   } else {
     int greater =
         gt_ballot(pm->proposal,
                   p->acceptor.promise); /* Paxos acceptor phase 1 decision */
-    IFDBG(D_NONE, FN; SYCEXP(synode); BALCEXP(pm->proposal); NDBG(greater, d));
+    XCOM_IFDBG(D_NONE, FN; SYCEXP(synode); BALCEXP(pm->proposal);
+               NDBG(greater, d));
     if (greater || noop_match(p, pm)) {
       p->last_modified = task_now();
       if (greater) {
@@ -4899,9 +4935,9 @@ static void handle_prepare(site_def const *site, pax_machine *p,
           add_ballot_event(pm->proposal);
           add_event(EVENT_DUMP_PAD, string_arg("promise"));
           add_ballot_event(p->acceptor.promise););
-  IFDBG(D_NONE, FN; BALCEXP(pm->proposal); BALCEXP(p->acceptor.promise);
-        if (p->acceptor.msg) BALCEXP(p->acceptor.msg->proposal);
-        STRLIT("type "); STRLIT(pax_msg_type_to_str(pm->msg_type)));
+  XCOM_IFDBG(D_NONE, FN; BALCEXP(pm->proposal); BALCEXP(p->acceptor.promise);
+             if (p->acceptor.msg) BALCEXP(p->acceptor.msg->proposal);
+             STRLIT("type "); STRLIT(pax_msg_type_to_str(pm->msg_type)));
 
   {
     pax_msg *reply = handle_simple_prepare(p, pm, pm->synode);
@@ -4910,8 +4946,8 @@ static void handle_prepare(site_def const *site, pax_machine *p,
 }
 
 bool_t check_propose(site_def const *site, pax_machine *p) {
-  IFDBG(D_NONE, FN; SYCEXP(p->synode);
-        COPY_AND_FREE_GOUT(dbg_machine_nodeset(p, get_maxnodes(site))););
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(p->synode);
+             COPY_AND_FREE_GOUT(dbg_machine_nodeset(p, get_maxnodes(site))););
   PAX_MSG_SANITY_CHECK(p->proposer.msg);
   {
     bool_t can_propose = FALSE;
@@ -4932,8 +4968,8 @@ static bool learn_ok(site_def const *site, pax_machine const *p) {
 }
 
 static pax_msg *check_learn(site_def const *site, pax_machine *p) {
-  IFDBG(D_NONE, FN; SYCEXP(p->synode);
-        COPY_AND_FREE_GOUT(dbg_machine_nodeset(p, get_maxnodes(site))););
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(p->synode);
+             COPY_AND_FREE_GOUT(dbg_machine_nodeset(p, get_maxnodes(site))););
   PAX_MSG_SANITY_CHECK(p->proposer.msg);
   {
     pax_msg *learn_msg = nullptr;
@@ -4967,8 +5003,8 @@ static void do_learn(site_def const *site [[maybe_unused]], pax_machine *p,
           add_event(EVENT_DUMP_PAD, string_arg("promise"));
           add_ballot_event(p->acceptor.promise););
   /* FN; SYCEXP(p->synode); SYCEXP(m->synode); STRLIT(NEWLINE); */
-  IFDBG(D_NONE, FN; SYCEXP(p->synode); SYCEXP(m->synode);
-        dbg_bitset(m->receivers, get_maxnodes(site)););
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(p->synode); SYCEXP(m->synode);
+             dbg_bitset(m->receivers, get_maxnodes(site)););
   if (m->a) m->a->chosen = TRUE;
   replace_pax_msg(&p->acceptor.msg, m);
   replace_pax_msg(&p->learner.msg, m);
@@ -5010,9 +5046,10 @@ static void handle_ack_prepare(site_def const *site, pax_machine *p,
           add_event(EVENT_DUMP_PAD, uint_arg(m->from));
           add_event(EVENT_DUMP_PAD, string_arg(pax_op_to_str(m->op))););
   assert(m);
-  IFDBG(D_NONE, FN; if (p->proposer.msg) BALCEXP(p->proposer.msg->proposal);
-        BALCEXP(p->proposer.bal); BALCEXP(m->reply_to);
-        BALCEXP(p->proposer.sent_prop); SYCEXP(m->synode));
+  XCOM_IFDBG(D_NONE, FN;
+             if (p->proposer.msg) BALCEXP(p->proposer.msg->proposal);
+             BALCEXP(p->proposer.bal); BALCEXP(m->reply_to);
+             BALCEXP(p->proposer.sent_prop); SYCEXP(m->synode));
   /*
     If the node is preparing a Noop for another node's slot, it is possible
     that the leader of the slot has since proposed a value. Hence, there is
@@ -5046,8 +5083,8 @@ pax_msg *handle_simple_accept(pax_machine *p, pax_msg *m, synode_no synode) {
   } else if (!gt_ballot(p->acceptor.promise,
                         m->proposal) || /* Paxos acceptor phase 2 decision */
              noop_match(p, m)) {
-    IFDBG(D_NONE, FN; SYCEXP(m->synode); STRLIT("accept ");
-          BALCEXP(m->proposal));
+    XCOM_IFDBG(D_NONE, FN; SYCEXP(m->synode); STRLIT("accept ");
+               BALCEXP(m->proposal));
     p->last_modified = task_now();
     replace_pax_msg(&p->acceptor.msg, m);
     reply = create_ack_accept_msg(m, synode);
@@ -5058,8 +5095,8 @@ pax_msg *handle_simple_accept(pax_machine *p, pax_msg *m, synode_no synode) {
 /* Accecpt value if promise is not greater */
 static void handle_accept(site_def const *site, pax_machine *p,
                           linkage *reply_queue, pax_msg *m) {
-  IFDBG(D_NONE, FN; BALCEXP(p->acceptor.promise); BALCEXP(m->proposal);
-        STREXP(pax_msg_type_to_str(m->msg_type)));
+  XCOM_IFDBG(D_NONE, FN; BALCEXP(p->acceptor.promise); BALCEXP(m->proposal);
+             STREXP(pax_msg_type_to_str(m->msg_type)));
   PAX_MSG_SANITY_CHECK(m);
   ADD_DBG(D_CONS, add_synode_event(p->synode);
           add_event(EVENT_DUMP_PAD, string_arg("m->from"));
@@ -5074,8 +5111,8 @@ static void handle_accept(site_def const *site, pax_machine *p,
     pax_msg *reply = handle_simple_accept(p, m, m->synode);
     if (reply != nullptr) {
       SEND_REPLY;
-      IFDBG(D_CONS, FN; STRLIT("activating sweeper on accept of ");
-            SYCEXP(m->synode));
+      XCOM_IFDBG(D_CONS, FN; STRLIT("activating sweeper on accept of ");
+                 SYCEXP(m->synode));
       activate_sweeper();
     }
   }
@@ -5100,12 +5137,12 @@ static void handle_ack_accept(site_def const *site, pax_machine *p,
           add_event(EVENT_DUMP_PAD, string_arg("m->from"));
           add_event(EVENT_DUMP_PAD, uint_arg(m->from));
           add_event(EVENT_DUMP_PAD, string_arg(pax_op_to_str(m->op))););
-  IFDBG(D_NONE, FN; SYCEXP(m->synode); BALCEXP(p->proposer.bal);
-        BALCEXP(p->proposer.sent_learn); BALCEXP(m->proposal);
-        BALCEXP(m->reply_to););
-  IFDBG(D_NONE, FN; SYCEXP(p->synode);
-        if (p->acceptor.msg) BALCEXP(p->acceptor.msg->proposal);
-        BALCEXP(p->proposer.bal); BALCEXP(m->reply_to););
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(m->synode); BALCEXP(p->proposer.bal);
+             BALCEXP(p->proposer.sent_learn); BALCEXP(m->proposal);
+             BALCEXP(m->reply_to););
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(p->synode);
+             if (p->acceptor.msg) BALCEXP(p->acceptor.msg->proposal);
+             BALCEXP(p->proposer.bal); BALCEXP(m->reply_to););
 
   {
     pax_msg *learn_msg = handle_simple_ack_accept(site, p, m);
@@ -5136,13 +5173,13 @@ void handle_tiny_learn(site_def const *site, pax_machine *pm, pax_msg *p) {
       handle_learn(site, pm, pm->acceptor.msg);
     } else {
       send_read(p->synode);
-      IFDBG(D_NONE, FN; STRLIT("tiny_learn"); SYCEXP(p->synode);
-            BALCEXP(pm->acceptor.msg->proposal); BALCEXP(p->proposal));
+      XCOM_IFDBG(D_NONE, FN; STRLIT("tiny_learn"); SYCEXP(p->synode);
+                 BALCEXP(pm->acceptor.msg->proposal); BALCEXP(p->proposal));
     }
   } else {
     send_read(p->synode);
-    IFDBG(D_NONE, FN; STRLIT("tiny_learn"); SYCEXP(p->synode);
-          BALCEXP(p->proposal));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("tiny_learn"); SYCEXP(p->synode);
+               BALCEXP(p->proposal));
   }
 }
 
@@ -5187,7 +5224,7 @@ static void force_interval(synode_no start, synode_no end, int enforcer) {
 static void start_force_config(site_def *s, int enforcer) {
   synode_no end = add_event_horizon(s->boot_key);
 
-  IFDBG(D_NONE, FN; SYCEXP(executed_msg); SYCEXP(end));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(executed_msg); SYCEXP(end));
   if (synode_gt(end, max_synode)) set_max_synode(end);
 
   free_forced_config_site_def();
@@ -5199,12 +5236,12 @@ static void start_force_config(site_def *s, int enforcer) {
 
 /* Learn this value */
 void handle_learn(site_def const *site, pax_machine *p, pax_msg *m) {
-  IFDBG(D_NONE, FN; STRLIT("proposer nodeset ");
-        dbg_bitset(p->proposer.prop_nodeset, get_maxnodes(site)););
-  IFDBG(D_NONE, FN; STRLIT("receivers ");
-        dbg_bitset(m->receivers, get_maxnodes(site)););
-  IFDBG(D_NONE, FN; NDBG(task_now(), f); SYCEXP(p->synode);
-        COPY_AND_FREE_GOUT(dbg_app_data(m->a)););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("proposer nodeset ");
+             dbg_bitset(p->proposer.prop_nodeset, get_maxnodes(site)););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("receivers ");
+             dbg_bitset(m->receivers, get_maxnodes(site)););
+  XCOM_IFDBG(D_NONE, FN; NDBG(task_now(), f); SYCEXP(p->synode);
+             COPY_AND_FREE_GOUT(dbg_app_data(m->a)););
 
   PAX_MSG_SANITY_CHECK(m);
   p->last_modified = task_now();
@@ -5213,14 +5250,14 @@ void handle_learn(site_def const *site, pax_machine *p, pax_msg *m) {
     do_learn(site, p, m);
     /* Check for special messages */
     if (m->a && m->a->body.c_t == unified_boot_type) {
-      IFDBG(D_NONE, FN; STRLIT("Got unified_boot "); SYCEXP(p->synode);
-            SYCEXP(m->synode););
+      XCOM_IFDBG(D_NONE, FN; STRLIT("Got unified_boot "); SYCEXP(p->synode);
+                 SYCEXP(m->synode););
       XCOM_FSM(x_fsm_net_boot, void_arg(m->a));
     }
     /* See if someone is forcing a new config */
     if (m->force_delivery && m->a) {
-      IFDBG(D_NONE, FN; STRLIT("Got forced config "); SYCEXP(p->synode);
-            SYCEXP(m->synode););
+      XCOM_IFDBG(D_NONE, FN; STRLIT("Got forced config "); SYCEXP(p->synode);
+                 SYCEXP(m->synode););
       /* Configure all messages from executed_msg until start of new config
          as forced messages so they will eventually be finished */
       /* Immediately install this new config */
@@ -5260,14 +5297,14 @@ void handle_learn(site_def const *site, pax_machine *p, pax_msg *m) {
 
 /* Skip this value */
 static void handle_skip(site_def const *site, pax_machine *p, pax_msg *m) {
-  /* IFDBG(D_NONE, FN;); */
-  /* IFDBG(D_NONE, FN; NDBG(task_now(),f); SYCEXP(p->msg->synode)); */
+  /* XCOM_IFDBG(D_NONE, FN;); */
+  /* XCOM_IFDBG(D_NONE, FN; NDBG(task_now(),f); SYCEXP(p->msg->synode)); */
   if (!finished(p)) {
     p->last_modified = task_now();
     skip_value(m);
     do_learn(site, p, m);
   }
-  /* IFDBG(D_NONE, FN; STRLIT("taskwakeup "); SYCEXP(p->msg->synode)); */
+  /* XCOM_IFDBG(D_NONE, FN; STRLIT("taskwakeup "); SYCEXP(p->msg->synode)); */
   task_wakeup(&p->rv);
 }
 
@@ -5293,7 +5330,7 @@ static int accept_site(site_def const *site) {
   if (site) {
     if (!mysite) {
       site_def *prev = (site_def *)find_prev_site_def(site->boot_key);
-      IFDBG(
+      XCOM_IFDBG(
           D_NONE, FN; PTREXP(site); PTREXP(mysite); PTREXP(prev);
           SYCEXP(site->boot_key); if (prev) { SYCEXP(prev->boot_key); });
       if (!prev) {
@@ -5309,8 +5346,8 @@ static int accept_site(site_def const *site) {
         return synode_gt(site->boot_key, prev->boot_key);
       }
     } else {
-      IFDBG(D_NONE, FN; PTREXP(site); PTREXP(mysite); SYCEXP(site->boot_key);
-            SYCEXP(mysite->boot_key));
+      XCOM_IFDBG(D_NONE, FN; PTREXP(site); PTREXP(mysite);
+                 SYCEXP(site->boot_key); SYCEXP(mysite->boot_key));
       if (get_group_id(site) != get_group_id(mysite)) {
         /** alive from different site should never be accepted */
         return 0;
@@ -5325,7 +5362,7 @@ static int accept_site(site_def const *site) {
     }
   }
   /** Always accept a NULL site */
-  IFDBG(D_NONE, FN; PTREXP(site));
+  XCOM_IFDBG(D_NONE, FN; PTREXP(site));
   return 1;
 }
 #endif
@@ -5481,8 +5518,8 @@ static inline void handle_alive(site_def const *site, linkage *reply_queue,
    reincarnation of this node.
    */
   if (site && pm->a && pm->a->body.c_t == xcom_boot_type) {
-    IFDBG(D_NONE, FN;
-          COPY_AND_FREE_GOUT(dbg_list(&pm->a->body.app_u_u.nodes)););
+    XCOM_IFDBG(D_NONE, FN;
+               COPY_AND_FREE_GOUT(dbg_list(&pm->a->body.app_u_u.nodes)););
 
     if (!node_exists_with_uid(&pm->a->body.app_u_u.nodes.node_list_val[0],
                               &get_site_def()->nodes))
@@ -5501,7 +5538,7 @@ static inline void handle_alive(site_def const *site, linkage *reply_queue,
         pm->from);
     SEND_REPLY;
   }
-  IFDBG(D_NONE, FN; STRLIT("sent need_boot_op"););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("sent need_boot_op"););
 }
 
 static void update_max_synode(pax_msg *p) {
@@ -5598,7 +5635,7 @@ static u_int allow_add_node(app_data_ptr a) {
   }
 
   if (add_node_unsafe_against_ipv4_old_nodes(a)) {
-    G_MESSAGE(
+    G_INFO(
         "This server is unable to join the group as the NIC used is "
         "configured "
         "with IPv6 only and there are members in the group that are unable "
@@ -5674,14 +5711,14 @@ static u_int allow_remove_node(app_data_ptr a) {
         We also cannot allow an upper-layer to remove a new incarnation
         of a node when it tries to remove an old one.
         */
-        G_MESSAGE(
+        G_INFO(
             "New incarnation found while trying to "
             "remove node %s %.*s.",
             nodes_to_change[i].address, nodes_to_change[i].uuid.data.data_len,
             nodes_to_change[i].uuid.data.data_val);
       } else {
         /* The node has already been removed, so we block the request */
-        G_MESSAGE(
+        G_INFO(
             "Node has already been removed: "
             "%s %.*s.",
             nodes_to_change[i].address, nodes_to_change[i].uuid.data.data_len,
@@ -5816,8 +5853,8 @@ static synode_no start_config = NULL_SYNODE;
 void dispatch_get_event_horizon(site_def const *site, pax_msg *p,
                                 linkage *reply_queue) {
   CREATE_REPLY(p);
-  IFDBG(D_NONE, FN; STRLIT("Got get_event_horizon from client");
-        SYCEXP(p->synode););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("Got get_event_horizon from client");
+             SYCEXP(p->synode););
   reply->op = xcom_client_reply;
   reply->cli_err = xcom_get_event_horizon(&reply->event_horizon);
   SEND_REPLY;
@@ -5842,7 +5879,8 @@ static reply_data *new_leader_info(site_def *site) {
 
 void dispatch_get_leaders(site_def *site, pax_msg *p, linkage *reply_queue) {
   CREATE_REPLY(p);
-  IFDBG(D_NONE, FN; STRLIT("Got get_leaders from client"); SYCEXP(p->synode););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("Got get_leaders from client");
+             SYCEXP(p->synode););
   reply->op = xcom_client_reply;
   reply->rd = new_leader_info(site);
   reply->cli_err = reply->rd ? REQUEST_OK : REQUEST_FAIL;
@@ -5880,8 +5918,8 @@ static void log_get_synode_app_data_failure(
 
 void dispatch_get_synode_app_data(site_def const *site, pax_msg *p,
                                   linkage *reply_queue) {
-  IFDBG(D_NONE, FN; STRLIT("Got get_synode_app_data from client");
-        SYCEXP(p->synode););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("Got get_synode_app_data from client");
+             SYCEXP(p->synode););
 
   {
     CREATE_REPLY(p);
@@ -5916,7 +5954,7 @@ static void process_client_msg(site_def const *site, pax_msg *p,
   clicnt++;
   if (p->a && (p->a->body.c_t == exit_type)) {
     /* purecov: begin deadcode */
-    IFDBG(D_NONE, FN; STRLIT("Got exit from client"); SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got exit from client"); SYCEXP(p->synode););
     bury_site(get_group_id(get_site_def()));
     ADD_DBG(D_FSM, add_event(EVENT_DUMP_PAD, string_arg("terminating"));)
     terminate_and_exit();
@@ -5926,7 +5964,7 @@ static void process_client_msg(site_def const *site, pax_msg *p,
 
   if (p->a && (p->a->body.c_t == reset_type)) {
     /* purecov: begin deadcode */
-    IFDBG(D_NONE, FN; STRLIT("Got reset from client"); SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got reset from client"); SYCEXP(p->synode););
     bury_site(get_group_id(get_site_def()));
     ADD_DBG(D_FSM, add_event(EVENT_DUMP_PAD, string_arg("terminating"));)
     XCOM_FSM(x_fsm_terminate, int_arg(0));
@@ -5935,8 +5973,8 @@ static void process_client_msg(site_def const *site, pax_msg *p,
   }
   if (p->a && (p->a->body.c_t == remove_reset_type)) {
     /* purecov: begin deadcode */
-    IFDBG(D_NONE, FN; STRLIT("Got remove_reset from client");
-          SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got remove_reset from client");
+               SYCEXP(p->synode););
     ADD_DBG(D_FSM, add_event(EVENT_DUMP_PAD, string_arg("terminating"));)
     XCOM_FSM(x_fsm_terminate, int_arg(0));
     return;
@@ -5944,8 +5982,8 @@ static void process_client_msg(site_def const *site, pax_msg *p,
   }
   if (p->a && (p->a->body.c_t == enable_arbitrator)) {
     CREATE_REPLY(p);
-    IFDBG(D_NONE, FN; STRLIT("Got enable_arbitrator from client");
-          SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got enable_arbitrator from client");
+               SYCEXP(p->synode););
     ARBITRATOR_HACK = 1;
     reply->op = xcom_client_reply;
     reply->cli_err = REQUEST_OK;
@@ -5954,8 +5992,8 @@ static void process_client_msg(site_def const *site, pax_msg *p,
   }
   if (p->a && (p->a->body.c_t == disable_arbitrator)) {
     CREATE_REPLY(p);
-    IFDBG(D_NONE, FN; STRLIT("Got disable_arbitrator from client");
-          SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got disable_arbitrator from client");
+               SYCEXP(p->synode););
     ARBITRATOR_HACK = 0;
     reply->op = xcom_client_reply;
     reply->cli_err = REQUEST_OK;
@@ -5964,8 +6002,8 @@ static void process_client_msg(site_def const *site, pax_msg *p,
   }
   if (p->a && (p->a->body.c_t == set_cache_limit)) {
     CREATE_REPLY(p);
-    IFDBG(D_NONE, FN; STRLIT("Got set_cache_limit from client");
-          SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got set_cache_limit from client");
+               SYCEXP(p->synode););
     if (the_app_xcom_cfg) {
       set_max_cache_size(p->a->body.app_u_u.cache_limit);
       reply->cli_err = REQUEST_OK;
@@ -5979,8 +6017,8 @@ static void process_client_msg(site_def const *site, pax_msg *p,
   if (p->a && (p->a->body.c_t == x_terminate_and_exit)) {
     /* purecov: begin deadcode */
     CREATE_REPLY(p);
-    IFDBG(D_NONE, FN; STRLIT("Got terminate_and_exit from client");
-          SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got terminate_and_exit from client");
+               SYCEXP(p->synode););
     reply->op = xcom_client_reply;
     reply->cli_err = REQUEST_OK;
     SEND_REPLY;
@@ -5988,7 +6026,7 @@ static void process_client_msg(site_def const *site, pax_msg *p,
       The function frees sites which is used by SEND_REPLY,
       so it should be called after SEND_REPLY.
     */
-    IFDBG(D_NONE, FN; STRLIT("terminate_and_exit"));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("terminate_and_exit"));
     ADD_DBG(D_FSM, add_event(EVENT_DUMP_PAD, string_arg("terminating"));)
     terminate_and_exit();
     return;
@@ -6022,51 +6060,56 @@ static void process_client_msg(site_def const *site, pax_msg *p,
     }
   }
   if (p->a && p->a->body.c_t == unified_boot_type) {
-    IFDBG(D_NONE, FN; STRLIT("Got unified_boot from client");
-          SYCEXP(p->synode););
-    IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(&p->a->body.app_u_u.nodes)););
-    IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got unified_boot from client");
+               SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN;
+               COPY_AND_FREE_GOUT(dbg_list(&p->a->body.app_u_u.nodes)););
+    XCOM_IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
     XCOM_FSM(x_fsm_net_boot, void_arg(p->a));
   }
   if (p->a && p->a->body.c_t == add_node_type) {
-    IFDBG(D_NONE, FN; STRLIT("Got add_node from client"); SYCEXP(p->synode););
-    IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(&p->a->body.app_u_u.nodes)););
-    IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got add_node from client");
+               SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN;
+               COPY_AND_FREE_GOUT(dbg_list(&p->a->body.app_u_u.nodes)););
+    XCOM_IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
     assert(get_site_def());
   }
   if (p->a && p->a->body.c_t == remove_node_type) {
-    IFDBG(D_NONE, FN; STRLIT("Got remove_node from client");
-          SYCEXP(p->synode););
-    IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(&p->a->body.app_u_u.nodes)););
-    IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got remove_node from client");
+               SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN;
+               COPY_AND_FREE_GOUT(dbg_list(&p->a->body.app_u_u.nodes)););
+    XCOM_IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
     assert(get_site_def());
   }
   if (p->a && p->a->body.c_t == set_event_horizon_type) {
-    IFDBG(D_NONE, FN; STRLIT("Got set_event_horizon from client");
-          SYCEXP(p->synode););
-    IFDBG(D_NONE, FN; NDBG(p->a->body.app_u_u.event_horizon, u));
-    IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got set_event_horizon from client");
+               SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN; NDBG(p->a->body.app_u_u.event_horizon, u));
+    XCOM_IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
     assert(get_site_def());
   }
   if (p->a && p->a->body.c_t == force_config_type) {
-    IFDBG(D_NONE, FN; STRLIT("Got new force config from client");
-          SYCEXP(p->synode););
-    IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(&p->a->body.app_u_u.nodes)););
-    IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got new force config from client");
+               SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN;
+               COPY_AND_FREE_GOUT(dbg_list(&p->a->body.app_u_u.nodes)););
+    XCOM_IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
     assert(get_site_def());
     XCOM_FSM(x_fsm_force_config, void_arg(p->a));
   }
   if (p->a && p->a->body.c_t == set_max_leaders) {
-    IFDBG(D_NONE, FN; STRLIT("Got set_max_leaders from client");
-          SYCEXP(p->synode););
-    IFDBG(D_NONE, FN; NDBG(p->a->body.app_u_u.max_leaders, u));
-    IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got set_max_leaders from client");
+               SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, FN; NDBG(p->a->body.app_u_u.max_leaders, u));
+    XCOM_IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
     assert(get_site_def());
   }
   if (p->a && p->a->body.c_t == set_leaders_type) {
-    IFDBG(D_NONE, FN; STRLIT("Got set_leaders_type from client");
-          SYCEXP(p->synode););
-    IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("Got set_leaders_type from client");
+               SYCEXP(p->synode););
+    XCOM_IFDBG(D_NONE, STRLIT("handle_client_msg "); NDBG(p->a->group_id, x));
     assert(get_site_def());
   }
   handle_client_msg(p);
@@ -6077,7 +6120,7 @@ static void process_prepare_op(site_def const *site, pax_msg *p,
   pax_machine *pm = get_cache(p->synode);
   assert(pm);
   if (p->force_delivery) pm->force_delivery = 1;
-  IFDBG(D_NONE, FN; dbg_pax_msg(p));
+  XCOM_IFDBG(D_NONE, FN; dbg_pax_msg(p));
 
   /*
    We can only be a productive Paxos Acceptor if we have been booted, i.e.
@@ -6127,7 +6170,7 @@ static void process_accept_op(site_def const *site, pax_msg *p,
   pax_machine *pm = get_cache(p->synode);
   assert(pm);
   if (p->force_delivery) pm->force_delivery = 1;
-  IFDBG(D_NONE, FN; dbg_pax_msg(p));
+  XCOM_IFDBG(D_NONE, FN; dbg_pax_msg(p));
 
   /*
    We can only be a productive Paxos Acceptor if we have been booted, i.e.
@@ -6185,11 +6228,13 @@ static void process_recover_learn_op(site_def const *site, pax_msg *p,
   pax_machine *pm = get_cache(p->synode);
   assert(pm);
   (void)reply_queue;
-  IFDBG(D_NONE, FN; STRLIT("recover_learn_op receive "); SYCEXP(p->synode));
+  XCOM_IFDBG(D_NONE, FN; STRLIT("recover_learn_op receive ");
+             SYCEXP(p->synode));
   if (p->force_delivery) pm->force_delivery = 1;
   update_max_synode(p);
   {
-    IFDBG(D_NONE, FN; STRLIT("recover_learn_op learn "); SYCEXP(p->synode));
+    XCOM_IFDBG(D_NONE, FN; STRLIT("recover_learn_op learn ");
+               SYCEXP(p->synode));
     p->op = learn_op;
     paxos_fsm(pm, site, paxos_learn, p);
     handle_learn(site, pm, p);
@@ -6272,10 +6317,10 @@ static void process_die_op(site_def const *site, pax_msg *p,
   */
   if (!synode_lt(p->synode, executed_msg)) {
     ADD_DBG(D_FSM, add_event(EVENT_DUMP_PAD, string_arg("terminating"));)
-    g_critical("Node %u is unable to get message {%x %" PRIu64
-               " %u}, since the group is too far "
-               "ahead. Node will now exit.",
-               get_nodeno(site), SY_MEM(p->synode));
+    G_FATAL("Node %u is unable to get message {%x %" PRIu64
+            " %u}, since the group is too far "
+            "ahead. Node will now exit.",
+            get_nodeno(site), SY_MEM(p->synode));
     terminate_and_exit();
   }
 }
@@ -6293,8 +6338,8 @@ static void process_gcs_snapshot_op(site_def const *site, pax_msg *p,
   (void)site;
   (void)reply_queue;
   /* Avoid duplicate snapshots and snapshots from zombies */
-  IFDBG(D_BASE, FN; SYCEXP(executed_msg););
-  IFDBG(D_BASE, FN; SYCEXP(start_config););
+  XCOM_IFDBG(D_BASE, FN; SYCEXP(executed_msg););
+  XCOM_IFDBG(D_BASE, FN; SYCEXP(start_config););
   if (!synode_eq(start_config, get_highest_boot_key(p->gcs_snap)) &&
       !is_dead_site(p->group_id)) {
     update_max_synode(p);
@@ -6324,7 +6369,7 @@ static void process_synode_request(site_def const *site, pax_msg *p,
 
   /* Find a free slot */
   assert(!synode_eq(current_message, null_synode));
-  IFDBG(D_CONS, FN; SYCEXP(executed_msg); SYCEXP(current_message));
+  XCOM_IFDBG(D_CONS, FN; SYCEXP(executed_msg); SYCEXP(current_message));
   site_def *tmp_site = find_site_def_rw(current_message);
   /* See if we can do anything with this message */
   if (tmp_site && get_nodeno(tmp_site) != VOID_NODE_NO && is_leader(tmp_site)) {
@@ -6344,20 +6389,20 @@ static void process_synode_request(site_def const *site, pax_msg *p,
                          "process_synode_request"))) {
       // We will grab this number, advance current_message
       set_current_message(incr_synode(msgno));
-      IFDBG(D_CONS, FN; STRLIT("sending reply "); SYCEXP(executed_msg);
-            SYCEXP(current_message); SYCEXP(msgno));
+      XCOM_IFDBG(D_CONS, FN; STRLIT("sending reply "); SYCEXP(executed_msg);
+                 SYCEXP(current_message); SYCEXP(msgno));
       CREATE_REPLY(p);
       reply->synode = msgno;
       reply->op = synode_allocated;
-      IFDBG(D_CONS, FN; SYCEXP(msgno));
+      XCOM_IFDBG(D_CONS, FN; SYCEXP(msgno));
       SEND_REPLY;
     } else {
-      IFDBG(D_CONS, FN; STRLIT("not sending reply "); SYCEXP(executed_msg);
-            SYCEXP(msgno));
+      XCOM_IFDBG(D_CONS, FN; STRLIT("not sending reply "); SYCEXP(executed_msg);
+                 SYCEXP(msgno));
     }
   } else {
-    IFDBG(D_CONS, FN; STRLIT("not leader ");
-          if (tmp_site) SYCEXP(tmp_site->start));
+    XCOM_IFDBG(D_CONS, FN; STRLIT("not leader ");
+               if (tmp_site) SYCEXP(tmp_site->start));
   }
 }
 
@@ -6368,7 +6413,7 @@ static void process_synode_allocated(site_def const *site, pax_msg *p,
   (void)p;
   (void)reply_queue;
 
-  IFDBG(D_BASE, FN; SYCEXP(p->synode));
+  XCOM_IFDBG(D_BASE, FN; SYCEXP(p->synode));
   synode_number_pool.put(p->synode, synode_allocation_type::remote);
 }
 
@@ -6432,8 +6477,8 @@ pax_msg *dispatch_op(site_def const *site, pax_msg *p, linkage *reply_queue) {
     update_delivered(dsite, p->from, p->delivered_msg);
   }
 
-  IFDBG(D_BASE, FN; STRLIT("incoming message ");
-        COPY_AND_FREE_GOUT(dbg_pax_msg(p)););
+  XCOM_IFDBG(D_BASE, FN; STRLIT("incoming message ");
+             COPY_AND_FREE_GOUT(dbg_pax_msg(p)););
   ADD_DBG(D_DISPATCH, add_synode_event(p->synode);
           add_event(EVENT_DUMP_PAD, string_arg("p->from"));
           add_event(EVENT_DUMP_PAD, uint_arg(p->from));
@@ -6454,8 +6499,8 @@ pax_msg *dispatch_op(site_def const *site, pax_msg *p, linkage *reply_queue) {
   }
 
   if (oom_abort) {
-    g_critical("Node %u has run out of memory and will now exit.",
-               get_nodeno(site));
+    G_FATAL("Node %u has run out of memory and will now exit.",
+            get_nodeno(site));
     terminate_and_exit();
   }
   return (p);
@@ -6469,16 +6514,16 @@ pax_msg *dispatch_op(site_def const *site, pax_msg *p, linkage *reply_queue) {
   msg->max_synode = get_max_synode();       \
   serialize_msg(msg, ep->rfd->x_proto, &ep->buflen, &ep->buf);
 
-#define WRITE_REPLY                                                    \
-  if (ep->buflen) {                                                    \
-    int64_t sent;                                                      \
-    IFDBG(D_TRANSPORT, FN; STRLIT("task_write "); NDBG(ep->rfd.fd, d); \
-          NDBG(ep->buflen, u));                                        \
-    TASK_CALL(task_write(ep->rfd, ep->buf, ep->buflen, &sent));        \
-    send_count[ep->p->op]++;                                           \
-    send_bytes[ep->p->op] += ep->buflen;                               \
-    X_FREE(ep->buf);                                                   \
-  }                                                                    \
+#define WRITE_REPLY                                                          \
+  if (ep->buflen) {                                                          \
+    int64_t sent;                                                            \
+    XCOM_IFDBG(D_TRANSPORT, FN; STRLIT("task_write "); NDBG(ep->rfd->fd, d); \
+               NDBG(ep->buflen, u));                                         \
+    TASK_CALL(task_write(ep->rfd, ep->buf, ep->buflen, &sent));              \
+    send_count[ep->p->op]++;                                                 \
+    send_bytes[ep->p->op] += ep->buflen;                                     \
+    X_FREE(ep->buf);                                                         \
+  }                                                                          \
   ep->buf = NULL;
 
 static inline void update_srv(server **target, server *srv) {
@@ -6663,8 +6708,8 @@ again:
     */
     update_srv(&ep->srv, get_server(ep->site, ep->p->from));
     ep->p->refcnt = 1; /* Refcnt from other end is void here */
-    IFDBG(D_NONE, FN; NDBG(ep->rfd.fd, d); NDBG(task_now(), f);
-          COPY_AND_FREE_GOUT(dbg_pax_msg(ep->p)););
+    XCOM_IFDBG(D_NONE, FN; NDBG(ep->rfd->fd, d); NDBG(task_now(), f);
+               COPY_AND_FREE_GOUT(dbg_pax_msg(ep->p)););
     receive_count[ep->p->op]++;
     receive_bytes[ep->p->op] += (uint64_t)n + MSG_HDR_SIZE;
     {
@@ -6730,13 +6775,13 @@ again:
           {
             msg_link *reply =
                 (msg_link *)(link_extract_first(&ep->reply_queue));
-            IFDBG(D_DISPATCH, FN; PTREXP(reply);
-                  COPY_AND_FREE_GOUT(dbg_linkage(&ep->reply_queue));
-                  COPY_AND_FREE_GOUT(dbg_msg_link(reply));
-                  COPY_AND_FREE_GOUT(dbg_pax_msg(reply->p)););
+            XCOM_IFDBG(D_DISPATCH, FN; PTREXP(reply);
+                       COPY_AND_FREE_GOUT(dbg_linkage(&ep->reply_queue));
+                       COPY_AND_FREE_GOUT(dbg_msg_link(reply));
+                       COPY_AND_FREE_GOUT(dbg_pax_msg(reply->p)););
             assert(reply->p);
             assert(reply->p->refcnt > 0);
-            IFDBG(D_DISPATCH, FN; STRLIT("serialize "); PTREXP(reply));
+            XCOM_IFDBG(D_DISPATCH, FN; STRLIT("serialize "); PTREXP(reply));
             SERIALIZE_REPLY(reply->p);
             msg_link_delete(&reply); /* Deallocate BEFORE potentially blocking
                                         call which will lose value of reply */
@@ -6744,26 +6789,26 @@ again:
           WRITE_REPLY;
         }
       } else {
-        IFDBG(D_EXEC, FN; STRLIT("rejecting ");
-              STRLIT(pax_op_to_str(ep->p->op)); NDBG(ep->p->from, d);
-              NDBG(ep->p->to, d); SYCEXP(ep->p->synode);
-              BALCEXP(ep->p->proposal));
+        XCOM_IFDBG(D_EXEC, FN; STRLIT("rejecting ");
+                   STRLIT(pax_op_to_str(ep->p->op)); NDBG(ep->p->from, d);
+                   NDBG(ep->p->to, d); SYCEXP(ep->p->synode);
+                   BALCEXP(ep->p->proposal));
         if (/* xcom_booted() && */ ep->behind) {
           if (/*ep->p->op == prepare_op && */ was_removed_from_cache(
               ep->p->synode)) {
-            IFDBG(D_NONE, FN; STRLIT("send_die ");
-                  STRLIT(pax_op_to_str(ep->p->op)); NDBG(ep->p->from, d);
-                  NDBG(ep->p->to, d); SYCEXP(ep->p->synode);
-                  BALCEXP(ep->p->proposal));
+            XCOM_IFDBG(D_NONE, FN; STRLIT("send_die ");
+                       STRLIT(pax_op_to_str(ep->p->op)); NDBG(ep->p->from, d);
+                       NDBG(ep->p->to, d); SYCEXP(ep->p->synode);
+                       BALCEXP(ep->p->proposal));
             if (get_maxnodes(ep->site) > 0) {
               {
                 pax_msg *np = nullptr;
                 np = pax_msg_new(ep->p->synode, ep->site);
                 np->op = die_op;
                 SERIALIZE_REPLY(np);
-                IFDBG(D_NONE, FN; STRLIT("sending die_op to node ");
-                      NDBG(np->to, d); SYCEXP(executed_msg); SYCEXP(max_synode);
-                      SYCEXP(np->synode));
+                XCOM_IFDBG(D_NONE, FN; STRLIT("sending die_op to node ");
+                           NDBG(np->to, d); SYCEXP(executed_msg);
+                           SYCEXP(max_synode); SYCEXP(np->synode));
                 delete_pax_msg(np); /* Deallocate BEFORE potentially blocking
                                    call which will lose value of np */
               }
@@ -6777,22 +6822,22 @@ again:
   }
 
   FINALLY
-  IFDBG(D_BUG, FN; STRLIT(" shutdown "); NDBG(ep->rfd.fd, d);
-        NDBG(task_now(), f));
+  XCOM_IFDBG(D_BUG, FN; STRLIT(" shutdown "); NDBG(ep->rfd->fd, d);
+             NDBG(task_now(), f));
   if (ep->reply_queue.suc && !link_empty(&ep->reply_queue))
     empty_msg_list(&ep->reply_queue);
   unchecked_replace_pax_msg(&ep->p, nullptr);
   shutdown_connection(ep->rfd);
   free(ep->rfd);
-  IFDBG(D_NONE, FN; NDBG(xcom_shutdown, d));
+  XCOM_IFDBG(D_NONE, FN; NDBG(xcom_shutdown, d));
   if (ep->buf) X_FREE(ep->buf);
   free(ep->in_buf);
 
   /* Unref srv to avoid leak */
   update_srv(&ep->srv, nullptr);
 
-  IFDBG(D_BUG, FN; STRLIT(" shutdown completed"); NDBG(ep->rfd.fd, d);
-        NDBG(task_now(), f));
+  XCOM_IFDBG(D_BUG, FN; STRLIT(" shutdown completed"); NDBG(ep->rfd->fd, d);
+             NDBG(task_now(), f));
   TASK_END;
 }
 
@@ -6821,7 +6866,7 @@ int reply_handler_task(task_arg arg) {
 
   while (!xcom_shutdown) {
     while (!is_connected(ep->s->con)) {
-      IFDBG(D_NONE, FN; STRLIT("waiting for connection"));
+      XCOM_IFDBG(D_NONE, FN; STRLIT("waiting for connection"));
       TASK_DELAY(ep->dtime);
       if (xcom_shutdown) {
         TERMINATE;
@@ -6835,11 +6880,11 @@ int reply_handler_task(task_arg arg) {
     {
       unchecked_replace_pax_msg(&ep->reply, pax_msg_new_0(null_synode));
 
-      ADD_DBG(D_NONE, add_event(EVENT_DUMP_PAD, string_arg("ep->s->con.fd"));
-              add_event(EVENT_DUMP_PAD, int_arg(ep->s->con.fd)););
+      ADD_DBG(D_NONE, add_event(EVENT_DUMP_PAD, string_arg("ep->s->con->fd"));
+              add_event(EVENT_DUMP_PAD, int_arg(ep->s->con->fd)););
       TASK_CALL(read_msg(ep->s->con, ep->reply, ep->s, &n));
-      ADD_DBG(D_NONE, add_event(EVENT_DUMP_PAD, string_arg("ep->s->con.fd"));
-              add_event(EVENT_DUMP_PAD, int_arg(ep->s->con.fd)););
+      ADD_DBG(D_NONE, add_event(EVENT_DUMP_PAD, string_arg("ep->s->con->fd"));
+              add_event(EVENT_DUMP_PAD, int_arg(ep->s->con->fd)););
       ep->reply->refcnt = 1; /* Refcnt from other end is void here */
       if (n <= 0) {
         shutdown_connection(ep->s->con);
@@ -6847,8 +6892,8 @@ int reply_handler_task(task_arg arg) {
       }
       receive_bytes[ep->reply->op] += (uint64_t)n + MSG_HDR_SIZE;
     }
-    IFDBG(D_NONE, FN; NDBG(ep->s->con.fd, d); NDBG(task_now(), f);
-          COPY_AND_FREE_GOUT(dbg_pax_msg(ep->reply)););
+    XCOM_IFDBG(D_NONE, FN; NDBG(ep->s->con->fd, d); NDBG(task_now(), f);
+               COPY_AND_FREE_GOUT(dbg_pax_msg(ep->reply)););
     receive_count[ep->reply->op]++;
 
     ADD_DBG(D_NONE, add_synode_event(ep->reply->synode);
@@ -6888,8 +6933,8 @@ int reply_handler_task(task_arg arg) {
 
   shutdown_connection(ep->s->con);
   ep->s->reply_handler = nullptr;
-  IFDBG(D_BUG, FN; STRLIT(" shutdown "); NDBG(ep->s->con.fd, d);
-        NDBG(task_now(), f));
+  XCOM_IFDBG(D_BUG, FN; STRLIT(" shutdown "); NDBG(ep->s->con->fd, d);
+             NDBG(task_now(), f));
   srv_unref(ep->s);
 
   TASK_END;
@@ -7016,7 +7061,7 @@ static void server_push_log(server *srv, synode_no push, node_no node) {
           if (pm != nullptr) {
             ref_msg(pm);
             pm->op = recover_learn_op;
-            IFDBG(D_NONE, FN; PTREXP(srv); PTREXP(s););
+            XCOM_IFDBG(D_NONE, FN; PTREXP(srv); PTREXP(s););
             send_msg(srv, s->nodeno, node, get_group_id(s), pm);
             unref_msg(&pm);
           }
@@ -7040,7 +7085,7 @@ static void reply_push_log(synode_no push, linkage *reply_queue) {
         reply->op = recover_learn_op;
         {
           msg_link *msg_x = msg_link_new(reply, reply->from);
-          IFDBG(D_NONE, FN; PTREXP(msg_x));
+          XCOM_IFDBG(D_NONE, FN; PTREXP(msg_x));
           link_into(&(msg_x->l), reply_queue);
         }
         replace_pax_msg(&reply, nullptr);
@@ -7073,8 +7118,8 @@ static gcs_snapshot *create_snapshot() {
     if (!gs) return nullptr;
     ADD_DBG(D_BASE, add_event(EVENT_DUMP_PAD, string_arg("export config ok")););
     gs->app_snap = app_snap;
-    IFDBG(D_BUG, FN; SYCEXP(app_lsn); SYCEXP(gs->log_start);
-          SYCEXP(gs->log_end));
+    XCOM_IFDBG(D_BUG, FN; SYCEXP(app_lsn); SYCEXP(gs->log_start);
+               SYCEXP(gs->log_end));
 
     /* Set starting point of log to match the snapshot */
     /* If we have a valid synode from application snapshot, see if it should
@@ -7085,7 +7130,7 @@ static gcs_snapshot *create_snapshot() {
       if (synode_eq(null_synode, gs->log_start) ||
           !synode_gt(app_lsn, gs->log_start)) {
         gs->log_start = app_lsn;
-        IFDBG(D_BUG, FN; STRLIT("using "); SYCEXP(app_lsn));
+        XCOM_IFDBG(D_BUG, FN; STRLIT("using "); SYCEXP(app_lsn));
       }
     }
     ADD_DBG(D_BASE, add_event(EVENT_DUMP_PAD, string_arg("gs->log_start"));
@@ -7101,15 +7146,16 @@ static gcs_snapshot *create_snapshot() {
       /* No valid valid synode from application snapshot, use
        * last_config_modification_id if not null_synode */
       gs->log_start = last_config_modification_id;
-      IFDBG(D_BUG, FN; STRLIT("using "); SYCEXP(last_config_modification_id));
+      XCOM_IFDBG(D_BUG, FN; STRLIT("using ");
+                 SYCEXP(last_config_modification_id));
     }
-    IFDBG(D_BUG, FN; SYCEXP(gs->log_start); SYCEXP(gs->log_end));
+    XCOM_IFDBG(D_BUG, FN; SYCEXP(gs->log_start); SYCEXP(gs->log_end));
     ADD_DBG(D_BASE, add_event(EVENT_DUMP_PAD, string_arg("gs->log_start"));
             add_synode_event(gs->log_start);
             add_event(EVENT_DUMP_PAD, string_arg("gs->log_end"));
             add_synode_event(gs->log_end););
   }
-  IFDBG(D_BUG, FN; SYCEXP(gs->log_start); SYCEXP(gs->log_end));
+  XCOM_IFDBG(D_BUG, FN; SYCEXP(gs->log_start); SYCEXP(gs->log_end));
   return gs;
 }
 
@@ -7123,11 +7169,11 @@ static void handle_need_snapshot(linkage *reply_queue, pax_msg *pm) {
     reply->gcs_snap = gs;
     {
       msg_link *msg_x = msg_link_new(reply, reply->from);
-      IFDBG(D_NONE, FN; PTREXP(msg_x));
+      XCOM_IFDBG(D_NONE, FN; PTREXP(msg_x));
       link_into(&(msg_x->l), reply_queue);
     }
     unref_msg(&reply);
-    IFDBG(D_NONE, FN; STRLIT("sent snapshot"););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("sent snapshot"););
     reply_push_log(gs->log_start, reply_queue);
     send_global_view();
   }
@@ -7151,7 +7197,7 @@ static int xcom_timer(task_arg arg) {
   XCOM_FSM(x_fsm_timeout, double_arg(ep->t));
   FINALLY
   if (stack == x_timer) set_task(&x_timer, nullptr);
-  IFDBG(D_CONS, FN; STRLIT(" timeout "));
+  XCOM_IFDBG(D_CONS, FN; STRLIT(" timeout "));
   TASK_END;
 }
 
@@ -7185,7 +7231,7 @@ static int x_fsm_completion_task(task_arg arg) {
   arg;
   XCOM_FSM(x_fsm_complete, null_arg);
   FINALLY
-  IFDBG(D_FSM, FN; STRLIT(" delivered "));
+  XCOM_IFDBG(D_FSM, FN; STRLIT(" delivered "));
   TASK_END;
 }
 /* purecov: end */
@@ -7208,7 +7254,7 @@ static void server_handle_need_snapshot(server *srv, site_def const *s,
 
   if (gs) {
     server_send_snapshot(srv, s, gs, node);
-    IFDBG(D_NONE, FN; STRLIT("sent snapshot"););
+    XCOM_IFDBG(D_NONE, FN; STRLIT("sent snapshot"););
     G_INFO("XCom snapshot sent to %s:%d", srv->srv, srv->port);
     server_push_log(srv, gs->log_start, node);
     send_global_view();
@@ -7272,7 +7318,7 @@ static void handle_x_snapshot(gcs_snapshot *gcs) {
       "Installing requested snapshot. Importing all incoming configurations.");
   import_config(gcs);
   if (get_nodeno(get_site_def()) == VOID_NODE_NO) {
-    IFDBG(D_BASE, FN; STRLIT("Not member of site, not executing log"));
+    XCOM_IFDBG(D_BASE, FN; STRLIT("Not member of site, not executing log"));
     gcs->log_end =
         gcs->log_start; /* Avoid executing log if not member of site */
   }
@@ -7288,8 +7334,8 @@ static void handle_x_snapshot(gcs_snapshot *gcs) {
   G_INFO("Finished snapshot installation. My node number is %d",
          get_nodeno(get_site_def()));
 
-  IFDBG(D_BUG, FN; SYCEXP(gcs->log_start); SYCEXP(gcs->log_end);
-        SYCEXP(last_config_modification_id); SYCEXP(executed_msg););
+  XCOM_IFDBG(D_BUG, FN; SYCEXP(gcs->log_start); SYCEXP(gcs->log_end);
+             SYCEXP(last_config_modification_id); SYCEXP(executed_msg););
 }
 
 /* Note that we have received snapshot, and install if better than old */
@@ -7369,7 +7415,7 @@ static int xcom_fsm_init(xcom_actions action, task_arg fsmargs,
                          xcom_fsm_state *ctxt) {
   (void)action;
   (void)fsmargs;
-  IFDBG(D_NONE, FN;);
+  XCOM_IFDBG(D_NONE, FN;);
   /* Initialize basic xcom data */
   xcom_thread_init();
   SET_X_FSM_STATE(xcom_fsm_start_enter);
@@ -7384,7 +7430,7 @@ static int xcom_fsm_start_enter(xcom_actions action, task_arg fsmargs,
   /* push_dbg(D_DETECT | D_FSM | D_FILEOP | D_CONS | D_BASE | D_TRANSPORT);
    */
   push_dbg(D_FSM);
-  IFDBG(D_NONE, FN; STRLIT("state x_start"););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("state x_start"););
   empty_prop_input_queue();
   empty_synode_number_pool();
   reset_snapshot_mask();
@@ -7471,7 +7517,7 @@ static void handle_fsm_exit() {
   free_forced_config_site_def();
   wait_forced_config = 0;
   garbage_collect_servers();
-  IFDBG(D_NONE, FN; STRLIT("shutting down"));
+  XCOM_IFDBG(D_NONE, FN; STRLIT("shutting down"));
   xcom_shutdown = 1;
   start_config = null_synode;
   G_DEBUG("Exiting xcom thread");
@@ -7527,7 +7573,7 @@ static int xcom_fsm_snapshot_wait_enter(xcom_actions action, task_arg fsmargs,
   (void)action;
   (void)fsmargs;
   push_dbg(D_DETECT | D_FSM | D_FILEOP | D_CONS | D_BASE | D_TRANSPORT);
-  IFDBG(D_NONE, FN; STRLIT("state x_snapshot_wait"););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("state x_snapshot_wait"););
   log_start_max = null_synode;
   log_end_max = null_synode;
   SET_X_FSM_STATE(xcom_fsm_snapshot_wait);
@@ -7602,7 +7648,7 @@ static int xcom_fsm_recover_wait_enter(xcom_actions action, task_arg fsmargs,
   (void)action;
   (void)fsmargs;
   push_dbg(D_DETECT | D_FSM | D_FILEOP | D_CONS | D_BASE | D_TRANSPORT);
-  IFDBG(D_NONE, FN; STRLIT("state x_recover_wait"););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("state x_recover_wait"););
   if (got_all_snapshots()) {
     /* Need to send message to trigger transition in context of xcom
      * thread */
@@ -7653,9 +7699,9 @@ static int xcom_fsm_run_enter(xcom_actions action, task_arg fsmargs,
     set_executed_msg(get_site_def()->start);
   }
 
-  IFDBG(D_NONE, FN; STRLIT("state x_run"););
-  IFDBG(D_BUG, FN; SYCEXP(executed_msg););
-  IFDBG(D_BUG, FN; SYCEXP(start_config););
+  XCOM_IFDBG(D_NONE, FN; STRLIT("state x_run"););
+  XCOM_IFDBG(D_BUG, FN; SYCEXP(executed_msg););
+  XCOM_IFDBG(D_BUG, FN; SYCEXP(start_config););
   stop_x_timer();
   if (xcom_run_cb) xcom_run_cb(0);
   client_boot_done = 1;
@@ -7726,7 +7772,7 @@ static int xcom_fsm_run(xcom_actions action, task_arg fsmargs,
 
     /* purecov: begin deadcode */
     case x_fsm_need_snapshot:
-      IFDBG(D_NONE, STRLIT("got snapshot request in x_run state"));
+      XCOM_IFDBG(D_NONE, STRLIT("got snapshot request in x_run state"));
       break;
       /* purecov: end */
 
@@ -7757,10 +7803,11 @@ xcom_fsm_state *xcom_fsm_impl(xcom_actions action, task_arg fsmargs) {
   dump_task_events();
 #endif
   /* Crank the state machine until it stops */
-  IFDBG(D_BUG, FN; STREXP(ctxt.state_name); STREXP(xcom_actions_name[action]));
+  XCOM_IFDBG(D_BUG, FN; STREXP(ctxt.state_name);
+             STREXP(xcom_actions_name[action]));
   while (ctxt.state_fp(action, fsmargs, &ctxt)) {
-    IFDBG(D_BUG, FN; STREXP(ctxt.state_name);
-          STREXP(xcom_actions_name[action]));
+    XCOM_IFDBG(D_BUG, FN; STREXP(ctxt.state_name);
+               STREXP(xcom_actions_name[action]));
   }
   return &ctxt;
 }
@@ -7842,7 +7889,7 @@ static int64_t socket_write(connection_descriptor *wfd, void *_buf, uint32_t n,
     while ((ret = write_function(wfd, buf + total, w)).val < 0 &&
            can_retry_write(ret.funerr)) {
       task_dump_err(ret.funerr);
-      IFDBG(D_NONE, FN; STRLIT("retry "); NEXP(total, d); NEXP(n, d));
+      XCOM_IFDBG(D_NONE, FN; STRLIT("retry "); NEXP(total, d); NEXP(n, d));
     }
     if (ret.val <= 0) { /* Something went wrong */
       task_dump_err(ret.funerr);
@@ -7851,7 +7898,7 @@ static int64_t socket_write(connection_descriptor *wfd, void *_buf, uint32_t n,
       total += (uint32_t)ret.val; /* Add number of bytes written to total */
     }
   }
-  IFDBG(D_TRANSPORT, FN; NEXP(total, u); NEXP(n, u));
+  XCOM_IFDBG(D_TRANSPORT, FN; NEXP(total, u); NEXP(n, u));
   assert(total == n);
   return (total);
 }
@@ -7898,7 +7945,7 @@ static int xcom_recv_proto(connection_descriptor *rfd, xcom_proto *x_proto,
   n = (int)socket_read_bytes(rfd, (char *)header_buf, MSG_HDR_SIZE);
 
   if (n != MSG_HDR_SIZE) {
-    IFDBG(D_NONE, FN; NDBG(n, d));
+    XCOM_IFDBG(D_NONE, FN; NDBG(n, d));
     return -1;
   }
 
@@ -8057,8 +8104,8 @@ int64_t xcom_send_client_app_data(connection_descriptor *fd, app_data_ptr a,
     }
 
     G_DEBUG("client connection will use protocol version %d", x_proto);
-    IFDBG(D_NONE, STRLIT("client connection will use protocol version ");
-          NDBG(x_proto, u); STRLIT(xcom_proto_to_str(x_proto)));
+    XCOM_IFDBG(D_NONE, STRLIT("client connection will use protocol version ");
+               NDBG(x_proto, u); STRLIT(xcom_proto_to_str(x_proto)));
     fd->x_proto = x_proto;
     set_connected(fd, CON_PROTO);
   }
@@ -8071,8 +8118,8 @@ int64_t xcom_send_client_app_data(connection_descriptor *fd, app_data_ptr a,
   if (serialized) {
     retval = socket_write(fd, buf, buflen);
     if (buflen != retval) {
-      IFDBG(D_NONE, FN; STRLIT("write failed "); NDBG(fd->fd, d);
-            NDBG(buflen, d); NDBG64(retval));
+      XCOM_IFDBG(D_NONE, FN; STRLIT("write failed "); NDBG(fd->fd, d);
+                 NDBG(buflen, d); NDBG64(retval));
     }
   } else {
     /* Failed to serialize, set retval accordingly. */
@@ -8123,8 +8170,8 @@ int64_t xcom_client_send_die(connection_descriptor *fd) {
       goto end;
     }
     G_DEBUG("client connection will use protocol version %d", x_proto);
-    IFDBG(D_NONE, STRLIT("client connection will use protocol version ");
-          NDBG(x_proto, u); STRLIT(xcom_proto_to_str(x_proto)));
+    XCOM_IFDBG(D_NONE, STRLIT("client connection will use protocol version ");
+               NDBG(x_proto, u); STRLIT(xcom_proto_to_str(x_proto)));
     fd->x_proto = x_proto;
     set_connected(fd, CON_PROTO);
   }
@@ -8143,8 +8190,8 @@ int64_t xcom_client_send_die(connection_descriptor *fd) {
   if (buflen) {
     retval = socket_write(fd, buf, buflen);
     if (buflen != retval) {
-      IFDBG(D_NONE, FN; STRLIT("write failed "); NDBG(fd->fd, d);
-            NDBG(buflen, d); NDBG64(retval));
+      XCOM_IFDBG(D_NONE, FN; STRLIT("write failed "); NDBG(fd->fd, d);
+                 NDBG(buflen, d); NDBG64(retval));
     }
     X_FREE(buf);
   }
@@ -8248,7 +8295,7 @@ static pax_msg *socket_read_msg(connection_descriptor *rfd, pax_msg *p)
   n = socket_read_bytes(rfd, (char *)header_buf, MSG_HDR_SIZE);
 
   if (n <= 0) {
-    IFDBG(D_NONE, FN; NDBG64(n));
+    XCOM_IFDBG(D_NONE, FN; NDBG64(n));
     return nullptr;
   }
   assert(n == MSG_HDR_SIZE);
@@ -8277,12 +8324,12 @@ static pax_msg *socket_read_msg(connection_descriptor *rfd, pax_msg *p)
   if (n > 0) {
     /* Deserialize message */
     deserialize_ok = deserialize_msg(p, rfd->x_proto, bytes, msgsize);
-    IFDBG(D_NONE, FN; STRLIT(" deserialized message"));
+    XCOM_IFDBG(D_NONE, FN; STRLIT(" deserialized message"));
   }
   /* Deallocate buffer */
   X_FREE(bytes);
   if (n <= 0 || deserialize_ok == 0) {
-    IFDBG(D_NONE, FN; NDBG64(n));
+    XCOM_IFDBG(D_NONE, FN; NDBG64(n));
     return nullptr;
   }
   return (p);
@@ -8380,8 +8427,7 @@ static xcom_send_app_wait_result xcom_send_app_wait_and_get(
     }
   } while (--retry_count);
   /* Timeout after REQUEST_RETRY has been received 'retry_count' times */
-  G_MESSAGE(
-      "Request failed: maximum number of retries (10) has been exhausted.");
+  G_INFO("Request failed: maximum number of retries (10) has been exhausted.");
   return RETRIES_EXCEEDED;
 }
 
@@ -8413,7 +8459,7 @@ int xcom_send_cfg_wait(connection_descriptor *fd, node_list *nl,
                        uint32_t group_id, cargo_type ct, int force) {
   app_data a;
   int retval = 0;
-  IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(nl)););
+  XCOM_IFDBG(D_NONE, FN; COPY_AND_FREE_GOUT(dbg_list(nl)););
   retval = xcom_send_app_wait(fd, init_config_with_group(&a, nl, ct, group_id),
                               force, nullptr);
   xdr_free((xdrproc_t)xdr_app_data, (char *)&a);
@@ -8799,7 +8845,7 @@ static void paxos_wakeup(unsigned int t) {
   linkage *head = &time_queue[t];
   linkage *p;
   if (!link_empty(head)) {
-    IFDBG(D_CONS, FN; NUMEXP(t); NUMEXP(link_empty(head)));
+    XCOM_IFDBG(D_CONS, FN; NUMEXP(t); NUMEXP(link_empty(head)));
   }
   while (!link_empty(head)) {
     p = link_first(head);
@@ -8829,7 +8875,7 @@ static int paxos_timer_task(task_arg arg [[maybe_unused]]) {
     paxos_timer_advance();
   }
   FINALLY
-  IFDBG(D_CONS, FN; STRLIT(" shutdown "));
+  XCOM_IFDBG(D_CONS, FN; STRLIT(" shutdown "));
   TASK_END;
 }
 
@@ -9057,7 +9103,7 @@ static inline void dispatch_p_event(paxos_state_action *vtbl,
 /* init state */
 int paxos_fsm_idle(pax_machine *paxos, site_def const *site, paxos_event event,
                    pax_msg *mess) {
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   dispatch_p_event(p1_idle_vtbl, paxos, site, event, mess);
   return 0;
 }
@@ -9068,7 +9114,7 @@ static int paxos_fsm_p1_master_enter(pax_machine *paxos, site_def const *site,
   (void)site;
   (void)event;
   (void)mess;
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   /* Send prepare and start timer */
   SET_PAXOS_FSM_STATE(paxos, paxos_fsm_p1_master_wait);
   return 0;
@@ -9077,7 +9123,7 @@ static int paxos_fsm_p1_master_enter(pax_machine *paxos, site_def const *site,
 /* Phase 1 master wait */
 static int paxos_fsm_p1_master_wait(pax_machine *paxos, site_def const *site,
                                     paxos_event event, pax_msg *mess) {
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   dispatch_p_event(p1_master_wait_vtbl, paxos, site, event, mess);
   return 0;
 }
@@ -9088,7 +9134,7 @@ static int paxos_fsm_p2_master_enter(pax_machine *paxos, site_def const *site,
   (void)site;
   (void)event;
   (void)mess;
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   /* Send prepare and start timer */
   SET_PAXOS_FSM_STATE(paxos, paxos_fsm_p2_master_wait);
   return 0;
@@ -9097,7 +9143,7 @@ static int paxos_fsm_p2_master_enter(pax_machine *paxos, site_def const *site,
 /* Phase 2 master wait */
 static int paxos_fsm_p2_master_wait(pax_machine *paxos, site_def const *site,
                                     paxos_event event, pax_msg *mess) {
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   dispatch_p_event(p2_master_wait_vtbl, paxos, site, event, mess);
   return 0;
 }
@@ -9108,7 +9154,7 @@ static int paxos_fsm_p2_slave_enter(pax_machine *paxos, site_def const *site,
   (void)site;
   (void)event;
   (void)mess;
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   /* Start timer */
   SET_PAXOS_FSM_STATE(paxos, paxos_fsm_p2_slave_wait);
   return 1;
@@ -9117,7 +9163,7 @@ static int paxos_fsm_p2_slave_enter(pax_machine *paxos, site_def const *site,
 /* Phase 2 slave wait */
 static int paxos_fsm_p2_slave_wait(pax_machine *paxos, site_def const *site,
                                    paxos_event event, pax_msg *mess) {
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   dispatch_p_event(p2_slave_wait_vtbl, paxos, site, event, mess);
   return 0;
 }
@@ -9125,7 +9171,7 @@ static int paxos_fsm_p2_slave_wait(pax_machine *paxos, site_def const *site,
 /* Phase 3 master wait */
 static int paxos_fsm_p3_master_wait(pax_machine *paxos, site_def const *site,
                                     paxos_event event, pax_msg *mess) {
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   dispatch_p_event(p3_master_wait_vtbl, paxos, site, event, mess);
   return 0;
 }
@@ -9136,7 +9182,7 @@ static int paxos_fsm_p3_slave_enter(pax_machine *paxos, site_def const *site,
   (void)site;
   (void)event;
   (void)mess;
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   /* Start timer */
   SET_PAXOS_FSM_STATE(paxos, paxos_fsm_p3_slave_wait);
   return 1;
@@ -9145,7 +9191,7 @@ static int paxos_fsm_p3_slave_enter(pax_machine *paxos, site_def const *site,
 /* Phase 3 slave wait */
 static int paxos_fsm_p3_slave_wait(pax_machine *paxos, site_def const *site,
                                    paxos_event event, pax_msg *mess) {
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   dispatch_p_event(p3_slave_wait_vtbl, paxos, site, event, mess);
   return 0;
 }
@@ -9153,7 +9199,7 @@ static int paxos_fsm_p3_slave_wait(pax_machine *paxos, site_def const *site,
 /* Finished */
 static int paxos_fsm_finished(pax_machine *paxos, site_def const *site,
                               paxos_event event, pax_msg *mess) {
-  IFDBG(D_CONS, FN;);
+  XCOM_IFDBG(D_CONS, FN;);
   dispatch_p_event(p_finished_vtbl, paxos, site, event, mess);
   return 0;
 }
@@ -9167,12 +9213,12 @@ const char *paxos_event_name[] = {p_events};
 static void paxos_fsm(pax_machine *paxos, site_def const *site,
                       paxos_event event, pax_msg *mess) {
   /* Crank the state machine until it stops */
-  IFDBG(D_CONS, FN; PTREXP(paxos); SYCEXP(paxos->synode);
-        BALCEXP(mess->proposal); STRLIT(paxos->state.state_name); STRLIT(" : ");
-        STRLIT(paxos_event_name[event]));
+  XCOM_IFDBG(D_CONS, FN; PTREXP(paxos); SYCEXP(paxos->synode);
+             BALCEXP(mess->proposal); STRLIT(paxos->state.state_name);
+             STRLIT(" : "); STRLIT(paxos_event_name[event]));
   while (paxos->state.state_fp(paxos, site, event, mess)) {
-    IFDBG(D_CONS, FN; PTREXP(paxos); SYCEXP(paxos->synode);
-          BALCEXP(mess->proposal); STRLIT(paxos->state.state_name);
-          STRLIT(" : "); STRLIT(paxos_event_name[event]));
+    XCOM_IFDBG(D_CONS, FN; PTREXP(paxos); SYCEXP(paxos->synode);
+               BALCEXP(mess->proposal); STRLIT(paxos->state.state_name);
+               STRLIT(" : "); STRLIT(paxos_event_name[event]));
   }
 }

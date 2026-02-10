@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -243,6 +243,14 @@ void Binlog_group_commit_ctx::set_session_ticket(binlog::BgcTicket ticket) {
     this->m_session_ticket = ticket;
   }
 }
+
+#ifndef NDEBUG
+void Binlog_group_commit_ctx::push_new_ticket() {
+  binlog::Bgc_ticket_manager::instance().push_new_ticket();
+  // we need to pop front in case there are no sessions waiting
+  binlog::Bgc_ticket_manager::instance().pop_front_ticket();
+}
+#endif
 
 void Binlog_group_commit_ctx::assign_ticket() {
   if (this->m_session_ticket.is_set()) {

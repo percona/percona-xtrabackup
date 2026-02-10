@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -71,7 +71,7 @@ dd::String_type Ndb_metadata::partition_expression() const {
   dd::String_type expr;
   if (m_ndbtab->getFragmentType() == NdbDictionary::Table::HashMapPartition &&
       m_ndbtab->getDefaultNoPartitionsFlag() &&
-      m_ndbtab->getFragmentCount() == 0 && m_ndbtab->getLinearFlag() == false) {
+      m_ndbtab->getFragmentCount() == 0 && !m_ndbtab->getLinearFlag()) {
     // Default partitioning
     return expr;
   }
@@ -89,7 +89,7 @@ dd::String_type Ndb_metadata::partition_expression() const {
   return expr;
 }
 
-void Ndb_metadata::create_columns(dd::Table *table_def) const {
+bool Ndb_metadata::create_columns(dd::Table *table_def) const {
   const bool hidden_pk = ndb_table_has_hidden_pk(m_ndbtab);
 
   // Virtual generated columns are a problem since they aren't stored in NDB
@@ -212,8 +212,10 @@ void Ndb_metadata::create_columns(dd::Table *table_def) const {
         dd_column->set_type(dd::enum_column_types::VARCHAR);
         break;
       case NdbDictionary::Column::Datetime:
-        dd_column->set_type(dd::enum_column_types::DATETIME);
-        break;
+        ndb_log_error(
+            "Can not map NDB Datetime column %s.%s to a MySQL column type.",
+            m_ndbtab->getName(), ndb_column->getName());
+        return false;
       case NdbDictionary::Column::Date:
         dd_column->set_type(dd::enum_column_types::NEWDATE);
         break;
@@ -248,16 +250,20 @@ void Ndb_metadata::create_columns(dd::Table *table_def) const {
         dd_column->set_type(dd::enum_column_types::VARCHAR);
         break;
       case NdbDictionary::Column::Time:
-        dd_column->set_type(dd::enum_column_types::TIME);
-        break;
+        ndb_log_error(
+            "Can not map NDB Time column %s.%s to a MySQL column type.",
+            m_ndbtab->getName(), ndb_column->getName());
+        return false;
       case NdbDictionary::Column::Year:
         dd_column->set_type(dd::enum_column_types::YEAR);
         dd_column->set_unsigned(true);
         dd_column->set_zerofill(true);
         break;
       case NdbDictionary::Column::Timestamp:
-        dd_column->set_type(dd::enum_column_types::TIMESTAMP);
-        break;
+        ndb_log_error(
+            "Can not map NDB Timestamp column %s.%s to a MySQL column type.",
+            m_ndbtab->getName(), ndb_column->getName());
+        return false;
       case NdbDictionary::Column::Time2:
         dd_column->set_type(dd::enum_column_types::TIME2);
         dd_column->set_datetime_precision(ndb_column->getPrecision());
@@ -323,6 +329,7 @@ void Ndb_metadata::create_columns(dd::Table *table_def) const {
       dd_column->options().set(key_column_format,
                                static_cast<uint32>(COLUMN_FORMAT_TYPE_DYNAMIC));
   }
+  return true;
 }
 
 bool Ndb_metadata::create_indexes(const NdbDictionary::Dictionary *dict,
@@ -598,7 +605,7 @@ bool Ndb_metadata::create_table_def(Ndb *ndb, dd::Table *table_def) const {
   table_def->set_engine("ndbcluster");
 
   // row_format
-  if (m_ndbtab->getForceVarPart() == false) {
+  if (!m_ndbtab->getForceVarPart()) {
     table_def->set_row_format(dd::Table::RF_FIXED);
   } else {
     table_def->set_row_format(dd::Table::RF_DYNAMIC);
@@ -672,7 +679,10 @@ bool Ndb_metadata::create_table_def(Ndb *ndb, dd::Table *table_def) const {
     // table_def->set_subpartition_expression_utf8();
   }
 
-  create_columns(table_def);
+  if (!create_columns(table_def)) {
+    ndb_log_error("Failed to create columns");
+    return false;
+  }
 
   if (!create_indexes(ndb->getDictionary(), table_def)) {
     ndb_log_error("Failed to create indexes");
@@ -745,7 +755,8 @@ class Compare_context {
 
  private:
   std::vector<std::string> diffs;
-  void add_diff(const char *property, std::string a, std::string b) {
+  void add_diff(const char *property, const std::string &a,
+                const std::string &b) {
     std::string diff;
     diff.append("Diff in '")
         .append(property)
@@ -758,7 +769,7 @@ class Compare_context {
   }
 
   void add_diff(object_type type, const char *name, const char *property,
-                std::string a, std::string b) {
+                const std::string &a, const std::string &b) {
     std::string object_type_string;
     switch (type) {
       case COLUMN:
@@ -789,7 +800,8 @@ class Compare_context {
   }
 
  public:
-  void compare(const char *property, dd::String_type a, dd::String_type b) {
+  void compare(const char *property, const dd::String_type &a,
+               const dd::String_type &b) {
     if (a == b) return;
     add_diff(property, a.c_str(), b.c_str());
   }
@@ -801,7 +813,7 @@ class Compare_context {
   }
 
   void compare(object_type type, const char *name, const char *property,
-               dd::String_type a, dd::String_type b) {
+               const dd::String_type &a, const dd::String_type &b) {
     if (a == b) return;
     add_diff(type, name, property, a.c_str(), b.c_str());
   }
@@ -813,7 +825,7 @@ class Compare_context {
   }
 
   bool equal() {
-    if (diffs.size() == 0) return true;
+    if (diffs.empty()) return true;
 
     // Print the list of diffs
     ndb_log_error("Metadata check has failed");
@@ -971,6 +983,7 @@ bool Ndb_metadata::compare_table_def(const dd::Table *t1,
     const dd::enum_column_types column2_type = column2->type();
     if (column1_type != dd::enum_column_types::BIT &&
         column1_type != dd::enum_column_types::LONG_BLOB &&
+        column1_type != dd::enum_column_types::VARCHAR &&
         column2_type != dd::enum_column_types::ENUM &&
         column2_type != dd::enum_column_types::SET)
       ctx.compare(Compare_context::COLUMN, column_name, "type",
@@ -1659,8 +1672,7 @@ bool Ndb_metadata::compare_table_def(const dd::Table *t1,
     tables. This makes the below check prone to failure with restore and
     auto sync/discovery
   */
-  // ctx.compare("fk_count", t1->foreign_keys().size(),
-  // t2->foreign_keys().size());
+  ctx.compare("fk_count", t1->foreign_keys().size(), t2->foreign_keys().size());
 
   dd::Table::Foreign_key_collection::const_iterator fk_it1(
       t1->foreign_keys().begin());

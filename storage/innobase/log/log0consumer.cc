@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -53,7 +53,7 @@ void Log_user_consumer::set_consumed_lsn(lsn_t consumed_lsn) {
 
 lsn_t Log_user_consumer::get_consumed_lsn() const { return m_consumed_lsn; }
 
-void Log_user_consumer::consumption_requested() {}
+void Log_user_consumer::consumption_requested(lsn_t /*request_lsn*/) {}
 
 Log_checkpoint_consumer::Log_checkpoint_consumer(log_t &log) : m_log{log} {}
 
@@ -66,8 +66,12 @@ lsn_t Log_checkpoint_consumer::get_consumed_lsn() const {
   return log_get_checkpoint_lsn(m_log);
 }
 
-void Log_checkpoint_consumer::consumption_requested() {
-  log_request_checkpoint_in_next_file(m_log);
+void Log_checkpoint_consumer::consumption_requested(lsn_t request_lsn) {
+  log_t &log = *log_sys;
+  ut_a(log_is_data_lsn(request_lsn));
+  const lsn_t current_lsn = log_get_lsn(log);
+  ut_a_le(request_lsn, current_lsn);
+  log_request_checkpoint_low(log, request_lsn);
 }
 
 void log_consumer_register(log_t &log, Log_consumer *log_consumer) {

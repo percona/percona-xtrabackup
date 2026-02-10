@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -69,7 +69,7 @@ bool init_state_maps(MY_CHARSET_LOADER *loader, CHARSET_INFO *cs) {
   // This character set has already been initialized.
   if (cs->state_maps != nullptr && cs->ident_map != nullptr) return false;
 
-  lex_state_maps_st *lex_state_maps = static_cast<lex_state_maps_st *>(
+  auto *lex_state_maps = static_cast<lex_state_maps_st *>(
       loader->once_alloc(sizeof(lex_state_maps_st)));
 
   if (lex_state_maps == nullptr) return true;  // OOM

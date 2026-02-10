@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -113,7 +113,7 @@ mysql_mutex_t Client::s_table_mutex;
 uint32_t Client::s_num_clones = 0;
 
 int Table_pfs::create_proxy_tables() {
-  auto thd = thd_get_current_thd();
+  auto *thd = thd_get_current_thd();
   if (mysql_pfs_table == nullptr || thd == nullptr) {
     return (1);
   }
@@ -222,33 +222,33 @@ void Table_pfs::release_services() {
 }
 
 static int cbk_rnd_init(PSI_table_handle *handle, bool) {
-  auto table = reinterpret_cast<Table_pfs *>(handle);
+  auto *table = reinterpret_cast<Table_pfs *>(handle);
   return (table->rnd_init());
 }
 
 static int cbk_rnd_next(PSI_table_handle *handle) {
-  auto table = reinterpret_cast<Table_pfs *>(handle);
+  auto *table = reinterpret_cast<Table_pfs *>(handle);
   return (table->rnd_next());
 }
 
 static int cbk_rnd_pos(PSI_table_handle *handle) {
-  auto table = reinterpret_cast<Table_pfs *>(handle);
+  auto *table = reinterpret_cast<Table_pfs *>(handle);
   return (table->rnd_pos());
 }
 
 static void cbk_reset_pos(PSI_table_handle *handle) {
-  auto table = reinterpret_cast<Table_pfs *>(handle);
+  auto *table = reinterpret_cast<Table_pfs *>(handle);
   table->reset_pos();
 }
 
 static int cbk_read_column(PSI_table_handle *handle, PSI_field *field,
                            uint32_t index) {
-  auto table = reinterpret_cast<Table_pfs *>(handle);
+  auto *table = reinterpret_cast<Table_pfs *>(handle);
   return (table->read_column_value(field, index));
 }
 
 static void cbk_close_table(PSI_table_handle *handle) {
-  auto table = reinterpret_cast<Table_pfs *>(handle);
+  auto *table = reinterpret_cast<Table_pfs *>(handle);
   table->close();
 }
 
@@ -317,14 +317,14 @@ static unsigned long long cbk_status_row_count() {
 }
 
 static PSI_table_handle *cbk_status_open_table(PSI_pos **pos) {
-  auto row_pos = reinterpret_cast<uint32_t **>(pos);
-  auto table = open_status_table(row_pos);
-  auto handle = reinterpret_cast<PSI_table_handle *>(table);
+  auto *row_pos = reinterpret_cast<uint32_t **>(pos);
+  auto *table = open_status_table(row_pos);
+  auto *handle = reinterpret_cast<PSI_table_handle *>(table);
   return (handle);
 }
 
 Status_pfs::Status_pfs() : Table_pfs(S_NUM_ROWS) {
-  auto table = get_proxy_share();
+  auto *table = get_proxy_share();
   table->m_table_name = "clone_status";
   table->m_table_name_length = strlen(table->m_table_name);
   table->m_table_definition =
@@ -411,7 +411,7 @@ int Status_pfs::read_column_value(PSI_field *field, uint32_t index) {
       mysql_pfscol_bigint->set_unsigned(field, bigint_value);
       break;
     case 11: /* GTID_EXECUTED */ {
-      int length = is_null ? 0 : m_data.m_gtid_string.length();
+      int const length = is_null ? 0 : m_data.m_gtid_string.length();
       mysql_pfscol_text->set(
           field, is_null ? nullptr : m_data.m_gtid_string.c_str(), length);
     } break;
@@ -597,14 +597,14 @@ static unsigned long long cbk_progress_row_count() {
 }
 
 static PSI_table_handle *cbk_progress_open_table(PSI_pos **pos) {
-  auto row_pos = reinterpret_cast<uint32_t **>(pos);
-  auto table = open_progress_table(row_pos);
-  auto handle = reinterpret_cast<PSI_table_handle *>(table);
+  auto *row_pos = reinterpret_cast<uint32_t **>(pos);
+  auto *table = open_progress_table(row_pos);
+  auto *handle = reinterpret_cast<PSI_table_handle *>(table);
   return (handle);
 }
 
 Progress_pfs::Progress_pfs() : Table_pfs(S_NUM_ROWS) {
-  auto table = get_proxy_share();
+  auto *table = get_proxy_share();
   table->m_table_name = "clone_progress";
   table->m_table_name_length = strlen(table->m_table_name);
   table->m_table_definition =

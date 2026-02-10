@@ -212,31 +212,31 @@ insert into t1_max_ins values (1, 1, repeat("B", 10000), repeat("E", 10001), 1);
 insert into t1_max_ins values (2, 2, repeat("A", 10002), repeat("T", 10003), 1);
 update t1_max_ins set X=20;
 Initial values on Slave
-select a,b,SHA1(c),length(c), SHA1(d), length(d), X from t1_max_ins order by a;
-a	b	SHA1(c)	length(c)	SHA1(d)	length(d)	X
-1	1	4a222e18b539cdefbf0960eaa7f4362a4976e1e0	10000	9641d473ab1bd921263190eee074397084933e2d	10001	20
-2	2	f833241322c062495632923d74314a6a5c23034d	10002	2dad269dfa115f6c7e53e91a73251e597aab8fe9	10003	20
+select a,b,SHA2(c,256),length(c), SHA2(d,256), length(d), X from t1_max_ins order by a;
+a	b	SHA2(c,256)	length(c)	SHA2(d,256)	length(d)	X
+1	1	0e4bbfff4bbfb86b373fdfcd608de625c7364d608c93cb8801892991810af62c	10000	e5308f16fe4e7d76a1a5bfad37b139e538dac414b908cb6f26f324d25752bcd3	10001	20
+2	2	79b982c1769ccaffe9bfa606171cb7141c5e52e15f9cd329284d13d89b0ce512	10002	563767784934ea03f46d9ba672b1d0e79e9a3f4c683a4685e4297adcfaf44393	10003	20
 Originate update which will be rejected due to NDB_MAX_INS algorithm.
 update t1_max_ins set c=repeat("Z", 10006), d=repeat("I", 10005), X=2 where a=1;
 Check slave has rejected due to smaller timestamp.
-select a,b,SHA1(c),length(c), SHA1(d), length(d), X from t1_max_ins order by a;
-a	b	SHA1(c)	length(c)	SHA1(d)	length(d)	X
-1	1	4a222e18b539cdefbf0960eaa7f4362a4976e1e0	10000	9641d473ab1bd921263190eee074397084933e2d	10001	20
-2	2	f833241322c062495632923d74314a6a5c23034d	10002	2dad269dfa115f6c7e53e91a73251e597aab8fe9	10003	20
+select a,b,SHA2(c,256),length(c), SHA2(d,256), length(d), X from t1_max_ins order by a;
+a	b	SHA2(c,256)	length(c)	SHA2(d,256)	length(d)	X
+1	1	0e4bbfff4bbfb86b373fdfcd608de625c7364d608c93cb8801892991810af62c	10000	e5308f16fe4e7d76a1a5bfad37b139e538dac414b908cb6f26f324d25752bcd3	10001	20
+2	2	79b982c1769ccaffe9bfa606171cb7141c5e52e15f9cd329284d13d89b0ce512	10002	563767784934ea03f46d9ba672b1d0e79e9a3f4c683a4685e4297adcfaf44393	10003	20
 Originate delete which will be rejected due to NDB_OLD algorithm.
 delete from t1_max_ins where a=1;
 Check slave has rejected due to before image mismatch.
-select a,b,SHA1(c),length(c), SHA1(d), length(d), X from t1_max_ins order by a;
-a	b	SHA1(c)	length(c)	SHA1(d)	length(d)	X
-1	1	4a222e18b539cdefbf0960eaa7f4362a4976e1e0	10000	9641d473ab1bd921263190eee074397084933e2d	10001	20
-2	2	f833241322c062495632923d74314a6a5c23034d	10002	2dad269dfa115f6c7e53e91a73251e597aab8fe9	10003	20
+select a,b,SHA2(c,256),length(c), SHA2(d,256), length(d), X from t1_max_ins order by a;
+a	b	SHA2(c,256)	length(c)	SHA2(d,256)	length(d)	X
+1	1	0e4bbfff4bbfb86b373fdfcd608de625c7364d608c93cb8801892991810af62c	10000	e5308f16fe4e7d76a1a5bfad37b139e538dac414b908cb6f26f324d25752bcd3	10001	20
+2	2	79b982c1769ccaffe9bfa606171cb7141c5e52e15f9cd329284d13d89b0ce512	10002	563767784934ea03f46d9ba672b1d0e79e9a3f4c683a4685e4297adcfaf44393	10003	20
 Originate insert which will be rejected due to NDB_MAX_INS algorithm.
 insert into t1_max_ins values (1, 1, repeat("R", 10004), repeat("A", 10007), 1);
 Check slave has rejected due to smaller timestamp.
-select a,b,SHA1(c),length(c), SHA1(d), length(d), X from t1_max_ins order by a;
-a	b	SHA1(c)	length(c)	SHA1(d)	length(d)	X
-1	1	4a222e18b539cdefbf0960eaa7f4362a4976e1e0	10000	9641d473ab1bd921263190eee074397084933e2d	10001	20
-2	2	f833241322c062495632923d74314a6a5c23034d	10002	2dad269dfa115f6c7e53e91a73251e597aab8fe9	10003	20
+select a,b,SHA2(c,256),length(c), SHA2(d,256), length(d), X from t1_max_ins order by a;
+a	b	SHA2(c,256)	length(c)	SHA2(d,256)	length(d)	X
+1	1	0e4bbfff4bbfb86b373fdfcd608de625c7364d608c93cb8801892991810af62c	10000	e5308f16fe4e7d76a1a5bfad37b139e538dac414b908cb6f26f324d25752bcd3	10001	20
+2	2	79b982c1769ccaffe9bfa606171cb7141c5e52e15f9cd329284d13d89b0ce512	10002	563767784934ea03f46d9ba672b1d0e79e9a3f4c683a4685e4297adcfaf44393	10003	20
 Expect t1_max_ins to have 3 entries
 select NDB$server_id, NDB$master_server_id, NDB$count, NDB$OP_TYPE, NDB$CFT_CAUSE, a from t1_max_ins$EX order by NDB$count;
 NDB$server_id	NDB$master_server_id	NDB$count	NDB$OP_TYPE	NDB$CFT_CAUSE	a

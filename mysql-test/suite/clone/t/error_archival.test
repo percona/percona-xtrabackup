@@ -10,8 +10,7 @@
 # it needs to sort some rows involving fairly large blobs.
 set sort_buffer_size=1048576;
 
-call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Log writer is waiting for redo-archiver to catch up .*");
-call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* Log writer waited too long for redo-archiver to advance .*");
+call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* The redo log archiver is aborted as it was lagging behind at LSN = .*");
 
 --disable_query_log
 RESET BINARY LOGS AND GTIDS;

@@ -10,7 +10,7 @@ CREATE USER u1 IDENTIFIED WITH 'sha256_password' BY 'pwd1', u2 IDENTIFIED WITH
 # CREATE USER statement test where few user exist and few does not
 CREATE USER u_ne1, u1 IDENTIFIED WITH 'sha256_password' BY 'auth_string',
 u_ne2 IDENTIFIED WITH 'sha256_password' REQUIRE SSL;
-ERROR HY000: Operation CREATE USER failed for 'u1'@'%'
+ERROR HY000: Operation CREATE USER failed for 'u1'@'%' (User account already exists)
 CREATE USER u_ne1, u1 IDENTIFIED WITH 'sha256_password' BY 'auth_string',
 u_ne2 IDENTIFIED WITH 'invalid_plugin' REQUIRE SSL;
 ERROR HY000: Plugin 'invalid_plugin' is not loaded
@@ -136,11 +136,11 @@ Note	3162	Authorization ID 'u_failed2'@'%' does not exist.
 Note	3162	Authorization ID 'r7'@'%' does not exist.
 # DROP USER statement test
 DROP USER u1, u2, u_ne1, u_ne2;
-ERROR HY000: Operation DROP USER failed for 'u_ne1'@'%','u_ne2'@'%'
+ERROR HY000: Operation DROP USER failed for 'u_ne1'@'%' (User account does not exist),'u_ne2'@'%' (User account does not exist)
 DROP ROLE r1, r2, u1, u_ne1;
-ERROR HY000: Operation DROP ROLE failed for 'u_ne1'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'u_ne1'@'%' (User account does not exist)
 DROP ROLE r1, r2, u5, u6, u1_failed;
-ERROR HY000: Operation DROP ROLE failed for 'u5'@'%','u1_failed'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'u5'@'%' (User account does not exist),'u1_failed'@'%' (User account does not exist)
 include/rpl/sync_to_replica.inc
 [connection master]
 SET @sql_log_bin_saved = @@sql_log_bin;

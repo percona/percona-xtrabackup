@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +21,6 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <ctype.h>
 #include <m_string.h>
 #include <my_compiler.h>
 #include <my_inttypes.h>
@@ -29,11 +28,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <mysql/components/service_implementation.h>
 #include <mysql/components/services/audit_api_message_service.h>
 #include <mysql/components/services/udf_registration.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <string_with_len.h>
 #include <sys/types.h>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 
 REQUIRES_SERVICE_PLACEHOLDER(udf_registration);
@@ -134,7 +134,7 @@ static long long message_replace(UDF_INIT *init [[maybe_unused]],
 
   if (args->arg_count == 2 && args->arg_type[0] == INT_RESULT &&
       args->arg_type[1] == STRING_RESULT) {
-    size_t pos = *reinterpret_cast<size_t *>(args->args[0]);
+    size_t const pos = *reinterpret_cast<size_t *>(args->args[0]);
     if (pos < no_args)
       emit_args[pos] = std::string(args->args[1]);
     else
@@ -186,8 +186,8 @@ static mysql_service_status_t init() {
 
 static mysql_service_status_t deinit() {
   int was_present = 0;
-  for (size_t i = 0; i < no_udfs; ++i)
-    mysql_service_udf_registration->udf_unregister(udf_names[i], &was_present);
+  for (auto udf_name : udf_names)
+    mysql_service_udf_registration->udf_unregister(udf_name, &was_present);
 
   return false;
 }

@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 # Set concurrent_insert = 0 to prevent random errors
 # will reset to original value at the end of the test
 SET @old_concurrent_insert = @@global.concurrent_insert;
@@ -108,3 +109,4 @@ DROP TABLE test.t1, test.t1_orig;
 # Reset concurrent_insert to its original value
 SET @@global.concurrent_insert = @old_concurrent_insert;
 # remove mysqldumpfile
+include/rpl/set_gtid_mode_on.inc

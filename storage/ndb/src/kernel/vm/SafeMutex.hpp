@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,10 +24,10 @@
 #ifndef NDB_SAFE_MUTEX_HPP
 #define NDB_SAFE_MUTEX_HPP
 
-#include <assert.h>
 #include <ndb_global.h>
 #include <ndb_types.h>
 #include <NdbOut.hpp>
+#include <cassert>
 #include "thr_cond.h"
 #include "thr_mutex.h"
 
@@ -67,7 +67,7 @@ class SafeMutex {
       : m_name(name),
         m_limit(limit),
         m_debug(debug),
-        m_simple(!(limit > 1 || debug)) {
+        m_simple(limit <= 1 && !debug) {
     assert(m_limit >= 1),
         m_owner = 0;  // wl4391_todo assuming numeric non-zero
     m_initdone = false;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +40,6 @@ I_Kerberos_client *Kerberos_client_create_factory(
     return static_cast<I_Kerberos_client *>(client);
   }
 #endif
-  Gssapi_client *client = new Gssapi_client(spn, vio, upn, password);
+  auto *client = new Gssapi_client(spn, vio, upn, password);
   return static_cast<I_Kerberos_client *>(client);
 }

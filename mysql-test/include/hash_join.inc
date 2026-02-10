@@ -628,6 +628,7 @@ CREATE TABLE t1 (
 INSERT INTO t1 VALUES (1,'n','X'), (2,'Y','8'), (3,'R','l'), (4,'a','b'), (5,'c','d'), (6,'e','f');
 
 let $query = SELECT
+SQL_SMALL_RESULT # Fix one plan between streaming and temp-table-aggregate
   t1.col_varchar_key AS field1
 FROM
   (t1, t1 as alias1)
@@ -1763,7 +1764,7 @@ INSERT INTO build SELECT col1 FROM probe;
 INSERT INTO build SELECT col1 FROM probe ORDER BY col1 DESC;
 ANALYZE TABLE build, probe;
 
-SET optimizer_switch = "materialization=off";
+SET optimizer_switch = "materialization=off,loosescan=off";
 SET join_buffer_size = 1024;
 
 # Note that we cannot use ORDER BY in the query, as that will allow hash join to
@@ -2919,3 +2920,95 @@ SELECT * FROM t1, t3 WHERE t1.j = t3.i;
 SELECT * FROM t1, t3 WHERE t1.j <=> t3.i;
 
 DROP TABLE t1, t2, t3;
+
+--echo #
+--echo # Bug#37057380: Wrong results with sorting or hash join reading from
+--echo #               single-record index lookups
+--echo #
+
+CREATE TABLE t1(a INT);
+INSERT INTO t1 VALUES (1), (2), (3), (4);
+
+CREATE TABLE t2(a INT);
+INSERT INTO t2 VALUES (1), (2), (3), (4);
+
+CREATE TABLE t3 (a INT, b INT);
+INSERT INTO t3 VALUES (1, 1), (2, 2), (3, 3), (4, 1);
+
+CREATE TABLE t4 (id INT PRIMARY KEY, a INT);
+INSERT INTO t4 VALUES (1, 1), (2, 2), (3, 3), (4, 4);
+
+ANALYZE TABLE t1, t2, t3, t4;
+
+--sorted_result
+SELECT t1.a AS t1a, dt.* FROM t1,
+LATERAL (
+  SELECT dt1.*, t2.a AS t2a FROM
+    (SELECT * FROM t3 JOIN t4 ON t3.b = t4.id AND t3.a = t4.a)
+       AS dt1(t3a, t3b, id, t4a)
+    JOIN t2 ON t2.a = t3a AND t1.a <> 100 LIMIT 100
+) AS dt;
+
+DROP TABLE t1, t2, t3, t4;
+
+--echo #
+--echo # Bug#37161583: Incorrect result with LEFT JOIN and small
+--echo #               join_buffer_size
+
+CREATE TABLE t1(a INT);
+INSERT INTO t1 VALUES (NULL);
+
+CREATE TABLE t2(b INT);
+INSERT INTO t2
+  WITH RECURSIVE
+    s(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM s WHERE n < 1000)
+  SELECT n FROM s;
+
+ANALYZE TABLE t1, t2;
+
+--let $query = SELECT * FROM t1 WHERE NOT EXISTS (SELECT * FROM t2 WHERE a = b)
+
+# We want to test a hash antijoin.
+--replace_regex $elide_costs
+--eval EXPLAIN FORMAT=TREE $query
+
+# First verify that we get the correct result with DEFAULT
+# join_buffer_size, when the operation does not spill to disk.
+TRUNCATE performance_schema.file_summary_by_event_name;
+SET join_buffer_size = DEFAULT;
+--sorted_result
+--eval $query
+# Verify that the operation did not spill to disk.
+--eval $hash_join_file_operations
+
+# Then verify that we get the correct result with a so small join
+# buffer that the operation spills to disk. It used to return zero
+# rows.
+TRUNCATE performance_schema.file_summary_by_event_name;
+SET join_buffer_size = 128;
+--sorted_result
+--eval $query
+SET join_buffer_size = DEFAULT;
+# Verify that the operation spilled to disk.
+--eval $hash_join_file_operations
+
+DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug#37273221: Hypergraph: Inefficient join order when using LIMIT
+--echo #
+
+CREATE TABLE t1(x INT);
+CREATE TABLE t2(x INT, y VARCHAR(10000));
+INSERT INTO t1 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
+INSERT INTO t2 SELECT x, REPEAT('x', x * 1000) FROM t1 WHERE t1.x < 10;
+ANALYZE TABLE t1, t2;
+
+# Expect the smaller table to be used as build table, since that
+# allows us to start returning rows earlier and hit the LIMIT earlier.
+# t1 has slightly more rows than t2, but it's much smaller in data
+# volume, so we want t1 to be the build table.
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT * FROM t1, t2 WHERE t1.x = t2.x LIMIT 1;
+
+DROP TABLE t1, t2;

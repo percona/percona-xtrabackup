@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,6 @@
 #include "sql/sp.h"
 
 #include <string.h>
-
 #include <algorithm>
 #include <atomic>
 #include <memory>
@@ -60,6 +59,7 @@
 #include "sql/dd/dd_utility.h"               // dd::normalize_string
 #include "sql/dd/string_type.h"
 #include "sql/dd/types/function.h"
+#include "sql/dd/types/library.h"
 #include "sql/dd/types/procedure.h"
 #include "sql/dd/types/routine.h"
 #include "sql/dd/types/schema.h"
@@ -86,9 +86,10 @@
 #include "sql/sql_db.h"  // get_default_db_collation
 #include "sql/sql_digest_stream.h"
 #include "sql/sql_error.h"
+#include "sql/sql_lex.h"  // enum_sp_type
 #include "sql/sql_list.h"
 #include "sql/sql_parse.h"  // parse_sql
-#include "sql/sql_show.h"   // append_identifier
+#include "sql/sql_show.h"   // append_identifier_*
 #include "sql/sql_table.h"  // write_bin_log
 #include "sql/strfunc.h"    // lex_string_strmake
 #include "sql/system_variables.h"
@@ -104,14 +105,36 @@
 class sp_rcontext;
 
 /* Used in error handling only */
-#define SP_TYPE_STRING(type) \
-  (type == enum_sp_type::FUNCTION ? "FUNCTION" : "PROCEDURE")
+#define SP_TYPE_STRING(type)                         \
+  ((type) == enum_sp_type::FUNCTION    ? "FUNCTION"  \
+   : (type) == enum_sp_type::PROCEDURE ? "PROCEDURE" \
+   : (type) == enum_sp_type::LIBRARY   ? "LIBRARY"   \
+                                       : "UNKNOWN")
+
 static bool create_string(
     THD *thd, String *buf, enum_sp_type sp_type, const char *db, size_t dblen,
     const char *name, size_t namelen, const char *params, size_t paramslen,
     const char *returns, size_t returnslen, const char *body, size_t bodylen,
     st_sp_chistics *chistics, const LEX_CSTRING &definer_user,
     const LEX_CSTRING &definer_host, sql_mode_t sql_mode, bool if_not_exists);
+
+static bool create_stored_procedure_and_function_string(
+    THD *thd, String *buf, enum_sp_type type, const char *db, size_t dblen,
+    const char *name, size_t namelen, const char *params, size_t paramslen,
+    const char *returns, size_t returnslen, const char *body, size_t bodylen,
+    st_sp_chistics *chistics, const LEX_CSTRING &definer_user,
+    const LEX_CSTRING &definer_host, bool if_not_exists, bool is_sql,
+    const char *dollar_quote, size_t dollar_quote_len, size_t language_length);
+
+static bool create_library_string(THD *thd, String *buf, const char *db,
+                                  size_t dblen, const char *name,
+                                  size_t namelen, const char *body,
+                                  size_t bodylen, st_sp_chistics *chistics,
+                                  bool if_not_exists, const char *dollar_quote,
+                                  size_t dollar_quote_len,
+                                  size_t language_length);
+
+static bool is_import_missing(THD *thd, const sp_name_with_alias &import);
 
 /**************************************************************************
   Fetch stored routines and events creation_ctx for upgrade.
@@ -275,8 +298,12 @@ static bool lock_routine_name(THD *thd, enum_sp_type type, const sp_name *name,
   MDL_key mdl_key;
   if (type == enum_sp_type::FUNCTION)
     dd::Function::create_mdl_key(name->m_db.str, name->m_name.str, &mdl_key);
-  else
+  else if (type == enum_sp_type::PROCEDURE)
     dd::Procedure::create_mdl_key(name->m_db.str, name->m_name.str, &mdl_key);
+  else if (type == enum_sp_type::LIBRARY)
+    dd::Library::create_mdl_key(name->m_db.str, name->m_name.str, &mdl_key);
+  else
+    assert(false);
 
   // MDL Lock request on the routine.
   MDL_request routine_request;
@@ -296,7 +323,7 @@ static bool lock_routine_name(THD *thd, enum_sp_type type, const sp_name *name,
   @param thd  Thread handle
   @param sp   The stored procedure executed
 
-  @remark For functions and triggers we return error about
+  @remark For functions, triggers and libraries we return error about
           prohibited recursion. For stored procedures we
           return about reaching recursion limit.
 */
@@ -306,8 +333,12 @@ static void recursion_level_error(THD *thd, sp_head *sp) {
     my_error(ER_SP_RECURSION_LIMIT, MYF(0),
              static_cast<int>(thd->variables.max_sp_recursion_depth),
              sp->m_name.str);
-  } else
+  } else {
+    // The library is not executable and does not support recursion.
+    assert(sp->m_type != enum_sp_type::LIBRARY);
+
     my_error(ER_SP_NO_RECURSION, MYF(0));
+  }
 }
 
 /**
@@ -348,13 +379,15 @@ static enum_sp_return_code db_find_routine(THD *thd, enum_sp_type type,
   const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
   const dd::Routine *routine = nullptr;
 
-  bool error;
+  bool error = true;
   if (type == enum_sp_type::FUNCTION)
     error = thd->dd_client()->acquire<dd::Function>(name->m_db.str,
                                                     name->m_name.str, &routine);
-  else
+  else if (type == enum_sp_type::PROCEDURE)
     error = thd->dd_client()->acquire<dd::Procedure>(
         name->m_db.str, name->m_name.str, &routine);
+  else
+    assert(false);
 
   if (error) return SP_INTERNAL_ERROR;
 
@@ -362,7 +395,7 @@ static enum_sp_return_code db_find_routine(THD *thd, enum_sp_type type,
 
   // prepare sp_chistics from the dd::routine object.
   st_sp_chistics sp_chistics;
-  prepare_sp_chistics_from_dd_routine(routine, &sp_chistics);
+  prepare_sp_chistics_from_dd_routine(thd, routine, &sp_chistics);
 
   // prepare stored routine's return type string.
   dd::String_type return_type_str;
@@ -520,9 +553,9 @@ enum_sp_return_code db_load_routine(
   const LEX_CSTRING user = {definer_user, strlen(definer_user)};
   const LEX_CSTRING host = {definer_host, strlen(definer_host)};
 
-  if (!create_string(thd, &defstr, type, nullptr, 0, sp_name, sp_name_len,
-                     params, strlen(params), returns, strlen(returns), body,
-                     strlen(body), sp_chistics, user, host, sql_mode, false)) {
+  if (create_string(thd, &defstr, type, nullptr, 0, sp_name, sp_name_len,
+                    params, strlen(params), returns, strlen(returns), body,
+                    strlen(body), sp_chistics, user, host, sql_mode, false)) {
     ret = SP_INTERNAL_ERROR;
     goto end;
   }
@@ -607,14 +640,20 @@ static bool check_routine_already_exists(THD *thd, sp_head *sp,
   assert(!already_exists);
 
   const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  bool error;
-  const dd::Routine *sr;
+  bool error = true;
+  const dd::Routine *sr = nullptr;
   if (sp->m_type == enum_sp_type::FUNCTION)
     error = thd->dd_client()->acquire<dd::Function>(sp->m_db.str,
                                                     sp->m_name.str, &sr);
-  else
+  else if (sp->m_type == enum_sp_type::PROCEDURE)
     error = thd->dd_client()->acquire<dd::Procedure>(sp->m_db.str,
                                                      sp->m_name.str, &sr);
+  else if (sp->m_type == enum_sp_type::LIBRARY)
+    error = thd->dd_client()->acquire<dd::Library>(sp->m_db.str, sp->m_name.str,
+                                                   &sr);
+  else
+    assert(false);
+
   if (error) {
     // Error is reported by DD API framework.
     return true;
@@ -746,14 +785,13 @@ static bool sp_binlog_create_routine_stmt(THD *thd, sp_head *sp,
   retstr.set_charset(system_charset_info);
   if (sp->m_type == enum_sp_type::FUNCTION) sp->returns_type(thd, &retstr);
 
-  if (!create_string(thd, &log_query, sp->m_type,
-                     (sp->m_explicit_name ? sp->m_db.str : nullptr),
-                     (sp->m_explicit_name ? sp->m_db.length : 0),
-                     sp->m_name.str, sp->m_name.length, sp->m_params.str,
-                     sp->m_params.length, retstr.c_ptr(), retstr.length(),
-                     sp->m_body.str, sp->m_body.length, sp->m_chistics,
-                     definer->user, definer->host, thd->variables.sql_mode,
-                     if_not_exists))
+  if (create_string(thd, &log_query, sp->m_type,
+                    (sp->m_explicit_name ? sp->m_db.str : nullptr),
+                    (sp->m_explicit_name ? sp->m_db.length : 0), sp->m_name.str,
+                    sp->m_name.length, sp->m_params.str, sp->m_params.length,
+                    retstr.c_ptr(), retstr.length(), sp->m_body.str,
+                    sp->m_body.length, sp->m_chistics, definer->user,
+                    definer->host, thd->variables.sql_mode, if_not_exists))
     return true;
 
   thd->add_to_binlog_accessed_dbs(sp->m_db.str);
@@ -768,6 +806,17 @@ static bool sp_binlog_create_routine_stmt(THD *thd, sp_head *sp,
     return true;
 
   return false;
+}
+
+/*
+  Private helper function to translate between the enum_sp_type and MDL_key.
+*/
+static MDL_key::enum_mdl_namespace get_mdl_type(enum_sp_type sp_type) {
+  if (sp_type == enum_sp_type::FUNCTION) return MDL_key::FUNCTION;
+  if (sp_type == enum_sp_type::PROCEDURE) return MDL_key::PROCEDURE;
+  if (sp_type == enum_sp_type::LIBRARY) return MDL_key::LIBRARY;
+  assert(false);
+  return {};
 }
 
 /**
@@ -801,13 +850,13 @@ bool sp_create_routine(THD *thd, sp_head *sp, const LEX_USER *definer,
                        static_cast<int>(sp->m_name.length), sp->m_name.str));
 
   assert(sp->m_type == enum_sp_type::PROCEDURE ||
-         sp->m_type == enum_sp_type::FUNCTION);
+         sp->m_type == enum_sp_type::FUNCTION ||
+         sp->m_type == enum_sp_type::LIBRARY);
   assert(!sp_already_exists);
 
   /* Grab an exclusive MDL lock. */
-  const MDL_key::enum_mdl_namespace mdl_type =
-      (sp->m_type == enum_sp_type::FUNCTION) ? MDL_key::FUNCTION
-                                             : MDL_key::PROCEDURE;
+  const MDL_key::enum_mdl_namespace mdl_type = get_mdl_type(sp->m_type);
+
   if (lock_object_name(thd, mdl_type, sp->m_db.str, sp->m_name.str)) {
     my_error(ER_SP_STORE_FAILED, MYF(0), SP_TYPE_STRING(sp->m_type),
              sp->m_name.str);
@@ -930,11 +979,11 @@ enum_sp_return_code sp_drop_routine(THD *thd, enum_sp_type type,
              ("type: %d  name: %.*s", static_cast<int>(type),
               static_cast<int>(name->m_name.length), name->m_name.str));
 
-  assert(type == enum_sp_type::PROCEDURE || type == enum_sp_type::FUNCTION);
+  assert(type == enum_sp_type::PROCEDURE || type == enum_sp_type::FUNCTION ||
+         type == enum_sp_type::LIBRARY);
 
   /* Grab an exclusive MDL lock. */
-  const MDL_key::enum_mdl_namespace mdl_type =
-      (type == enum_sp_type::FUNCTION) ? MDL_key::FUNCTION : MDL_key::PROCEDURE;
+  MDL_key::enum_mdl_namespace mdl_type = get_mdl_type(type);
   if (lock_object_name(thd, mdl_type, name->m_db.str, name->m_name.str))
     return SP_DROP_FAILED;
 
@@ -943,13 +992,18 @@ enum_sp_return_code sp_drop_routine(THD *thd, enum_sp_type type,
   const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
   const dd::Routine *routine = nullptr;
 
-  bool error;
+  bool error = true;
   if (type == enum_sp_type::FUNCTION)
     error = thd->dd_client()->acquire<dd::Function>(name->m_db.str,
                                                     name->m_name.str, &routine);
-  else
+  else if (type == enum_sp_type::PROCEDURE)
     error = thd->dd_client()->acquire<dd::Procedure>(
         name->m_db.str, name->m_name.str, &routine);
+  else if (type == enum_sp_type::LIBRARY)
+    error = thd->dd_client()->acquire<dd::Library>(name->m_db.str,
+                                                   name->m_name.str, &routine);
+  else
+    assert(false);
   if (error) return SP_INTERNAL_ERROR;
 
   if (routine == nullptr) return SP_DOES_NOT_EXISTS;
@@ -1006,7 +1060,7 @@ enum_sp_return_code sp_drop_routine(THD *thd, enum_sp_type type,
       make sure the routine is at least gone from the
       local cache.
     */
-    {
+    if (type == enum_sp_type::FUNCTION || type == enum_sp_type::PROCEDURE) {
       sp_head *sp;
       sp_cache **spc = (type == enum_sp_type::FUNCTION ? &thd->sp_func_cache
                                                        : &thd->sp_proc_cache);
@@ -1060,11 +1114,11 @@ bool sp_update_routine(THD *thd, enum_sp_type type, sp_name *name,
              ("type: %d  name: %.*s", static_cast<int>(type),
               static_cast<int>(name->m_name.length), name->m_name.str));
 
-  assert(type == enum_sp_type::PROCEDURE || type == enum_sp_type::FUNCTION);
+  assert(type == enum_sp_type::PROCEDURE || type == enum_sp_type::FUNCTION ||
+         type == enum_sp_type::LIBRARY);
 
   /* Grab an exclusive MDL lock. */
-  const MDL_key::enum_mdl_namespace mdl_type =
-      (type == enum_sp_type::FUNCTION) ? MDL_key::FUNCTION : MDL_key::PROCEDURE;
+  const MDL_key::enum_mdl_namespace mdl_type = get_mdl_type(type);
   if (lock_object_name(thd, mdl_type, name->m_db.str, name->m_name.str)) {
     my_error(ER_SP_CANT_ALTER, MYF(0), SP_TYPE_STRING(type), name->m_name.str);
     return true;
@@ -1073,12 +1127,15 @@ bool sp_update_routine(THD *thd, enum_sp_type type, sp_name *name,
   // Check if routine exists.
   const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
   dd::Routine *routine = nullptr;
-  bool error;
+  bool error = true;
   if (type == enum_sp_type::FUNCTION)
     error = thd->dd_client()->acquire_for_modification<dd::Function>(
         name->m_db.str, name->m_name.str, &routine);
-  else
+  else if (type == enum_sp_type::PROCEDURE)
     error = thd->dd_client()->acquire_for_modification<dd::Procedure>(
+        name->m_db.str, name->m_name.str, &routine);
+  else if (type == enum_sp_type::LIBRARY)
+    error = thd->dd_client()->acquire_for_modification<dd::Library>(
         name->m_db.str, name->m_name.str, &routine);
   if (error) {
     // Error is reported by DD API framework.
@@ -1118,7 +1175,7 @@ bool sp_update_routine(THD *thd, enum_sp_type type, sp_name *name,
             system_charset_info, invalid_sub_str)) {
       // Provide contextual information
       my_error(
-          ER_COMMENT_CONTAINS_INVALID_STRING, MYF(0), "stored routine",
+          ER_COMMENT_CONTAINS_INVALID_STRING, MYF(0), SP_TYPE_STRING(type),
           (std::string(name->m_db.str) + "." + std::string(name->m_name.str))
               .c_str(),
           system_charset_info->csname, invalid_sub_str.c_str());
@@ -1132,6 +1189,22 @@ bool sp_update_routine(THD *thd, enum_sp_type type, sp_name *name,
       my_error(ER_TOO_LONG_ROUTINE_COMMENT, MYF(0), chistics->comment.str,
                MYSQL_STORED_ROUTINE_COMMENT_LENGTH);
       return true;
+    }
+  }
+
+  // Validate the list of the imported libraries.
+  const mem_root_deque<sp_name_with_alias> *imported_libraries =
+      chistics->get_imported_libraries();
+  if (imported_libraries != nullptr && !imported_libraries->empty()) {
+    for (auto &library : *imported_libraries) {
+      auto library_name = sp_name{library.m_db, library.m_name, true};
+      if (check_routine_access(thd, EXECUTE_ACL, library.m_db.str,
+                               library.m_name.str, Acl_type::LIBRARY, true) ||
+          sp_exists_library(thd, &library_name)) {
+        // Could't find the library or it lacks the permissions.
+        my_error(ER_SP_DOES_NOT_EXIST, MYF(0), "LIBRARY", library.m_name.str);
+        return true;
+      }
     }
   }
 
@@ -1178,14 +1251,17 @@ err_report_with_rollback:
 bool lock_db_routines(THD *thd, const dd::Schema &schema) {
   DBUG_TRACE;
 
-  // Vectors for names of stored functions and procedures of the schema.
-  std::vector<dd::String_type> func_names, proc_names;
+  // Vectors for names of stored functions, procedures and libraries of the
+  // schema.
+  std::vector<dd::String_type> func_names, proc_names, library_names;
 
-  // Fetch names of stored functions and procedures of the schema.
+  // Fetch names of stored functions, procedures and libraries of the schema.
   if (thd->dd_client()->fetch_schema_component_names<dd::Function>(
           &schema, &func_names) ||
       thd->dd_client()->fetch_schema_component_names<dd::Procedure>(
-          &schema, &proc_names))
+          &schema, &proc_names) ||
+      thd->dd_client()->fetch_schema_component_names<dd::Library>(
+          &schema, &library_names))
     return true;
 
   /*
@@ -1224,6 +1300,7 @@ bool lock_db_routines(THD *thd, const dd::Schema &schema) {
 
   add_requests_for_names(dd::Routine::RT_FUNCTION, func_names);
   add_requests_for_names(dd::Routine::RT_PROCEDURE, proc_names);
+  add_requests_for_names(dd::Routine::RT_LIBRARY, library_names);
 
   return thd->mdl_context.acquire_locks(&mdl_requests,
                                         thd->variables.lock_wait_timeout);
@@ -1245,13 +1322,15 @@ bool sp_drop_db_routines(THD *thd, const dd::Schema &schema) {
   bool is_routine_dropped = false;
 
   // Vectors for names of stored functions and procedures of the schema.
-  std::vector<dd::String_type> func_names, proc_names;
+  std::vector<dd::String_type> func_names, proc_names, libraries_names;
 
   // Fetch names of stored functions and procedures of the schema.
   if (thd->dd_client()->fetch_schema_component_names<dd::Function>(
           &schema, &func_names) ||
       thd->dd_client()->fetch_schema_component_names<dd::Procedure>(
-          &schema, &proc_names))
+          &schema, &proc_names) ||
+      thd->dd_client()->fetch_schema_component_names<dd::Library>(
+          &schema, &libraries_names))
     return true;
 
   MEM_ROOT foreach_fn_root(key_memory_rm_table_foreach_root,
@@ -1267,10 +1346,17 @@ bool sp_drop_db_routines(THD *thd, const dd::Schema &schema) {
         if (thd->dd_client()->acquire<dd::Function>(schema.name().c_str(),
                                                     name.c_str(), &routine))
           return true;
-      } else {
+      } else if (type == enum_sp_type::PROCEDURE) {
         if (thd->dd_client()->acquire<dd::Procedure>(schema.name().c_str(),
                                                      name.c_str(), &routine))
           return true;
+      } else if (type == enum_sp_type::LIBRARY) {
+        if (thd->dd_client()->acquire<dd::Library>(schema.name().c_str(),
+                                                   name.c_str(), &routine))
+          return true;
+      } else {
+        assert(false);  // Unknown type.
+        return false;
       }
 
       DBUG_EXECUTE_IF("fail_drop_db_routines", {
@@ -1280,9 +1366,7 @@ bool sp_drop_db_routines(THD *thd, const dd::Schema &schema) {
 
       if (routine == nullptr || thd->dd_client()->drop(routine)) {
         assert(routine != nullptr);
-        my_error(ER_SP_DROP_FAILED, MYF(0),
-                 type == enum_sp_type::FUNCTION ? "FUNCTION" : "PROCEDURE",
-                 name.c_str());
+        my_error(ER_SP_DROP_FAILED, MYF(0), SP_TYPE_STRING(type), name.c_str());
         return true;
       }
 
@@ -1310,7 +1394,8 @@ bool sp_drop_db_routines(THD *thd, const dd::Schema &schema) {
   };
 
   if (drop_routines_by_names(enum_sp_type::FUNCTION, func_names) ||
-      drop_routines_by_names(enum_sp_type::PROCEDURE, proc_names)) {
+      drop_routines_by_names(enum_sp_type::PROCEDURE, proc_names) ||
+      drop_routines_by_names(enum_sp_type::LIBRARY, libraries_names)) {
     return true;
   }
 
@@ -1320,58 +1405,47 @@ bool sp_drop_db_routines(THD *thd, const dd::Schema &schema) {
   return false;
 }
 
+/* Helper function to translate the SP type to string. */
+static constexpr const char *get_routine_string_camel_case(enum_sp_type type) {
+  switch (type) {
+    case enum_sp_type::FUNCTION:
+      return "Function";
+    case enum_sp_type::PROCEDURE:
+      return "Procedure";
+    default:
+      assert(false);
+      return "Unknown";
+  }
+}
+
+/* Helper function to translate the SP type to CREATE ROUTINE string. */
+static constexpr const char *get_create_routine_string(enum_sp_type type) {
+  switch (type) {
+    case enum_sp_type::FUNCTION:
+      return "Create Function";
+    case enum_sp_type::PROCEDURE:
+      return "Create Procedure";
+    default:
+      assert(false);
+      return "Unknown";
+  }
+}
+
 /**
-  Prepare show create routine output from the DD routine object.
+  Send the output of SHOW CREATE ROUTINE.
 
-  @param[in] thd       Thread handle.
-  @param[in] type      Stored routine type.
-  @param[in] sp        Stored routine name.
-  @param[in] routine   Routine object read for the routine.
+  @param[in] thd         Thread.
+  @param[in] type        PROCEDURE or FUNCTION.
+  @param[in] routine     The SP object.
+  @param[in] defstr      Definition string.
+  @param[in] full_access true if the user has permissions to see the definition.
 
-  @retval    false     on success
-  @retval    true      on error
+  @retval    false       on success
+  @retval    true        on error
 */
-static bool show_create_routine_from_dd_routine(THD *thd, enum_sp_type type,
-                                                sp_name *sp,
-                                                const dd::Routine *routine) {
-  DBUG_TRACE;
-
-  /*
-    Check if user has full access to the routine properties (i.e including
-    stored routine code), or partial access (i.e to view its other properties).
-  */
-
-  bool full_access = has_full_view_routine_access(
-      thd, sp->m_db.str, routine->definer_user().c_str(),
-      routine->definer_host().c_str());
-
-  if (!full_access &&
-      !has_partial_view_routine_access(thd, sp->m_db.str, sp->m_name.str,
-                                       type == enum_sp_type::PROCEDURE))
-    return true;
-
-  // prepare st_sp_chistics object from the dd::Routine.
-  st_sp_chistics sp_chistics;
-  prepare_sp_chistics_from_dd_routine(routine, &sp_chistics);
-
-  // prepare stored routine return type string.
-  dd::String_type return_type_str;
-  prepare_return_type_string_from_dd_routine(thd, routine, &return_type_str);
-
-  // Prepare stored routine definition string.
-  String defstr;
-  defstr.set_charset(system_charset_info);
-  if (!create_string(
-          thd, &defstr, type, nullptr, 0, routine->name().c_str(),
-          routine->name().length(), routine->parameter_str().c_str(),
-          routine->parameter_str().length(), return_type_str.c_str(),
-          return_type_str.length(), routine->definition().c_str(),
-          routine->definition().length(), &sp_chistics,
-          {routine->definer_user().c_str(), routine->definer_user().length()},
-          {routine->definer_host().c_str(), routine->definer_host().length()},
-          routine->sql_mode(), false))
-    return true;
-
+static bool send_show_create_stored_function_and_procedure(
+    THD *thd, enum_sp_type type, const dd::Routine *routine, String &defstr,
+    bool full_access) {
   // Prepare sql_mode string representation.
   LEX_STRING sql_mode;
   sql_mode_string_representation(thd, routine->sql_mode(), &sql_mode);
@@ -1379,8 +1453,7 @@ static bool show_create_routine_from_dd_routine(THD *thd, enum_sp_type type,
   /* Send header. */
   mem_root_deque<Item *> fields(thd->mem_root);
   // Column type
-  const char *col1_caption =
-      (type == enum_sp_type::PROCEDURE) ? "Procedure" : "Function";
+  const char *col1_caption = get_routine_string_camel_case(type);
   fields.push_back(new Item_empty_string(col1_caption, NAME_CHAR_LEN));
 
   // Column sql_mode
@@ -1388,9 +1461,7 @@ static bool show_create_routine_from_dd_routine(THD *thd, enum_sp_type type,
 
   // Column Create Procedure/Function.
   {
-    const char *col3_caption = (type == enum_sp_type::PROCEDURE)
-                                   ? "Create Procedure"
-                                   : "Create Function";
+    const char *col3_caption = get_create_routine_string(type);
     /*
       NOTE: SQL statement field must be not less than 1024 in order not to
       confuse old clients.
@@ -1455,6 +1526,131 @@ static bool show_create_routine_from_dd_routine(THD *thd, enum_sp_type type,
 }
 
 /**
+  Send the output of SHOW CREATE LIBRARY.
+
+  @param[in] thd         Thread.
+  @param[in] library     The Library object.
+  @param[in] defstr      Definition string.
+  @param[in] full_access true if the user has permissions to see the definition.
+
+  @retval    false       on success
+  @retval    true        on error
+*/
+static bool send_show_create_library(THD *thd, const dd::Routine *library,
+                                     String &defstr, bool full_access) {
+  // Prepare sql_mode string representation.
+  LEX_STRING sql_mode;
+  sql_mode_string_representation(thd, library->sql_mode(), &sql_mode);
+  /* Send header. */
+  mem_root_deque<Item *> fields(thd->mem_root);
+  // Column type
+  fields.push_back(new Item_empty_string("Library", NAME_CHAR_LEN));
+  // Column sql_mode
+  fields.push_back(new Item_empty_string("sql_mode", sql_mode.length));
+
+  // Column Create Library.
+  {
+    /*
+      NOTE: SQL statement field must be not less than 1024 in order not to
+      confuse old clients.
+    */
+    Item_empty_string *stmt_fld = new Item_empty_string(
+        "Create Library", std::max<size_t>(defstr.length(), 1024U));
+
+    stmt_fld->set_nullable(true);
+
+    fields.push_back(stmt_fld);
+  }
+
+  if (thd->send_result_metadata(fields,
+                                Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
+    return true;
+
+  /* Send data. */
+  Protocol *protocol = thd->get_protocol();
+  protocol->start_row();
+
+  // Library Name
+  protocol->store_string(library->name().c_str(), library->name().length(),
+                         system_charset_info);
+  // sql mode.
+  protocol->store_string(sql_mode.str, sql_mode.length, system_charset_info);
+
+  // Library definition.
+  const CHARSET_INFO *cs_info =
+      dd_get_mysql_charset(library->client_collation_id());
+  if (full_access)
+    protocol->store_string(defstr.c_ptr(), defstr.length(), cs_info);
+  else
+    protocol->store_null();
+
+  const bool err_status = protocol->end_row();
+
+  if (!err_status) my_eof(thd);
+
+  return err_status;
+}
+
+/**
+  Prepare show create routine output from the DD routine object.
+
+  @param[in] thd       Thread handle.
+  @param[in] type      Stored routine type.
+  @param[in] sp        Stored routine name.
+  @param[in] routine   Routine object read for the routine.
+
+  @retval    false     on success
+  @retval    true      on error
+*/
+static bool show_create_routine_from_dd_routine(THD *thd, enum_sp_type type,
+                                                sp_name *sp,
+                                                const dd::Routine *routine) {
+  DBUG_TRACE;
+
+  /*
+    Check if user has full access to the routine properties (i.e including
+    stored routine code), or partial access (i.e to view its other properties).
+  */
+
+  bool full_access = has_full_view_routine_access(
+      thd, sp->m_db.str, routine->definer_user().c_str(),
+      routine->definer_host().c_str());
+
+  assert(type == enum_sp_type::PROCEDURE || type == enum_sp_type::FUNCTION ||
+         type == enum_sp_type::LIBRARY);
+  if (!full_access &&
+      !has_partial_view_routine_access(thd, sp->m_db.str, sp->m_name.str,
+                                       enum_sp_type_to_acl_type(type)))
+    return true;
+
+  // prepare st_sp_chistics object from the dd::Routine.
+  st_sp_chistics sp_chistics;
+  prepare_sp_chistics_from_dd_routine(thd, routine, &sp_chistics);
+
+  // prepare stored routine return type string.
+  dd::String_type return_type_str;
+  prepare_return_type_string_from_dd_routine(thd, routine, &return_type_str);
+
+  // Prepare stored routine definition string.
+  String defstr;
+  defstr.set_charset(system_charset_info);
+  if (create_string(
+          thd, &defstr, type, nullptr, 0, routine->name().c_str(),
+          routine->name().length(), routine->parameter_str().c_str(),
+          routine->parameter_str().length(), return_type_str.c_str(),
+          return_type_str.length(), routine->definition().c_str(),
+          routine->definition().length(), &sp_chistics,
+          {routine->definer_user().c_str(), routine->definer_user().length()},
+          {routine->definer_host().c_str(), routine->definer_host().length()},
+          routine->sql_mode(), false))
+    return true;
+  if (type == enum_sp_type::LIBRARY)
+    return send_show_create_library(thd, routine, defstr, full_access);
+  return send_show_create_stored_function_and_procedure(thd, type, routine,
+                                                        defstr, full_access);
+}
+
+/**
   Implement SHOW CREATE statement for stored routines.
 
   The operation finds the stored routine object specified by name and
@@ -1474,7 +1670,8 @@ bool sp_show_create_routine(THD *thd, enum_sp_type type, sp_name *name) {
   DBUG_PRINT("enter",
              ("name: %.*s", (int)name->m_name.length, name->m_name.str));
 
-  assert(type == enum_sp_type::PROCEDURE || type == enum_sp_type::FUNCTION);
+  assert(type == enum_sp_type::PROCEDURE || type == enum_sp_type::FUNCTION ||
+         type == enum_sp_type::LIBRARY);
 
   // Lock routine for read.
   if (lock_routine_name(thd, type, name, MDL_SHARED_HIGH_PRIO)) {
@@ -1486,13 +1683,18 @@ bool sp_show_create_routine(THD *thd, enum_sp_type type, sp_name *name) {
   const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
   const dd::Routine *routine = nullptr;
 
-  bool error;
+  bool error = true;
   if (type == enum_sp_type::FUNCTION)
     error = thd->dd_client()->acquire<dd::Function>(name->m_db.str,
                                                     name->m_name.str, &routine);
-  else
+  else if (type == enum_sp_type::PROCEDURE)
     error = thd->dd_client()->acquire<dd::Procedure>(
         name->m_db.str, name->m_name.str, &routine);
+  else if (type == enum_sp_type::LIBRARY)
+    error = thd->dd_client()->acquire<dd::Library>(name->m_db.str,
+                                                   name->m_name.str, &routine);
+  else
+    assert(false);
 
   if (error) {
     my_error(ER_SP_LOAD_FAILED, MYF(0), name->m_name.str);
@@ -1506,8 +1708,7 @@ bool sp_show_create_routine(THD *thd, enum_sp_type type, sp_name *name) {
       If we have insufficient privileges, pretend the routine
       does not exist.
     */
-    my_error(ER_SP_DOES_NOT_EXIST, MYF(0),
-             type == enum_sp_type::FUNCTION ? "FUNCTION" : "PROCEDURE",
+    my_error(ER_SP_DOES_NOT_EXIST, MYF(0), SP_TYPE_STRING(type),
              name->m_name.str);
     return true;
   }
@@ -1532,7 +1733,7 @@ bool sp_show_create_routine(THD *thd, enum_sp_type type, sp_name *name) {
     NULL    in case of error.
 */
 
-sp_head *sp_find_routine(THD *thd, enum_sp_type type, sp_name *name,
+sp_head *sp_find_routine(THD *thd, enum_sp_type type, const sp_name *name,
                          sp_cache **cp, bool cache_only) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("name:  %.*s.%.*s  type: %d  cache only %d",
@@ -1636,22 +1837,47 @@ sp_head *sp_setup_routine(THD *thd, enum_sp_type type, sp_name *name,
 }
 
 /**
+  This is used by sp_exist_routines() and sql_parse.cc to find if
+  the library exists.
+
+  @param thd      Thread handler
+  @param name     Name of library
+
+  @retval false Found.
+  @retval true  Not found
+*/
+bool sp_exists_library(THD *thd, sp_name *name) {
+  // Lock routine for read.
+  if (lock_routine_name(thd, enum_sp_type::LIBRARY, name, MDL_SHARED)) {
+    return true;
+  }
+  // Find the library in the data dictionary.
+  auto releaser = dd::cache::Dictionary_client::Auto_releaser{thd->dd_client()};
+  const dd::Library *library = nullptr;
+  if (thd->dd_client()->acquire<dd::Library>(name->m_db.str, name->m_name.str,
+                                             &library)) {
+    return true;
+  }
+  return library == nullptr;
+}
+
+/**
   This is used by sql_acl.cc:mysql_routine_grant() and is used to find
   the routines in 'routines'.
 
-  @param thd Thread handler
+  @param thd      Thread handler
   @param routines List of needles in the hay stack
-  @param is_proc  Indicates whether routines in the list are procedures
-                  or functions.
+  @param sp_type  Routine type - stored procedure or a stored function.
 
   @retval false Found.
   @retval true  Not found
 */
 
-bool sp_exist_routines(THD *thd, Table_ref *routines, bool is_proc) {
+bool sp_exist_routines(THD *thd, Table_ref *routines, enum_sp_type sp_type) {
   Table_ref *routine;
   bool sp_object_found;
   DBUG_TRACE;
+
   for (routine = routines; routine; routine = routine->next_global) {
     sp_name *name;
     LEX_CSTRING lex_db;
@@ -1662,14 +1888,23 @@ bool sp_exist_routines(THD *thd, Table_ref *routines, bool is_proc) {
     lex_name.str = thd->strmake(routine->table_name, lex_name.length);
     name = new (thd->mem_root) sp_name(lex_db, lex_name, true);
     name->init_qname(thd);
-    sp_object_found =
-        is_proc ? sp_find_routine(thd, enum_sp_type::PROCEDURE, name,
-                                  &thd->sp_proc_cache, false) != nullptr
-                : sp_find_routine(thd, enum_sp_type::FUNCTION, name,
-                                  &thd->sp_func_cache, false) != nullptr;
+
+    if (sp_type == enum_sp_type::PROCEDURE)
+      sp_object_found = sp_find_routine(thd, sp_type, name, &thd->sp_proc_cache,
+                                        false) != nullptr;
+    else if (sp_type == enum_sp_type::FUNCTION)
+      sp_object_found = sp_find_routine(thd, sp_type, name, &thd->sp_func_cache,
+                                        false) != nullptr;
+    else if (sp_type == enum_sp_type::LIBRARY) {
+      sp_object_found = !sp_exists_library(thd, name);
+    } else {
+      assert(false);
+      return true;  // Unknown type.
+    }
+
     thd->get_stmt_da()->reset_condition_info(thd);
     if (!sp_object_found) {
-      my_error(ER_SP_DOES_NOT_EXIST, MYF(0), is_proc ? "PROCEDURE" : "FUNCTION",
+      my_error(ER_SP_DOES_NOT_EXIST, MYF(0), SP_TYPE_STRING(sp_type),
                routine->table_name);
       return true;
     }
@@ -1695,6 +1930,8 @@ bool sp_exist_routines(THD *thd, Table_ref *routines, bool is_proc) {
   @param name_length     Length of the routine name.
   @param belong_to_view  Uppermost view which uses this routine
                          (0 if routine is not used by view)
+  @param type            Routine type (one of FUNCTION/PROCEDURE/
+                                                     TRIGGER ...)
 
   @note
     Will also add element to end of 'Query_tables_list::sroutines_list' list.
@@ -1716,7 +1953,8 @@ static bool sp_add_used_routine(Query_tables_list *prelocking_ctx,
                                 Query_arena *arena, const uchar *key,
                                 size_t key_length, size_t db_length,
                                 const char *name, size_t name_length,
-                                Table_ref *belong_to_view) {
+                                Table_ref *belong_to_view,
+                                Sroutine_hash_entry::entry_type type) {
   if (prelocking_ctx->sroutines == nullptr) {
     prelocking_ctx->sroutines.reset(
         new malloc_unordered_map<std::string, Sroutine_hash_entry *>(
@@ -1746,6 +1984,9 @@ static bool sp_add_used_routine(Query_tables_list *prelocking_ctx,
     prelocking_ctx->sroutines_list.link_in_list(rn, &rn->next);
     rn->belong_to_view = belong_to_view;
     rn->m_cache_version = 0;
+    if (type == Sroutine_hash_entry::entry_type::FUNCTION) {
+      prelocking_ctx->has_stored_functions = true;
+    }
     return true;
   }
   return false;
@@ -1810,8 +2051,9 @@ bool sp_add_used_routine(Query_tables_list *prelocking_ctx, Query_arena *arena,
     */
     key_length +=
         my_casedn_str(system_charset_info, (char *)(key) + key_length) + 1;
-  } else
+  } else {
     key_length += db_length + 1;
+  }
 
   switch (name_normalize_type) {
     case Sp_name_normalize_type::LEAVE_AS_IS:
@@ -1860,7 +2102,7 @@ bool sp_add_used_routine(Query_tables_list *prelocking_ctx, Query_arena *arena,
   }
 
   if (sp_add_used_routine(prelocking_ctx, arena, key, key_length, db_length,
-                          name, name_length, belong_to_view)) {
+                          name, name_length, belong_to_view, type)) {
     if (own_routine) {
       prelocking_ctx->sroutines_list_own_last =
           prelocking_ctx->sroutines_list.next;
@@ -1922,7 +2164,7 @@ void sp_update_stmt_used_routines(
     (void)sp_add_used_routine(prelocking_ctx, thd->stmt_arena,
                               pointer_cast<const uchar *>(rt->m_key),
                               rt->m_key_length, rt->m_db_length, rt->name(),
-                              rt->name_length(), belong_to_view);
+                              rt->name_length(), belong_to_view, rt->type());
   }
 }
 
@@ -1947,7 +2189,7 @@ void sp_update_stmt_used_routines(THD *thd, Query_tables_list *prelocking_ctx,
     (void)sp_add_used_routine(prelocking_ctx, thd->stmt_arena,
                               pointer_cast<const uchar *>(rt->m_key),
                               rt->m_key_length, rt->m_db_length, rt->name(),
-                              rt->name_length(), belong_to_view);
+                              rt->name_length(), belong_to_view, rt->type());
 }
 
 /**
@@ -2122,11 +2364,21 @@ static size_t find_dollar_quote(const st_sp_chistics *chistics,
   return strlen(quote);
 }
 
+size_t get_imports_length(const mem_root_deque<sp_name_with_alias> *imports) {
+  if (imports == nullptr || !imports->size()) return 0;
+  size_t imports_length = sizeof("    USING ()\n") + 1;
+  for (const auto &import : *imports) {
+    imports_length += import.m_db.length + import.m_db.length +
+                      import.m_alias.length + sizeof(". AS ");
+  }
+  return imports_length;
+}
+
 /**
   Generates the CREATE... string from the table information.
 
   @return
-    Returns true on success, false on (alloc) failure.
+    Returns false on success, true on (alloc) failure.
 */
 static bool create_string(
     THD *thd, String *buf, enum_sp_type type, const char *db, size_t dblen,
@@ -2146,24 +2398,62 @@ static bool create_string(
              : find_dollar_quote(chistics, body, bodylen, dollar_quote,
                                  max_quote_len);
   assert(dollar_quote_len < max_quote_len);
-
-  /* Make some room to begin with */
-  if (buf->alloc(100 + dblen + 1 + namelen + paramslen + returnslen + bodylen +
-                 chistics->comment.length + 10 /* length of " DEFINER= "*/ +
-                 USER_HOST_BUFF_SIZE +
-                 (is_sql ? 0
-                         : sizeof("LANGUAGE=") + chistics->language.length +
-                               dollar_quote_len * 2 +
-                               5)))  // +5 for AS and white space
-    return false;
+  const size_t language_length =
+      is_sql ? 0
+             : sizeof("    LANGUAGE \n") + chistics->language.length +
+                   dollar_quote_len * 2 + 5;  // +5 for AS and white space
 
   thd->variables.sql_mode = sql_mode;
+
+  bool error = true;
+  if (type == enum_sp_type::FUNCTION || type == enum_sp_type::PROCEDURE) {
+    error = create_stored_procedure_and_function_string(
+        thd, buf, type, db, dblen, name, namelen, params, paramslen, returns,
+        returnslen, body, bodylen, chistics, definer_user, definer_host,
+        if_not_exists, is_sql, dollar_quote, dollar_quote_len, language_length);
+  } else {
+    assert(type == enum_sp_type::LIBRARY);
+    error = create_library_string(
+        thd, buf, db, dblen, name, namelen, body, bodylen, chistics,
+        if_not_exists, dollar_quote, dollar_quote_len, language_length);
+  }
+
+  thd->variables.sql_mode = old_sql_mode;
+  return error;
+}
+
+/**
+  Generates the CREATE FUNCTION/PROCEDURE string from the table information.
+
+  @return
+    Returns false on success, true on (alloc) failure.
+*/
+static bool create_stored_procedure_and_function_string(
+    THD *thd, String *buf, enum_sp_type type, const char *db, size_t dblen,
+    const char *name, size_t namelen, const char *params, size_t paramslen,
+    const char *returns, size_t returnslen, const char *body, size_t bodylen,
+    st_sp_chistics *chistics, const LEX_CSTRING &definer_user,
+    const LEX_CSTRING &definer_host, bool if_not_exists, bool is_sql,
+    const char *dollar_quote, size_t dollar_quote_len, size_t language_length) {
+  const mem_root_deque<sp_name_with_alias> *imports =
+      chistics->get_imported_libraries();
+  const size_t imports_length = get_imports_length(imports);
+  const size_t alloc_length =
+      100 + dblen + 1 + namelen + paramslen + returnslen + bodylen +
+      chistics->comment.length + 10 /* length of " DEFINER= "*/ +
+      USER_HOST_BUFF_SIZE + language_length + imports_length;
+
+  /* Make some room to begin with */
+  if (buf->alloc(alloc_length)) return true;
+
   buf->append(STRING_WITH_LEN("CREATE "));
   append_definer(thd, buf, definer_user, definer_host);
   if (type == enum_sp_type::FUNCTION)
     buf->append(STRING_WITH_LEN("FUNCTION "));
-  else
+  else if (type == enum_sp_type::PROCEDURE)
     buf->append(STRING_WITH_LEN("PROCEDURE "));
+  else
+    assert(false);
   if (if_not_exists) buf->append(STRING_WITH_LEN("IF NOT EXISTS "));
   if (dblen > 0) {
     append_identifier(thd, buf, db, dblen);
@@ -2201,6 +2491,31 @@ static bool create_string(
     buf->append(chistics->language.str, chistics->language.length);
     buf->append('\n');
   }
+  if (imports != nullptr && imports->size() > 0) {
+    buf->append(STRING_WITH_LEN("    USING ("));
+    bool first = true;
+    for (const auto &import : *imports) {
+      if (first)
+        first = false;
+      else
+        buf->append(", ");
+      if (import.m_db.length > 0) {
+        append_identifier(thd, buf, import.m_db.str, import.m_db.length);
+        buf->append('.');
+      }
+      append_identifier(thd, buf, import.m_name.str, import.m_name.length);
+      if (import.m_alias.length > 0) {
+        buf->append(" AS ");
+        append_identifier(thd, buf, import.m_alias.str, import.m_alias.length);
+      }
+      if (is_import_missing(thd, import)) {
+        push_warning_printf(thd, Sql_condition::SL_WARNING, ER_LIBRARY_INVALID,
+                            ER_THD(thd, ER_LIBRARY_INVALID), name,
+                            import.m_db.str, import.m_name.str);
+      }
+    }
+    buf->append(")\n");
+  }
   if (chistics->comment.length) {
     buf->append(STRING_WITH_LEN("    COMMENT "));
     append_unescaped(buf, chistics->comment.str, chistics->comment.length);
@@ -2214,8 +2529,97 @@ static bool create_string(
   if (dollar_quote_len > 0) {
     buf->append(dollar_quote, dollar_quote_len);
   }
-  thd->variables.sql_mode = old_sql_mode;
-  return true;
+
+  return false;
+}
+
+/**
+  Convert an input array of binary data into hexadecimal string literal.
+
+  @return
+    Hexadecimal string literal representation of the input data array.
+*/
+static std::string binary_to_hex(std::string_view input) {
+  std::stringstream ss;
+  ss << std::hex << std::uppercase << std::setfill('0');
+  for (char i : input) {
+    // First convert it to unsigned to remove the signage but keep it 8 bit.
+    // Then convert it to int to be treated as a number, not a character.
+    ss << std::setw(2)
+       << static_cast<unsigned int>(static_cast<unsigned char>(i));
+  }
+  return ss.str();
+}
+
+/**
+  Generates the CREATE LIBRARY string from the table information.
+
+  @return
+    Returns false on success, true on (alloc) failure.
+*/
+static bool create_library_string(THD *thd, String *buf, const char *db,
+                                  size_t dblen, const char *name,
+                                  size_t namelen, const char *body,
+                                  size_t bodylen, st_sp_chistics *chistics,
+                                  bool if_not_exists, const char *dollar_quote,
+                                  size_t dollar_quote_len,
+                                  size_t language_length) {
+  const size_t alloc_length = 100 + dblen + 1 + namelen + bodylen +
+                              USER_HOST_BUFF_SIZE + language_length;
+
+  /* Make some room to begin with */
+  if (buf->alloc(alloc_length)) return true;
+
+  buf->append(STRING_WITH_LEN("CREATE LIBRARY "));
+  if (if_not_exists) buf->append(STRING_WITH_LEN("IF NOT EXISTS "));
+  if (dblen > 0) {
+    append_identifier(thd, buf, db, dblen);
+    buf->append('.');
+  }
+  append_identifier(thd, buf, name, namelen);
+  buf->append('\n');
+  if (chistics->comment.length) {
+    buf->append(STRING_WITH_LEN("    COMMENT "));
+    append_unescaped(buf, chistics->comment.str, chistics->comment.length);
+    buf->append('\n');
+  }
+  buf->append(STRING_WITH_LEN("    LANGUAGE "));
+  buf->append(chistics->language.str, chistics->language.length);
+  buf->append('\n');
+  // Library definition.
+  if (chistics->is_binary) {
+    buf->append(STRING_WITH_LEN("AS 0x"));
+    std::string hex = binary_to_hex({body, bodylen});
+    buf->append(hex.data(), hex.length());
+  } else {
+    if (dollar_quote_len > 0) {  // For external languages, add delimiters
+      buf->append("AS ");
+      buf->append(dollar_quote, dollar_quote_len);
+    }
+    buf->append(body, bodylen);
+    if (dollar_quote_len > 0) {
+      buf->append(dollar_quote, dollar_quote_len);
+    }
+  }
+
+  return false;
+}
+
+/**
+  Verify the imported library is present and the user has proper access.
+
+  @param thd      Thread context.
+  @param import   The imported library.
+
+  @return true if the library is missing or the user lacks access permissions.
+          false on success.
+*/
+bool is_import_missing(THD *thd, const sp_name_with_alias &import) {
+  auto import_name = sp_name{import.m_db, import.m_name, true};
+  if (check_routine_access(thd, EXECUTE_ACL, import.m_db.str, import.m_name.str,
+                           Acl_type::LIBRARY, true))
+    return true;
+  return sp_exists_library(thd, &import_name);
 }
 
 /**
@@ -2314,6 +2718,7 @@ uint sp_get_flags_for_command(LEX *lex) {
     case SQLCOM_SHOW_CREATE:
     case SQLCOM_SHOW_CREATE_DB:
     case SQLCOM_SHOW_CREATE_FUNC:
+    case SQLCOM_SHOW_CREATE_LIBRARY:
     case SQLCOM_SHOW_CREATE_PROC:
     case SQLCOM_SHOW_CREATE_EVENT:
     case SQLCOM_SHOW_CREATE_TRIGGER:
@@ -2337,6 +2742,7 @@ uint sp_get_flags_for_command(LEX *lex) {
     case SQLCOM_SHOW_STATUS:
     case SQLCOM_SHOW_STATUS_FUNC:
     case SQLCOM_SHOW_STATUS_PROC:
+    case SQLCOM_SHOW_STATUS_LIBRARY:
     case SQLCOM_SHOW_STORAGE_ENGINES:
     case SQLCOM_SHOW_TABLES:
     case SQLCOM_SHOW_TABLE_STATUS:
@@ -2404,6 +2810,7 @@ uint sp_get_flags_for_command(LEX *lex) {
     case SQLCOM_CREATE_SPFUNCTION:
     case SQLCOM_ALTER_PROCEDURE:
     case SQLCOM_ALTER_FUNCTION:
+    case SQLCOM_ALTER_LIBRARY:
     case SQLCOM_DROP_PROCEDURE:
     case SQLCOM_DROP_FUNCTION:
     case SQLCOM_CREATE_EVENT:

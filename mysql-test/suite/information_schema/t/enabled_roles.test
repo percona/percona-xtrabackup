@@ -1,5 +1,8 @@
 # This file tests INFORMATION_SCHEMA.ENABLED_ROLES.
 
+SET @save_activate_mandatory_roles = @@global.activate_mandatory_roles;
+SET GLOBAL activate_mandatory_roles = 0;
+
 --echo # SETUP SCHEMA
 --source suite/information_schema/include/roles_schema.inc
 
@@ -113,3 +116,5 @@ REVOKE project_lead FROM updater;
 
 --echo # Cleanup
 --source suite/information_schema/include/roles_schema_clean.inc
+
+SET global activate_mandatory_roles = @save_activate_mandatory_roles;

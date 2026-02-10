@@ -1,0 +1,100 @@
+# This is a simple test to check row id generation
+
+--source include/have_debug.inc
+--source include/have_debug_sync.inc
+
+# Helper procedure to insert `num_records` into `table_name` as a single insert
+DELIMITER //;
+CREATE PROCEDURE populate_table(IN table_name VARCHAR(2), IN num_records INT)
+BEGIN
+  DECLARE row_value INT DEFAULT 0;
+  DECLARE value_list VARCHAR(10000) DEFAULT "";
+
+  WHILE row_value < num_records - 1 DO
+    SET value_list = CONCAT(value_list, "(", row_value, "),");
+    SET row_value = row_value + 1;
+  END WHILE;
+
+  SET value_list = CONCAT(value_list, "(", row_value, ")");
+  SET @sql = CONCAT("INSERT INTO ", table_name, " VALUES ", value_list);
+  PREPARE stmt FROM @sql;
+  EXECUTE stmt;
+  DEALLOCATE PREPARE stmt;
+
+END//
+DELIMITER ;//
+
+--echo # Case 1: Sequential generation of row id
+CREATE TABLE t1 (c1 INT);
+CALL populate_table("t1", 100);
+SELECT COUNT(*) FROM t1;
+CHECK TABLE t1;
+
+DROP TABLE t1;
+
+--echo # Case 2: Parallel generation of row id
+--echo # Case 2.1: 1 table
+CREATE TABLE t1 (c1 INT);
+
+connect (conn1, localhost, root,,);
+connect (conn2, localhost, root,,);
+connect (conn3, localhost, root,,);
+
+--connection conn1
+--send CALL populate_table("t1", 100)
+--connection conn2
+--send CALL populate_table("t1", 100)
+--connection conn3
+--send CALL populate_table("t1", 100)
+
+--connection conn1
+--reap
+--connection conn2
+--reap
+--connection conn3
+--reap
+
+--connection default
+SELECT COUNT(*) FROM t1;
+CHECK TABLE t1;
+
+DROP TABLE t1;
+
+--echo # Case 2.2: 3 tables
+CREATE TABLE t1 (c1 INT);
+CREATE TABLE t2 (c1 INT);
+CREATE TABLE t3 (c1 INT);
+
+--connection conn1
+--send CALL populate_table("t1", 100)
+--connection conn2
+--send CALL populate_table("t2", 100)
+--connection conn3
+--send CALL populate_table("t3", 100)
+
+--connection conn1
+--reap
+--connection conn2
+--reap
+--connection conn3
+--reap
+
+--connection default
+SELECT COUNT(*) FROM t1;
+CHECK TABLE t1;
+
+SELECT COUNT(*) FROM t2;
+CHECK TABLE t2;
+
+SELECT COUNT(*) FROM t3;
+CHECK TABLE t3;
+
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t3;
+
+disconnect conn1;
+disconnect conn2;
+disconnect conn3;
+
+DROP PROCEDURE populate_table;

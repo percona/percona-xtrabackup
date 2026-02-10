@@ -17,12 +17,10 @@ CREATE TABLE d1.t1 (a INT NOT NULL, b VARCHAR(10));
 --source include/rpl/sync_to_replica.inc
 --source include/rpl/stop_replica.inc
 
-SET @save_replica_parallel_type = @@GLOBAL.replica_parallel_type;
 SET @save_replica_parallel_workers = @@GLOBAL.replica_parallel_workers;
 SET @saved_replica_preserve_commit_order = @@GLOBAL.replica_preserve_commit_order;
 SET @saved_debug= @@GLOBAL.debug;
 
-SET GLOBAL replica_parallel_type = LOGICAL_CLOCK;
 SET GLOBAL replica_parallel_workers = 4;
 SET GLOBAL replica_preserve_commit_order= ON;
 ## Sleep so any other statement running parallely executes first.
@@ -69,7 +67,6 @@ DROP TABLE d1.t1;
 DROP DATABASE d1;
 
 --connection slave
-SET @@GLOBAL.replica_parallel_type= @save_replica_parallel_type;
 --disable_warnings
 SET @@GLOBAL.replica_parallel_workers= @save_replica_parallel_workers;
 --enable_warnings

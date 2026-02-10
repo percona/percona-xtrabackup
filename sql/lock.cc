@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -97,6 +97,7 @@
 #include "sql/auth/auth_common.h"  // SUPER_ACL
 #include "sql/dd/types/event.h"
 #include "sql/dd/types/function.h"
+#include "sql/dd/types/library.h"
 #include "sql/dd/types/procedure.h"
 #include "sql/dd/types/resource_group.h"
 #include "sql/debug_sync.h"
@@ -866,6 +867,9 @@ bool lock_object_name(THD *thd, MDL_key::enum_mdl_namespace mdl_type,
       break;
     case MDL_key::PROCEDURE:
       dd::Procedure::create_mdl_key(db, name, &mdl_key);
+      break;
+    case MDL_key::LIBRARY:
+      dd::Library::create_mdl_key(db, name, &mdl_key);
       break;
     case MDL_key::EVENT:
       dd::Event::create_mdl_key(db, name, &mdl_key);

@@ -1,0 +1,690 @@
+CREATE TABLE t1 (
+id INT AUTO_INCREMENT PRIMARY KEY,
+name VARCHAR(255) NOT NULL,
+age BIGINT UNSIGNED,
+height DECIMAL(5,2),
+rand DECIMAL(65,30),
+weight DOUBLE,
+gender ENUM('male', 'female', 'other'),
+birthday DATE,
+email VARCHAR(255) UNIQUE,
+phone CHAR(10),
+address TEXT,
+bio BLOB,
+image LONGBLOB,
+created_at TIMESTAMP DEFAULT "2023-06-27 15:53:33",
+updated_at DATETIME DEFAULT "2023-06-27 15:53:33",
+secret BINARY(16),
+password VARBINARY(255),
+verified BOOL,
+login_time TIME,
+graduation_year YEAR,
+info JSON,
+jsontext TEXT,
+jsonpath VARCHAR(255)
+) secondary_engine RAPID;
+INSERT INTO t1 (name, age, height, weight, gender, birthday, email, phone, address, bio, image, secret, password, verified, login_time, graduation_year, info, rand)
+VALUES
+('Alice', 18446744073709551615, 999.99, 1.7976931348623157E+308, 'female', '1998-01-01', 'alice@example.com', '1234567890', '123 Main Street', NULL, NULL, 0x616C69636570, b'00000001', TRUE, '09:00:00', 2020, '{"x": 17, "x": "red", "x": [3, 5, 7]}', 99999999999999999999999999999.9999999999999999999999999999),
+('Bob', 2, 180.3, 75.4, 'male', '1993-02-02', 'bob@example.com', '0987654321', '456 Second Avenue', NULL, NULL,  0x626F6270, b'00000010', FALSE, '10:00:00', 2019, '{"oracle": "oracle is a database company"}', 1000.3000),
+('Charlie', 3, 175.6, 70.3, 'male', '1988-03-03', 'charlie@example.com', '1357924680', '789 Third Boulevard',  NULL, NULL, 0x636861726C70 , b'00000100', TRUE,'11:00:00', 2018, '{"key": "value", "key2": "value2"}', 1000.3000),
+('Diana', 4 ,170.4 ,65.1 ,'female' ,'1983-04-04' ,'diana@example.com' ,'2468013579' ,'101 Fourth Lane' ,NULL ,NULL, 0x6469616E70 , b'00001000' ,FALSE ,'12:00:00' ,2017, '{"key2": "value2", "key": "value"}', 1000.3000),
+('Evan', 5 ,185.7 ,80.5 ,'male' ,'1978-05-05' ,'evan@example.com' ,'9753186420' ,'202 Fifth Street' , NULL ,NULL, 0x6576616E70 , b'00010000' ,TRUE ,'13:00:00' ,2016, '{"id": 14, "name": "Aztalan"}', 1000.3000),
+#Common
+('Alice', 25, 165.5, 55.2, 'female', '1998-01-01', 'alice1@example.com', '1234567890', '123 Main Street', NULL, NULL, 0x616C69636570, b'00000001', TRUE, '09:00:00', 2020, '{"a": 1, "b": 2, "c": [3, 4, 5]}', 1000.3000),
+('Bob', 30, 180.3, 75.4, 'male', '1993-02-02', 'bob2@example.com', '0987654321', '456 Second Avenue', NULL, NULL,  0x626F6270, b'00000010', FALSE, '10:00:00', 2019, '{"a": {"b": 1}, "c": {"b": 2}}', 1000.3000),
+('Charlie', 35, 175.6, 70.3, 'male', '1988-03-03', 'charlie2@example.com', '1357924680', '789 Third Boulevard',  NULL, NULL, 0x636861726C70 , b'00000100', TRUE,'11:00:00', 2018, '[1, 2, 3, 4, 5]', 1000.3000),
+('Diana', 40 ,170.4 ,65.1 ,'female' ,'1983-04-04' ,'diana2@example.com' ,'2468013579' ,'101 Fourth Lane' ,NULL ,NULL, 0x6469616E70 , b'00001000' ,FALSE ,'12:00:00' ,2017, '[1, 2, 3, 4, 5]', 1000.3000),
+('Evan', 45 ,185.7 ,80.5 ,'male' ,'1978-05-05' ,'evan2@example.com' ,'9753186420' ,'202 Fifth Street' , NULL ,NULL, 0x6576616E70 , b'00010000' ,TRUE ,'13:00:00' ,2016, '["a", {"b": [true, false]}, [10, 20]]', 1000.3000),
+('Alice1', 18446744073709551614, 165.5, 155.2, 'female', '1998-01-02', 'ald2ice@example.com', '1234567891', '122 Main Street', NULL, NULL, 0x616C69636570, b'00000001', TRUE, '09:00:00', 2020, '18446744073709551614', 1000.3000),
+('Bob1', 18446744073709551614, 180.3, 175.4, 'male', '1993-02-01', 'bo2db@example.com', '0987654322', '451 Second Avenue', NULL, NULL,  0x626F6270, b'00000010', FALSE, '10:00:00', 2019, '18446744073709551615', 1000.3000),
+('Charlie1', 18446744073709551614, 175.6, 70.3, 'male', '1988-03-02', 'chad2rlie@example.com', '1357924683', '781 Third Boulevard',  NULL, NULL, 0x636861726C70 , b'00000100', TRUE,'11:00:00', 2018, '18446744073709551613', 1000.3000),
+('Diana1', 18446744073709551614, 110.4 ,65.1 ,'female' ,'1983-04-01' ,'ddid2ana@example.com' ,'2468013574' ,'111 Fourth Lane' ,NULL ,NULL, 0x6469616E70 , b'00001000' ,FALSE ,'12:00:00' ,2017, 'null', 1000.3000),
+('Evan1', 145 ,115.7 ,80.5 ,'male' ,'1978-05-23' ,'evda2n@example.com' ,'9753186422' ,'212 Fifth Street' , NULL ,NULL, 0x6576616E70 , b'00010000' ,TRUE ,'13:00:00' ,2016, '{"x": 17, "x": "red", "x": [3, 5, 7]}', 1000.3000),
+('Alice2', 225, 165.5, 155.2, 'female', '1998-01-02', 'al2dice@example.com', '1234567891', '122 Main Street', NULL, NULL, 0x616C69636570, b'00000001', TRUE, '09:00:00', 2020, '[3,10,5,17,[22,44,66]]', 1000.3000),
+('Bob2', 230, 180.3, 175.4, 'male', '1993-02-01', 'bod2b@example.com', '0987654322', '451 Second Avenue', NULL, NULL,  0x626F6270, b'00000010', FALSE, '10:00:00', 2019, '{"MySQL":"DB"}', 1000.3000),
+('Charlie2', 235, 175.6, 70.3, 'male', '1988-03-02', 'chad2drlie@example.com', '1357924683', '781 Third Boulevard',  NULL, NULL, 0x636861726C70 , b'00000100', TRUE,'11:00:00', 2018, '{"x": 17, "x": "red", "x": [3, 5, 7]}', 1000.3000);
+SELECT ETAG(id), ETAG(name), ETAG(age), ETAG(height), ETAG(rand), ETAG(weight), ETAG(gender), ETAG(birthday), ETAG(email) from t1;
+ETAG(id)	ETAG(name)	ETAG(age)	ETAG(height)	ETAG(rand)	ETAG(weight)	ETAG(gender)	ETAG(birthday)	ETAG(email)
+df3ce784d856334d65cd25028f98f158	ad3e42204255668917779bfcc6058313	20dbdeb09a959e7f056a116d7ec33be3	1afdfce05668c6954d777c4b3190c176	c0b4209a2c2bc3db1b46f60ac91f0907	29e75d794dc0fc33b46771edd66e131c	69664111975ad54d7aa70a5bc99720d3	60399235eb359486cee55d1623f4ff59	6894295e90529036fd3d12f4080bd2a3
+cb358fcee0dfde56fb95a7322f5da314	48ece5e15be3ec58f55b081fd5718291	cb358fcee0dfde56fb95a7322f5da314	9d37d1b07c33f59da5829ef4d37d8aff	d9b0945a82469da12897d4abde97a8a8	8004b6f00c7679b22e3950af51d580ff	fd9179a5d3fdc70d9f33724f1a9791da	d15cb9e0df43d71ea9fc21c348c23417	03bffffde1b731f2e048904ee81a254f
+5fcddc9c0829c4457324dc1e7e9474f0	b14828c708de8e1f122c4afa3c0c61a7	5fcddc9c0829c4457324dc1e7e9474f0	ebf9a18bfd472064f566178ac7344351	d9b0945a82469da12897d4abde97a8a8	90c0cfb8c6143c45ee5a3c4ae443959b	fd9179a5d3fdc70d9f33724f1a9791da	b1b99826e7daae549a26587c3729df52	2acdfd97c578bbeb0aa4491290e501ee
+475982afbcaa3f3ce28911027fcf803f	01ad5f8d4c9fa548c6ee969549c5b6d6	475982afbcaa3f3ce28911027fcf803f	a4674ba9390f48938ee0698f1027078a	d9b0945a82469da12897d4abde97a8a8	f9a138511ee121052df7d57fc9714fe1	69664111975ad54d7aa70a5bc99720d3	738b23e7bcd8b7c813aa4bfbcf706807	0c7d0442a00a5dd42fa8e9c12a4761d9
+562591323b675829dedb980100c87e72	78bcedb316e0241243fa4eb5e41445b8	562591323b675829dedb980100c87e72	bc2bb573aa0bb60320d8aae8a30849dd	d9b0945a82469da12897d4abde97a8a8	f53afc876f0c4155b9bad515c23601ee	fd9179a5d3fdc70d9f33724f1a9791da	5742a1f4aadc7fe7501812647b2aecb9	08cf7da733bc638499918e5250407e54
+be9052674d3a7ac4b564a48862bc4a0d	ad3e42204255668917779bfcc6058313	2eabf10f7398e52d0ae51e5d19c400a4	8c3e009e97826215cba8324980db4352	d9b0945a82469da12897d4abde97a8a8	a1644179cbf7781c7ba3f4c3aa912173	69664111975ad54d7aa70a5bc99720d3	60399235eb359486cee55d1623f4ff59	2ffe2e63ccab6ff51ceafc6f1e6cea90
+dbd6a1e71414294c06eed105b82285fa	48ece5e15be3ec58f55b081fd5718291	0b165d236bdc00c3213488a6525340f6	9d37d1b07c33f59da5829ef4d37d8aff	d9b0945a82469da12897d4abde97a8a8	8004b6f00c7679b22e3950af51d580ff	fd9179a5d3fdc70d9f33724f1a9791da	d15cb9e0df43d71ea9fc21c348c23417	2b6c688e3a5ef4001013c03e95ac71fe
+f94f136d1b923225664f427c6b2c4bea	b14828c708de8e1f122c4afa3c0c61a7	c0fa1850869881515d2f60522120999c	ebf9a18bfd472064f566178ac7344351	d9b0945a82469da12897d4abde97a8a8	90c0cfb8c6143c45ee5a3c4ae443959b	fd9179a5d3fdc70d9f33724f1a9791da	b1b99826e7daae549a26587c3729df52	3b3d506df560f4d43b819b864934eca0
+7c6bdb19ba3f158928353a066812b268	01ad5f8d4c9fa548c6ee969549c5b6d6	db062448c563095a290b6225d65a7e4d	a4674ba9390f48938ee0698f1027078a	d9b0945a82469da12897d4abde97a8a8	f9a138511ee121052df7d57fc9714fe1	69664111975ad54d7aa70a5bc99720d3	738b23e7bcd8b7c813aa4bfbcf706807	765a3c7692b45fc1fdbc33b876b48a3f
+cc662761ad24bd12d0698444ed39c832	78bcedb316e0241243fa4eb5e41445b8	54abb616c4f52f257db246d3a990eccc	bc2bb573aa0bb60320d8aae8a30849dd	d9b0945a82469da12897d4abde97a8a8	f53afc876f0c4155b9bad515c23601ee	fd9179a5d3fdc70d9f33724f1a9791da	5742a1f4aadc7fe7501812647b2aecb9	02634801f6c0cf92c490ec0e34a604fa
+4e5cf7d371fc86f7205381dc855b977a	3b26d140facfdb895228d5c70e01d441	ea7705d00c5a21d96b92c0f945dff5c6	8c3e009e97826215cba8324980db4352	d9b0945a82469da12897d4abde97a8a8	5514ac5b854394551067e7b1cae3197c	69664111975ad54d7aa70a5bc99720d3	9406053d115c1a92bc60b983d645c27d	b369bb7d8c66ad19da856239bac5f3b0
+3f99c012c83676377ecd2e572c949f74	6b7f7a4ae5dece57aed5543bbfa8f5e2	ea7705d00c5a21d96b92c0f945dff5c6	9d37d1b07c33f59da5829ef4d37d8aff	d9b0945a82469da12897d4abde97a8a8	455fe97ce392e26088b4a8434c946395	fd9179a5d3fdc70d9f33724f1a9791da	31daf3c6197ecdace792b4345cb181a9	7c4a61ad970cdd6bc3e52c672f05c1c8
+716179422f85ab4c90a0338accf546ca	afe5dc4b42a2c12c6193b3739f51d3f9	ea7705d00c5a21d96b92c0f945dff5c6	ebf9a18bfd472064f566178ac7344351	d9b0945a82469da12897d4abde97a8a8	90c0cfb8c6143c45ee5a3c4ae443959b	fd9179a5d3fdc70d9f33724f1a9791da	677e4ccdeb8004dc88ec260180bdbd13	443fbbed95db0fac449a3550a0d4ac4c
+c1ae72bb26663ded014908a81dd43806	6161a22c7da19548b74d8d86c401b614	ea7705d00c5a21d96b92c0f945dff5c6	4960f76548349a380e791fa7fafe8f7f	d9b0945a82469da12897d4abde97a8a8	f9a138511ee121052df7d57fc9714fe1	69664111975ad54d7aa70a5bc99720d3	a12e6568fc3a9d9826c3da27212eb3b4	93eb0485381e403023a8dcb8b791c588
+3939209799fc3367d7080b213541ea80	d78d1b9bcb2c40754c6a1df6e727a283	d66b5f8a2aca2784b780b039fd6cc12f	66f0f6f1b2e581c01f7032b14d8b9fb4	d9b0945a82469da12897d4abde97a8a8	f53afc876f0c4155b9bad515c23601ee	fd9179a5d3fdc70d9f33724f1a9791da	22b95013c6947c76dea67dec4c1a03ee	42fc514a8b6ed67ce0a16aedd57950c5
+80665f90cfc89ba1efe5d3b279f68366	913912c6f2bad106828a0197c3b4e2d5	d7c858bb68d1b95d35d3bb30a1922c00	8c3e009e97826215cba8324980db4352	d9b0945a82469da12897d4abde97a8a8	5514ac5b854394551067e7b1cae3197c	69664111975ad54d7aa70a5bc99720d3	9406053d115c1a92bc60b983d645c27d	682f43ff1002a5cf32a043c37f97e666
+2551bcc489eb3b1ea24b1d542cede2db	e7a674ef7d2bd633db02f01eea8d6eeb	830e7c7972f99482c2089628f21b1496	9d37d1b07c33f59da5829ef4d37d8aff	d9b0945a82469da12897d4abde97a8a8	455fe97ce392e26088b4a8434c946395	fd9179a5d3fdc70d9f33724f1a9791da	31daf3c6197ecdace792b4345cb181a9	2c1bcd4aafd9e0685d070670f3ab20e1
+b356afc18ac159a87b7265f3c6196653	70a2aa431e0f67d5ce951e762c77da18	71e9c32e9c2383c481698e314fa61b5c	ebf9a18bfd472064f566178ac7344351	d9b0945a82469da12897d4abde97a8a8	90c0cfb8c6143c45ee5a3c4ae443959b	fd9179a5d3fdc70d9f33724f1a9791da	677e4ccdeb8004dc88ec260180bdbd13	9ac83ae353a3789de0fcd71478fc63af
+SELECT ETAG(phone), ETAG(address), ETAG(bio), ETAG(image), ETAG(created_at), ETAG(updated_at), HEX(ETAG(password)) from t1;
+ETAG(phone)	ETAG(address)	ETAG(bio)	ETAG(image)	ETAG(created_at)	ETAG(updated_at)	HEX(ETAG(password))
+82d9f70aeb974c48565e705734e91277	4b0040101aa38de4aef1618c012553ed	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3531303235613434393138333535303565313265663964326562383663656562
+34ff3b55e14805bd59739a6fc784d8c4	e8d90340c9873fcad0352050ec13bc46	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	6533616231353266636231373632626663396634326536633965393364666666
+1cb3e76188bdf9ec1ccc2a0f0c075863	9064f47fb100067306213e7d1c03bc36	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3266663339333637333934663530366337336232323834623332626638363732
+6f1ce5635c3524a1087dee16e60b27c4	f952e5d34e544bf682697cfafb223648	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3831306662353562353866333165396264633464303066373861653439373264
+4d4a1a5ab2a30a189e02add2bce22530	50e8b0d0cca6a48c516774e3e2badfac	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3666636664383062303861313637386265613363376363383330623633383236
+82d9f70aeb974c48565e705734e91277	4b0040101aa38de4aef1618c012553ed	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3531303235613434393138333535303565313265663964326562383663656562
+34ff3b55e14805bd59739a6fc784d8c4	e8d90340c9873fcad0352050ec13bc46	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	6533616231353266636231373632626663396634326536633965393364666666
+1cb3e76188bdf9ec1ccc2a0f0c075863	9064f47fb100067306213e7d1c03bc36	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3266663339333637333934663530366337336232323834623332626638363732
+6f1ce5635c3524a1087dee16e60b27c4	f952e5d34e544bf682697cfafb223648	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3831306662353562353866333165396264633464303066373861653439373264
+4d4a1a5ab2a30a189e02add2bce22530	50e8b0d0cca6a48c516774e3e2badfac	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3666636664383062303861313637386265613363376363383330623633383236
+0d91445b2c98081dae358136bf40c8cd	ee671a707615491af4b90b9bfd1c1eae	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3531303235613434393138333535303565313265663964326562383663656562
+295ced13c825b94c037e688b8b08be83	223e612638d34c526f2e4f6be0aab939	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	6533616231353266636231373632626663396634326536633965393364666666
+5949438292eac3952c6525122a9669c3	3af991d3870a9c673ace09c833afa9f3	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3266663339333637333934663530366337336232323834623332626638363732
+29bdaed0be6153d2bdb2a2e2692b5073	0665a0ef8b3b49c1e9d35668b6794dc4	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3831306662353562353866333165396264633464303066373861653439373264
+4b1760857492351f019759165e1459ec	1555405b38ce7dabab1aa597fefe461f	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3666636664383062303861313637386265613363376363383330623633383236
+0d91445b2c98081dae358136bf40c8cd	ee671a707615491af4b90b9bfd1c1eae	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3531303235613434393138333535303565313265663964326562383663656562
+295ced13c825b94c037e688b8b08be83	223e612638d34c526f2e4f6be0aab939	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	6533616231353266636231373632626663396634326536633965393364666666
+5949438292eac3952c6525122a9669c3	3af991d3870a9c673ace09c833afa9f3	4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0	2147c10ba5c5157ea3d288fcc9dd2b8b	2147c10ba5c5157ea3d288fcc9dd2b8b	3266663339333637333934663530366337336232323834623332626638363732
+SELECT ETAG(verified), ETAG(login_time), ETAG(graduation_year), ETAG(info), ETAG(jsontext) from t1;
+ETAG(verified)	ETAG(login_time)	ETAG(graduation_year)	ETAG(info)	ETAG(jsontext)
+df3ce784d856334d65cd25028f98f158	16999af278cf7b9aabd6849bbd64fefd	5222206d2db54671917b4b7388695152	974ad7903a7282fc700c36774d19b2ba	4d6ac5b7d1a1655cab94ac0ace7276c0
+ce8f15881282a4001982e3a7bb241055	53ecac27d7bdf946df24cacccf16b7f5	b6d281818a30508162046a078d97db6c	b90ba0c1b92d00b9b72758513814e74e	4d6ac5b7d1a1655cab94ac0ace7276c0
+df3ce784d856334d65cd25028f98f158	1c63359aa09a92fdfd289bc2ee978291	59c9fb5508c381bb7ed5703dedab7f27	eba2de65e4bc10c10476e1395ee07dec	4d6ac5b7d1a1655cab94ac0ace7276c0
+ce8f15881282a4001982e3a7bb241055	c10429a772294b1ae3eaf460fbb4ee76	0f763e358e1303c3ba6d56bf1db1be30	eba2de65e4bc10c10476e1395ee07dec	4d6ac5b7d1a1655cab94ac0ace7276c0
+df3ce784d856334d65cd25028f98f158	ccd29495e573ef7dda632af5b95972b3	be209dc1cba353199fd70a93a8dd7a5b	ccd01274c3c0c6fc794edca5d1223729	4d6ac5b7d1a1655cab94ac0ace7276c0
+df3ce784d856334d65cd25028f98f158	16999af278cf7b9aabd6849bbd64fefd	5222206d2db54671917b4b7388695152	9b97dd30cdef84b01b683e0e3ef5d98f	4d6ac5b7d1a1655cab94ac0ace7276c0
+ce8f15881282a4001982e3a7bb241055	53ecac27d7bdf946df24cacccf16b7f5	b6d281818a30508162046a078d97db6c	5c447d1ee398b88db8397acb7ec1f495	4d6ac5b7d1a1655cab94ac0ace7276c0
+df3ce784d856334d65cd25028f98f158	1c63359aa09a92fdfd289bc2ee978291	59c9fb5508c381bb7ed5703dedab7f27	126dd1180668978479fa9419915341d5	4d6ac5b7d1a1655cab94ac0ace7276c0
+ce8f15881282a4001982e3a7bb241055	c10429a772294b1ae3eaf460fbb4ee76	0f763e358e1303c3ba6d56bf1db1be30	126dd1180668978479fa9419915341d5	4d6ac5b7d1a1655cab94ac0ace7276c0
+df3ce784d856334d65cd25028f98f158	ccd29495e573ef7dda632af5b95972b3	be209dc1cba353199fd70a93a8dd7a5b	7b9a8e4a4a865a492a61b0f4148482eb	4d6ac5b7d1a1655cab94ac0ace7276c0
+df3ce784d856334d65cd25028f98f158	16999af278cf7b9aabd6849bbd64fefd	5222206d2db54671917b4b7388695152	b2ee578c110c9b59e9a89682238a81dd	4d6ac5b7d1a1655cab94ac0ace7276c0
+ce8f15881282a4001982e3a7bb241055	53ecac27d7bdf946df24cacccf16b7f5	b6d281818a30508162046a078d97db6c	b2ee578c110c9b59e9a89682238a81dd	4d6ac5b7d1a1655cab94ac0ace7276c0
+df3ce784d856334d65cd25028f98f158	1c63359aa09a92fdfd289bc2ee978291	59c9fb5508c381bb7ed5703dedab7f27	b2ee578c110c9b59e9a89682238a81dd	4d6ac5b7d1a1655cab94ac0ace7276c0
+ce8f15881282a4001982e3a7bb241055	c10429a772294b1ae3eaf460fbb4ee76	0f763e358e1303c3ba6d56bf1db1be30	a6cd5e9392000f6ac44bdff4074eecdb	4d6ac5b7d1a1655cab94ac0ace7276c0
+df3ce784d856334d65cd25028f98f158	ccd29495e573ef7dda632af5b95972b3	be209dc1cba353199fd70a93a8dd7a5b	974ad7903a7282fc700c36774d19b2ba	4d6ac5b7d1a1655cab94ac0ace7276c0
+df3ce784d856334d65cd25028f98f158	16999af278cf7b9aabd6849bbd64fefd	5222206d2db54671917b4b7388695152	02649da38986af99cf52baae1b256772	4d6ac5b7d1a1655cab94ac0ace7276c0
+ce8f15881282a4001982e3a7bb241055	53ecac27d7bdf946df24cacccf16b7f5	b6d281818a30508162046a078d97db6c	27482606bad90cdf1f9f752acf367ddf	4d6ac5b7d1a1655cab94ac0ace7276c0
+df3ce784d856334d65cd25028f98f158	1c63359aa09a92fdfd289bc2ee978291	59c9fb5508c381bb7ed5703dedab7f27	974ad7903a7282fc700c36774d19b2ba	4d6ac5b7d1a1655cab94ac0ace7276c0
+SELECT ETAG() from t1;
+ERROR 42000: Incorrect parameter count in the call to native function 'ETAG'
+SELECT ETAG(1) from t1;
+ETAG(1)
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+df3ce784d856334d65cd25028f98f158
+SELECT ETAG("constant") from t1;
+ETAG("constant")
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+77bfd56b2dc40dc0455f597c9ef83c3e
+SELECT id, name, age, height from t1 where ETAG(id,age) >'13647057490375175604';
+id	name	age	height
+2	Bob	2	180.30
+3	Charlie	3	175.60
+4	Diana	4	170.40
+5	Evan	5	185.70
+6	Alice	25	165.50
+7	Bob	30	180.30
+8	Charlie	35	175.60
+9	Diana	40	170.40
+10	Evan	45	185.70
+11	Alice1	18446744073709551614	165.50
+12	Bob1	18446744073709551614	180.30
+13	Charlie1	18446744073709551614	175.60
+14	Diana1	18446744073709551614	110.40
+16	Alice2	225	165.50
+17	Bob2	230	180.30
+18	Charlie2	235	175.60
+SELECT ETAG(concat(id, name)) from t1;
+ETAG(concat(id, name))
+024e50ccce180554704337373517db36
+c90cf079d12a8395201b4e2d0e70e172
+569ce51d4c496d305fbd5b07a26a52a2
+050b0ac0feb182359355827015b539a1
+759c17fa2f286879cd182bce8ef38418
+6cd98605f36f3280efe7fb0b67be4106
+1047831e05739619aa3cd12cd416f8a6
+898486d0e1c45644a8f2d8087eaf7629
+636d51d154dde126dccd1aee122162f4
+9002e1f7587aa08c53d0266dc16b7269
+e0ac0800fcf0f51016c0304b1e5d3a03
+5fd8378c2eb7835cf0805074ce088d4d
+3db33ec6c86023a3a9f4601de60558d7
+090ae61ae08822ccca5a0fbe9a36350a
+3e505ea99dee5602bb4766efccbdb12a
+8b8b6450991dea32f7b5e13b9409c51b
+d2648a3825f50e357073e0c01f25dacd
+27d95d62a4e9cd6f71c7b799e8200416
+SELECT ETAG(id, name) from t1;
+ETAG(id, name)
+8c7b29a51aab99d67d44c0ff559e746b
+142275b03cc3caaff0f0af5204cf25a5
+111605631108526485512718baa0d697
+4906e23d0949e485a977a797c9953715
+cee27ee552477c3c22d5e6b6e4dcc42a
+6bce94878f8fe14dccdc408528c1cd20
+24c387c86ff815a4fc49d9258d94088b
+aa973c342470c044787b8d76a738ad91
+7e193aa706debad1ef23d09bb1d8693e
+45231514c404e1251463d2fad14e0dea
+8983c9146ccc6280727c57a3935d6bbb
+ab193a5dae15448f2da28292ec3d9556
+2147558d72286c78f233e6fe6c471ac3
+231014e7a407d335b896962ee1d5ee1a
+10c63c33652873dd237229181c698d03
+119f7257c2836ca8726fd54a3dab663b
+0cf831b4071711527d4e0d73177b51c6
+23f95a04a8d0c17e4a078469f291406b
+SELECT ETAG(info, jsontext) from t1;
+ETAG(info, jsontext)
+e4b59d480c13e8591ba0e2821b8c297a
+067666798ace661662bc045c06875e0e
+390da41db65d761db00b8d442d52f4ac
+390da41db65d761db00b8d442d52f4ac
+1a3ad82c95622c5924e388b09f94ade9
+e902a2e89f90ea0cc6fcea190d68504f
+a9af42d6b53a1dea63ce26d64d346b55
+5fd896cfd809fce1258f40245fc5b895
+5fd896cfd809fce1258f40245fc5b895
+c90554021c27bfa5d5f65cfee2f6f9ab
+00591d43e2ae00b6953d428cf1fcf89d
+00591d43e2ae00b6953d428cf1fcf89d
+00591d43e2ae00b6953d428cf1fcf89d
+f438244b63a174c76fe08bfed5c1639b
+e4b59d480c13e8591ba0e2821b8c297a
+4fcf635b5b2814f67ae766b8e997de32
+74b2ebbe8c7a723bcb3421359da8f49f
+e4b59d480c13e8591ba0e2821b8c297a
+SELECT ETAG(id, name, info, jsontext) from t1;
+ETAG(id, name, info, jsontext)
+7130c6ed26bf822f98e5a381712a9de5
+1a98dc29c79230c653acb3ae0b5683b3
+4a23a980c765c882355cb45ce7f3cb43
+8214865abfa75aa3598334dbf6e82bc1
+e91d5711e7a9a89547b96f6784717213
+54d137702f20cb5a93d92a9e362a1d6f
+ce72ca9f2532338f6017fffbdac873e0
+0a6fd303fc7abd259e0acd9b06fe6626
+ddf1d176dee8b7b314b310c0119e21d3
+0e286916e02ca0caea5a2ff9b4450795
+89dce6584f7a633707b99a30855a6458
+ab7257a190c34545c2dfc51fde3a8df3
+21a072d154d66d2f8771298b5e441360
+1748393307a947fd2877222db79751b5
+f57bd97b713c5c363f130b9a37f5b67d
+616ed5b31dab819eed573c032743446d
+81ab1d729391838e48822ea8b5244665
+08aef74cb4e4a9d765a866ec0e1d69e5
+SELECT ETAG(id, name, info) from t1;
+ETAG(id, name, info)
+23c60135551e1cd2ed50f776a2b82725
+cd2e1671f5f0cb69a81807a33ce40cf3
+fcb8e3c8f5c4632589c8085219815483
+34a9c0a2ee05f546adee88d12875b501
+9bb2915a160843389c24c35cb5fefb53
+076671b85d7f65fde8447e9367b7a6af
+810804e75390ce32b48353f10c55fd20
+bd050d4c2ad957c8f2762190388bef66
+90870bbf0d475256691e64b5432bab13
+c0bda35f0e8b3b6e3ec583eee5d290d5
+3c7220a07dd8fdda5c24ee25b6e7ed98
+5e0791e9bf21dfe9174b19150fc81733
+d435ad19833507d2dbdc7d808fd19ca0
+c9dd737b3607e2a07ce27622e924daf5
+a81113c39f9af6d9937e5f8f69833fbd
+14040ffb4c0a1c4241c28ff858d0cdad
+344057bac1f01e319ced829de6b1cfa5
+bb443194e343447aba13bae13faaf325
+DROP TABLE t1;
+CREATE TABLE Z (f1 INTEGER DEFAULT NULL, f2 integer DEFAULT NULL, f3 varchar(100) DEFAULT NULL);
+INSERT INTO Z(f1) VALUES (1);
+INSERT INTO Z(f2) VALUES (100);
+INSERT INTO Z(f3) VALUES ('database');
+SELECT * from Z;
+f1	f2	f3
+1	NULL	NULL
+NULL	100	NULL
+NULL	NULL	database
+SELECT ETAG(f2), ETAG(f2,f3), ETAG(f3,f2), ETAG(f2,f2) from Z;
+ETAG(f2)	ETAG(f2,f3)	ETAG(f3,f2)	ETAG(f2,f2)
+4d6ac5b7d1a1655cab94ac0ace7276c0	9ad58b6fa342cab9572958159ce4ed80	9ad58b6fa342cab9572958159ce4ed80	9ad58b6fa342cab9572958159ce4ed80
+aeaed4684912c402e3cd843a18868415	fc199a201ab4295f8f623044e6f8fad5	fc199a201ab4295f8f623044e6f8fad5	5d5da8d092258805c79b0874310d082a
+4d6ac5b7d1a1655cab94ac0ace7276c0	a1e6c81f3e3162761d9c45349994c0c0	a1e6c81f3e3162761d9c45349994c0c0	9ad58b6fa342cab9572958159ce4ed80
+DROP TABLE Z;
+CREATE TABLE example_table (
+id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+data JSON
+);
+INSERT INTO example_table (data) VALUES ('{"name": "John", "email":
+"john.doe@example.com", "age": 30}');
+INSERT INTO example_table (data) VALUES
+('{"_metadata": "example", "name": "Jane", "email": "jane.doe@example.com",
+"age": 25}');
+INSERT INTO example_table (data) VALUES ('{"name": "Jane",
+"email": "jane.doe@example.com", "age": 25}');
+SELECT data, ETAG(data) FROM example_table;
+data	ETAG(data)
+{"age": 30, "name": "John", "email": "john.doe@example.com"}	a41001743c693bb49625121aa174edd0
+{"age": 25, "name": "Jane", "email": "jane.doe@example.com", "_metadata": "example"}	bad6483e9e887c81209f0133cb13e1dc
+{"age": 25, "name": "Jane", "email": "jane.doe@example.com"}	dde1e0797e88a453c2a24cf621211b8a
+DROP TABLE example_table;
+CREATE TABLE t1 (
+-- Numeric types
+tinyint_col TINYINT,
+smallint_col SMALLINT,
+mediumint_col MEDIUMINT,
+int_col INT,
+bigint_col BIGINT,
+decimal_col DECIMAL(10, 2),
+float_col FLOAT,
+double_col DOUBLE,
+bit_col BIT(1),
+-- String types
+char_col CHAR(10),
+varchar_col VARCHAR(255),
+binary_col BINARY(16),
+tinyblob_col TINYBLOB,
+blob_col BLOB,
+mediumblob_col MEDIUMBLOB,
+longblob_col LONGBLOB,
+tinytext_col TINYTEXT,
+text_col TEXT,
+mediumtext_col MEDIUMTEXT,
+longtext_col LONGTEXT,
+enum_col ENUM('value1', 'value2', 'value3'),
+set_col SET('value1', 'value2', 'value3'),
+-- Date and time types
+date_col DATE,
+datetime_col DATETIME,
+timestamp_col TIMESTAMP,
+time_col TIME,
+year_col YEAR,
+-- JSON type
+json_col JSON,
+-- Spatial types
+geometry_col GEOMETRY,
+point_col POINT,
+linestring_col LINESTRING,
+polygon_col POLYGON,
+multipoint_col MULTIPOINT,
+multilinestring_col MULTILINESTRING,
+multipolygon_col MULTIPOLYGON,
+geometrycollection_col GEOMETRYCOLLECTION
+);
+INSERT INTO t1 (
+tinyint_col, smallint_col, mediumint_col, int_col, bigint_col,
+decimal_col, float_col, double_col, bit_col, char_col, varchar_col,
+binary_col, tinyblob_col, blob_col, mediumblob_col,
+longblob_col, tinytext_col, text_col, mediumtext_col, longtext_col,
+enum_col, set_col, date_col, datetime_col, timestamp_col, time_col, year_col,
+json_col, geometry_col, point_col, linestring_col, polygon_col,
+multipoint_col, multilinestring_col, multipolygon_col, geometrycollection_col
+) VALUES (
+1, 123, 12345, 123456, 1234567890123,
+1234.56, 12.34, 12345.6789, b'1', 'A', 'Hello, world!',
+BINARY('binary_data'), 'tiny_blob', 'blob_data', 'medium_blob_data',
+'long_blob_data', 'tiny_text', 'text_data', 'medium_text_data', 'long_text_data',
+'value1', 'value1,value2', '2024-01-01', '2024-01-01 12:34:56', CURRENT_TIMESTAMP, '12:34:56', 2024,
+'{"key": "value"}',
+ST_GeomFromText('POINT(1 1)'),
+ST_GeomFromText('POINT(1 1)'),
+ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)'),
+ST_GeomFromText('POLYGON((0 0, 1 1, 1 0, 0 0))'),
+ST_GeomFromText('MULTIPOINT((0 0), (1 1))'),
+ST_GeomFromText('MULTILINESTRING((0 0, 1 1), (2 2, 3 3))'),
+ST_GeomFromText('MULTIPOLYGON(((0 0, 1 1, 1 0, 0 0)), ((2 2, 3 3, 3 2, 2 2)))'),
+ST_GeomFromText('GEOMETRYCOLLECTION(POINT(1 1), LINESTRING(0 0, 1 1))')
+);
+Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
+INSERT INTO t1 (
+tinyint_col, smallint_col, mediumint_col, int_col, bigint_col,
+decimal_col, float_col, double_col, bit_col, char_col, varchar_col,
+binary_col, tinyblob_col, blob_col, mediumblob_col,
+longblob_col, tinytext_col, text_col, mediumtext_col, longtext_col,
+enum_col, set_col, date_col, datetime_col, timestamp_col, time_col, year_col,
+json_col, geometry_col, point_col, linestring_col, polygon_col,
+multipoint_col, multilinestring_col, multipolygon_col, geometrycollection_col
+) VALUES (
+2, 123, 12345, 123456, 1234567890123,
+1234.56, 1234.567777777777777777, 1234.567777777777777777, b'1', 'A', 'Hello, world!',
+BINARY('binary_data'), 'tiny_blob', 'blob_data', 'medium_blob_data',
+'long_blob_data', 'tiny_text', 'text_data', 'medium_text_data', 'long_text_data',
+'value1', 'value1,value2', '2024-01-01', '2024-01-01 12:34:56', CURRENT_TIMESTAMP, '12:34:56', 2024,
+'{"key": "value"}', ST_GeomFromText('POINT(1 1)'), ST_GeomFromText('POINT(1 1)'), ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)'),
+ST_GeomFromText('POLYGON((0 0, 1 1, 1 0, 0 0))'), ST_GeomFromText('MULTIPOINT((0 0), (1 1))'),
+ST_GeomFromText('MULTILINESTRING((0 0, 1 1), (2 2, 3 3))'),
+ST_GeomFromText('MULTIPOLYGON(((0 0, 1 1, 1 0, 0 0)), ((2 2, 3 3, 3 2, 2 2)))'),
+ST_GeomFromText('GEOMETRYCOLLECTION(POINT(1 1), LINESTRING(0 0, 1 1))')
+);
+Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
+SELECT 
+ETAG(tinyint_col),
+ETAG(smallint_col),
+ETAG(mediumint_col),
+ETAG(int_col),
+ETAG(bigint_col),
+ETAG(decimal_col),
+ETAG(float_col),
+ETAG(double_col),
+ETAG(bit_col),
+ETAG(char_col),
+ETAG(varchar_col),
+ETAG(binary_col),
+ETAG(tinyblob_col),
+ETAG(blob_col),
+ETAG(mediumblob_col),
+ETAG(longblob_col),
+ETAG(tinytext_col),
+ETAG(text_col),
+ETAG(mediumtext_col),
+ETAG(longtext_col),
+ETAG(enum_col),
+ETAG(set_col),
+ETAG(date_col),
+ETAG(datetime_col),
+ETAG(time_col),
+ETAG(year_col),
+ETAG(json_col)
+FROM t1;
+ETAG(tinyint_col)	ETAG(smallint_col)	ETAG(mediumint_col)	ETAG(int_col)	ETAG(bigint_col)	ETAG(decimal_col)	ETAG(float_col)	ETAG(double_col)	ETAG(bit_col)	ETAG(char_col)	ETAG(varchar_col)	ETAG(binary_col)	ETAG(tinyblob_col)	ETAG(blob_col)	ETAG(mediumblob_col)	ETAG(longblob_col)	ETAG(tinytext_col)	ETAG(text_col)	ETAG(mediumtext_col)	ETAG(longtext_col)	ETAG(enum_col)	ETAG(set_col)	ETAG(date_col)	ETAG(datetime_col)	ETAG(time_col)	ETAG(year_col)	ETAG(json_col)
+df3ce784d856334d65cd25028f98f158	0e45f72b026d434f404a763b3f4c8c9a	4af3da69f61e14cf26f4c14b6b6bfdb4	4c2b6eecc66547d595102682557afd52	9a325e7488f4804ece293409a66af880	b820114f1b8b8f937b30caa590649e84	aa2a1b16f72336d315d1ec5483324559	e94e8baa3965cf70ecf50e85cb30b8e0	51025a4491835505e12ef9d2eb86ceeb	9b0498cbe3839becd0d496e05c553485	ade2b2886b80787bbb5ca743b534f2fa	3cee50f26f9f621d9b8959256797f69a	3c3010731d325cf1385b103bfe511eb5	67196b66e56d409efb14854a861dc6e4	435dd31b4f77d3e92b0a624572218c11	ec88823d73736b97d11803584851b837	b8263bcc8bfdc9ed2b32c73ed5929c8d	28c7e1a602b45e7e4356c6b792afc9ce	239957b0de52ce58304d9b5e8fb7774a	7cc303203469611d7e2927213083ed5f	db30ad1e9e5ddef343d9f04d682c43bd	755be5f99d66c1b0418ff70c9d81ce42	5855ff9482b2bf47c38632484ff42797	f583363862662fe1480a0188584e5ebe	67cdacffecb895e7637dac0dbf9e69bf	2ffaaea83a774e8d9013b654014199fe	2326dd478c4061d746f6ad295d5d2a4d
+cb358fcee0dfde56fb95a7322f5da314	0e45f72b026d434f404a763b3f4c8c9a	4af3da69f61e14cf26f4c14b6b6bfdb4	4c2b6eecc66547d595102682557afd52	9a325e7488f4804ece293409a66af880	b820114f1b8b8f937b30caa590649e84	cc2b7e12c1bfcb961153e35c2827543c	93539f9aff0fbe9e88b22a98048d10de	51025a4491835505e12ef9d2eb86ceeb	9b0498cbe3839becd0d496e05c553485	ade2b2886b80787bbb5ca743b534f2fa	3cee50f26f9f621d9b8959256797f69a	3c3010731d325cf1385b103bfe511eb5	67196b66e56d409efb14854a861dc6e4	435dd31b4f77d3e92b0a624572218c11	ec88823d73736b97d11803584851b837	b8263bcc8bfdc9ed2b32c73ed5929c8d	28c7e1a602b45e7e4356c6b792afc9ce	239957b0de52ce58304d9b5e8fb7774a	7cc303203469611d7e2927213083ed5f	db30ad1e9e5ddef343d9f04d682c43bd	755be5f99d66c1b0418ff70c9d81ce42	5855ff9482b2bf47c38632484ff42797	f583363862662fe1480a0188584e5ebe	67cdacffecb895e7637dac0dbf9e69bf	2ffaaea83a774e8d9013b654014199fe	2326dd478c4061d746f6ad295d5d2a4d
+SELECT float_col, ETAG(float_col), double_col, ETAG(double_col) FROM t1;
+float_col	ETAG(float_col)	double_col	ETAG(double_col)
+12.34	aa2a1b16f72336d315d1ec5483324559	12345.6789	e94e8baa3965cf70ecf50e85cb30b8e0
+1234.57	cc2b7e12c1bfcb961153e35c2827543c	1234.5677777777778	93539f9aff0fbe9e88b22a98048d10de
+SELECT ETAG(CONCAT(float_col, double_col, multipolygon_col)) FROM t1;
+ETAG(CONCAT(float_col, double_col, multipolygon_col))
+e636049736b3668511e64bc34d5cecf6
+54d8561662753325630a7d9442f4f6da
+SELECT ETAG(CONCAT(float_col, double_col,longtext_col)) FROM t1;
+ETAG(CONCAT(float_col, double_col,longtext_col))
+71d4c9898275772a29e4421a22c9688e
+d2657c7fd92d37c271157f92c006d753
+SELECT ETAG(float_col) FROM t1 GROUP BY ETAG(float_col) order by 1 limit 5;
+ETAG(float_col)
+aa2a1b16f72336d315d1ec5483324559
+cc2b7e12c1bfcb961153e35c2827543c
+SELECT ETAG(character_length(tinytext_col)) FROM t1 GROUP BY ETAG(character_length(tinytext_col)) order by 1 limit 5;
+ETAG(character_length(tinytext_col))
+7c6bdb19ba3f158928353a066812b268
+SELECT ETAG(float_col) FROM t1 WHERE ETAG(character_length(tinytext_col)) > 1 order by 1 limit 5;
+ETAG(float_col)
+aa2a1b16f72336d315d1ec5483324559
+cc2b7e12c1bfcb961153e35c2827543c
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '7c6bdb19ba3f158928353a066812b268'
+Warning	1292	Truncated incorrect DOUBLE value: '7c6bdb19ba3f158928353a066812b268'
+SELECT ETAG(float_col) FROM t1 WHERE ETAG(character_length(tinytext_col)) > ETAG(longtext_col);
+ETAG(float_col)
+SELECT ETAG(float_col) FROM t1 WHERE ETAG(character_length(tinytext_col)) > json_col;
+ETAG(float_col)
+SELECT ETAG(tinytext_col) FROM t1 WHERE ETAG(character_length(tinytext_col)) > date_col order by 1 limit 5;
+ETAG(tinytext_col)
+Warnings:
+Warning	1292	Incorrect datetime value: '7c6bdb19ba3f158928353a066812b268'
+Warning	1292	Incorrect datetime value: '7c6bdb19ba3f158928353a066812b268'
+SELECT ETAG(multipolygon_col) FROM t1;
+ERROR HY000: ETAG is not supported with Vector/ Geometry types.
+CREATE TABLE CTAS_t1 as SELECT ETAG(tinyint_col),
+ETAG(smallint_col),
+ETAG(mediumint_col),
+ETAG(int_col),
+ETAG(bigint_col),
+ETAG(decimal_col),
+ETAG(float_col),
+ETAG(double_col),
+ETAG(bit_col),
+ETAG(char_col),
+ETAG(varchar_col),
+ETAG(binary_col),
+ETAG(tinyblob_col),
+ETAG(blob_col),
+ETAG(mediumblob_col),
+ETAG(longblob_col),
+ETAG(tinytext_col),
+ETAG(text_col),
+ETAG(mediumtext_col),
+ETAG(longtext_col),
+ETAG(enum_col),
+ETAG(set_col),
+ETAG(date_col),
+ETAG(datetime_col),
+ETAG(time_col),
+ETAG(year_col),
+ETAG(json_col) from t1;
+SELECT * from CTAS_t1;
+ETAG(tinyint_col)	ETAG(smallint_col)	ETAG(mediumint_col)	ETAG(int_col)	ETAG(bigint_col)	ETAG(decimal_col)	ETAG(float_col)	ETAG(double_col)	ETAG(bit_col)	ETAG(char_col)	ETAG(varchar_col)	ETAG(binary_col)	ETAG(tinyblob_col)	ETAG(blob_col)	ETAG(mediumblob_col)	ETAG(longblob_col)	ETAG(tinytext_col)	ETAG(text_col)	ETAG(mediumtext_col)	ETAG(longtext_col)	ETAG(enum_col)	ETAG(set_col)	ETAG(date_col)	ETAG(datetime_col)	ETAG(time_col)	ETAG(year_col)	ETAG(json_col)
+df3ce784d856334d65cd25028f98f158	0e45f72b026d434f404a763b3f4c8c9a	4af3da69f61e14cf26f4c14b6b6bfdb4	4c2b6eecc66547d595102682557afd52	9a325e7488f4804ece293409a66af880	b820114f1b8b8f937b30caa590649e84	aa2a1b16f72336d315d1ec5483324559	e94e8baa3965cf70ecf50e85cb30b8e0	51025a4491835505e12ef9d2eb86ceeb	9b0498cbe3839becd0d496e05c553485	ade2b2886b80787bbb5ca743b534f2fa	3cee50f26f9f621d9b8959256797f69a	3c3010731d325cf1385b103bfe511eb5	67196b66e56d409efb14854a861dc6e4	435dd31b4f77d3e92b0a624572218c11	ec88823d73736b97d11803584851b837	b8263bcc8bfdc9ed2b32c73ed5929c8d	28c7e1a602b45e7e4356c6b792afc9ce	239957b0de52ce58304d9b5e8fb7774a	7cc303203469611d7e2927213083ed5f	db30ad1e9e5ddef343d9f04d682c43bd	755be5f99d66c1b0418ff70c9d81ce42	5855ff9482b2bf47c38632484ff42797	f583363862662fe1480a0188584e5ebe	67cdacffecb895e7637dac0dbf9e69bf	2ffaaea83a774e8d9013b654014199fe	2326dd478c4061d746f6ad295d5d2a4d
+cb358fcee0dfde56fb95a7322f5da314	0e45f72b026d434f404a763b3f4c8c9a	4af3da69f61e14cf26f4c14b6b6bfdb4	4c2b6eecc66547d595102682557afd52	9a325e7488f4804ece293409a66af880	b820114f1b8b8f937b30caa590649e84	cc2b7e12c1bfcb961153e35c2827543c	93539f9aff0fbe9e88b22a98048d10de	51025a4491835505e12ef9d2eb86ceeb	9b0498cbe3839becd0d496e05c553485	ade2b2886b80787bbb5ca743b534f2fa	3cee50f26f9f621d9b8959256797f69a	3c3010731d325cf1385b103bfe511eb5	67196b66e56d409efb14854a861dc6e4	435dd31b4f77d3e92b0a624572218c11	ec88823d73736b97d11803584851b837	b8263bcc8bfdc9ed2b32c73ed5929c8d	28c7e1a602b45e7e4356c6b792afc9ce	239957b0de52ce58304d9b5e8fb7774a	7cc303203469611d7e2927213083ed5f	db30ad1e9e5ddef343d9f04d682c43bd	755be5f99d66c1b0418ff70c9d81ce42	5855ff9482b2bf47c38632484ff42797	f583363862662fe1480a0188584e5ebe	67cdacffecb895e7637dac0dbf9e69bf	2ffaaea83a774e8d9013b654014199fe	2326dd478c4061d746f6ad295d5d2a4d
+DROP TABLE CTAS_t1;
+DROP TABLE t1;
+CREATE TABLE tn1 (a datetime, b varchar(33) DEFAULT (ETAG(a)));
+INSERT INTO tn1(a) VALUES ('2014-10-10 01:01:01');
+SELECT ETAG(b) FROM tn1;
+ETAG(b)
+c225a3fc66c12b62b9e8fd9e80b23faf
+DROP TABLE tn1;
+CREATE TABLE spatial_data (id INT AUTO_INCREMENT PRIMARY KEY, location GEOMETRY NOT NULL);
+INSERT INTO spatial_data (location)  VALUES (ST_GeomFromText('LINESTRING(10 10, 30 40, 20 20)'));
+INSERT INTO spatial_data (location)  VALUES (ST_GeomFromText('LINESTRING(10 10, 20 20, 30 40)'));
+SELECT ETAG(location) FROM spatial_data;
+ERROR HY000: ETAG is not supported with Vector/ Geometry types.
+SELECT ETAG(CAST(location as JSON)) FROM spatial_data;
+ETAG(CAST(location as JSON))
+cd3d161230f11d59d6318d8ba496a55f
+da878719c0f5fc604bea194aee6eb0ef
+DROP TABLE spatial_data;
+CREATE TABLE departments (
+department_code VARCHAR(30),
+department_name VARCHAR(50),
+region          VARCHAR(50)
+);
+CREATE TABLE employees (
+emp_id      INT PRIMARY KEY,
+first_name  VARCHAR(50),
+last_name   VARCHAR(50),
+salary      DECIMAL(10,2),
+department  VARCHAR(30),
+hire_date   DATE
+);
+INSERT INTO departments (department_code, department_name, region) VALUES
+('SALES', 'Sales Department', 'North America'),
+('ENG', 'Engineering', 'North America'),
+('HR', 'Human Resources', 'Europe'),
+('MKT', 'Marketing', 'Asia'),
+('FIN', 'Finance', 'Europe');
+INSERT INTO employees (emp_id, first_name, last_name, salary, department, hire_date) VALUES
+(1001, 'Alice', 'Johnson', 95000, 'SALES', '2021-03-15'),
+(1002, 'Bob', 'Smith', 120000, 'ENG', '2022-07-10'),
+(1003, 'Carol', 'Taylor', 75000, 'HR', '2019-11-25'),
+(1004, 'David', 'Brown', 68000, 'MKT', '2023-01-20'),
+(1005, 'Eva', 'Green', 105000, 'ENG', '2020-09-01'),
+(1006, 'Frank', 'White', 45000, 'SALES', '2024-02-14'),
+(1007, 'Grace', 'Lee', 56000, 'HR', '2023-10-05'),
+(1008, 'Henry', 'Kim', 66000, 'MKT', '2022-04-30'),
+(1009, 'Isla', 'Nguyen', 89000, 'FIN', '2021-12-17'),
+(1010, 'Jack', 'Patel', 51000, 'ENG', '2023-08-25'),
+(1011, 'Tom', 'Exact', 50000.000, 'FIN', '2022-01-01'),
+(1012, 'grace', 'lee', 56000, 'HR', '2023-10-05'),
+(1013, 'GRACE', 'LEE', 56000, 'HR', '2023-10-05'),
+(1014, ' Alice ', 'Johnson', 95000, 'SALES', '2021-03-15'),
+(1015, 'Alice', '  Johnson  ', 95000, 'SALES', '2021-03-15'),
+(1016, 'Zane', 'DateEdge', 70000, 'ENG', '2023-08-25 14:32:55'),
+(1017, 'Floaty', 'Numbers', 51000.0001, 'ENG', '2023-08-25');
+Warnings:
+Note	1292	Incorrect date value: '2023-08-25 14:32:55' for column 'hire_date' at row 16
+Note	1265	Data truncated for column 'salary' at row 17
+SELECT
+emp_id, first_name, last_name, salary,
+ETAG(CONCAT(first_name, last_name, salary)) AS etag,
+ETAG(LOWER(first_name)) AS etag_lower,
+ETAG(UPPER(first_name)) AS etag_upper,
+ETAG(CONCAT(first_name, ' ', last_name)) AS e1
+FROM employees
+WHERE department = 'SALES';
+emp_id	first_name	last_name	salary	etag	etag_lower	etag_upper	e1
+1001	Alice	Johnson	95000.00	1db8c73d937bd721950f07cacc95c2fb	48bb949a3dd26afac9a1342ad0e35dd2	7ffcb7df4d390e142a885f16b3f665dc	76b48a39f9fcbd4bbc9d07ea7c5b715d
+1006	Frank	White	45000.00	af914cd8f88d9d6183101bc2de724b4d	78c74fb6cbd1976a600a6cf13e00b424	ea66dfccd828461afce6ad8d7c852ce0	f921b0a6bdc2bed4a2848450014af654
+1014	 Alice 	Johnson	95000.00	b834a9e9ce50e5a7f300f34ff865c390	19f1e085050436313293674c631027c6	46cef06e4ae218d11e55c6698d0254a7	d045ff69cb4c90f196b01567fece1c06
+1015	Alice	  Johnson  	95000.00	37076589d80ced51ef7b4854ec9f1742	48bb949a3dd26afac9a1342ad0e35dd2	7ffcb7df4d390e142a885f16b3f665dc	78ed83aeecb1a8a1a94a3d623fad4f15
+SELECT
+emp_id, COALESCE(first_name, 'Unknown') AS fname,
+CASE
+WHEN salary >= 100000 THEN 'High'
+    WHEN salary BETWEEN 50000 AND 99999 THEN 'Medium'
+    ELSE 'Low'
+  END AS salary_grade,
+ETAG(COALESCE(first_name, 'Unknown'), salary) AS etag
+FROM employees
+WHERE department IN (
+SELECT DISTINCT department
+FROM employees
+WHERE hire_date >= STR_TO_DATE('2022-01-01', '%Y-%m-%d')
+);
+emp_id	fname	salary_grade	etag
+1001	Alice	Medium	db3f385be47548e314739625e0e2b9c3
+1002	Bob	High	588d66db08d4c96efe85fc49b69b454c
+1003	Carol	Medium	7befb1d7e1c6b8a1f80fc34d31b8c184
+1004	David	Medium	96e6a324b05642cb1a637d1009f5c3f9
+1005	Eva	High	46464a49e9cc0db34e186c9820a66710
+1006	Frank	Low	cd98a66ef70cc251e0e4d39ebe313025
+1007	Grace	Medium	f81059f729f05dca9ce3d0ca51a74f36
+1008	Henry	Medium	b2bed6ee9e94cba4a59de1656700b7f4
+1009	Isla	Medium	264f43f3ee966758d87cd98a6549e774
+1010	Jack	Medium	881f6000f91ab293a8a28abaf1a6bae8
+1011	Tom	Medium	fe516f2b28ca837a58a2329cbc070385
+1012	grace	Medium	99b6e510b2f91ef5a3caee36ba981c15
+1013	GRACE	Medium	268a910cdb7edf71440800982fe12be4
+1014	 Alice 	Medium	61476b32567066a163a9222c33f090e7
+1015	Alice	Medium	db3f385be47548e314739625e0e2b9c3
+1016	Zane	Medium	d49bc61ec195aafddeddccefbc2b6b4a
+1017	Floaty	Medium	e74323e1e2efc23a6615b326f3c5f80f
+SELECT
+department, COUNT(*) AS total_employees, AVG(salary) AS avg_salary,
+ETAG(department, FORMAT(AVG(salary), 2)) AS dept_etag
+FROM employees
+GROUP BY department
+HAVING AVG(salary) > 50000 ORDER BY department;
+department	total_employees	avg_salary	dept_etag
+ENG	5	79400.000000	f10aa5721f3b2c7bf1f8c3a93be5c314
+FIN	2	69500.000000	fc7143d3afd6e3a7e64a8ff9dc49d6b9
+HR	4	60750.000000	6c20380a27f075e2e64ed1995119e019
+MKT	2	67000.000000	dbdc2b6d38821a031f2a1dff3734d704
+SALES	4	82500.000000	ae154b26c9255f143131caf1bd0ac16c
+SELECT
+emp_id,
+CONCAT(UCASE(LEFT(first_name, 1)), LCASE(SUBSTRING(first_name, 2)), ' ',
+UCASE(LEFT(last_name, 1)), LCASE(SUBSTRING(last_name, 2))) AS full_name,
+salary,
+DATE_FORMAT(hire_date, '%Y-%m') AS hire_month,
+ETAG(
+UPPER(department),
+ROUND(salary, -3),
+DATE_FORMAT(hire_date, '%Y-%m')
+) AS custom_etag
+FROM employees
+WHERE salary > (
+SELECT AVG(salary)
+FROM employees
+WHERE department = 'Engineering'
+);
+emp_id	full_name	salary	hire_month	custom_etag
+SELECT
+e.emp_id, e.first_name, e.last_name, d.department_name,
+ETAG(e.first_name, e.last_name, d.department_name) AS row_etag
+FROM employees e
+JOIN departments d ON e.department = d.department_code
+WHERE d.region = 'North America';
+emp_id	first_name	last_name	department_name	row_etag
+1001	Alice	Johnson	Sales Department	760dcc8539f415aacf3fcbb7780999d3
+1002	Bob	Smith	Engineering	c342137b2cffd569a7907c4a70c91516
+1005	Eva	Green	Engineering	9002fed39ae080c86a79bc1280edd6b2
+1006	Frank	White	Sales Department	a28652ceedc3c35c8506851b81907594
+1010	Jack	Patel	Engineering	59fc7e6bde0fef49444887389550528b
+1014	 Alice 	Johnson	Sales Department	fc15ff5babef33691e7557bdcb1770f7
+1015	Alice	  Johnson  	Sales Department	50d3b02a292d0488fbbfa425859bdf59
+1016	Zane	DateEdge	Engineering	b19376fdeaa6b6f8315b9709bca11f7b
+1017	Floaty	Numbers	Engineering	83fb49a391e56ee6a6ad99b3d1b4846e
+SELECT
+emp_id, salary,
+ETAG(FORMAT(salary, 2)) AS etag1,
+ETAG(ROUND(salary, 2)) AS etag2,
+ETAG(DATE_FORMAT(hire_date, '%Y-%m-%d')) AS etag3,
+ETAG(salary * 1.0) AS etag_float,
+ETAG(salary) AS etag_int
+FROM employees;
+emp_id	salary	etag1	etag2	etag3	etag_float	etag_int
+1001	95000.00	700116bba5683a5d2c4d470996549521	2e00f63ba21fe259fcfbfa291add36b0	4d7ee8d4f6e76af8c7ba29aab6606204	8c3c7ebb473acf317e34b7319d51a505	2e00f63ba21fe259fcfbfa291add36b0
+1002	120000.00	8bf87de3cfa2cf33e8938d6aa4600c94	0fa080f9acf0dd16092af429e129c2bb	89a5d99008f0994774d4fb2eb8675c22	58fc5ef5847d9fdceb8441c1fd46e5fc	0fa080f9acf0dd16092af429e129c2bb
+1003	75000.00	788c06443cd051889e6977b3837abd15	0dc798b3204d64a00eba4cb9b69492f9	53b8550ff939d64cebd309ea79e7352e	1632d0cae11975fa32afa96a7866fbfd	0dc798b3204d64a00eba4cb9b69492f9
+1004	68000.00	3b5a0fe41b90f3749ecf8690001e0f84	413c5a8a3cb37df62b195bdaf84f1e59	28f510dd28e1974637537205fcb345e0	914382762957f3dc45b137e1d0734944	413c5a8a3cb37df62b195bdaf84f1e59
+1005	105000.00	4ba25a7965a613232347ec3c63d0a720	1162227cc376ea1f305b6e5dfeab855a	a70064aa5f22007c53f6a472a345016e	345ccffa989e807bb719115067995d16	1162227cc376ea1f305b6e5dfeab855a
+1006	45000.00	fd4d2c3bdef7b1aa8fa8b7e03a4ce4c9	726fb34abaad73b5ecc610229b936816	03fb2c5bf2faea32aaf814554576fcca	c912b134abec9d5b82a2d0bf76cc4df4	726fb34abaad73b5ecc610229b936816
+1007	56000.00	91c13da7ef7c4af660141f7181e0ca10	e05e2f014038220ed6096abcdd02900a	97f5e226ac68cb9674dc8120a9e2495b	eef0077769130c1e5e9bc6e0c90b2e9b	e05e2f014038220ed6096abcdd02900a
+1008	66000.00	7c8c2fae642b7e672d545e51273e340a	0cba3932a63944c3a2fbf053841475df	535afcced4ac838bd949bfd8df963b1f	86d6fab6140d9d9b6042508c52d1cd5e	0cba3932a63944c3a2fbf053841475df
+1009	89000.00	2e2be9b4c96666a3718bddb4097cdbf7	e220242f81a990088ec34246c5139a47	aad7e6d0c61899248a48721dc99a47ba	afcdcd0b1dfd331237a92442ffaf282f	e220242f81a990088ec34246c5139a47
+1010	51000.00	ecbcca64f8ed9f4bf91c3f2dca200e81	6c06b4fb2702e35836446bfd8086975b	212760697aa8ddf175d4cef505d5285e	f67c9723ecafd51928cdbc328238ad75	6c06b4fb2702e35836446bfd8086975b
+1011	50000.00	7bd03f05bb818936535bee2555a9f19d	d99eed78905e57da38429d2b1ad5eb06	45a086a29fff3eaffef21bf91f70116d	4df6537d959ccaa7718201c0690aeb56	d99eed78905e57da38429d2b1ad5eb06
+1012	56000.00	91c13da7ef7c4af660141f7181e0ca10	e05e2f014038220ed6096abcdd02900a	97f5e226ac68cb9674dc8120a9e2495b	eef0077769130c1e5e9bc6e0c90b2e9b	e05e2f014038220ed6096abcdd02900a
+1013	56000.00	91c13da7ef7c4af660141f7181e0ca10	e05e2f014038220ed6096abcdd02900a	97f5e226ac68cb9674dc8120a9e2495b	eef0077769130c1e5e9bc6e0c90b2e9b	e05e2f014038220ed6096abcdd02900a
+1014	95000.00	700116bba5683a5d2c4d470996549521	2e00f63ba21fe259fcfbfa291add36b0	4d7ee8d4f6e76af8c7ba29aab6606204	8c3c7ebb473acf317e34b7319d51a505	2e00f63ba21fe259fcfbfa291add36b0
+1015	95000.00	700116bba5683a5d2c4d470996549521	2e00f63ba21fe259fcfbfa291add36b0	4d7ee8d4f6e76af8c7ba29aab6606204	8c3c7ebb473acf317e34b7319d51a505	2e00f63ba21fe259fcfbfa291add36b0
+1016	70000.00	ebe492cbf8ee2913701e72c5dc4243dd	dd4f75712a541fe92c00dc6f63efdcab	212760697aa8ddf175d4cef505d5285e	d222bee040725d5df4e6752260a4aef9	dd4f75712a541fe92c00dc6f63efdcab
+1017	51000.00	ecbcca64f8ed9f4bf91c3f2dca200e81	6c06b4fb2702e35836446bfd8086975b	212760697aa8ddf175d4cef505d5285e	f67c9723ecafd51928cdbc328238ad75	6c06b4fb2702e35836446bfd8086975b
+DROP TABLE employees, departments;
+SELECT ETAG(json_array()), ETAG(json_array('')), ETAG(json_array('', '', '', ''));
+ETAG(json_array())	ETAG(json_array(''))	ETAG(json_array('', '', '', ''))
+8160525cdc4248c7d72f745408743e95	9bebbabae439c98a548e68bde3d2215a	9ee7f45759f607d3638f49f2089a6116
+SELECT ETAG(json_array('a', 'b')), ETAG(json_array('a', '', 'b', ''));
+ETAG(json_array('a', 'b'))	ETAG(json_array('a', '', 'b', ''))
+f349368f03d146d390bf9e3fb880dca0	6f2f08395c2997acf7dc283472ce2625
+SELeCT ETAG(cast('null' as json)), ETAG(null);
+ETAG(cast('null' as json))	ETAG(null)
+a6cd5e9392000f6ac44bdff4074eecdb	4d6ac5b7d1a1655cab94ac0ace7276c0
+SELECT ETAG(null), ETAG('\0');
+ETAG(null)	ETAG('\0')
+4d6ac5b7d1a1655cab94ac0ace7276c0	a6cd5e9392000f6ac44bdff4074eecdb
+CREATE TABLE t1(x JSON);
+INSERT INTO t1 VALUES (NULL);
+SELECT ETAG(NULL), ETAG(x) FROM t1;
+ETAG(NULL)	ETAG(x)
+4d6ac5b7d1a1655cab94ac0ace7276c0	4d6ac5b7d1a1655cab94ac0ace7276c0
+DROP TABLE t1;
+CREATE TABLE t1(x varchar(100));
+INSERT INTO t1 VALUES ("x");
+SELECT ETAG("x"), ETAG(x) FROM t1;
+ETAG("x")	ETAG(x)
+5c7401c0ec22eeeeeaf06c6480b2cd11	5c7401c0ec22eeeeeaf06c6480b2cd11
+DROP TABLE t1;

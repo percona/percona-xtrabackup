@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -138,7 +138,9 @@
 #include "mysql_com_server.h"
 #include "sql/client_settings.h"
 #include "sql/server_component/mysql_command_services_imp.h"
+#include "sql/srv_session.h"
 /* mysql_command_service_extn */
+#include "sql/mysqld.h"  // srv_registry
 #else
 #include "libmysql/client_settings.h"
 #endif /* MYSQL_SERVER && ! XTRABACKUP */
@@ -3374,6 +3376,141 @@ void mysql_extension_bind_free(MYSQL_EXTENSION *ext) {
   memset(&ext->bind_info, 0, sizeof(ext->bind_info));
 }
 
+#ifdef MYSQL_SERVER
+/**
+  Release services.
+
+  @param[in] consumer_refs A valid mysql_command_consumer_refs object.
+  @param[in] mcs_ext       A valid mysql_command_service_extn object.
+  @param[in] srv_registry  Registry service pointer.
+*/
+static void release_services(mysql_command_consumer_refs *consumer_refs,
+                             mysql_command_service_extn *mcs_ext,
+                             mysql_service_registry_t *srv_registry) {
+  if (consumer_refs) {
+    if (consumer_refs->factory_srv) {
+      /* This service call is used to free the memory, the allocation
+         was happened through factory_srv->start() service api. */
+      consumer_refs->factory_srv->end(
+          reinterpret_cast<SRV_CTX_H>(mcs_ext->consumer_srv_data));
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(mysql_text_consumer_factory_v1) *>(
+              consumer_refs->factory_srv)));
+    }
+    if (consumer_refs->metadata_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(mysql_text_consumer_metadata_v1) *>(
+              consumer_refs->metadata_srv)));
+    if (consumer_refs->row_factory_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(
+              mysql_text_consumer_row_factory_v1) *>(
+              consumer_refs->row_factory_srv)));
+    if (consumer_refs->error_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(mysql_text_consumer_error_v1) *>(
+              consumer_refs->error_srv)));
+    if (consumer_refs->get_null_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(mysql_text_consumer_get_null_v1) *>(
+              consumer_refs->get_null_srv)));
+    if (consumer_refs->get_integer_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(
+              mysql_text_consumer_get_integer_v1) *>(
+              consumer_refs->get_integer_srv)));
+    if (consumer_refs->get_longlong_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(
+              mysql_text_consumer_get_longlong_v1) *>(
+              consumer_refs->get_longlong_srv)));
+    if (consumer_refs->get_decimal_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(
+              mysql_text_consumer_get_decimal_v1) *>(
+              consumer_refs->get_decimal_srv)));
+    if (consumer_refs->get_double_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(
+              mysql_text_consumer_get_double_v1) *>(
+              consumer_refs->get_double_srv)));
+    if (consumer_refs->get_date_time_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(
+              mysql_text_consumer_get_date_time_v1) *>(
+              consumer_refs->get_date_time_srv)));
+    if (consumer_refs->get_string_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(
+              mysql_text_consumer_get_string_v1) *>(
+              consumer_refs->get_string_srv)));
+    if (consumer_refs->client_capabilities_srv)
+      srv_registry->release(reinterpret_cast<my_h_service>(
+          const_cast<SERVICE_TYPE_NO_CONST(
+              mysql_text_consumer_client_capabilities_v1) *>(
+              consumer_refs->client_capabilities_srv)));
+  }
+}
+
+/**
+  Free the command service extension.
+
+  This function releases consumer services and closes/detaches the backend
+  session as appropriate, then frees 'ext->mcs_extn'.
+  Safe to call even if some fields are null/partially initialized. No-op if
+  'ext' or 'ext->mcs_extn' is null.
+
+  @param[in,out] ext  The MYSQL_EXTENSION owning the command service state.
+                      On return, any consumer services are released, cleans up
+                      the backend session (detached sessions are detached/
+                      closed, THD-associated sessions are left to their owner),
+                      and 'ext->mcs_extn' is freed and set to nullptr. The 'ext'
+                      object itself is not freed.
+*/
+static void mysql_command_service_extn_free(MYSQL_EXTENSION *ext) {
+  if (!ext || !ext->mcs_extn) return;
+
+  auto *mcs_ext = reinterpret_cast<mysql_command_service_extn *>(ext->mcs_extn);
+
+  // Release consumer services acquired earlier
+  if (mcs_ext->command_consumer_services) {
+    auto *consumer_refs = reinterpret_cast<mysql_command_consumer_refs *>(
+        mcs_ext->command_consumer_services);
+    bool no_lock_registry = mcs_ext->no_lock_registry;
+
+    if (consumer_refs) {
+      no_lock_registry
+          ? release_services(consumer_refs, mcs_ext, srv_registry_no_lock)
+          : release_services(consumer_refs, mcs_ext, srv_registry);
+      delete consumer_refs;
+      consumer_refs = nullptr;
+
+      // avoid dangling ptr
+      mcs_ext->command_consumer_services = nullptr;
+    }
+  }
+
+  // Close session
+  if (mcs_ext->session_svc) {
+    if (!mcs_ext->is_thd_associated) {
+      // Detached session: detach then close
+      srv_session_detach(mcs_ext->session_svc);
+      srv_session_close(mcs_ext->session_svc);
+    } else {
+      // Locally created/owned session: delete it
+      delete mcs_ext->session_svc;
+    }
+    // THD-associated session: do not detach/close here (owner will close it)
+    mcs_ext->session_svc = nullptr;
+  }
+
+  // Reset var, free ext storage, and set ptr to nullptr
+  mcs_ext->is_thd_associated = false;
+  my_free(mcs_ext);
+  ext->mcs_extn = nullptr;
+}
+#endif
+
 void mysql_extension_free(MYSQL_EXTENSION *ext) {
   if (!ext) return;
   if (ext->trace_data) my_free(ext->trace_data);
@@ -3400,7 +3537,7 @@ void mysql_extension_free(MYSQL_EXTENSION *ext) {
     ext->mysql_async_context = nullptr;
   }
 #ifdef MYSQL_SERVER
-  if (ext->mcs_extn) my_free(ext->mcs_extn);
+  mysql_command_service_extn_free(ext);
 #endif
   // free state change related resources.
   free_state_change_info(ext);
@@ -4065,7 +4202,7 @@ extern "C" auth_plugin_t win_auth_client_plugin;
 
 #if defined(CLIENT_PROTOCOL_TRACING) && defined(TEST_TRACE_PLUGIN) && \
     !defined(NDEBUG)
-extern auth_plugin_t test_trace_plugin;
+extern "C" auth_plugin_t test_trace_plugin;
 #endif
 
 struct st_mysql_client_plugin *mysql_client_builtins[] = {

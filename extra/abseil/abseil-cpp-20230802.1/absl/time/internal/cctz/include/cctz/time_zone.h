@@ -232,7 +232,7 @@ class time_zone {
 bool load_time_zone(const std::string& name, time_zone* tz);
 
 // Returns a time_zone representing UTC. Cannot fail.
-time_zone utc_time_zone();
+ABSL_DLL time_zone utc_time_zone();
 
 // Returns a time zone that is a fixed offset (seconds east) from UTC.
 // Note: If the absolute value of the offset is greater than 24 hours

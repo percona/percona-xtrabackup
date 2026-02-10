@@ -1,6 +1,4 @@
 --source include/rpl/connection_replica.inc
---replace_result '$saved_replica_parallel_type' SAVED_REPLICA_PARALLEL_TYPE
---eval SET GLOBAL replica_parallel_type = '$saved_replica_parallel_type'
 --disable_warnings
 --replace_result $saved_replica_parallel_workers SAVED_REPLICA_PARALLEL_WORKERS
 --eval SET GLOBAL replica_parallel_workers = $saved_replica_parallel_workers

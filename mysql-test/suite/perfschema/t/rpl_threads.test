@@ -118,5 +118,7 @@ select VARIABLE_NAME, VARIABLE_VALUE
   from performance_schema.status_by_thread
   where VARIABLE_NAME = 'Compression_level' and THREAD_ID = @slave_sql_tid;
 
+# We have reset the gtids on replica so need to ignore the gtids from source on sync
+--let $ignore_gtids_on_sync = 1
 --source include/rpl/deinit.inc
 

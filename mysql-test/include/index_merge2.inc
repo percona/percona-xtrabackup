@@ -381,7 +381,7 @@ analyze table t1;
 -- enable_query_log
 
 # to test the bug, the following must use "sort_union":
---replace_regex $elide_costs
+--replace_regex $elide_costs_and_rows
 explain select * from t1 where (key3 > 30 and key3<35) or (key2 >32 and key2 < 40);
 select * from t1 where (key3 > 30 and key3<35) or (key2 >32 and key2 < 40);
 drop table t1;

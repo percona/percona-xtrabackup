@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,12 +27,12 @@
 #include <kernel_types.h>
 #include <ndb_global.h>
 #include <ndb_limits.h>
-#include <stdlib.h>
-#include <string.h>
 #include <ConfigSection.hpp>
 #include <EventLogger.hpp>
 #include <Properties.hpp>
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include "portlib/ndb_socket.h"  // ntohl()
 #include "util/require.h"
 
@@ -102,7 +102,7 @@ ConfigObject::~ConfigObject() {
 }
 
 ConfigObject *ConfigObject::copy_current(ConfigSection *curr_section) const {
-  ConfigObject *new_co = new ConfigObject();
+  auto *new_co = new ConfigObject();
   DEB_MALLOC(("new(%u) => %p", __LINE__, new_co));
   ConfigSection *new_cs = curr_section->copy();
   if (new_cs == nullptr) {
@@ -182,7 +182,7 @@ void ConfigObject::createSections(Uint32 num_sections) {
 }
 
 bool ConfigObject::createSection(Uint32 section_type, Uint32 type) {
-  ConfigSection *cs = new ConfigSection(this);
+  auto *cs = new ConfigSection(this);
   DEB_MALLOC(("new(%u) => %p", __LINE__, cs));
   if (section_type == CONFIG_SECTION_NODE) {
     if (type == DATA_NODE_TYPE) {
@@ -413,7 +413,7 @@ bool ConfigObject::unpack_v1(const Uint32 *src, Uint32 len) {
   {
     /* 2) above */
     Uint32 len32 = (len >> 2);
-    const Uint32 *tmp = (const Uint32 *)src;
+    const auto *tmp = (const Uint32 *)src;
     Uint32 chk = 0;
     for (Uint32 i = 0; (i + 1) < len32; i++) {
       chk ^= ntohl(tmp[i]);
@@ -869,17 +869,11 @@ bool ConfigObject::unpack_default_sections(const Uint32 **data) {
     return false;
   }
   DEB_MALLOC(("new(%u) => %p", __LINE__, m_shm_default_section));
-  if (unlikely(!m_shm_default_section->unpack_shm_section(data))) {
-    return false;
-  }
-  return true;
+  return likely(m_shm_default_section->unpack_shm_section(data));
 }
 
 bool ConfigObject::unpack_system_section(const Uint32 **data) {
-  if (unlikely(!m_system_section->unpack_system_section(data))) {
-    return false;
-  }
-  return true;
+  return likely(m_system_section->unpack_system_section(data));
 }
 
 bool ConfigObject::unpack_node_sections(const Uint32 **data) {
@@ -1019,7 +1013,7 @@ bool ConfigObject::unpack_v2(const Uint32 *src, Uint32 len) {
     return false;
   }
   data++;  // Step past checksum
-  Uint32 tot_len_words = Uint32(data - src);
+  auto tot_len_words = Uint32(data - src);
   if (unlikely(tot_len_words != m_v2_tot_len)) {
     m_error_code = WRONG_V2_UNPACK_LENGTH;
     return false;
@@ -1034,15 +1028,12 @@ bool ConfigObject::unpack_v2(const Uint32 *src, Uint32 len) {
 
 bool ConfigObject::check_checksum(const Uint32 *src, Uint32 len) {
   Uint32 len32 = (len >> 2);
-  const Uint32 *tmp = (const Uint32 *)src;
+  const auto *tmp = (const Uint32 *)src;
   Uint32 chk = 0;
   for (Uint32 i = 0; (i + 1) < len32; i++) {
     chk ^= ntohl(tmp[i]);
   }
-  if (unlikely(chk != ntohl(tmp[len32 - 1]))) {
-    return false;
-  }
-  return true;
+  return likely(chk == ntohl(tmp[len32 - 1]));
 }
 
 void ConfigObject::create_v1_header_section(Uint32 **v1_ptr,
@@ -1353,16 +1344,12 @@ static bool compare_comm_sections(ConfigSection *first, ConfigSection *second) {
   if (first == second) return false;
   Uint32 first_node_id = first->get_first_node_id();
   Uint32 second_node_id = second->get_first_node_id();
-  if (first_node_id < second_node_id)
-    return true;
-  else if (first_node_id > second_node_id)
-    return false;
+  if (first_node_id < second_node_id) return true;
+  if (first_node_id > second_node_id) return false;
   first_node_id = first->get_second_node_id();
   second_node_id = second->get_second_node_id();
-  if (first_node_id < second_node_id)
-    return true;
-  else if (first_node_id > second_node_id)
-    return false;
+  if (first_node_id < second_node_id) return true;
+  if (first_node_id > second_node_id) return false;
   /* We should never have two comm sections with same node ids */
   require(false);
   return false;

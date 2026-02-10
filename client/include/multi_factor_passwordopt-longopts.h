@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,7 +50,7 @@
      user account
    */
     {"password1",
-     MYSQL_OPT_USER_PASSWORD,
+     OPT_MFA_PASSWORD1,
      "Password for first factor authentication plugin.",
      nullptr,
      nullptr,
@@ -64,7 +64,7 @@
      0,
      nullptr},
     {"password2",
-     MYSQL_OPT_USER_PASSWORD,
+     OPT_MFA_PASSWORD2,
      "Password for second factor authentication plugin.",
      nullptr,
      nullptr,
@@ -78,7 +78,7 @@
      0,
      nullptr},
     {"password3",
-     MYSQL_OPT_USER_PASSWORD,
+     OPT_MFA_PASSWORD3,
      "Password for third factor authentication plugin.",
      nullptr,
      nullptr,

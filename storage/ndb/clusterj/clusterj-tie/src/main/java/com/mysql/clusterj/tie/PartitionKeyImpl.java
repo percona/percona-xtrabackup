@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+ *  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License, version 2.0,
@@ -205,7 +205,6 @@ class PartitionKeyImpl implements PartitionKey {
                 keyParts.add(keyPart);
             }
             public void release() {
-//                System.out.println("PartitionKeyImpl.addBytesKey.release() " + length);
             }
         });
     }
@@ -285,7 +284,7 @@ class PartitionKeyImpl implements PartitionKey {
         public void addKeyPart(BufferManager bufferManager) {}
         public void release() {
             if (this.bufferManager != null && this.buffer != null && this.length != 0) {
-                this.bufferManager.returnPartitionKeyPartBuffer(this.length, this.buffer);
+                this.bufferManager.returnPartitionKeyPartBuffer(this.buffer);
             }
         }
     }

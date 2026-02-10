@@ -7,6 +7,8 @@ SELECT password_last_changed into @sys_plc from mysql.user where user= 'mysql.sy
 SELECT authentication_string into @sys_auth_str from mysql.user where user= 'mysql.sys' and host='localhost';
 update mysql.user set plugin= 'sha256_password', authentication_string= '' where user='root' and host='localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET PASSWORD='123';
 call mtr.add_suppression("Dictionary file not specified");
 mysql_secure_installation: [Warning] Using a password on the command line interface can be insecure.
@@ -117,3 +119,5 @@ UNINSTALL COMPONENT "file://component_validate_password";
 UPDATE mysql.user SET password_last_changed=@plc, authentication_string=@auth_str, plugin= @plugin, user_attributes=@user_attrib where user='root';
 UPDATE mysql.user SET password_last_changed=@sys_plc, authentication_string=@sys_auth_str, plugin= @sys_plugin where user='mysql.sys';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

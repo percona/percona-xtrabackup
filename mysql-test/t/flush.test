@@ -1,3 +1,8 @@
+# FLUSH TABLES may block the periodic update of `mysql.gtid_executed` by
+# `Clone_persist_gtid`, to avoid unrelated flush errors `GTID_MODE` is
+# disabled in this test.
+--source include/rpl/set_gtid_mode_off.inc
+
 connect (con1,localhost,root,,);
 connect (con2,localhost,root,,);
 connection con1;
@@ -658,3 +663,5 @@ disconnect con1;
 connection default;
 COMMIT;
 DROP TABLE t1;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

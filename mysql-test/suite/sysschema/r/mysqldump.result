@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 CREATE TABLE mysql.tmp_backup_tables_priv AS SELECT * FROM mysql.tables_priv;
 CREATE TABLE mysql.tmp_backup_user AS SELECT * FROM mysql.user;
 DROP DATABASE sys;
@@ -24,3 +25,5 @@ TRUNCATE TABLE mysql.user;
 INSERT INTO mysql.user (SELECT * FROM mysql.tmp_backup_user);
 DROP TABLE mysql.tmp_backup_user;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

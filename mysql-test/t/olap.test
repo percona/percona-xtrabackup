@@ -1,6 +1,7 @@
 --disable_warnings
 DROP TABLE IF EXISTS t1,t2;
 --enable_warnings
+--source include/elide_costs.inc
 
 SET @sav_dpi= @@div_precision_increment;
 SET div_precision_increment= 5;
@@ -633,19 +634,18 @@ SELECT a, b, c, GROUPING(a) FROM t1 GROUP BY a,b,c WITH ROLLUP;
 SELECT a, b, c, GROUPING(a, b) FROM t1 GROUP BY a,b,c WITH ROLLUP;
 SELECT a, b, c, GROUPING(a, b, c) FROM t1 GROUP BY a,b,c WITH ROLLUP;
 SELECT a, b FROM t1 GROUP BY a,b WITH ROLLUP HAVING GROUPING(b) = 1;
+SELECT a, b, GROUPING(a) FROM t1 GROUP BY a,b;
 
 # Failure cases
 --error ER_FIELD_IN_GROUPING_NOT_GROUP_BY
 SELECT a, b, GROUPING(c) FROM t1 GROUP BY a,b WITH ROLLUP;
 --error ER_FIELD_IN_GROUPING_NOT_GROUP_BY
-SELECT a, b, c, GROUPING(a, b, c) FROM t1 GROUP BY a,b WITH ROLLUP;
+SELECT a, b, GROUPING(a, b, c) FROM t1 GROUP BY a,b WITH ROLLUP;
 --error ER_FIELD_IN_GROUPING_NOT_GROUP_BY
 SELECT a, GROUPING(SUM(a)) FROM t1 GROUP BY (a) WITH ROLLUP;
 
 --error ER_INVALID_GROUP_FUNC_USE
-SELECT a, b, GROUPING(a) FROM t1 GROUP BY a,b;
---error ER_INVALID_GROUP_FUNC_USE
-SELECT a, b, GROUPING(a) FROM t1 ;
+SELECT a, b, GROUPING(a) FROM t1;
 --error ER_INVALID_GROUP_FUNC_USE
 SELECT a, b FROM t1 WHERE GROUPING(a)=1 GROUP BY a,b WITH ROLLUP;
 --error ER_WRONG_GROUP_FIELD
@@ -1055,7 +1055,7 @@ INSERT INTO t VALUES (1,'a'),(1,'b'),(2,'c'),(3,'d');
 # we just don't want it to crash. The result will depend on the point of which
 # we evaluate the variable assignments, so it's not stable with respect to the query plan.
 --replace_regex /^NULL$/1/
-SELECT (((@e:=`b`)) NOT BETWEEN 0x0b5f09 AND (CHAR(md5(@pub1),
+SELECT (((@e:=`b`)) NOT BETWEEN 0x0b5f09 AND (CHAR(sha2(@pub1, 256),
   (CONNECTION_ID()+LEAD(5225.750000,110) RESPECT NULLS OVER(ORDER BY b, a)))))
   FROM t GROUP BY b,a WITH ROLLUP;
 
@@ -1389,3 +1389,219 @@ SET timestamp=UNIX_TIMESTAMP('2009-04-16 12:46:00');
 SELECT SUM(UTC_DATE()) OVER() FROM t1 GROUP BY UTC_DATE() WITH ROLLUP;
 SET timestamp=default;
 DROP TABLE t1;
+
+--echo #
+--echo # Bug#38203473: Assertion `is_nullable()' in Item_typecast_signed::val_int
+--echo #               at sql/item_func.cc
+
+CREATE TABLE t1 (f1 INTEGER, f2 INTEGER, PRIMARY KEY (f1));
+# ROLLUP outputs one row for empty result
+let $query = SELECT f1 FROM t1 WHERE f1 = 10 GROUP BY ROLLUP(f1);
+--skip_if_hypergraph
+--eval EXPLAIN FORMAT=tree $query
+--eval $query
+let $query = SELECT f1, AVG(f2), COUNT(f2) FROM t1 WHERE f1 = 10 GROUP BY ROLLUP(f1);
+--skip_if_hypergraph
+--eval EXPLAIN FORMAT=tree $query
+--eval $query
+let $query = SELECT f1, AVG(f2), COUNT(f2) FROM t1 WHERE f1 = 10 GROUP BY ROLLUP(f1) HAVING FALSE;
+--eval EXPLAIN FORMAT=tree $query
+--eval $query
+
+SET @saved_sql_mode = @@sql_mode;
+SET @saved_opt_switch = @@optimizer_switch;
+SET sql_mode='';
+
+SET optimizer_switch="subquery_to_derived=on";
+let $query = SELECT f1 FROM t1 WHERE f1 = 10 GROUP BY ROLLUP(f2) ORDER BY CAST(f1 AS SIGNED);
+--replace_regex $elide_costs
+--skip_if_hypergraph
+--eval EXPLAIN FORMAT=tree $query
+--eval $query
+let $query = SELECT f1 FROM t1 WHERE f1 = 10 GROUP BY ROLLUP(f2) HAVING f1 IS NOT NULL;
+--replace_regex $elide_costs
+--skip_if_hypergraph
+--eval EXPLAIN FORMAT=tree $query
+--eval $query
+let $query = SELECT (SELECT 'a' FROM t1 AS t2 WHERE t2.f1 = CAST(t1.f1 AS SIGNED)) = 'aa' FROM t1 GROUP BY ROLLUP(f1);
+--eval $query
+SET optimizer_switch=@saved_opt_switch;
+
+let $query = SELECT /*+NO_INDEX(t1) */ f1 FROM t1 WHERE f1 = 10 GROUP BY ROLLUP(f2);
+--let $elide_differences = $elide_costs /t1\.f2/f2/
+--replace_regex $elide_differences
+--eval EXPLAIN FORMAT=tree $query
+--eval $query
+
+DROP TABLE t1;
+
+CREATE TABLE t1 (f1 INTEGER, f2 INTEGER);
+let $query = SELECT f1 FROM t1 GROUP BY ROLLUP(f2);
+--replace_regex $elide_differences
+--eval EXPLAIN FORMAT=tree $query
+--eval $query
+let $query = SELECT ANY_VALUE(f1) FROM t1 GROUP BY ROLLUP(f2);
+--replace_regex $elide_differences
+--eval EXPLAIN FORMAT=tree $query
+--eval $query;
+SET sql_mode=@saved_sql_mode;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#38168051: Support for GROUPING() function with primitive GBY
+--echo #
+
+CREATE TABLE t1 (f1 INTEGER, f2 INTEGER);
+INSERT INTO t1 VALUES (1,1), (1,2), (2,1);
+SELECT GROUPING(f1) FROM t1 GROUP BY f1;
+--error ER_FIELD_IN_GROUPING_NOT_GROUP_BY
+SELECT GROUPING(f2) FROM t1 GROUP BY f1;
+--error ER_BAD_FIELD_ERROR
+SELECT GROUPING(f3) FROM t1 GROUP BY f1;
+--error ER_BAD_FIELD_ERROR
+SELECT f1, f2, GROUPING(f3) FROM t1 GROUP BY f1;
+SELECT f1, f1+GROUPING(f1) FROM t1 GROUP BY f1;
+SELECT f1 FROM t1 GROUP BY f1 HAVING GROUPING(f1) = 0;
+--error ER_BAD_FIELD_ERROR
+SELECT f1 FROM t1 GROUP BY f1 HAVING GROUPING(f2) = 0;
+SELECT f1 FROM t1 GROUP BY f1 HAVING f1+GROUPING(f1) = 0;
+SELECT f1 FROM t1 GROUP BY f1 ORDER BY GROUPING(f1);
+SELECT SUM(f1) OVER(PARTITION BY GROUPING(f1)) FROM t1 GROUP BY f1;
+--error ER_FIELD_IN_GROUPING_NOT_GROUP_BY
+SELECT SUM(f1) OVER(PARTITION BY GROUPING(f2)) FROM t1 GROUP BY f1;
+--error ER_FIELD_IN_GROUPING_NOT_GROUP_BY
+SELECT f1 FROM t1 GROUP BY f1 ORDER BY GROUPING(f2);
+--error ER_FIELD_IN_GROUPING_NOT_GROUP_BY
+SELECT f1 FROM t1 GROUP BY f1 ORDER BY GROUPING(f1+f1);
+SELECT 1 FROM t1 GROUP BY (f1+f1) ORDER BY GROUPING(f1+f1);
+DROP TABLE t1;
+--echo # GROUPING SET
+--echo #
+--echo # Empty or single GROUPING SETS can transformed to an implicitly
+--echo # grouped query, or a primitive grouped query, respectively.
+
+CREATE TABLE t1 (i int, j INT);
+SELECT COUNT(*) FROM t1
+GROUP BY GROUPING SETS (());
+
+SELECT GROUPING(i) FROM t1
+GROUP BY GROUPING SETS ((i));
+
+INSERT INTO t1 VALUES (1, 2), (2,3),  (1, 2),  (1, 2),  (3, 4), (4,3);
+ANALYZE TABLE t1;
+
+SELECT COUNT(*) FROM t1
+GROUP BY GROUPING SETS (());
+
+--sorted_result
+SELECT GROUPING(i) FROM t1
+GROUP BY GROUPING SETS ((i));
+
+--error  ER_FIELD_IN_GROUPING_NOT_GROUP_BY
+SELECT GROUPING(j) FROM t1
+GROUP BY GROUPING SETS ((i));
+
+SELECT COUNT(*) FROM t1
+GROUP BY GROUPING SETS (());
+
+SELECT COUNT(*) FROM t1
+GROUP BY GROUPING SETS ((i));
+
+SELECT COUNT(*) FROM t1
+GROUP BY GROUPING SETS ((i,j));
+
+--error ER_SECONDARY_ENGINE
+SELECT COUNT(*) FROM t1
+GROUP BY GROUPING SETS ((), (i,j));
+
+--error ER_SECONDARY_ENGINE
+SELECT COUNT(*) FROM t1
+GROUP BY GROUPING SETS ((), ());
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#38107927 WL16494: Assertion failed in UpdateReferencesToMaterializedItems at finalize_plan.cc
+--echo #
+
+CREATE TABLE t1 (`col_date3` date DEFAULT NULL) ENGINE = InnoDB;
+
+CREATE TABLE t2 (`col_date3` date DEFAULT NULL) ENGINE = InnoDB;
+
+--sorted_result
+SELECT MAX(table1.col_date3) AS field1
+FROM t1 AS table1 STRAIGHT_JOIN t1 AS table2
+ON 1
+WHERE EXISTS (
+    WITH cte1 AS (
+      SELECT DISTINCT SUBQUERY1_t1.col_date3 AS SUBQUERY1_field1
+      FROM       t1 AS SUBQUERY1_t1
+      INNER JOIN t2 AS SUBQUERY1_t2
+      RIGHT JOIN t1 AS SUBQUERY1_t3 ON 1
+      ON 1
+      GROUP BY GROUPING SETS ((SUBQUERY1_field1))
+    )
+    SELECT * FROM cte1
+  )
+WINDOW w1 AS ();
+
+--sorted_result
+SELECT 1 AS field1
+FROM t1 AS table1
+WHERE EXISTS (
+  WITH cte1 AS (
+      SELECT DISTINCT SUBQUERY1_t1.col_date3 AS SUBQUERY1_field1
+      FROM  t1 AS SUBQUERY1_t1 RIGHT JOIN t1 AS SUBQUERY1_t3 ON 1
+      GROUP BY GROUPING SETS ((SUBQUERY1_field1))
+            )
+  SELECT * FROM cte1
+);
+
+DROP TABLE t1, t2;
+
+
+--echo #
+--echo # Bug#38161069 WL16494: mysqld crash - Assertion failure in Field::get_geometry_type at field.h
+--echo #
+
+CREATE TABLE t1 (
+  `pk` int NOT NULL AUTO_INCREMENT,
+  `col_int` int DEFAULT NULL,
+  `col_int_key` int DEFAULT NULL,
+  `col_varchar_key` varchar(1) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `idx_CC_col_int_key` (`col_int_key`),
+  KEY `idx_CC_col_varchar_key` (`col_varchar_key`)
+) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+SELECT alias1.col_varchar_key
+FROM t1 AS alias1, ( SELECT * FROM t1 ) AS alias2
+WHERE (7, 8) IN ( SELECT SQ2_alias1.pk AS SQ2_field1,
+                         MAX(SQ2_alias2.col_int_key) AS SQ2_field2
+                   FROM t1 AS SQ2_alias1, t1 AS SQ2_alias2
+                   WHERE SQ2_alias2.col_int >= 113
+                   GROUP BY GROUPING SETS ((SQ2_field1))
+                 );
+DROP TABLE t1;
+
+
+--echo #
+--echo # Bug 38168233 - WL16494: mysqld crash - ASAN crash in Field_longlong::store
+--echo #
+
+
+CREATE TABLE t (pk int PRIMARY KEY);
+
+INSERT INTO t VALUES
+(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),
+(12),(13),(14),(15),(16),(17),(18),(19),(20);
+
+SELECT COUNT( pk )
+FROM t
+WHERE (3,4)  IN ( SELECT SQ1_alias1 . pk AS SQ1_field1,
+                         MAX(  SQ1_alias1.pk ) AS SQ1_field2
+                  FROM ( t AS  SQ1_alias1, t AS  SQ1_alias2)
+                  GROUP BY GROUPING SETS ( ( SQ1_field1 ) ) );
+
+DROP TABLE t;

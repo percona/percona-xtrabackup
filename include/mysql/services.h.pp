@@ -107,7 +107,6 @@ typedef uint64_t uint64;
 typedef intptr_t intptr;
 typedef ulonglong my_off_t;
 typedef int myf;
-#include "my_macros.h"
 typedef enum {
   TRUNCATE = 0,
   HALF_EVEN,

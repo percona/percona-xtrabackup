@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -623,7 +623,6 @@ using event_tracking_stored_program_t =
     SERVICE_TYPE_NO_CONST(event_tracking_stored_program);
 using event_tracking_table_access_t =
     SERVICE_TYPE_NO_CONST(event_tracking_table_access);
-
 SERVICE_TYPE(event_tracking_authentication) *srv_event_tracking_authentication =
     nullptr;
 SERVICE_TYPE(event_tracking_command) *srv_event_tracking_command = nullptr;
@@ -687,7 +686,6 @@ void init_srv_event_tracking_handles() {
                         reinterpret_cast<my_h_service *>(
                             const_cast<event_tracking_table_access_t **>(
                                 &srv_event_tracking_table_access)));
-
   assert(srv_event_tracking_authentication != nullptr &&
          srv_event_tracking_command != nullptr &&
          srv_event_tracking_connection != nullptr &&
@@ -699,7 +697,6 @@ void init_srv_event_tracking_handles() {
          srv_event_tracking_query != nullptr &&
          srv_event_tracking_stored_program != nullptr &&
          srv_event_tracking_table_access != nullptr);
-
   inited = true;
 }
 void deinit_srv_event_tracking_handles() {
@@ -865,6 +862,19 @@ DEFINE_BOOL_METHOD(Event_authentication_bridge_implementation::notify,
     auto event_information =
         static_cast<Event_tracking_authentication_information *>(
             thd->get_event_tracking_data().second);
+    // if there's no event information we log a warning and return OK
+    if (event_information == nullptr) {
+      LogEvent()
+          .prio(WARNING_LEVEL)
+          .errcode(ER_WARN_EVENT_TRACKING_BRIDGE_INVALID_EVENT)
+          .subsys("Event_authentication_bridge")
+          .component("MySQL Server")
+          .source_line(__LINE__)
+          .source_file(__FILE__)
+          .lookup(ER_WARN_EVENT_TRACKING_BRIDGE_INVALID_EVENT,
+                  "Authentication");
+      return false;
+    }
 
     mysql_event_authentication plugin_data;
 
@@ -995,6 +1005,17 @@ DEFINE_BOOL_METHOD(Event_general_bridge_implementation::notify,
 
     auto event_information = static_cast<Event_tracking_general_information *>(
         thd->get_event_tracking_data().second);
+    if (event_information == nullptr) {
+      LogEvent()
+          .prio(WARNING_LEVEL)
+          .errcode(ER_WARN_EVENT_TRACKING_BRIDGE_INVALID_EVENT)
+          .subsys("Event_general_bridge")
+          .component("MySQL Server")
+          .source_line(__LINE__)
+          .source_file(__FILE__)
+          .lookup(ER_WARN_EVENT_TRACKING_BRIDGE_INVALID_EVENT, "General");
+      return false;
+    }
 
     mysql_event_general plugin_data;
 
@@ -1223,20 +1244,23 @@ DEFINE_BOOL_METHOD(Event_parse_bridge_implementation::notify,
         break;
     }
 
-    mysql_event_parse_rewrite_plugin_flag plugin_flag;
-    switch (*(data->flags)) {
-      case EVENT_TRACKING_PARSE_REWRITE_NONE:
-        plugin_flag = MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_NONE;
-        break;
-      case EVENT_TRACKING_PARSE_REWRITE_QUERY_REWRITTEN:
-        plugin_flag = MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_QUERY_REWRITTEN;
-        break;
-      case EVENT_TRACKING_PARSE_REWRITE_IS_PREPARED_STATEMENT:
-        plugin_flag = MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_IS_PREPARED_STATEMENT;
-        break;
-      default:
-        assert(false);
-        break;
+    mysql_event_parse_rewrite_plugin_flag plugin_flag =
+        MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_NONE;
+    if (data->flags) {
+      switch (*(data->flags)) {
+        case EVENT_TRACKING_PARSE_REWRITE_NONE:
+          plugin_flag = MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_NONE;
+          break;
+        case EVENT_TRACKING_PARSE_REWRITE_QUERY_REWRITTEN:
+          plugin_flag = MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_QUERY_REWRITTEN;
+          break;
+        case EVENT_TRACKING_PARSE_REWRITE_IS_PREPARED_STATEMENT:
+          plugin_flag = MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_IS_PREPARED_STATEMENT;
+          break;
+        default:
+          assert(false);
+          break;
+      }
     }
 
     LEX_CSTRING rewritten_query{nullptr, 0};

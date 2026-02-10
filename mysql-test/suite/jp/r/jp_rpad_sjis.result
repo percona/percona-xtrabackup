@@ -79,28 +79,28 @@ SELECT `‚b‚P`, RPAD(`‚b‚P`,5,'–\' ) FROM `‚s‚U`;
 ƒ\\•\—\\	ƒ\\•\—\\
 SELECT `‚b‚P`, RPAD(`‚b‚P`,5,'¡') FROM `‚s‚V`;
 ‚b‚P	RPAD(`‚b‚P`,5,'¡')
-±²³´µ	±²³´µ
-±²³´	±²³´¡
-±²³	±²³¡¡
-±²	±²¡¡¡
-±	±¡¡¡¡
 	¡¡¡¡¡
+±	±¡¡¡¡
+±²	±²¡¡¡
+±²³	±²³¡¡
+±²³´	±²³´¡
+±²³´µ	±²³´µ
 SELECT `‚b‚P`, RPAD(`‚b‚P`,5,'‚w') FROM `‚s‚W`;
 ‚b‚P	RPAD(`‚b‚P`,5,'‚w')
-‚ ‚¢‚¤‚¦‚¨	‚ ‚¢‚¤‚¦‚¨
-‚ ‚¢‚¤‚¦	‚ ‚¢‚¤‚¦‚w
-‚ ‚¢‚¤	‚ ‚¢‚¤‚w‚w
-‚ ‚¢	‚ ‚¢‚w‚w‚w
-‚ 	‚ ‚w‚w‚w‚w
 	‚w‚w‚w‚w‚w
+‚ 	‚ ‚w‚w‚w‚w
+‚ ‚¢	‚ ‚¢‚w‚w‚w
+‚ ‚¢‚¤	‚ ‚¢‚¤‚w‚w
+‚ ‚¢‚¤‚¦	‚ ‚¢‚¤‚¦‚w
+‚ ‚¢‚¤‚¦‚¨	‚ ‚¢‚¤‚¦‚¨
 SELECT `‚b‚P`, RPAD(`‚b‚P`,5,'–\' ) FROM `‚s‚X`;
 ‚b‚P	RPAD(`‚b‚P`,5,'–\' )
-ƒ\\•\—\\	ƒ\\•\—\\
-ƒ\\•\—\	ƒ\\•\—\–\
-ƒ\\•\	ƒ\\•\–\–\
-ƒ\\	ƒ\\–\–\–\
-ƒ\	ƒ\–\–\–\–\
 	–\–\–\–\–\
+ƒ\	ƒ\–\–\–\–\
+ƒ\\	ƒ\\–\–\–\
+ƒ\\•\	ƒ\\•\–\–\
+ƒ\\•\—\	ƒ\\•\—\–\
+ƒ\\•\—\\	ƒ\\•\—\\
 DROP TABLE `‚s‚P`;
 DROP TABLE `‚s‚Q`;
 DROP TABLE `‚s‚R`;

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@
 #ifndef NDBD_MALLOC_H
 #define NDBD_MALLOC_H
 
-#include <stddef.h>
+#include <cstddef>
 
 #include "ndb_types.h"
 

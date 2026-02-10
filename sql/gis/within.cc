@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -104,7 +104,7 @@ bool Within::eval(const Cartesian_point *g1,
 bool Within::eval(const Cartesian_point *g1,
                   const Cartesian_geometrycollection *g2) const {
   // g1 must be within one of the elements of g2.
-  for (auto g : *g2)
+  for (auto *g : *g2)
     if ((*this)(g1, g)) return true;
   return false;
 }
@@ -154,12 +154,12 @@ bool Within::eval(const Cartesian_linestring *g1,
   split_gc(g2, &g2_mpt, &g2_mls, &g2_mpy);
   gc_union(m_semi_major, m_semi_minor, &g2_mpt, &g2_mls, &g2_mpy);
 
-  Difference difference(m_semi_major, m_semi_minor);
+  Difference const difference(m_semi_major, m_semi_minor);
   std::unique_ptr<Geometry> g1_diff_g2;
   g1_diff_g2 = difference(g1, g2_mls.get());
   g1_diff_g2 = difference(g1_diff_g2.get(), g2_mpy.get());
 
-  boost::geometry::de9im::mask mask("T********");
+  boost::geometry::de9im::mask const mask("T********");
   return g1_diff_g2->is_empty() &&
          (bg::relate(*g1, *down_cast<Cartesian_multilinestring *>(g2_mls.get()),
                      mask) ||
@@ -239,7 +239,7 @@ bool Within::eval(const Cartesian_polygon *g1,
 
 bool Within::eval(const Cartesian_geometrycollection *g1,
                   const Cartesian_point *g2) const {
-  Equals equals(m_semi_major, m_semi_minor);
+  Equals const equals(m_semi_major, m_semi_minor);
   return equals(g1, g2);
 }
 
@@ -319,7 +319,7 @@ bool Within::eval(const Cartesian_geometrycollection *g1,
   gc_union(m_semi_major, m_semi_minor, &g2_mpt, &g2_mls, &g2_mpy);
 
   // Check that no part of g1 is in the exterior of g2.
-  Difference difference(m_semi_major, m_semi_minor);
+  Difference const difference(m_semi_major, m_semi_minor);
   std::unique_ptr<Geometry> g1_mpt_diff_g2;
   g1_mpt_diff_g2 = difference(g1_mpt.get(), g2_mpt.get());
   g1_mpt_diff_g2 = difference(g1_mpt_diff_g2.get(), g2_mls.get());
@@ -336,7 +336,7 @@ bool Within::eval(const Cartesian_geometrycollection *g1,
   if (!g1_mpy_diff_g2->is_empty()) return false;
 
   // Check that the interiors of g1 and g2 have at least one point in common.
-  boost::geometry::de9im::mask mask("T********");
+  boost::geometry::de9im::mask const mask("T********");
   return eval(down_cast<Cartesian_multipoint *>(g1_mpt.get()), g2) ||
          bg::relate(*down_cast<Cartesian_multilinestring *>(g1_mls.get()),
                     *down_cast<Cartesian_multilinestring *>(g2_mls.get()),
@@ -424,7 +424,7 @@ bool Within::eval(const Cartesian_geometrycollection *g1,
 
 bool Within::eval(const Cartesian_multipoint *g1,
                   const Cartesian_point *g2) const {
-  Equals equals(m_semi_major, m_semi_minor);
+  Equals const equals(m_semi_major, m_semi_minor);
   return equals(g1, g2);
 }
 
@@ -433,7 +433,7 @@ bool Within::eval(const Cartesian_multipoint *g1,
   // At least one point in g1 must be within g2. The rest has to intersect g2.
   bool within = false;
   bool intersects = false;
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!within) {
       within = bg::within(pt, *g2);
       if (!within)
@@ -453,7 +453,7 @@ bool Within::eval(const Cartesian_multipoint *g1,
   // At least one point in g1 must be within g2. The rest has to intersect g2.
   bool within = false;
   bool intersects = false;
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!within) {
       within = bg::within(pt, *g2);
       if (!within)
@@ -471,10 +471,10 @@ bool Within::eval(const Cartesian_multipoint *g1,
 bool Within::eval(const Cartesian_multipoint *g1,
                   const Cartesian_geometrycollection *g2) const {
   // At least one point in g1 must be within g2. The rest has to intersect g2.
-  Intersects intersects_func(m_semi_major, m_semi_minor);
+  Intersects const intersects_func(m_semi_major, m_semi_minor);
   bool within = false;
   bool intersects = false;
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!within) {
       within = eval(&pt, g2);
       if (!within)
@@ -491,7 +491,7 @@ bool Within::eval(const Cartesian_multipoint *g1,
 
 bool Within::eval(const Cartesian_multipoint *g1,
                   const Cartesian_multipoint *g2) const {
-  for (auto &pt : *g1)
+  for (const auto &pt : *g1)
     if (!bg::within(pt, *g2)) return false;
   return true;
 }
@@ -501,7 +501,7 @@ bool Within::eval(const Cartesian_multipoint *g1,
   // At least one point in g1 must be within g2. The rest has to intersect g2.
   bool within = false;
   bool intersects = false;
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!within) {
       within = bg::within(pt, *g2);
       if (!within)
@@ -521,7 +521,7 @@ bool Within::eval(const Cartesian_multipoint *g1,
   // At least one point in g1 must be within g2. The rest has to intersect g2.
   bool within = false;
   bool intersects = false;
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!within) {
       within = bg::within(pt, *g2);
       if (!within)
@@ -567,12 +567,12 @@ bool Within::eval(const Cartesian_multilinestring *g1,
   split_gc(g2, &g2_mpt, &g2_mls, &g2_mpy);
   gc_union(m_semi_major, m_semi_minor, &g2_mpt, &g2_mls, &g2_mpy);
 
-  Difference difference(m_semi_major, m_semi_minor);
+  Difference const difference(m_semi_major, m_semi_minor);
   std::unique_ptr<Geometry> g1_diff_g2;
   g1_diff_g2 = difference(g1, g2_mls.get());
   g1_diff_g2 = difference(g1_diff_g2.get(), g2_mpy.get());
 
-  boost::geometry::de9im::mask mask("T********");
+  boost::geometry::de9im::mask const mask("T********");
   return g1_diff_g2->is_empty() &&
          (bg::relate(*g1, *down_cast<Cartesian_multilinestring *>(g2_mls.get()),
                      mask) ||
@@ -671,7 +671,7 @@ bool Within::eval(const Geographic_point *g1,
 bool Within::eval(const Geographic_point *g1,
                   const Geographic_geometrycollection *g2) const {
   // g1 must be within one of the elements of g2.
-  for (auto g : *g2)
+  for (auto *g : *g2)
     if ((*this)(g1, g)) return true;
   return false;
 }
@@ -724,12 +724,12 @@ bool Within::eval(const Geographic_linestring *g1,
   split_gc(g2, &g2_mpt, &g2_mls, &g2_mpy);
   gc_union(m_semi_major, m_semi_minor, &g2_mpt, &g2_mls, &g2_mpy);
 
-  Difference difference(m_semi_major, m_semi_minor);
+  Difference const difference(m_semi_major, m_semi_minor);
   std::unique_ptr<Geometry> g1_diff_g2;
   g1_diff_g2 = difference(g1, g2_mls.get());
   g1_diff_g2 = difference(g1_diff_g2.get(), g2_mpy.get());
 
-  boost::geometry::de9im::mask mask("T********");
+  boost::geometry::de9im::mask const mask("T********");
   return g1_diff_g2->is_empty() &&
          (bg::relate(*g1,
                      *down_cast<Geographic_multilinestring *>(g2_mls.get()),
@@ -810,7 +810,7 @@ bool Within::eval(const Geographic_polygon *g1,
 
 bool Within::eval(const Geographic_geometrycollection *g1,
                   const Geographic_point *g2) const {
-  Equals equals(m_semi_major, m_semi_minor);
+  Equals const equals(m_semi_major, m_semi_minor);
   return equals(g1, g2);
 }
 
@@ -893,7 +893,7 @@ bool Within::eval(const Geographic_geometrycollection *g1,
   gc_union(m_semi_major, m_semi_minor, &g2_mpt, &g2_mls, &g2_mpy);
 
   // Check that no part of g1 is in the exterior of g2.
-  Difference difference(m_semi_major, m_semi_minor);
+  Difference const difference(m_semi_major, m_semi_minor);
   std::unique_ptr<Geometry> g1_mpt_diff_g2;
   g1_mpt_diff_g2 = difference(g1_mpt.get(), g2_mpt.get());
   g1_mpt_diff_g2 = difference(g1_mpt_diff_g2.get(), g2_mls.get());
@@ -910,7 +910,7 @@ bool Within::eval(const Geographic_geometrycollection *g1,
   if (!g1_mpy_diff_g2->is_empty()) return false;
 
   // Check that the interiors of g1 and g2 have at least one point in common.
-  boost::geometry::de9im::mask mask("T********");
+  boost::geometry::de9im::mask const mask("T********");
   return eval(down_cast<Geographic_multipoint *>(g1_mpt.get()), g2) ||
          bg::relate(*down_cast<Geographic_multilinestring *>(g1_mls.get()),
                     *down_cast<Geographic_multilinestring *>(g2_mls.get()),
@@ -1003,7 +1003,7 @@ bool Within::eval(const Geographic_geometrycollection *g1,
 
 bool Within::eval(const Geographic_multipoint *g1,
                   const Geographic_point *g2) const {
-  Equals equals(m_semi_major, m_semi_minor);
+  Equals const equals(m_semi_major, m_semi_minor);
   return equals(g1, g2);
 }
 
@@ -1012,7 +1012,7 @@ bool Within::eval(const Geographic_multipoint *g1,
   // At least one point in g1 must be within g2. The rest has to intersect g2.
   bool within = false;
   bool intersects = false;
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!within) {
       within = bg::within(pt, *g2, m_geographic_pl_pa_strategy);
       if (!within)
@@ -1032,7 +1032,7 @@ bool Within::eval(const Geographic_multipoint *g1,
   // At least one point in g1 must be within g2. The rest has to intersect g2.
   bool within = false;
   bool intersects = false;
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!within) {
       within = bg::within(pt, *g2, m_geographic_pl_pa_strategy);
       if (!within)
@@ -1050,10 +1050,10 @@ bool Within::eval(const Geographic_multipoint *g1,
 bool Within::eval(const Geographic_multipoint *g1,
                   const Geographic_geometrycollection *g2) const {
   // At least one point in g1 must be within g2. The rest has to intersect g2.
-  Intersects intersects_func(m_semi_major, m_semi_minor);
+  Intersects const intersects_func(m_semi_major, m_semi_minor);
   bool within = false;
   bool intersects = false;
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!within) {
       within = eval(&pt, g2);
       if (!within)
@@ -1072,7 +1072,7 @@ bool Within::eval(const Geographic_multipoint *g1,
                   const Geographic_multipoint *g2) const {
   // Default strategy is OK. P/P computations do not depend on shape of
   // ellipsoid.
-  for (auto &pt : *g1)
+  for (const auto &pt : *g1)
     if (!bg::within(pt, *g2)) return false;
   return true;
 }
@@ -1082,7 +1082,7 @@ bool Within::eval(const Geographic_multipoint *g1,
   // At least one point in g1 must be within g2. The rest has to intersect g2.
   bool within = false;
   bool intersects = false;
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!within) {
       within = bg::within(pt, *g2, m_geographic_pl_pa_strategy);
       if (!within)
@@ -1102,7 +1102,7 @@ bool Within::eval(const Geographic_multipoint *g1,
   // At least one point in g1 must be within g2. The rest has to intersect g2.
   bool within = false;
   bool intersects = false;
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!within) {
       within = bg::within(pt, *g2, m_geographic_pl_pa_strategy);
       if (!within)
@@ -1148,12 +1148,12 @@ bool Within::eval(const Geographic_multilinestring *g1,
   split_gc(g2, &g2_mpt, &g2_mls, &g2_mpy);
   gc_union(m_semi_major, m_semi_minor, &g2_mpt, &g2_mls, &g2_mpy);
 
-  Difference difference(m_semi_major, m_semi_minor);
+  Difference const difference(m_semi_major, m_semi_minor);
   std::unique_ptr<Geometry> g1_diff_g2;
   g1_diff_g2 = difference(g1, g2_mls.get());
   g1_diff_g2 = difference(g1_diff_g2.get(), g2_mpy.get());
 
-  boost::geometry::de9im::mask mask("T********");
+  boost::geometry::de9im::mask const mask("T********");
   return g1_diff_g2->is_empty() &&
          (bg::relate(*g1,
                      *down_cast<Geographic_multilinestring *>(g2_mls.get()),
@@ -1238,11 +1238,13 @@ bool Within::eval(const Cartesian_box *b1, const Cartesian_box *b2) const {
 
   // Work around bugs in BG for boxes that have zero height and/or width.
   if (mbr_is_point(*b1)) {
-    Cartesian_point pt(b1->min_corner().x(), b1->min_corner().y());
+    Cartesian_point const pt(b1->min_corner().x(), b1->min_corner().y());
 
     if (mbr_is_line(*b2)) {
-      Cartesian_point b2_ls_start(b2->min_corner().x(), b2->min_corner().y());
-      Cartesian_point b2_ls_end(b2->max_corner().x(), b2->max_corner().y());
+      Cartesian_point const b2_ls_start(b2->min_corner().x(),
+                                        b2->min_corner().y());
+      Cartesian_point const b2_ls_end(b2->max_corner().x(),
+                                      b2->max_corner().y());
       Cartesian_linestring b2_ls;
       b2_ls.push_back(b2_ls_start);
       b2_ls.push_back(b2_ls_end);
@@ -1254,15 +1256,18 @@ bool Within::eval(const Cartesian_box *b1, const Cartesian_box *b2) const {
   }
 
   if (mbr_is_line(*b1)) {
-    Cartesian_point b1_ls_start(b1->min_corner().x(), b1->min_corner().y());
-    Cartesian_point b1_ls_end(b1->max_corner().x(), b1->max_corner().y());
+    Cartesian_point const b1_ls_start(b1->min_corner().x(),
+                                      b1->min_corner().y());
+    Cartesian_point const b1_ls_end(b1->max_corner().x(), b1->max_corner().y());
     Cartesian_linestring b1_ls;
     b1_ls.push_back(b1_ls_start);
     b1_ls.push_back(b1_ls_end);
 
     if (mbr_is_line(*b2)) {
-      Cartesian_point b2_ls_start(b2->min_corner().x(), b2->min_corner().y());
-      Cartesian_point b2_ls_end(b2->max_corner().x(), b2->max_corner().y());
+      Cartesian_point const b2_ls_start(b2->min_corner().x(),
+                                        b2->min_corner().y());
+      Cartesian_point const b2_ls_end(b2->max_corner().x(),
+                                      b2->max_corner().y());
       Cartesian_linestring b2_ls;
       b2_ls.push_back(b2_ls_start);
       b2_ls.push_back(b2_ls_end);
@@ -1270,11 +1275,11 @@ bool Within::eval(const Cartesian_box *b1, const Cartesian_box *b2) const {
       return bg::within(b1_ls, b2_ls);
     }
 
-    Cartesian_point b2_pt1(b2->min_corner().x(), b2->min_corner().y());
-    Cartesian_point b2_pt2(b2->max_corner().x(), b2->min_corner().y());
-    Cartesian_point b2_pt3(b2->max_corner().x(), b2->max_corner().y());
-    Cartesian_point b2_pt4(b2->min_corner().x(), b2->max_corner().y());
-    Cartesian_point b2_pt5(b2->min_corner().x(), b2->min_corner().y());
+    Cartesian_point const b2_pt1(b2->min_corner().x(), b2->min_corner().y());
+    Cartesian_point const b2_pt2(b2->max_corner().x(), b2->min_corner().y());
+    Cartesian_point const b2_pt3(b2->max_corner().x(), b2->max_corner().y());
+    Cartesian_point const b2_pt4(b2->min_corner().x(), b2->max_corner().y());
+    Cartesian_point const b2_pt5(b2->min_corner().x(), b2->min_corner().y());
     Cartesian_linearring b2_lr;
     b2_lr.push_back(b2_pt1);
     b2_lr.push_back(b2_pt2);
@@ -1295,11 +1300,13 @@ bool Within::eval(const Geographic_box *b1, const Geographic_box *b2) const {
 
   // Work around bugs in BG for boxes that have zero height and/or width.
   if (mbr_is_point(*b1)) {
-    Geographic_point pt(b1->min_corner().x(), b1->min_corner().y());
+    Geographic_point const pt(b1->min_corner().x(), b1->min_corner().y());
 
     if (mbr_is_line(*b2)) {
-      Geographic_point b2_ls_start(b2->min_corner().x(), b2->min_corner().y());
-      Geographic_point b2_ls_end(b2->max_corner().x(), b2->max_corner().y());
+      Geographic_point const b2_ls_start(b2->min_corner().x(),
+                                         b2->min_corner().y());
+      Geographic_point const b2_ls_end(b2->max_corner().x(),
+                                       b2->max_corner().y());
       Geographic_linestring b2_ls;
       b2_ls.push_back(b2_ls_start);
       b2_ls.push_back(b2_ls_end);
@@ -1311,15 +1318,19 @@ bool Within::eval(const Geographic_box *b1, const Geographic_box *b2) const {
   }
 
   if (mbr_is_line(*b1)) {
-    Geographic_point b1_ls_start(b1->min_corner().x(), b1->min_corner().y());
-    Geographic_point b1_ls_end(b1->max_corner().x(), b1->max_corner().y());
+    Geographic_point const b1_ls_start(b1->min_corner().x(),
+                                       b1->min_corner().y());
+    Geographic_point const b1_ls_end(b1->max_corner().x(),
+                                     b1->max_corner().y());
     Geographic_linestring b1_ls;
     b1_ls.push_back(b1_ls_start);
     b1_ls.push_back(b1_ls_end);
 
     if (mbr_is_line(*b2)) {
-      Geographic_point b2_ls_start(b2->min_corner().x(), b2->min_corner().y());
-      Geographic_point b2_ls_end(b2->max_corner().x(), b2->max_corner().y());
+      Geographic_point const b2_ls_start(b2->min_corner().x(),
+                                         b2->min_corner().y());
+      Geographic_point const b2_ls_end(b2->max_corner().x(),
+                                       b2->max_corner().y());
       Geographic_linestring b2_ls;
       b2_ls.push_back(b2_ls_start);
       b2_ls.push_back(b2_ls_end);
@@ -1357,8 +1368,8 @@ bool within(const dd::Spatial_reference_system *srs, const Geometry *g1,
 
     if ((*null = (g1->is_empty() || g2->is_empty()))) return false;
 
-    Within within_func(srs ? srs->semi_major_axis() : 0.0,
-                       srs ? srs->semi_minor_axis() : 0.0);
+    Within const within_func(srs ? srs->semi_major_axis() : 0.0,
+                             srs ? srs->semi_minor_axis() : 0.0);
     *within = within_func(g1, g2);
   } catch (...) {
     handle_gis_exception(func_name);
@@ -1381,8 +1392,8 @@ bool mbr_within(const dd::Spatial_reference_system *srs, const Geometry *g1,
 
     if ((*null = (g1->is_empty() || g2->is_empty()))) return false;
 
-    Within within_func(srs ? srs->semi_major_axis() : 0.0,
-                       srs ? srs->semi_minor_axis() : 0.0);
+    Within const within_func(srs ? srs->semi_major_axis() : 0.0,
+                             srs ? srs->semi_minor_axis() : 0.0);
 
     switch (g1->coordinate_system()) {
       case Coordinate_system::kCartesian: {

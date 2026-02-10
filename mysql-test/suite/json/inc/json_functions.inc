@@ -344,11 +344,9 @@ EXPLAIN SELECT j, COUNT(*) FROM t GROUP BY j WITH ROLLUP;
 # either '9223372036854775807.000' or '9223372036854775807' could be the name of the group
 # These issues are resolved by removing trailing zeros from decimals and replacing -0 with 0.
 # This also replaces .000010 with 010 and .000001 with 001 [because \s is not supported].
---skip_if_hypergraph  # Different warnings.
 --replace_regex /1\.0e\-1/0.1/ /1\.0e\-2/0.01/ /0\.010/0.01/ /\.000// /\.0// /0\.100/0.1/ /\-0/0/ /3\.130/3.13/ /3\.140/3.14/ /3\.150/3.15/ /9\.223372036854776e18/9223372036854776000/
 SELECT j, COUNT(*) FROM t GROUP BY j ORDER BY j;
 
---skip_if_hypergraph  # Different warnings.
 --replace_regex /1\.0e\-1/0.1/ /1\.0e\-2/0.01/ /0\.010/0.01/ /\.000// /\.0// /0\.100/0.1/ /\-0/0/ /3\.130/3.13/ /3\.140/3.14/ /3\.150/3.15/ /9\.223372036854776e18/9223372036854776000/
 SELECT JSON_EXTRACT(j, '$') AS je, COUNT(*) FROM t GROUP BY je ORDER BY je;
 
@@ -3673,6 +3671,7 @@ let $dump_table= SELECT *, JSON_STORAGE_SIZE(j1) ss1,
 let $query= UPDATE t SET j1 = JSON_SET(j1, '\$.a', 'x'),
                          j2 = JSON_SET(j2, '\$.a', 'y'),
                          j1 = JSON_SET(j1, '\$.b', 'z');
+SET explain_json_format_version = 1;
 --skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
@@ -4022,6 +4021,7 @@ UPDATE t SET j = JSON_REMOVE(JSON_REMOVE(j, '$[0]', '$[0]', '$.x'),
                              '$.b', '$.y', '$.z');
 --eval $dump_table
 DROP TABLE t;
+SET explain_json_format_version = DEFAULT;
 
 --echo #
 --echo # WL#9692: Add JSON_MERGE_PATCH
@@ -4208,6 +4208,27 @@ SELECT * FROM t1 LEFT JOIN t2 ON x=y WHERE JSON_ARRAY_INSERT('[]', '$[0]', y) <>
 SELECT * FROM t1 LEFT JOIN t2 ON x=y WHERE JSON_SET('{}', '$.a', y) <> 3;
 SELECT * FROM t1 LEFT JOIN t2 ON x=y WHERE JSON_REPLACE('{}', '$.a', y) <> 3;
 DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug#337458212: Extreme TIME value magically appear smaller when
+--echo #                converted to JSON
+--echo #
+
+CREATE TABLE times (t TIME(6));
+
+INSERT INTO times VALUES
+('-838:59:59'),
+('838:59:59'),
+('-00:00:00.000001'),
+('-00:00:00'),
+('24:00:00'),
+('-12:00:00'),
+('-24:00:00');
+
+--sorted_result
+SELECT CAST(t AS JSON) FROM times;
+
+DROP TABLE times;
 
 # Local Variables:
 # mode: sql

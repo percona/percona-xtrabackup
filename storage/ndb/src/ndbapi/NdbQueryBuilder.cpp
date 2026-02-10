@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -486,7 +486,7 @@ int NdbQueryOptionsImpl::copyInterpretedCode(const NdbInterpretedCode &src) {
     return 0;
   }
 
-  NdbInterpretedCode *interpretedCode = new NdbInterpretedCode();
+  auto *interpretedCode = new NdbInterpretedCode();
   if (unlikely(interpretedCode == nullptr)) {
     return Err_MemoryAlloc;
   }
@@ -498,7 +498,7 @@ int NdbQueryOptionsImpl::copyInterpretedCode(const NdbInterpretedCode &src) {
   }
 
   /* Replace existing NdbInterpretedCode */
-  if (m_interpretedCode) delete m_interpretedCode;
+  delete m_interpretedCode;
 
   m_interpretedCode = interpretedCode;
   return 0;
@@ -607,12 +607,11 @@ const NdbDictionary::Index *NdbQueryOperationDef::getIndex() const {
  ******************************************/
 // Static method.
 NdbQueryBuilder *NdbQueryBuilder::create() {
-  NdbQueryBuilderImpl *const impl = new NdbQueryBuilderImpl();
+  auto *const impl = new NdbQueryBuilderImpl();
   if (likely(impl != nullptr)) {
     return &impl->m_interface;
-  } else {
-    return nullptr;
   }
+  return nullptr;
 }
 
 void NdbQueryBuilder::destroy() { delete &m_impl; }
@@ -749,7 +748,7 @@ const NdbQueryLookupOperationDef *NdbQueryBuilder::readTuple(
   returnErrIf(keys[keyfields] != nullptr, QRY_TOO_MANY_KEY_VALUES);
 
   int error = 0;
-  NdbQueryPKLookupOperationDefImpl *op = new NdbQueryPKLookupOperationDefImpl(
+  auto *op = new NdbQueryPKLookupOperationDefImpl(
       tableImpl, keys, options ? options->getImpl() : defaultOptions, ident,
       m_impl.m_operations.size(), m_impl.getNextInternalOpNo(), error);
 
@@ -812,7 +811,7 @@ const NdbQueryLookupOperationDef *NdbQueryBuilder::readTuple(
   returnErrIf(keys[inxfields] != nullptr, QRY_TOO_MANY_KEY_VALUES);
 
   int error = 0;
-  NdbQueryIndexOperationDefImpl *op = new NdbQueryIndexOperationDefImpl(
+  auto *op = new NdbQueryIndexOperationDefImpl(
       indexImpl, tableImpl, keys, options ? options->getImpl() : defaultOptions,
       ident, m_impl.m_operations.size(), m_impl.getNextInternalOpNo(), error);
 
@@ -845,7 +844,7 @@ const NdbQueryTableScanOperationDef *NdbQueryBuilder::scanTable(
   returnErrIf(m_impl.m_operations.size() > 0, QRY_UNKNOWN_PARENT);
 
   int error = 0;
-  NdbQueryTableScanOperationDefImpl *op = new NdbQueryTableScanOperationDefImpl(
+  auto *op = new NdbQueryTableScanOperationDefImpl(
       NdbTableImpl::getImpl(*table),
       options ? options->getImpl() : defaultOptions, ident,
       m_impl.m_operations.size(), m_impl.getNextInternalOpNo(), error);
@@ -899,7 +898,7 @@ const NdbQueryIndexScanOperationDef *NdbQueryBuilder::scanIndex(
               QRY_WRONG_INDEX_TYPE);
 
   int error = 0;
-  NdbQueryIndexScanOperationDefImpl *op = new NdbQueryIndexScanOperationDefImpl(
+  auto *op = new NdbQueryIndexScanOperationDefImpl(
       indexImpl, tableImpl, bound,
       options ? options->getImpl() : defaultOptions, ident,
       m_impl.m_operations.size(), m_impl.getNextInternalOpNo(), error);
@@ -1035,8 +1034,7 @@ const NdbQueryDefImpl *NdbQueryBuilderImpl::prepare(const Ndb *ndb) {
   }
 
   int error;
-  NdbQueryDefImpl *def =
-      new NdbQueryDefImpl(ndb, m_operations, m_operands, error);
+  auto *def = new NdbQueryDefImpl(ndb, m_operations, m_operands, error);
   m_operations.clear();
   m_operands.clear();
   m_paramCnt = 0;
@@ -1060,7 +1058,8 @@ const NdbQueryDefImpl *NdbQueryBuilderImpl::prepare(const Ndb *ndb) {
 inline int NdbQueryBuilderImpl::takeOwnership(NdbQueryOperandImpl *operand) {
   if (unlikely(operand == nullptr)) {
     return Err_MemoryAlloc;
-  } else if (unlikely(m_operands.push_back(operand) != 0)) {
+  }
+  if (unlikely(m_operands.push_back(operand) != 0)) {
     assert(errno == ENOMEM);
     delete operand;
     return Err_MemoryAlloc;
@@ -1072,7 +1071,8 @@ inline int NdbQueryBuilderImpl::takeOwnership(
     NdbQueryOperationDefImpl *operation) {
   if (unlikely(operation == nullptr)) {
     return Err_MemoryAlloc;
-  } else if (unlikely(m_operations.push_back(operation) != 0)) {
+  }
+  if (unlikely(m_operations.push_back(operation) != 0)) {
     assert(errno == ENOMEM);
     delete operation;
     return Err_MemoryAlloc;
@@ -1514,7 +1514,8 @@ int NdbQueryIndexScanOperationDefImpl::checkPrunable(
   if (indexRecord->m_no_of_distribution_keys !=
       tableRecord->m_no_of_distribution_keys) {
     return 0;  // Index does not contain all fields in the distribution key.
-  } else if (shortestBound < prefixLength) {
+  }
+  if (shortestBound < prefixLength) {
     // Bounds set on query instance are to short to contain full dist key.
     return 0;
   }
@@ -1541,9 +1542,8 @@ int NdbQueryIndexScanOperationDefImpl::checkPrunable(
     Uint32 keyPartNo = 0;
     Uint32 distKeyPartNo [[maybe_unused]] = 0;
     while (keyPos < keyEnd) {
-      const NdbIndexScanOperation::BoundType type =
-          static_cast<NdbIndexScanOperation::BoundType>(keyInfo.get(keyPos) &
-                                                        0xF);
+      const auto type = static_cast<NdbIndexScanOperation::BoundType>(
+          keyInfo.get(keyPos) & 0xF);
       const AttributeHeader attHead1(keyInfo.get(keyPos + 1));
       const Ndb::Key_part_ptr keyPart1 = {keyInfo.addr(keyPos + 2),
                                           attHead1.getByteSize()};
@@ -1709,10 +1709,9 @@ int NdbQueryOperationDefImpl::addChild(NdbQueryOperationDefImpl *childOp) {
   }
   if (likely(m_children.push_back(childOp) == 0)) {
     return 0;
-  } else {
-    assert(errno == ENOMEM);
-    return Err_MemoryAlloc;
   }
+  assert(errno == ENOMEM);
+  return Err_MemoryAlloc;
 }
 
 void NdbQueryOperationDefImpl::removeChild(
@@ -1839,9 +1838,9 @@ class Uint16Sequence {
 
  private:
   /** Should not be copied.*/
-  Uint16Sequence(Uint16Sequence &);
+  Uint16Sequence(Uint16Sequence &) = delete;
   /** Should not be assigned.*/
-  Uint16Sequence &operator=(Uint16Sequence &);
+  Uint16Sequence &operator=(Uint16Sequence &) = delete;
 
   Uint32 *m_seq;        // Preallocated buffer to append Uint16's into
   const Uint32 m_size;  // Uint16 words available in m_seq
@@ -2283,7 +2282,7 @@ Uint32 NdbQueryOperationDefImpl::appendParamConstructor(
    */
   for (Uint32 i = 0; i < paramSize; ++i) {
     assert(interpretedParams[i]->getKind() == NdbQueryOperandImpl::Linked);
-    const NdbLinkedOperandImpl *param =
+    const auto *param =
         static_cast<const NdbLinkedOperandImpl *>(interpretedParams[i]);
 
     const NdbQueryOperationDefImpl *parent = getParentOperation();
@@ -2359,8 +2358,7 @@ int NdbQueryPKLookupOperationDefImpl ::serializeOperation(
   requestInfo |= appendChildProjection(serializedDef);
 
   // Fill in LookupNode contents (Already allocated, 'startPos' is our handle:
-  QN_LookupNode *node =
-      reinterpret_cast<QN_LookupNode *>(serializedDef.addr(startPos));
+  auto *node = reinterpret_cast<QN_LookupNode *>(serializedDef.addr(startPos));
   if (unlikely(node == nullptr)) {
     return Err_MemoryAlloc;
   }
@@ -2370,9 +2368,8 @@ int NdbQueryPKLookupOperationDefImpl ::serializeOperation(
   const Uint32 length = serializedDef.getSize() - startPos;
   if (unlikely(length > 0xFFFF)) {
     return QRY_DEFINITION_TOO_LARGE;  // Query definition too large.
-  } else {
-    QueryNode::setOpLen(node->len, QueryNode::QN_LOOKUP, length);
   }
+  QueryNode::setOpLen(node->len, QueryNode::QN_LOOKUP, length);
 
 #ifdef __TRACE_SERIALIZATION
   ndbout << "Serialized node " << getInternalOpNo() << " : ";
@@ -2436,7 +2433,7 @@ int NdbQueryIndexOperationDefImpl ::serializeOperation(
     }
 
     // Fill in LookupNode contents (Already allocated, 'startPos' is our handle:
-    QN_LookupNode *node =
+    auto *node =
         reinterpret_cast<QN_LookupNode *>(serializedDef.addr(startPos));
     if (unlikely(node == nullptr)) {
       return Err_MemoryAlloc;
@@ -2447,9 +2444,8 @@ int NdbQueryIndexOperationDefImpl ::serializeOperation(
     const Uint32 length = serializedDef.getSize() - startPos;
     if (unlikely(length > 0xFFFF)) {
       return QRY_DEFINITION_TOO_LARGE;  // Query definition too large.
-    } else {
-      QueryNode::setOpLen(node->len, QueryNode::QN_LOOKUP, length);
     }
+    QueryNode::setOpLen(node->len, QueryNode::QN_LOOKUP, length);
 
 #ifdef __TRACE_SERIALIZATION
     ndbout << "Serialized index " << getInternalOpNo() - 1 << " : ";
@@ -2501,8 +2497,7 @@ int NdbQueryIndexOperationDefImpl ::serializeOperation(
   requestInfo |= appendChildProjection(serializedDef);
 
   // Fill in LookupNode contents (Already allocated, 'startPos' is our handle:
-  QN_LookupNode *node =
-      reinterpret_cast<QN_LookupNode *>(serializedDef.addr(startPos));
+  auto *node = reinterpret_cast<QN_LookupNode *>(serializedDef.addr(startPos));
   if (unlikely(node == nullptr)) {
     return Err_MemoryAlloc;
   }
@@ -2512,9 +2507,8 @@ int NdbQueryIndexOperationDefImpl ::serializeOperation(
   const Uint32 length = serializedDef.getSize() - startPos;
   if (unlikely(length > 0xFFFF)) {
     return QRY_DEFINITION_TOO_LARGE;  // Query definition too large.
-  } else {
-    QueryNode::setOpLen(node->len, QueryNode::QN_LOOKUP, length);
   }
+  QueryNode::setOpLen(node->len, QueryNode::QN_LOOKUP, length);
 
 #ifdef __TRACE_SERIALIZATION
   ndbout << "Serialized node " << getInternalOpNo() << " : ";
@@ -2589,7 +2583,7 @@ int NdbQueryScanOperationDefImpl::serialize(const Ndb *ndb,
 
   // Fill in ScanFragNode contents (Already allocated, 'startPos' is our handle:
   if (likely(useNewScanFrag)) {
-    QN_ScanFragNode *node =
+    auto *node =
         reinterpret_cast<QN_ScanFragNode *>(serializedDef.addr(startPos));
     if (unlikely(node == nullptr)) {
       return Err_MemoryAlloc;
@@ -2605,7 +2599,7 @@ int NdbQueryScanOperationDefImpl::serialize(const Ndb *ndb,
   }
   // Deprecated QueryNode type, keep for backward comp
   else if (isRoot) {
-    QN_ScanFragNode_v1 *node =
+    auto *node =
         reinterpret_cast<QN_ScanFragNode_v1 *>(serializedDef.addr(startPos));
     if (unlikely(node == nullptr)) {
       return Err_MemoryAlloc;
@@ -2615,7 +2609,7 @@ int NdbQueryScanOperationDefImpl::serialize(const Ndb *ndb,
     node->requestInfo = requestInfo;
     QueryNode::setOpLen(node->len, QueryNode::QN_SCAN_FRAG_v1, length);
   } else {
-    QN_ScanIndexNode_v1 *node =
+    auto *node =
         reinterpret_cast<QN_ScanIndexNode_v1 *>(serializedDef.addr(startPos));
     if (unlikely(node == nullptr)) {
       return Err_MemoryAlloc;

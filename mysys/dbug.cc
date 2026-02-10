@@ -81,26 +81,27 @@
 
 #include "my_config.h"
 
-#include <assert.h>
-#include <ctype.h>
-#include <errno.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
-#include <time.h>
-
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #include <algorithm>
+#include <array>
+#include <cassert>
+#include <cctype>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
 
 #include "dig_vec.h"
 #include "m_string.h"
-#include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_inttypes.h"
 #include "my_io.h"
-#include "my_macros.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
+#include "mysql/attribute.h"
 #include "mysql/strings/int2str.h"
 #include "nulls.h"
 #include "thr_mutex.h"
@@ -118,10 +119,13 @@
 #if defined(_WIN32)
 #include <process.h>
 #else
-#include <signal.h>
+#include <csignal>
 #endif
 
 #ifndef NDEBUG
+
+struct CODE_STATE;
+struct settings;
 
 /*
  *            Manifest constants which may be "tuned" if desired.
@@ -1191,8 +1195,8 @@ void _db_enter_(const char *_func_, int func_len, const char *_file_,
  */
 
 void _db_return_(uint _line_, struct _db_stack_frame_ *_stack_frame_) {
-  int save_errno = errno;
-  uint _slevel_ = _stack_frame_->level & ~TRACE_ON;
+  int const save_errno = errno;
+  uint const _slevel_ = _stack_frame_->level & ~TRACE_ON;
   CODE_STATE *cs;
   get_code_state_or_return;
 
@@ -1394,7 +1398,7 @@ void _db_dump_(uint _line_, const char *keyword, const unsigned char *memory,
 
     pos = 0;
     while (length-- > 0) {
-      uint tmp = *(memory++);
+      uint const tmp = *(memory++);
       if ((pos += 3) >= 80) {
         fputc('\n', cs->stack->out_file);
         pos = 3;
@@ -1923,7 +1927,7 @@ static void DBUGOpenFile(CODE_STATE *cs, const char *name, const char *end,
 
   if (name != nullptr) {
     if (end) {
-      size_t len = end - name;
+      size_t const len = end - name;
       memcpy(cs->stack->name, name, len);
       cs->stack->name[len] = 0;
     } else

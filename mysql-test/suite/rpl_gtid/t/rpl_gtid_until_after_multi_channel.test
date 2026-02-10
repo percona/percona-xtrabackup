@@ -20,7 +20,6 @@
 # WL#15755: MAKE SQL_AFTER_GTIDS WORK WITH MTS
 #
 
---source include/have_replica_parallel_workers.inc
 
 --echo #
 --echo # set up source server_1 and server_3 with server_2 being a replica.

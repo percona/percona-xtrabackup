@@ -559,7 +559,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	PRIMARY	t1bit	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
 2	SUBQUERY	t2bit	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
 Warnings:
-Note	1003	/* select#1 */ select conv(`test`.`t1bit`.`a1`,10,2) AS `bin(a1)`,conv(`test`.`t1bit`.`a2`,10,2) AS `bin(a2)` from `test`.`t1bit` where <in_optimizer>((`test`.`t1bit`.`a1`,`test`.`t1bit`.`a2`),(`test`.`t1bit`.`a1`,`test`.`t1bit`.`a2`) in ( <materialize> (/* select#2 */ select `test`.`t2bit`.`b1`,`test`.`t2bit`.`b2` from `test`.`t2bit` where true ), <primary_index_lookup>(`test`.`t1bit`.`a1` in <temporary table> on <auto_distinct_key> where ((`test`.`t1bit`.`a1` = `<materialized_subquery>`.`b1`) and (`test`.`t1bit`.`a2` = `<materialized_subquery>`.`b2`)))))
+Note	1003	/* select#1 */ select conv(`test`.`t1bit`.`a1`,10,2) AS `bin(a1)`,conv(`test`.`t1bit`.`a2`,10,2) AS `bin(a2)` from `test`.`t1bit` where <in_optimizer>((`test`.`t1bit`.`a1`,`test`.`t1bit`.`a2`),(`test`.`t1bit`.`a1`,`test`.`t1bit`.`a2`) in ( <materialize> (/* select#2 */ select `test`.`t2bit`.`b1`,`test`.`t2bit`.`b2` from `test`.`t2bit` where true ), <index_lookup>(`test`.`t1bit`.`a1` in <temporary table> on <hash_distinct_key> where ((`test`.`t1bit`.`a1` = `<materialized_subquery>`.`b1`) and (`test`.`t1bit`.`a2` = `<materialized_subquery>`.`b2`)))))
 select bin(a1), bin(a2)
 from t1bit
 where (a1, a2) in (select b1, b2 from t2bit);

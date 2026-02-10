@@ -35,24 +35,23 @@ JSON	JSON
 set global explain_format=default;
 select @@explain_format, @@global.explain_format;
 @@explain_format	@@global.explain_format
-JSON	TRADITIONAL
+JSON	TREE
 set persist explain_format=default;
 select @@explain_format, @@global.explain_format;
 @@explain_format	@@global.explain_format
-JSON	TRADITIONAL
+JSON	TREE
 set explain_format=default;
 select @@explain_format, @@global.explain_format;
 @@explain_format	@@global.explain_format
-TRADITIONAL	TRADITIONAL
+TREE	TREE
 reset persist explain_format;
 select @@explain_format, @@global.explain_format;
 @@explain_format	@@global.explain_format
-TRADITIONAL	TRADITIONAL
+TREE	TREE
 explain select 1;
-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
-Warnings:
-Note	1003	/* select#1 */ select 1 AS `1`
+EXPLAIN
+-> Rows fetched before execution  (cost=0..0 rows=1)
+
 explain format=tree select 1;
 EXPLAIN
 -> Rows fetched before execution  (cost=0..0 rows=1)
@@ -60,13 +59,17 @@ EXPLAIN
 explain format=json select 1;
 EXPLAIN
 {
-  "query_block": {
-    "select_id": 1,
-    "message": "No tables used"
-  }
+  "query": "/* select#1 */ select 1 AS `1`",
+  "query_plan": {
+    "operation": "Rows fetched before execution",
+    "access_type": "rows_fetched_before_execution",
+    "estimated_rows": 1.0,
+    "estimated_total_cost": 0.0,
+    "estimated_first_row_cost": 0.0
+  },
+  "query_type": "select",
+  "json_schema_version": "2.0"
 }
-Warnings:
-Note	1003	/* select#1 */ select 1 AS `1`
 set explain_format=tree;
 explain select 1;
 EXPLAIN
@@ -75,13 +78,17 @@ EXPLAIN
 explain format=json select 1;
 EXPLAIN
 {
-  "query_block": {
-    "select_id": 1,
-    "message": "No tables used"
-  }
+  "query": "/* select#1 */ select 1 AS `1`",
+  "query_plan": {
+    "operation": "Rows fetched before execution",
+    "access_type": "rows_fetched_before_execution",
+    "estimated_rows": 1.0,
+    "estimated_total_cost": 0.0,
+    "estimated_first_row_cost": 0.0
+  },
+  "query_type": "select",
+  "json_schema_version": "2.0"
 }
-Warnings:
-Note	1003	/* select#1 */ select 1 AS `1`
 set explain_format=json;
 explain format=tree select 1;
 EXPLAIN
@@ -90,19 +97,22 @@ EXPLAIN
 explain select 1;
 EXPLAIN
 {
-  "query_block": {
-    "select_id": 1,
-    "message": "No tables used"
-  }
+  "query": "/* select#1 */ select 1 AS `1`",
+  "query_plan": {
+    "operation": "Rows fetched before execution",
+    "access_type": "rows_fetched_before_execution",
+    "estimated_rows": 1.0,
+    "estimated_total_cost": 0.0,
+    "estimated_first_row_cost": 0.0
+  },
+  "query_type": "select",
+  "json_schema_version": "2.0"
 }
-Warnings:
-Note	1003	/* select#1 */ select 1 AS `1`
 set explain_format=default;
 explain select 1;
-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
-Warnings:
-Note	1003	/* select#1 */ select 1 AS `1`
+EXPLAIN
+-> Rows fetched before execution  (cost=0..0 rows=1)
+
 explain format=tree select 1;
 EXPLAIN
 -> Rows fetched before execution  (cost=0..0 rows=1)

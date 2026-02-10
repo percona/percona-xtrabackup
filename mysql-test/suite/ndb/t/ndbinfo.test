@@ -185,9 +185,9 @@ DROP TABLE ndb$test;
 CREATE TABLE ndb$test (node_id int, block_number int PRIMARY KEY,
                        index(node_id)) ENGINE = ndbinfo;
 
-## 5) Table with blobs not supported
---error ER_TABLE_CANT_HANDLE_BLOB
+## 5) Table with blobs now supported
 CREATE TABLE ndb$test (node_id int, block_number blob) ENGINE = ndbinfo;
+DROP TABLE ndb$test;
 
 ## 6) Table with autoincrement not supported
 --error ER_TABLE_CANT_HANDLE_AUTO_INCREMENT

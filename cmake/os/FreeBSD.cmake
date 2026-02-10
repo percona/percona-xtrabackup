@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -34,15 +34,15 @@ LIST(APPEND CMAKE_REQUIRED_INCLUDES "/usr/local/include")
 # in order to search include/boost_1_70_0/patches
 # INCLUDE_DIRECTORIES(SYSTEM /usr/local/include)
 
-# We require at least GCC 10 Clang 12
+# We require at least GCC 10 Clang 14
 IF(NOT FORCE_UNSUPPORTED_COMPILER)
   IF(MY_COMPILER_IS_GNU)
     IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10)
       MESSAGE(FATAL_ERROR "GCC 10 or newer is required")
     ENDIF()
   ELSEIF(MY_COMPILER_IS_CLANG)
-    IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
-      MESSAGE(FATAL_ERROR "Clang 12 or newer is required!")
+    IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
+      MESSAGE(FATAL_ERROR "Clang 14 or newer is required!")
     ENDIF()
   ELSE()
     MESSAGE(FATAL_ERROR "Unsupported compiler!")

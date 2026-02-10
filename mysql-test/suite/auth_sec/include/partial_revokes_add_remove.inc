@@ -401,12 +401,12 @@ REVOKE UPDATE,SELECT ON secret_db.* FROM foo;
 SHOW GRANTS FOR foo;
 --connect($conn_name, localhost, foo,,,$MASTER_MYPORT)
 --echo [connection $conn_name]
---echo # Should fail because foo cannot remove SELECT priv on bar
+--echo # Should fail because foo cannot remove UPDATE priv on bar
 --error ER_DB_ACCESS_DENIED
 REVOKE ALL ON *.* FROM bar;
 --connection default
 --disconnect $conn_name
-GRANT SELECT ON `secret_db`.* TO foo;
+GRANT UPDATE ON `secret_db`.* TO foo;
 SHOW GRANTS FOR foo;
 --connect($conn_name, localhost, foo,,,$MASTER_MYPORT)
 --echo [connection $conn_name]
@@ -1122,10 +1122,154 @@ REVOKE SELECT ON *.* FROM foo;
 DROP USER foo;
 DROP DATABASE `db_1`;
 DROP DATABASE `db%1`;
+--echo --------------- Test related to wildcard grants end here. ---------------
+--echo
 --echo -------------------------------------------------------------------------
---echo Test related to wildcard grants end here.
+--echo Tests related to Bug 37570206 - REVOKE EXECUTE from a user throws ERROR
+--echo 3879 (HY000): Access denied *
 --echo -------------------------------------------------------------------------
 
+CREATE USER bug37570206_user;
+CREATE USER bug37570206_admin;
+CREATE DATABASE bug37570206_db;
+
+# Case 1: Both grantor and grantee has same set of restrictions
+
+--connection default
+GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE SELECT, EXECUTE ON bug37570206_db.* FROM bug37570206_admin;
+
+--connect(conn_bug37570206_admin, localhost, bug37570206_admin,,,$MASTER_MYPORT)
+GRANT SELECT, EXECUTE ON *.* TO bug37570206_user;
+SHOW GRANTS FOR bug37570206_user;
+
+--echo # Must succeed
+REVOKE SELECT, EXECUTE ON *.* FROM bug37570206_user;
+SHOW GRANTS FOR bug37570206_user;
+
+# Case 2: Grantee has more restrictions than grantor
+
+--connection default
+--disconnect conn_bug37570206_admin
+REVOKE ALL ON *.* FROM bug37570206_admin, bug37570206_user;
+
+GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE SELECT ON bug37570206_db.* FROM bug37570206_admin;
+
+GRANT SELECT, EXECUTE ON *.* TO bug37570206_user;
+REVOKE SELECT, EXECUTE ON bug37570206_db.* FROM bug37570206_user;
+
+--connect(conn_bug37570206_admin, localhost, bug37570206_admin,,,$MASTER_MYPORT)
+--echo # Must succeed
+REVOKE SELECT, EXECUTE ON *.* FROM bug37570206_user;
+
+--connection default
+GRANT SELECT, EXECUTE ON *.* TO bug37570206_user;
+REVOKE SELECT, EXECUTE ON bug37570206_db.* FROM bug37570206_user;
+REVOKE SELECT, EXECUTE ON mysql.* FROM bug37570206_user;
+
+--connection conn_bug37570206_admin
+--echo # Must succeed
+REVOKE SELECT, EXECUTE ON *.* FROM bug37570206_user;
+
+--connection default
+--disconnect conn_bug37570206_admin
+GRANT SELECT ON bug37570206_db.* TO bug37570206_admin;
+GRANT SELECT, EXECUTE ON *.* TO bug37570206_user;
+REVOKE SELECT, EXECUTE ON bug37570206_db.* FROM bug37570206_user;
+
+--connect(conn_bug37570206_admin, localhost, bug37570206_admin,,,$MASTER_MYPORT)
+--echo # Must succeed
+REVOKE SELECT, EXECUTE ON *.* FROM bug37570206_user;
+
+# Case 3: Grantee has different privileges and/or restrictions than those being revoked
+
+--connection default
+--disconnect conn_bug37570206_admin
+REVOKE ALL ON *.* FROM bug37570206_admin, bug37570206_user;
+
+GRANT SELECT, INSERT, UPDATE ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE SELECT, INSERT ON bug37570206_db.* FROM bug37570206_admin;
+
+GRANT SELECT, EXECUTE, DELETE ON *.* TO bug37570206_user;
+REVOKE SELECT, EXECUTE ON bug37570206_db.* FROM bug37570206_user;
+
+--connect(conn_bug37570206_admin, localhost, bug37570206_admin,,,$MASTER_MYPORT)
+--echo # Must succeed
+REVOKE SELECT ON *.* FROM bug37570206_user;
+
+--connection default
+--disconnect conn_bug37570206_admin
+REVOKE ALL ON *.* FROM bug37570206_admin, bug37570206_user;
+
+GRANT ALL ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE INSERT ON bug37570206_db.* FROM bug37570206_admin;
+
+GRANT SELECT, INSERT ON *.* TO bug37570206_user;
+REVOKE INSERT ON bug37570206_db.* FROM bug37570206_user;
+
+--connect(conn_bug37570206_admin, localhost, bug37570206_admin,,,$MASTER_MYPORT)
+--echo # Must succeed
+REVOKE ALL ON *.* FROM bug37570206_user;
+
+# Case 4: Grantee has less restrictions than grantor
+
+--connection default
+--disconnect conn_bug37570206_admin
+REVOKE ALL ON *.* FROM bug37570206_admin, bug37570206_user;
+
+GRANT SELECT, INSERT, UPDATE ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE SELECT, INSERT ON bug37570206_db.* FROM bug37570206_admin;
+
+GRANT SELECT, EXECUTE, DELETE ON *.* TO bug37570206_user;
+
+--connect(conn_bug37570206_admin, localhost, bug37570206_admin,,,$MASTER_MYPORT)
+--echo # Must fail
+--error ER_DB_ACCESS_DENIED
+REVOKE SELECT ON *.* FROM bug37570206_user;
+
+--connection default
+--disconnect conn_bug37570206_admin
+REVOKE DELETE ON bug37570206_db.* FROM bug37570206_user;
+
+--connect(conn_bug37570206_admin, localhost, bug37570206_admin,,,$MASTER_MYPORT)
+--echo # Must fail
+--error ER_DB_ACCESS_DENIED
+REVOKE SELECT ON *.* FROM bug37570206_user;
+
+--connection default
+--disconnect conn_bug37570206_admin
+REVOKE ALL ON *.* FROM bug37570206_admin, bug37570206_user;
+
+GRANT ALL ON *.* TO bug37570206_admin WITH GRANT OPTION;
+REVOKE SELECT, INSERT ON bug37570206_db.* FROM bug37570206_admin;
+
+GRANT SELECT, UPDATE, DELETE, INSERT ON *.* TO bug37570206_user;
+
+--connect(conn_bug37570206_admin, localhost, bug37570206_admin,,,$MASTER_MYPORT)
+--echo # Must fail
+--error ER_DB_ACCESS_DENIED
+REVOKE ALL ON *.* FROM bug37570206_user;
+
+--connection default
+--disconnect conn_bug37570206_admin
+REVOKE INSERT ON bug37570206_db.* FROM bug37570206_user;
+
+--connect(conn_bug37570206_admin, localhost, bug37570206_admin,,,$MASTER_MYPORT)
+--echo # Must fail
+--error ER_DB_ACCESS_DENIED
+REVOKE ALL ON *.* FROM bug37570206_user;
+
+# Cleanup
+--connection default
+--disconnect conn_bug37570206_admin
+DROP USER bug37570206_admin, bug37570206_user;
+DROP DATABASE bug37570206_db;
+
+--echo -------------------------------------------------------------------------
+--echo Tests related to Bug 37570206 - REVOKE EXECUTE from a user throws ERROR
+--echo 3879 (HY000): Access denied * end here
+--echo -------------------------------------------------------------------------
 #
 # Clean up
 #

@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,14 +40,15 @@ namespace murmur3_unittest {
 TEST(Murmur3, Basic) {
   const char *str = "To be, or not to be, that is the question;";
 
-  uint hash = murmur3_32(pointer_cast<const uchar *>(str), strlen(str), 0);
+  uint const hash =
+      murmur3_32(pointer_cast<const uchar *>(str), strlen(str), 0);
   EXPECT_EQ(2385370181U, hash);
 }
 
 /* Test for empty key. */
 
 TEST(Murmur3, Empty) {
-  uint hash = murmur3_32(nullptr, 0, 0);
+  uint const hash = murmur3_32(nullptr, 0, 0);
   EXPECT_EQ(0U, hash);
 }
 
@@ -60,8 +61,8 @@ TEST(Murmur3, Zeroes) {
   uchar buff[32];
   memset(buff, 0, sizeof(buff));
 
-  uint hash1 = murmur3_32(buff, sizeof(buff) / 2, 0);
-  uint hash2 = murmur3_32(buff, sizeof(buff), 0);
+  uint const hash1 = murmur3_32(buff, sizeof(buff) / 2, 0);
+  uint const hash2 = murmur3_32(buff, sizeof(buff), 0);
   EXPECT_NE(hash1, hash2);
 }
 
@@ -70,8 +71,10 @@ TEST(Murmur3, Zeroes) {
 TEST(Murmur3, Seed) {
   const char *str = "Whether 'tis nobler in the mind to suffer";
 
-  uint hash1 = murmur3_32(pointer_cast<const uchar *>(str), strlen(str), 0);
-  uint hash2 = murmur3_32(pointer_cast<const uchar *>(str), strlen(str), 1);
+  uint const hash1 =
+      murmur3_32(pointer_cast<const uchar *>(str), strlen(str), 0);
+  uint const hash2 =
+      murmur3_32(pointer_cast<const uchar *>(str), strlen(str), 1);
   EXPECT_NE(hash1, hash2);
 }
 

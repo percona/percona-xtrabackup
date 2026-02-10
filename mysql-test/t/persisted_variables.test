@@ -385,6 +385,9 @@ SELECT * FROM performance_schema.persisted_variables ORDER BY 1;
 --echo #                = ON_PERMISSIVE OR ON
 --echo #
 
+# The gtid_mode is ON,set it to OFF first to continue testing this scenario
+--source include/rpl/set_gtid_mode_off.inc
+
 RESET PERSIST;
 SELECT @@gtid_mode;
 SET PERSIST gtid_mode=OFF_PERMISSIVE;

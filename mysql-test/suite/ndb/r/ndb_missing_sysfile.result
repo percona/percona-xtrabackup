@@ -1,0 +1,49 @@
+# Missing files D2
+Node 2 is being restarted
+
+remove_file ndb_2_fs/D2/NDBCNTR/P0.sysfile
+remove_file ndb_2_fs/D2/DBDIH/P0.sysfile
+remove_file ndb_2_fs/D2/DBDICT/P0.SchemaLog
+remove_file ndb_2_fs/D2/DBDICT/T8/S0.TableList
+remove_file ndb_2_fs/D2/DBDIH/S2.FragList
+Database node 2 is being started.
+
+Node 1: STARTED
+Node 2: STARTED
+# Missing files D1
+Node 2 is being restarted
+
+remove_file ndb_2_fs/D1/NDBCNTR/P0.sysfile
+remove_file ndb_2_fs/D1/DBDIH/P0.sysfile
+remove_file ndb_2_fs/D1/DBDICT/P0.SchemaLog
+move_file ndb_2_fs/D1/DBDICT/T8/S0.TableList ndb_2_fs/D2/DBDICT/T8/S0.TableList
+remove_file ndb_2_fs/D1/DBDIH/S2.FragList
+Database node 2 is being started.
+
+Node 1: STARTED
+Node 2: STARTED
+# Empty files D2
+Node 2 is being restarted
+
+empty file ndb_2_fs/D2/NDBCNTR/P0.sysfile
+empty file ndb_2_fs/D2/DBDIH/P0.sysfile
+empty file ndb_2_fs/D2/DBDICT/P0.SchemaLog
+move_file ndb_2_fs/D2/DBDICT/T8/S0.TableList ndb_2_fs/D1/DBDICT/T8/S0.TableList
+empty file ndb_2_fs/D2/DBDICT/T8/S0.TableList
+empty ndb_2_fs/D2/DBDIH/S2.FragList
+Database node 2 is being started.
+
+Node 1: STARTED
+Node 2: STARTED
+# Empty files D1
+Node 2 is being restarted
+
+empty ndb_2_fs/D1/NDBCNTR/P0.sysfile
+empty ndb_2_fs/D1/DBDIH/P0.sysfile
+empty file ndb_2_fs/D1/DBDICT/P0.SchemaLog
+empty file ndb_2_fs/D1/DBDICT/P0.SchemaLog
+empty file ndb_2_fs/D1/DBDIH/S2.FragList
+Database node 2 is being started.
+
+Node 1: STARTED
+Node 2: STARTED

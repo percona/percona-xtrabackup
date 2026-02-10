@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,7 @@
 #include <mysql/components/services/udf_registration.h>
 #include <mysql/plugin.h>
 #include <mysql_version.h>
-#include <stddef.h>
+#include <cstddef>
 
 REQUIRES_SERVICE_PLACEHOLDER(host_application_signal) = nullptr;
 REQUIRES_SERVICE_PLACEHOLDER(udf_registration) = nullptr;

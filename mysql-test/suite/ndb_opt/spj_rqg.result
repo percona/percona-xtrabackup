@@ -3710,13 +3710,12 @@ EXPLAIN
     -> Temporary table with deduplication
         -> Nested loop inner join
             -> Table scan on table1, with pushed condition: (table1.col_int_unique is not null)
-            -> Limit: 1 row(s)
-                -> Single-row index lookup on <subquery2> using <auto_distinct_key> (field3 = table1.col_int_unique)
-                    -> Materialize with deduplication
-                        -> Inner hash join (table1s.col_int_unique = table2s.col_int)
-                            -> Table scan on table1s
-                            -> Hash
-                                -> Index range scan (Multi-Range Read) on table2s using PRIMARY over (2 <= col_int <= 10), with pushed condition: (table2s.col_int between 2 and 10)
+            -> Single-row index lookup on <subquery2> using <auto_distinct_key> (field3 = table1.col_int_unique)
+                -> Materialize with deduplication
+                    -> Inner hash join (table1s.col_int_unique = table2s.col_int)
+                        -> Table scan on table1s
+                        -> Hash
+                            -> Index range scan (Multi-Range Read) on table2s using PRIMARY over (2 <= col_int <= 10), with pushed condition: (table2s.col_int between 2 and 10)
 
 Warnings:
 Note	1003	Can't push table 'table2s' as child, access type 'Range-scan' not implemented

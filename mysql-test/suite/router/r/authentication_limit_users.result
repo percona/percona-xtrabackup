@@ -1,0 +1,92 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+CREATE USER 'u1'@'%' IDENTIFIED BY 'p1';
+CREATE USER 'u2'@'%' IDENTIFIED BY 'p2';
+CREATE USER 'u3'@'%' IDENTIFIED BY 'p3';
+
+
+## I. Create servcices that have basic-mysql authentication:
+#
+## II. Limit the hosts
+#
+
+#
+# I.1
+# Registred SERVICE at path: /svc1
+# Registred DB_SCHEMA at path: /svc1/basic1
+# Registred DB_OBJECT at path: /svc1/basic1/o1
+# Registred AUTH APP at path: /svc1
+# Limit max-attempts per user to "1"
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=
+'{"authentication":{"throttling":{"perAccount":{"maximumAttemptsPerMinute":1}}}}';
+
+#
+# II.1
+# sanity check that basic1 requires auth.
+GET /svc1/basic1/o1
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+# try to auth 'u1'
+GET /svc1/authentication/login
+
+OK
+# Different users may access the server one after another.
+GET /svc1/authentication/login
+
+OK
+# Same users gets throttled and gets asked to retry after 60seconds.
+GET /svc1/authentication/login
+{"message":"Too Many Requests","status":429}
+OK
+# Different users may still access the server.
+GET /svc1/authentication/login
+
+OK
+# wait 60secs to reset the rate-limiter and check that u2 can login again.
+GET /svc1/authentication/login
+
+OK
+# change the maximumAttemptsPerMinute and check if it is applied.
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=
+'{"authentication":{"throttling":{"perAccount":{"maximumAttemptsPerMinute":2},"blockWhenAttemptsExceededInSeconds":2}}}';
+# check that u3 can login.
+GET /svc1/authentication/login
+
+OK
+# check that u3 can still login.
+GET /svc1/authentication/login
+
+OK
+# check that u3 fails with the max-attempts-per-minute and check that 'block-when-attempts...' forwarded to 'Retry-After'. (TSFR_1_3_1)
+GET /svc1/authentication/login
+{"message":"Too Many Requests","status":429}
+OK
+# minimumTimeBetweenRequestsInMs (TSFR_1_2_1)
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=
+'{"authentication":{"throttling":{"perAccount":{"minimumTimeBetweenRequestsInMs":1000}}}}';
+GET /svc1/authentication/login
+
+OK
+GET /svc1/authentication/login
+
+OK
+GET /svc1/authentication/login
+{"message":"Too Many Requests","status":429}
+OK
+GET /svc1/authentication/login
+
+OK
+DROP USER 'u1'@'%';
+DROP USER 'u2'@'%';
+DROP USER 'u3'@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

@@ -1,5 +1,7 @@
 # This test takes long time, so only run it with the --big-test mtr-flag.
 --source include/big_test.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 ################################################################################
 # t/partition_alter1_1_innodb.test                                             #
 #                                                                              #
@@ -44,7 +46,6 @@ SET @max_row = 20;
 let $more_trigger_tests= 0;
 let $more_pk_ui_tests= 0;
 
-
 #------------------------------------------------------------------------------#
 # Engine specific settings and requirements
 
@@ -79,3 +80,6 @@ let $MAX_VALUE= (2147483646);
 #------------------------------------------------------------------------------#
 # Cleanup
 --source suite/parts/inc/partition_cleanup.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc
+

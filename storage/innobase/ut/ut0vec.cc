@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -65,9 +65,9 @@ Resize the vector, currently the vector can only grow and we
 expand the number of elements it can hold by 2 times. */
 void ib_vector_resize(ib_vector_t *vec) /* in: vector */
 {
-  ulint new_total = vec->total * 2;
-  ulint old_size = vec->used * vec->sizeof_value;
-  ulint new_size = new_total * vec->sizeof_value;
+  ulint const new_total = vec->total * 2;
+  ulint const old_size = vec->used * vec->sizeof_value;
+  ulint const new_size = new_total * vec->sizeof_value;
 
   vec->data = static_cast<void *>(vec->allocator->mem_resize(
       vec->allocator, vec->data, old_size, new_size));

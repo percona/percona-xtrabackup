@@ -20,10 +20,17 @@ if (mysqld.global.gr_nodes === undefined) {
 if (mysqld.global.cluster_nodes === undefined) {
   mysqld.global.cluster_nodes = [];
 }
+
+if (mysqld.global.gr_id === undefined) {
+  mysqld.global.gr_id = "uuid";
+}
+
 var options = {
   cluster_type: "gr",
-  gr_id: mysqld.global.gr_id,
-  innodb_cluster_name: "mycluster",
+  innodb_cluster_name: "my-cluster",
+  innodb_cluster_instances: mysqld.global.innodb_cluster_instances,
+  group_replication_members: gr_memberships.gr_members(
+      mysqld.global.gr_node_host, mysqld.global.gr_nodes),
   gr_id: mysqld.global.gr_id,
   metadata_schema_version: mysqld.global.schema_version,
   replication_group_members: gr_memberships.gr_members(
@@ -50,6 +57,9 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_commit",
       "router_select_rest_accounts_credentials_gr_by_uuid",
       "router_clusterset_present",
+      "get_routing_guidelines_version",
+      "get_guidelines_router_info",
+      "get_routing_guidelines",
 
       // to fail account verification in some tests this is not added on
       // purpose
@@ -57,6 +67,7 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_check_member_state",
       "router_select_members_count",
       "router_select_group_membership",
+      "router_update_last_check_in_v2_4",
     ],
     options);
 
@@ -69,9 +80,12 @@ var common_responses_regex = common_stmts.prepare_statement_responses_regex(
       "router_grant_on_pfs_db",
       "router_grant_on_routers",
       "router_grant_on_v2_routers",
+      "router_grant_on_router_stats",
       "router_update_routers_in_metadata",
       "router_update_router_options_in_metadata",
       "router_select_config_defaults_stored_gr_cluster",
+      "router_update_local_cluster_in_metadata",
+      "router_update_attributes_v2",
     ],
     options);
 

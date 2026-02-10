@@ -25,6 +25,7 @@
 --let $rpl_connection_name= server1
 --source include/connection.inc
 SET sql_log_bin=0;
+call mtr.add_suppression("The group replication applier thread has received KILL request.");
 call mtr.add_suppression("Fatal error during execution on the Applier process of Group Replication. The server will now leave the group.");
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
 call mtr.add_suppression("The server was automatically set into offline mode after an error was detected.");
@@ -69,6 +70,14 @@ INSERT INTO t1 VALUES (1);
 
 --let $wait_condition=SELECT COUNT(*)=0 FROM performance_schema.threads WHERE NAME="thread/group_rpl/THD_applier_module_receiver"
 --source include/wait_condition.inc
+
+# Assert that the expected entry is in the error log during KILL command
+--let $assert_text= Assert that the expected entry is in the error log during KILL command
+--let $assert_file=$MYSQLTEST_VARDIR/log/mysqld.1.err
+--let $assert_only_after = Received SQL KILL from user
+--let $assert_select= The group replication applier thread has received KILL request
+--let $assert_count= 1
+--source include/assert_grep.inc
 
 
 --echo

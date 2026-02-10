@@ -90,6 +90,98 @@ insert into expect_full_reduce values (+1, +1, +1);
 --error ER_NO_SUCH_TABLE
 select a-b, a+b, -a, -b, +a, +b from expect_unchanged;
 
+# Test WHERE clauses with comparison operators and negative numbers
+# All of these should produce the same digest per comparison operator
+--error ER_NO_SUCH_TABLE
+select * from expect_where_eq where a = 1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_eq where a = -1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_eq where a = +1;
+
+--error ER_NO_SUCH_TABLE
+select * from expect_where_ne where a != 1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_ne where a != -1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_ne where a <> +1;
+
+--error ER_NO_SUCH_TABLE
+select * from expect_where_lt where a < 1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_lt where a < -1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_lt where a < +1;
+
+--error ER_NO_SUCH_TABLE
+select * from expect_where_gt where a > 1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_gt where a > -1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_gt where a > +1;
+
+--error ER_NO_SUCH_TABLE
+select * from expect_where_le where a <= 1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_le where a <= -1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_le where a <= +1;
+
+--error ER_NO_SUCH_TABLE
+select * from expect_where_ge where a >= 1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_ge where a >= -1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_ge where a >= +1;
+
+--error ER_NO_SUCH_TABLE
+select * from expect_where_spaceship where a <=> 1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_spaceship where a <=> -1;
+--error ER_NO_SUCH_TABLE
+select * from expect_where_spaceship where a <=> +1;
+
+# Test CASE WHEN THEN with unary operators
+# All three should produce the same digest
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then 1 end from expect_case_then;
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then -1 end from expect_case_then;
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then +1 end from expect_case_then;
+
+# Test CASE WHEN THEN ELSE with unary operators in THEN clause
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then 1 else 0 end from expect_case_then_else1;
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then -1 else 0 end from expect_case_then_else1;
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then +1 else 0 end from expect_case_then_else1;
+
+# Test CASE WHEN THEN ELSE with unary operators in ELSE clause
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then 0 else 1 end from expect_case_else;
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then 0 else -1 end from expect_case_else;
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then 0 else +1 end from expect_case_else;
+
+# Test CASE WHEN THEN ELSE with unary operators in both clauses
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then 1 else 2 end from expect_case_both;
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then -1 else -2 end from expect_case_both;
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then +1 else +2 end from expect_case_both;
+
+# Test nested CASE statements
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then case when b > 0 then 1 else 2 end else 3 end from expect_nested_case;
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then case when b > 0 then -1 else -2 end else -3 end from expect_nested_case;
+--error ER_NO_SUCH_TABLE
+select case when a > 0 then case when b > 0 then +1 else +2 end else +3 end from expect_nested_case;
+
 --enable_query_log
 
 SELECT SCHEMA_NAME, DIGEST_TEXT, COUNT_STAR

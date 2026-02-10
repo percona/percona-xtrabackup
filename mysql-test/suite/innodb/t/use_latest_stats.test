@@ -1,0 +1,123 @@
+--source include/have_debug.inc
+
+# Disable hypergraph optimizer
+--disable_query_log
+SET @optimizer_switch_global = @@global.optimizer_switch,
+    @optimizer_switch_local = @@session.optimizer_switch;
+--enable_query_log
+--source include/disable_hypergraph.inc
+
+# Check the latest records_per_key statistics are used for table with only secondary indexes
+
+CREATE TABLE t1 (a INT, b INT, KEY(a), KEY(b));
+
+SET information_schema_stats_expiry = 0; # Do not cache table statistics in information_schema.table. Always give the latest value.
+SET GLOBAL DEBUG='+d,syncpoint_completed_stats_update';
+INSERT t1 VALUES (1, 1), (1, 2);
+SET DEBUG_SYNC='now WAIT_FOR reached_completed_stats_update'; # wait for background thread to update stats
+SET DEBUG_SYNC='now SIGNAL continue_completed_stats_update'; # tell stats background thread to continue
+SET GLOBAL DEBUG='-d,syncpoint_completed_stats_update';
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t1;
+SET DEBUG='-d,print_records_per_key';
+ANALYZE TABLE t1;
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t1;
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+TRUNCATE t1;
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t1;
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+
+# After analyze they are up-to-date.
+INSERT t1 VALUES (1, 1), (1, 2);
+ANALYZE TABLE t1;
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t1;
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+
+DROP TABLE t1;
+
+
+
+# Check the latest records_per_key statistics are used for table primary key and secondary index and query plan
+
+CREATE TABLE t1 (a INT PRIMARY KEY AUTO_INCREMENT, b INT, c INT, KEY(b));
+
+# Temporarily turning off auto statistics recalculation to prepare statistics that are off.
+SET GLOBAL innodb_stats_auto_recalc = OFF;
+INSERT t1 VALUES (1, 1, 1), (2, 1, 1), (3, 1, 1), (4, 1, 1), (5, 1, 1), (6, 1, 1), (7, 1, 1), (8, 1, 1), (9, 1, 1), (10, 1, 1), (11, 1, 1), (12, 1, 1), (13, 1, 1), (14, 1, 1), (15, 1, 1), (16, 1, 1);
+ANALYZE TABLE t1;
+--replace_regex /  \(cost=.*//
+EXPLAIN ANALYZE FORMAT=TREE SELECT * FROM t1 WHERE b = 1;
+TRUNCATE t1; # Clean statistics
+INSERT t1 VALUES (1, 1, 1), (2, 1, 1), (3, 3, 3), (4, 3, 3), (5, 5, 5), (6, 5, 5), (7, 7, 7), (8, 7, 7);
+SET GLOBAL innodb_stats_auto_recalc = ON; # Turn on the automatic statistics recalculation.
+ALTER TABLE t1 STATS_AUTO_RECALC = 1;
+SET GLOBAL DEBUG='+d,syncpoint_completed_stats_update';
+INSERT t1 VALUES (9, 9, 9), (10, 10, 10); # Add a few more to trigger statistics recalculation.
+SET DEBUG_SYNC='now WAIT_FOR reached_completed_stats_update'; # wait for background thread to update stats
+SET DEBUG_SYNC='now SIGNAL continue_completed_stats_update'; # tell stats background thread to continue
+SET GLOBAL DEBUG='-d,syncpoint_completed_stats_update';
+--replace_regex /  \(cost=.*//
+EXPLAIN ANALYZE FORMAT=TREE SELECT * FROM t1 WHERE b = 1;
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t1;
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+DROP TABLE t1;
+
+
+
+# Check statistics for partition table
+CREATE TABLE t2 (a INT, b INT, KEY(a), KEY(b))
+PARTITION BY RANGE (a) (
+  PARTITION p0 VALUES LESS THAN (4),
+  PARTITION p1 VALUES LESS THAN MAXVALUE
+);
+
+SET GLOBAL DEBUG='+d,syncpoint_completed_stats_update';
+INSERT t2 VALUES (1, 1), (1, 2);
+SET DEBUG_SYNC='now WAIT_FOR reached_completed_stats_update'; # wait for background thread to update stats
+SET DEBUG_SYNC='now SIGNAL continue_completed_stats_update'; # tell stats background thread to continue
+SET GLOBAL DEBUG='-d,syncpoint_completed_stats_update';
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t2;
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+ANALYZE TABLE t2;
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t2;
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+TRUNCATE t2;
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t2;
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+
+DROP TABLE t2;
+
+
+
+# clean up
+SET DEBUG='-d,print_records_per_key';
+SET information_schema_stats_expiry = DEFAULT;
+SET GLOBAL innodb_stats_auto_recalc = DEFAULT;
+
+# Restore optimizer configuration
+--disable_query_log
+SET @@session.optimizer_switch = @optimizer_switch_local,
+    @@global.optimizer_switch = @optimizer_switch_global;
+--enable_query_log

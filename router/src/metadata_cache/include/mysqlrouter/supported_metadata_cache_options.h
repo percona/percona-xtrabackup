@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -47,6 +47,7 @@ static constexpr std::array metadata_cache_supported_options{
     "ssl_capath",
     "ssl_crl",
     "ssl_crlpath",
+    "close_connection_after_refresh",
 };
 
 #endif /* METADATA_CACHE_SUPPORTED_OPTIONS_INCLUDED */

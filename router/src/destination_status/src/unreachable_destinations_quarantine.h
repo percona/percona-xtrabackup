@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,9 @@
 #include <mutex>
 #include <vector>
 
-#include "mysql/harness/net_ts/internet.h"
+#include "mysql/harness/destination.h"
+#include "mysql/harness/destination_endpoint.h"
+#include "mysql/harness/destination_socket.h"
 #include "mysql/harness/net_ts/io_context.h"
 #include "mysql/harness/net_ts/timer.h"
 #include "mysqlrouter/destination_status_types.h"
@@ -91,7 +93,7 @@ class UnreachableDestinationsQuarantine {
    * @returns true if the destination got added to the quarantine, false
    * otherwise
    */
-  bool report_connection_result(const mysql_harness::TCPAddress &dest,
+  bool report_connection_result(const mysql_harness::Destination &dest,
                                 bool success);
 
   /**
@@ -100,7 +102,7 @@ class UnreachableDestinationsQuarantine {
    * @param[in] dest Unreachable destination candidate address.
    */
   void remove_destination_candidate_from_quarantine(
-      const mysql_harness::TCPAddress &dest);
+      const mysql_harness::Destination &dest);
 
   /**
    * Query the quarantined destination candidates set and check if the given
@@ -109,7 +111,7 @@ class UnreachableDestinationsQuarantine {
    * @param[in] dest Destination candidate address.
    * @returns true if the destination candidate is quarantined, false otherwise.
    */
-  bool is_quarantined(const mysql_harness::TCPAddress &dest);
+  bool is_quarantined(const mysql_harness::Destination &dest);
 
   /**
    * Refresh the quarantined destination candidates list on metadata refresh.
@@ -127,9 +129,9 @@ class UnreachableDestinationsQuarantine {
    * @param[in] available_destinations List of destination candidates that are
    *            available for the given routing plugin after metadata refresh.
    */
-  void refresh_quarantine(
-      const std::string &instance_name, const bool nodes_changed_on_md_refresh,
-      const std::vector<AvailableDestination> &available_destinations);
+  void refresh_quarantine(const std::string &instance_name,
+                          const bool nodes_changed_on_md_refresh,
+                          const AllowedNodes &available_destinations);
 
   /**
    * Stop all async operations and clear the quarantine list.
@@ -145,10 +147,10 @@ class UnreachableDestinationsQuarantine {
    * @param[in] dest Destination candidate address.
    */
   void quarantine_handler(const std::error_code &ec,
-                          const mysql_harness::TCPAddress &dest);
+                          const mysql_harness::Destination &dest);
 
   void add_destination_candidate_to_quarantine(
-      const mysql_harness::TCPAddress &dest);
+      const mysql_harness::Destination &dest);
 
   /**
    * Go through all routing instances and check if there are routing plugins
@@ -165,7 +167,7 @@ class UnreachableDestinationsQuarantine {
    * @returns List of referencing routing instance names
    */
   std::vector<std::string> get_referencing_routing_instances(
-      const mysql_harness::TCPAddress &destination);
+      const mysql_harness::Destination &destination);
 
   /**
    * On metadata refresh we got a destination candidates list that is reported
@@ -201,17 +203,17 @@ class UnreachableDestinationsQuarantine {
    */
   struct Unreachable_destination_candidate {
     Unreachable_destination_candidate(
-        net::io_context *io_ctx, const mysql_harness::TCPAddress &addr,
+        net::io_context *io_ctx, mysql_harness::Destination dest,
         std::vector<std::string> referencing_instances,
         std::chrono::seconds quarantine_interval,
         std::function<void()> on_delete, std::function<void()> on_connect_ok)
         : io_ctx_{io_ctx},
-          address_{addr},
+          dest_{std::move(dest)},
           referencing_routing_instances_{std::move(referencing_instances)},
           quarantine_interval_{quarantine_interval},
           timer_{*io_ctx},
-          on_delete_{on_delete},
-          on_connect_ok_{on_connect_ok} {}
+          on_delete_{std::move(on_delete)},
+          on_connect_ok_{std::move(on_connect_ok)} {}
 
     ~Unreachable_destination_candidate();
 
@@ -236,17 +238,16 @@ class UnreachableDestinationsQuarantine {
     stdx::expected<void, std::error_code> connected();
 
     net::io_context *io_ctx_;
-    mysql_harness::TCPAddress address_;
+    mysql_harness::Destination dest_;
     std::vector<std::string> referencing_routing_instances_;
     std::chrono::seconds quarantine_interval_;
     net::steady_timer timer_;
 
-    using server_protocol_type = net::ip::tcp;
-
-    net::ip::tcp::resolver::results_type endpoints_;
-    net::ip::tcp::resolver::results_type::iterator endpoints_it_;
-    server_protocol_type::socket server_sock_{*io_ctx_};
-    server_protocol_type::endpoint server_endpoint_;
+    std::vector<mysql_harness::DestinationEndpoint> endpoints_;
+    decltype(endpoints_)::iterator endpoints_it_;
+    mysql_harness::DestinationSocket server_sock_{
+        mysql_harness::DestinationSocket::TcpType{*io_ctx_}};
+    mysql_harness::DestinationEndpoint server_endpoint_;
 
     bool connect_timed_out_{false};
     bool connected_{false};
@@ -272,7 +273,7 @@ class UnreachableDestinationsQuarantine {
   std::mutex quarantine_mutex_;
   std::vector<std::shared_ptr<Unreachable_destination_candidate>>
       quarantined_destination_candidates_;
-  std::map<mysql_harness::TCPAddress, uint32_t> destination_errors_;
+  std::map<mysql_harness::Destination, uint32_t> destination_errors_;
   std::mutex destination_errors_mutex_;
   std::mutex unreachable_destinations_init_mutex_;
   std::mutex routing_instances_mutex_;

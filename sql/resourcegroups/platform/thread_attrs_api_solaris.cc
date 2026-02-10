@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,6 @@
 #include <sys/processor.h>
 #include <sys/procset.h>
 #include <sys/types.h>
-#include "sys/pset.h"
 
 #include "my_dbug.h"
 #include "my_sys.h"
@@ -146,24 +145,6 @@ bool set_thread_priority(int, my_thread_os_id_t) {
   DBUG_TRACE;
   // Setting thread priority on solaris is not supported.
   return false;
-}
-
-uint32_t num_vcpus_using_affinity() {
-  uint32_t num_vcpus = 0;
-  pid_t pid = getpid();
-  psetid_t pset = PS_NONE;
-
-  if (pset_bind(PS_QUERY, P_PID, pid, &pset) == 0 && pset != PS_NONE) {
-    pset_info(pset, nullptr, &num_vcpus, nullptr);
-  }
-  return num_vcpus;
-}
-
-uint32_t num_vcpus_using_config() {
-  uint32_t num_vcpus = 0;
-
-  pset_info(P_MYID, nullptr, &num_vcpus, nullptr);
-  return num_vcpus;
 }
 
 bool can_thread_priority_be_set() { return false; }

@@ -1,7 +1,7 @@
 #ifndef MB_WC_INCLUDED
 #define MB_WC_INCLUDED
 
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,7 +57,7 @@
 
 #include <string.h>
 
-#include "my_compiler.h"
+#include "my_compiler.h"  // for ALWAYS_INLINE
 #include "my_config.h"
 #include "mysql/strings/m_ctype.h"
 

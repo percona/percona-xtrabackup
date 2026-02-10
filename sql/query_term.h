@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -619,6 +619,23 @@ class Query_term_set_op : public Query_term {
                           Query_result *common_result, ulonglong added_options,
                           ulonglong removed_options,
                           ulonglong create_option) override;
+
+  /**
+    Prepare "type holder" items for a query term. Used when query term is
+    used in an outer context.
+
+    @param thd                thread handle
+    @param qe                 containing query expression
+    @param contributing_children number of query terms part of this query term
+    @param visible_columns    number of columns in each contributing query term
+    @param columns_nullable   array with nullable information to be included
+
+    @returns false for success, true for error (OOM, incompatible types)
+  */
+  bool prepare_type_holders(THD *thd, Query_expression *qe,
+                            size_t contributing_children,
+                            size_t visible_columns,
+                            Mem_root_array<bool> &columns_nullable);
 
   bool optimize_query_term(THD *thd, Query_expression *qe) override;
 

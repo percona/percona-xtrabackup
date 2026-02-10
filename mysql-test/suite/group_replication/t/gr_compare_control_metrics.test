@@ -75,6 +75,11 @@
 --echo #Bootstrap and start GR on M1
 --let $rpl_connection_name= server1
 --source include/connection.inc
+
+--let $assert_text = 'Gr_empty_consensus_proposals_count value must be 0'
+--let $assert_cond = [SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME="Gr_empty_consensus_proposals_count", VARIABLE_VALUE, 1] = 0
+--source include/assert.inc
+
 --source include/start_and_bootstrap_group_replication.inc
 
 --echo #Start GR on M2
@@ -104,8 +109,8 @@ SET SESSION sql_log_bin = 1;
 --let $rpl_connection_name = server1
 --source include/connection.inc
 
---let $assert_text = 'Gr_empty_consensus_proposals_count Value should be 0'
---let $assert_cond = [SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME="Gr_empty_consensus_proposals_count", VARIABLE_VALUE, 1] = 0
+--let $assert_text = 'Gr_empty_consensus_proposals_count value must be greater than 0'
+--let $assert_cond = [SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME="Gr_empty_consensus_proposals_count", VARIABLE_VALUE, 1] > 0
 --source include/assert.inc
 
 --let $rpl_connection_name = server2
@@ -218,8 +223,8 @@ DROP TABLE test.t1;
 --let $func = DATACOUNTEQUAL
 --source ../mysql-test/suite/group_replication/include/check_metrics.inc
 
---let $assert_text = 'Gr_empty_consensus_proposals_count Value should be 0'
---let $assert_cond = [SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME="Gr_empty_consensus_proposals_count", VARIABLE_VALUE, 1] = 0
+--let $assert_text = 'Gr_empty_consensus_proposals_count value must be greater than 0'
+--let $assert_cond = [SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME="Gr_empty_consensus_proposals_count", VARIABLE_VALUE, 1] > 0
 --source include/assert.inc
 
 --echo #Gr_data_messages_* Metrics value should not increase on M2

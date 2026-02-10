@@ -25,7 +25,6 @@
 #
 # === Parameters ===
 #
-# $is_mts    1 if MTS is enabled
 
 --source include/have_debug.inc
 --source include/have_debug_sync.inc
@@ -47,10 +46,8 @@ CREATE TABLE t1 (a INT UNIQUE);
 --source include/rpl/sync_to_replica.inc
 
 # add suppressions for when MTS is enabled
-if ($is_mts) {
-  CALL mtr.add_suppression(".*Replica SQL for channel 'channel_1': worker thread retried transaction 10 time.*");
-  CALL mtr.add_suppression(".*The replica coordinator and worker threads are stopped, possibly leaving data in inconsistent state.*");
-}
+CALL mtr.add_suppression(".*Replica SQL for channel 'channel_1': worker thread retried transaction 10 time.*");
+CALL mtr.add_suppression(".*The replica coordinator and worker threads are stopped, possibly leaving data in inconsistent state.*");
 
 # check that the values are empty as expected
 --let $ps_table = performance_schema.replication_applier_status_by_worker

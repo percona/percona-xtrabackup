@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2024, Oracle and/or its affiliates.
+Copyright (c) 1994, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -542,15 +542,20 @@ int64_t btr_estimate_n_rows_in_range(dict_index_t *index,
 /** Estimates the number of different key values in a given index, for
  each n-column prefix of the index where 1 <= n <=
  dict_index_get_n_unique(index). The estimates are stored in the array
- index->stat_n_diff_key_vals[] (indexed 0..n_uniq-1) and the number of pages
- that were sampled is saved in index->stat_n_sample_sizes[]. If
+ index_stats->n_diff_key_vals[] (indexed 0..n_uniq-1) and the number of
+ pages that were sampled is saved in index_stats->n_sample_sizes[]. If
  innodb_stats_method is nulls_ignored, we also record the number of non-null
  values for each prefix and stored the estimates in array
- index->stat_n_non_null_key_vals.
+ index_stats->n_non_null_key_vals.
+ @param[in]     index
+                    Index for which statistics will be computed.
+ @param[out]    index_stats
+                    Computed index statistics. Writes are not synchronised.
+                    Object should be exclusively owned by the caller.
  @return true if the index is available and we get the estimated numbers,
  false if the index is unavailable. */
-bool btr_estimate_number_of_different_key_vals(
-    dict_index_t *index); /*!< in: index */
+bool btr_estimate_number_of_different_key_vals(dict_index_t *index,
+                                               dict_index_stats_t *index_stats);
 
 /** Copies an externally stored field of a record to mem heap.
 @param[in]      trx             the trx doing the operation.

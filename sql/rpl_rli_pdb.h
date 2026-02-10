@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,42 +73,9 @@ extern ulong w_rr;
   T-event event that Terminates a group (a transaction)
 */
 
-/* Assigned Partition Hash (APH) entry */
-struct db_worker_hash_entry {
-  uint db_len;
-  const char *db;
-  Slave_worker *worker;
-  /*
-    The number of transaction pending on this database.
-    This should only be modified under the lock slave_worker_hash_lock.
-   */
-  long usage;
-  /*
-    The list of temp tables belonging to @ db database is
-    attached to an assigned @c worker to become its thd->temporary_tables.
-    The list is updated with every ddl incl CREATE, DROP.
-    It is removed from the entry and merged to the coordinator's
-    thd->temporary_tables in case of events: slave stops, APH oversize.
-  */
-  TABLE *volatile temporary_tables;
-
-  /* todo: relax concurrency to mimic record-level locking.
-     That is to augmenting the entry with mutex/cond pair
-     pthread_mutex_t
-     pthread_cond_t
-     timestamp updated_at; */
-};
-
-bool init_hash_workers(Relay_log_info *rli);
-void destroy_hash_workers(Relay_log_info *);
-Slave_worker *map_db_to_worker(const char *dbname, Relay_log_info *rli,
-                               db_worker_hash_entry **ptr_entry,
-                               bool need_temp_tables, Slave_worker *w);
 Slave_worker *get_least_occupied_worker(Relay_log_info *rli,
                                         Slave_worker_array *workers,
                                         Log_event *ev);
-
-#define SLAVE_INIT_DBS_IN_GROUP 4  // initial allocation for CGEP dynarray
 
 struct Slave_job_group {
   Slave_job_group() = default;
@@ -520,9 +487,6 @@ class Slave_worker : public Relay_log_info {
   mysql_cond_t jobs_cond;   // condition variable for the jobs queue
   Relay_log_info *c_rli;    // pointer to Coordinator's rli
 
-  Prealloced_array<db_worker_hash_entry *, SLAVE_INIT_DBS_IN_GROUP>
-      curr_group_exec_parts;  // Current Group Executed Partitions
-
 #ifndef NDEBUG
   bool curr_group_seen_sequence_number;  // is set to true about starts_group()
 #endif
@@ -539,10 +503,6 @@ class Slave_worker : public Relay_log_info {
   ulonglong
       last_groups_assigned_index;  // index of previous group assigned to worker
   std::atomic<int> curr_jobs;      // number of active  assignments
-  // number of partitions allocated to the worker at point in time
-  long usage_partition;
-  // symmetric to rli->mts_end_group_sets_max_dbs
-  bool end_group_sets_max_dbs;
 
   volatile bool relay_log_change_notified;  // Coord sets and resets, W can read
   volatile bool checkpoint_notified;        // Coord sets and resets, W can read
@@ -586,7 +546,7 @@ class Slave_worker : public Relay_log_info {
   /// @brief Copies data and sets the metric collection flag
   /// @param other the instance to be copied
   void copy_worker_metrics(Slave_worker *other) {
-    m_worker_metrics.copy_stats_from(other->m_worker_metrics);
+    m_worker_metrics = other->m_worker_metrics;
     m_is_worker_metric_collection_enabled =
         other->m_is_worker_metric_collection_enabled;
   }
@@ -1004,7 +964,6 @@ class Slave_worker : public Relay_log_info {
                              const char *start_event_relay_log_name,
                              my_off_t end_relay_pos,
                              const char *end_event_relay_log_name);
-  void assign_partition_db(Log_event *ev);
 
  public:
   /**
@@ -1027,7 +986,6 @@ bool handle_slave_worker_stop(Slave_worker *worker, Slave_job_item *job_item);
 bool set_max_updated_index_on_stop(Slave_worker *worker,
                                    Slave_job_item *job_item);
 
-TABLE *mts_move_temp_table_to_entry(TABLE *, THD *, db_worker_hash_entry *);
 TABLE *mts_move_temp_tables_to_thd(THD *, TABLE *);
 // Auxiliary function
 TABLE *mts_move_temp_tables_to_thd(THD *, TABLE *, enum_mts_parallel_type);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@
 
 #include "my_config.h"
 
-#include <stdio.h>
+#include <cstdio>
 
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
@@ -181,22 +181,21 @@ bool str_set_decimal(uint mask, const my_decimal *val, String *str,
     my_decimal2string(mask, val, str);
     str->set_charset(cs);
     return false;
-  } else {
-    /*
-      For ASCII-incompatible character sets (like UCS2) we
-      call my_decimal2string() on a temporary buffer first,
-      and then convert the result to the target character
-      with help of str->copy().
-    */
-    StringBuffer<DECIMAL_MAX_STR_LENGTH + 1> tmp(&my_charset_latin1);
-    if (static_cast<int>(decimals) < val->frac) {
-      my_decimal_round(E_DEC_FATAL_ERROR, val, decimals, false, &dec_buf);
-      val = &dec_buf;
-    }
-    my_decimal2string(mask, val, &tmp);
-    uint errors;
-    return str->copy(tmp.ptr(), tmp.length(), &my_charset_latin1, cs, &errors);
   }
+  /*
+  For ASCII-incompatible character sets (like UCS2) we
+  call my_decimal2string() on a temporary buffer first,
+  and then convert the result to the target character
+  with help of str->copy().
+  */
+  StringBuffer<DECIMAL_MAX_STR_LENGTH + 1> tmp(&my_charset_latin1);
+  if (static_cast<int>(decimals) < val->frac) {
+    my_decimal_round(E_DEC_FATAL_ERROR, val, decimals, false, &dec_buf);
+    val = &dec_buf;
+  }
+  my_decimal2string(mask, val, &tmp);
+  uint errors;
+  return str->copy(tmp.ptr(), tmp.length(), &my_charset_latin1, cs, &errors);
 }
 
 /*
@@ -319,14 +318,17 @@ my_decimal *date2my_decimal(const MYSQL_TIME *ltime, my_decimal *dec) {
 
 /**
   Convert time value to my_decimal in format hhmmss.ffffff
-  @param ltime  Date value to convert from.
+  @param time   Date value to convert from.
   @param dec    Decimal value to convert to.
 */
-my_decimal *time2my_decimal(const MYSQL_TIME *ltime, my_decimal *dec) {
+my_decimal *time2my_decimal(const Time_val *time, my_decimal *dec) {
   lldiv_t lld;
-  lld.quot = TIME_to_ulonglong_time(*ltime);
-  lld.rem = (longlong)ltime->second_part * 1000;
-  return lldiv_t2my_decimal(&lld, ltime->neg, dec);
+  lld.quot = time->to_int_truncated();
+  if (time->is_negative()) {
+    lld.quot = -lld.quot;
+  }
+  lld.rem = (longlong)time->microsecond() * 1000;
+  return lldiv_t2my_decimal(&lld, time->is_negative(), dec);
 }
 
 /**

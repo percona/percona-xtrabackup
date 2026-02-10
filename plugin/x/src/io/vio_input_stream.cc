@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -141,9 +141,7 @@ bool Vio_input_stream::Skip(int count) {
   return true;
 }
 
-Vio_input_stream::gint64 Vio_input_stream::ByteCount() const {
-  return m_bytes_count;
-}
+int64_t Vio_input_stream::ByteCount() const { return m_bytes_count; }
 
 bool Vio_input_stream::peek_data(const void **data, int *size) {
   if (m_buffer_data_pos < m_buffer_data_count) {

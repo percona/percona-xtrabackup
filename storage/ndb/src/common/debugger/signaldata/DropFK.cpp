@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ bool printDROP_FK_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const DropFKReq *sig = (const DropFKReq *)theData;
+  const auto *sig = (const DropFKReq *)theData;
   fprintf(output, " clientData: %u", sig->clientData);
   fprintf(output, " clientRef: 0x%x", sig->clientRef);
   fprintf(output, " requestInfo: 0x%x", sig->requestInfo);
@@ -53,7 +53,7 @@ bool printDROP_FK_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const DropFKRef *sig = (const DropFKRef *)theData;
+  const auto *sig = (const DropFKRef *)theData;
   fprintf(output, " clientData: %u", sig->senderData);
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " transId: 0x%x", sig->transId);
@@ -73,7 +73,7 @@ bool printDROP_FK_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const DropFKConf *sig = (const DropFKConf *)theData;
+  const auto *sig = (const DropFKConf *)theData;
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, " senderRef: 0%x", sig->senderRef);
   fprintf(output, " transId: 0x%x", sig->transId);

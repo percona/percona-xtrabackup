@@ -63,11 +63,9 @@ call mtr.add_suppression("Cannot execute the current event group in the parallel
 
 --source include/rpl/stop_replica.inc
 
-SET @save_replica_parallel_type = @@GLOBAL.replica_parallel_type;
 SET @save_replica_parallel_workers = @@GLOBAL.replica_parallel_workers;
 SET @save_replica_transaction_retries = @@GLOBAL.replica_transaction_retries;
 
-SET GLOBAL replica_parallel_type = LOGICAL_CLOCK;
 SET GLOBAL replica_parallel_workers = 3;
 SET GLOBAL replica_transaction_retries = 0;
 
@@ -354,7 +352,6 @@ FLUSH LOGS;
 --source include/rpl/sync_to_replica.inc
 --source include/rpl/stop_replica.inc
 
-SET @@GLOBAL.replica_parallel_type= @save_replica_parallel_type;
 --disable_warnings
 SET @@GLOBAL.replica_parallel_workers= @save_replica_parallel_workers;
 --enable_warnings

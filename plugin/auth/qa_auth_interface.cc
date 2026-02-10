@@ -1,4 +1,4 @@
-/*  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
 
 #include <mysql/client_plugin.h>
 #include <mysql/plugin_auth.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 /**
   first byte of the question string is the question "type".
@@ -54,12 +54,12 @@ static int qa_auth_interface(MYSQL_PLUGIN_VIO *vio,
   info->password_used = PASSWORD_USED_YES;
 
   /* fail if the password is wrong */
-  if (strcmp((const char *)pkt, info->auth_string)) return CR_ERROR;
+  if (strcmp((const char *)pkt, info->auth_string) != 0) return CR_ERROR;
 
   /* Check the contents of components of info */
   if (strcmp(info->user_name, "qa_test_1_user") == 0) {
     if (info->user_name_length != 14) err = CR_ERROR;
-    if (strcmp(info->auth_string, "qa_test_1_dest")) err = CR_ERROR;
+    if (strcmp(info->auth_string, "qa_test_1_dest") != 0) err = CR_ERROR;
     if (info->auth_string_length != 14) err = CR_ERROR;
     /*
       To be set by the plugin
@@ -69,7 +69,7 @@ static int qa_auth_interface(MYSQL_PLUGIN_VIO *vio,
              err= CR_ERROR;
     */
     if (info->password_used != PASSWORD_USED_YES) err = CR_ERROR;
-    if (strcmp(info->host_or_ip, "localhost")) err = CR_ERROR;
+    if (strcmp(info->host_or_ip, "localhost") != 0) err = CR_ERROR;
     if (info->host_or_ip_length != 9) err = CR_ERROR;
   }
   /* Assign values to the components of info even if not intended and watch the

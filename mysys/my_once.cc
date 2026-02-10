@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,12 +32,11 @@
 
 /* Not MT-SAFE */
 
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
 
-#include "my_alloc.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_pointer_arithmetic.h"
@@ -99,13 +98,13 @@ void *my_once_alloc(size_t Size, myf MyFlags) {
 
 char *my_once_strdup(const char *src, myf myflags) {
   const size_t len = strlen(src) + 1;
-  uchar *dst = static_cast<uchar *>(my_once_alloc(len, myflags));
+  auto *dst = static_cast<uchar *>(my_once_alloc(len, myflags));
   if (dst) memcpy(dst, src, len);
   return (char *)dst;
 }
 
 void *my_once_memdup(const void *src, size_t len, myf myflags) {
-  uchar *dst = static_cast<uchar *>(my_once_alloc(len, myflags));
+  auto *dst = static_cast<uchar *>(my_once_alloc(len, myflags));
   if (dst) memcpy(dst, src, len);
   return dst;
 }
@@ -117,7 +116,7 @@ void *my_once_memdup(const void *src, size_t len, myf myflags) {
     my_once_free()
 */
 
-void my_once_free(void) {
+void my_once_free() {
   USED_MEM *next, *old;
   DBUG_TRACE;
 

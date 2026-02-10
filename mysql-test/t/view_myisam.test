@@ -1,6 +1,10 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
+
 #
 # LOAD DATA with view and CHECK OPTION
 #
@@ -140,3 +144,5 @@ RENAME TABLES t5 TO t1, v2 TO v1, t3 TO t4;
 SELECT * FROM v2;
 DROP VIEW v2;
 DROP TABLES t2, t3, t4, t5;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

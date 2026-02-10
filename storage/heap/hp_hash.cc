@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,8 @@
 
 /* The hash functions used for saving keys */
 
-#include <inttypes.h>
 #include <sys/types.h>
+#include <cinttypes>
 
 #include <algorithm>
 #include <cmath>
@@ -220,7 +220,6 @@ void hp_movelink(HASH_INFO *pos, HASH_INFO *next_link, HASH_INFO *newlink) {
     old_link = next_link;
   } while ((next_link = next_link->next_key) != pos);
   old_link->next_key = newlink;
-  return;
 }
 
 /* Calc hashvalue for a key */
@@ -268,7 +267,7 @@ uint64 hp_hashnr(HP_KEYDEF *keydef, const uchar *key) {
     } else if (seg->type == HA_KEYTYPE_VARTEXT1) /* Any VARCHAR segments */
     {
       const CHARSET_INFO *cs = seg->charset;
-      uint pack_length = 2; /* Key packing is constant */
+      uint const pack_length = 2; /* Key packing is constant */
       size_t length = uint2korr(pos);
       if (cs->mbmaxlen > 1 && (seg->flag & HA_PART_KEY_SEG)) {
         size_t char_length;
@@ -329,7 +328,7 @@ uint64 hp_rec_hashnr(HP_KEYDEF *keydef, const uchar *rec) {
     } else if (seg->type == HA_KEYTYPE_VARTEXT1) /* Any VARCHAR segments */
     {
       const CHARSET_INFO *cs = seg->charset;
-      uint pack_length = seg->bit_start;
+      uint const pack_length = seg->bit_start;
       size_t length = (pack_length == 1 ? (uint)*pos : uint2korr(pos));
       if (cs->mbmaxlen > 1 && (seg->flag & HA_PART_KEY_SEG)) {
         size_t char_length;
@@ -381,7 +380,7 @@ int hp_rec_key_cmp(HP_KEYDEF *keydef, const uchar *rec1, const uchar *rec2) {
       const uchar *pos1 = rec1 + seg->start;
       const uchar *pos2 = rec2 + seg->start;
       if (cs->mbmaxlen > 1 && (seg->flag & HA_PART_KEY_SEG)) {
-        size_t char_length = seg->length / cs->mbmaxlen;
+        size_t const char_length = seg->length / cs->mbmaxlen;
         char_length1 = my_charpos(cs, pos1, pos1 + seg->length, char_length);
         char_length1 = std::min(char_length1, size_t(seg->length));
         char_length2 = my_charpos(cs, pos2, pos2 + seg->length, char_length);
@@ -409,7 +408,7 @@ int hp_rec_key_cmp(HP_KEYDEF *keydef, const uchar *rec1, const uchar *rec2) {
       const uchar *pos1 = rec1 + seg->start;
       const uchar *pos2 = rec2 + seg->start;
       uint char_length1, char_length2;
-      uint pack_length = seg->bit_start;
+      uint const pack_length = seg->bit_start;
       const CHARSET_INFO *cs = seg->charset;
       if (pack_length == 1) {
         char_length1 = (uint) * (pos1++);
@@ -421,9 +420,9 @@ int hp_rec_key_cmp(HP_KEYDEF *keydef, const uchar *rec1, const uchar *rec2) {
         pos2 += 2;
       }
       if (cs->mbmaxlen > 1 && (seg->flag & HA_PART_KEY_SEG)) {
-        uint safe_length1 = char_length1;
-        uint safe_length2 = char_length2;
-        uint char_length = seg->length / cs->mbmaxlen;
+        uint const safe_length1 = char_length1;
+        uint const safe_length2 = char_length2;
+        uint const char_length = seg->length / cs->mbmaxlen;
         char_length1 = my_charpos(cs, pos1, pos1 + char_length1, char_length);
         char_length1 = std::min(char_length1, safe_length1);
         char_length2 = my_charpos(cs, pos2, pos2 + char_length2, char_length);
@@ -434,7 +433,8 @@ int hp_rec_key_cmp(HP_KEYDEF *keydef, const uchar *rec1, const uchar *rec2) {
                                 char_length2))
         return 1;
     } else {
-      if (memcmp(rec1 + seg->start, rec2 + seg->start, seg->length)) return 1;
+      if (memcmp(rec1 + seg->start, rec2 + seg->start, seg->length) != 0)
+        return 1;
     }
   }
   return 0;
@@ -448,7 +448,7 @@ int hp_key_cmp(HP_KEYDEF *keydef, const uchar *rec, const uchar *key) {
   for (seg = keydef->seg, endseg = seg + keydef->keysegs; seg < endseg;
        key += (seg++)->length) {
     if (seg->null_bit) {
-      bool found_null = (rec[seg->null_pos] & seg->null_bit);
+      bool const found_null = (rec[seg->null_pos] & seg->null_bit);
       assert(*key == 0x00 || *key == 0x01);
       if (found_null != (bool)*key++) return 1;
       if (found_null) {
@@ -463,7 +463,7 @@ int hp_key_cmp(HP_KEYDEF *keydef, const uchar *rec, const uchar *key) {
       uint char_length_rec;
       const uchar *pos = rec + seg->start;
       if (cs->mbmaxlen > 1 && (seg->flag & HA_PART_KEY_SEG)) {
-        uint char_length = seg->length / cs->mbmaxlen;
+        uint const char_length = seg->length / cs->mbmaxlen;
         char_length_key = my_charpos(cs, key, key + seg->length, char_length);
         char_length_key = std::min(char_length_key, uint(seg->length));
         char_length_rec = my_charpos(cs, pos, pos + seg->length, char_length);
@@ -495,7 +495,7 @@ int hp_key_cmp(HP_KEYDEF *keydef, const uchar *rec, const uchar *key) {
     {
       const uchar *pos = rec + seg->start;
       const CHARSET_INFO *cs = seg->charset;
-      uint pack_length = seg->bit_start;
+      uint const pack_length = seg->bit_start;
       uint char_length_rec = (pack_length == 1 ? (uint)*pos : uint2korr(pos));
       /* Key segments are always packed with 2 bytes */
       uint char_length_key = uint2korr(key);
@@ -516,7 +516,7 @@ int hp_key_cmp(HP_KEYDEF *keydef, const uchar *rec, const uchar *key) {
                                 char_length_key))
         return 1;
     } else {
-      if (memcmp(rec + seg->start, key, seg->length)) return 1;
+      if (memcmp(rec + seg->start, key, seg->length) != 0) return 1;
     }
   }
   return 0;
@@ -532,7 +532,7 @@ void hp_make_key(HP_KEYDEF *keydef, uchar *key, const uchar *rec) {
     uint char_length = seg->length;
     const uchar *pos = rec + seg->start;
     if (seg->null_bit) {
-      bool rec_is_null = rec[seg->null_pos] & seg->null_bit;
+      bool const rec_is_null = rec[seg->null_pos] & seg->null_bit;
       *key++ = (rec_is_null ? 1 : 0);
     }
     if (cs->mbmaxlen > 1 && (seg->flag & HA_PART_KEY_SEG)) {
@@ -563,14 +563,14 @@ uint hp_rb_make_key(HP_KEYDEF *keydef, uchar *key, const uchar *rec,
   for (seg = keydef->seg, endseg = seg + keydef->keysegs; seg < endseg; seg++) {
     size_t char_length;
     if (seg->null_bit) {
-      bool rec_is_null = rec[seg->null_pos] & seg->null_bit;
+      bool const rec_is_null = rec[seg->null_pos] & seg->null_bit;
       if (!(*key++ = 1 - (rec_is_null ? 1 : 0))) continue;
     }
     if (seg->flag & HA_SWAP_KEY) {
       uint length = seg->length;
       const uchar *pos = rec + seg->start;
       if (seg->type == HA_KEYTYPE_FLOAT) {
-        float nr = float4get(pos);
+        float const nr = float4get(pos);
         if (std::isnan(nr)) {
           /* Replace NAN with zero */
           memset(key, 0, length);
@@ -578,7 +578,7 @@ uint hp_rb_make_key(HP_KEYDEF *keydef, uchar *key, const uchar *rec,
           continue;
         }
       } else if (seg->type == HA_KEYTYPE_DOUBLE) {
-        double nr = float8get(pos);
+        double const nr = float8get(pos);
         if (std::isnan(nr)) {
           memset(key, 0, length);
           key += length;
@@ -595,8 +595,8 @@ uint hp_rb_make_key(HP_KEYDEF *keydef, uchar *key, const uchar *rec,
     if (seg->flag & (HA_VAR_LENGTH_PART | HA_BLOB_PART)) {
       const uchar *pos = rec + seg->start;
       uint length = seg->length;
-      uint pack_length = seg->bit_start;
-      uint tmp_length = (pack_length == 1 ? (uint)*pos : uint2korr(pos));
+      uint const pack_length = seg->bit_start;
+      uint const tmp_length = (pack_length == 1 ? (uint)*pos : uint2korr(pos));
       const CHARSET_INFO *cs = seg->charset;
       char_length = length / cs->mbmaxlen;
 
@@ -659,7 +659,7 @@ uint hp_rb_pack_key(const HP_KEYDEF *keydef, uchar *key, const uchar *old,
     }
     if (seg->flag & (HA_VAR_LENGTH_PART | HA_BLOB_PART)) {
       /* Length of key-part used with heap_rkey() always 2 */
-      uint tmp_length = uint2korr(old);
+      uint const tmp_length = uint2korr(old);
       uint length = seg->length;
       const CHARSET_INFO *cs = seg->charset;
       char_length = length / cs->mbmaxlen;
@@ -781,14 +781,14 @@ void heap_update_auto_increment(HP_INFO *info, const uchar *record) {
       break;
     case HA_KEYTYPE_FLOAT: /* This shouldn't be used */
     {
-      float f_1 = float4get(key);
+      float const f_1 = float4get(key);
       /* Ignore negative values */
       value = (f_1 < (float)0.0) ? 0 : (ulonglong)f_1;
       break;
     }
     case HA_KEYTYPE_DOUBLE: /* This shouldn't be used */
     {
-      double f_1 = float8get(key);
+      double const f_1 = float8get(key);
       /* Ignore negative values */
       value = (f_1 < 0.0) ? 0 : (ulonglong)f_1;
       break;

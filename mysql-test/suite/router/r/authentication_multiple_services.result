@@ -1,0 +1,219 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+create user mrsuser@'%' identified by 'S3kre7';
+grant all on *.* to mrsuser@'%';
+
+
+## I. Create three servcices and three authentication application,
+##    assign them that first covers service 1,2, second covers service 2,3,
+##    third covers services 1,2,3:
+#
+# 1. Verify that services, point correct authapp in /authentication/authApps endpoints.
+# 2. Verify that authentication to each of those services can be done with one of assigned
+#    auth-apps (and remember created session).
+#
+## II. Verify if the auth-app sessions can be used with assigned services:
+#
+# 1. Verify that session created with "first" auth-app is usable with service 1,2, and fails with service 3.
+# 2. Verify that session created with "first" auth-app is usable with service 2,3, and fails with service 1.
+# 3. Verify that session created with "first" auth-app is usable with service 1,2,3.
+#
+#
+
+#
+# I.1
+# Registred SERVICE at path: /a
+# Registred DB_SCHEMA at path: /a/sch
+# Registred DB_OBJECT at path: /a/sch/t
+# Registred SERVICE at path: /b
+# Registred DB_SCHEMA at path: /b/sch
+# Registred DB_OBJECT at path: /b/sch/t
+# Registred SERVICE at path: /c
+# Registred DB_SCHEMA at path: /c/sch
+# Registred DB_OBJECT at path: /c/sch/t
+# Registred AUTH APP at path: /a|/b
+# Registred AUTH APP at path: /b|/c
+# Registred AUTH APP at path: /a|/b|/c
+
+#
+# I.1
+GET /a/authentication/authApps
+[
+    {
+        "name": "first",
+        "vendorId": "0x31000000000000000000000000000000"
+    },
+    {
+        "name": "third",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+GET /b/authentication/authApps
+[
+    {
+        "name": "first",
+        "vendorId": "0x31000000000000000000000000000000"
+    },
+    {
+        "name": "second",
+        "vendorId": "0x31000000000000000000000000000000"
+    },
+    {
+        "name": "third",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+GET /c/authentication/authApps
+[
+    {
+        "name": "second",
+        "vendorId": "0x31000000000000000000000000000000"
+    },
+    {
+        "name": "third",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+
+#
+# I.2
+GET /a/authentication/login?authApp=first
+
+OK
+GET /b/authentication/login?authApp=second
+
+OK
+GET /c/authentication/login?authApp=third
+
+OK
+
+#
+# II.1
+GET /a/sch/t/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/a/sch/t/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+GET /b/sch/t/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/b/sch/t/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+GET /c/sch/t/1
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+
+#
+# II.2
+GET /a/sch/t/1
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /b/sch/t/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/b/sch/t/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+GET /c/sch/t/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/c/sch/t/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+
+#
+# II.3
+GET /a/sch/t/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/a/sch/t/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+GET /b/sch/t/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/b/sch/t/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+GET /c/sch/t/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/c/sch/t/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+drop user mrsuser@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

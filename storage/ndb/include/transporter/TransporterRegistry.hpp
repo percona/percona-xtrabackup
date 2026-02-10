@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,7 +37,7 @@
 #ifndef TransporterRegistry_H
 #define TransporterRegistry_H
 
-#include <assert.h>
+#include <cassert>
 #include "ndb_config.h"
 
 #if defined(HAVE_EPOLL_CREATE)
@@ -222,7 +222,7 @@ class TransporterRegistry {
    * (if set) is destroyed, and this is destroyed by the destructor
    */
   void set_mgm_handle(NdbMgmHandle h);
-  NdbMgmHandle get_mgm_handle(void) { return m_mgm_handle; }
+  NdbMgmHandle get_mgm_handle() { return m_mgm_handle; }
 
   bool init(NodeId localNodeId);
 
@@ -556,6 +556,8 @@ class TransporterRegistry {
 
   Multi_Transporter *get_node_multi_transporter(NodeId node_id) const;
 
+  static bool is_permitted_halt_signal(const SignalHeader *signalHeader);
+
  private:
   TransporterCallback *const callbackObj;
   TransporterReceiveHandle *const receiveHandle;
@@ -857,7 +859,8 @@ inline bool TransporterRegistry::backoff_update_and_check_time_for_connect(
   for (int i = 0; i < attempt_moments_count; i++) {
     if (connectingTime[nodeId] == attempt_moments[i]) {
       return true;
-    } else if (connectingTime[nodeId] < attempt_moments[i]) {
+    }
+    if (connectingTime[nodeId] < attempt_moments[i]) {
       return false;
     }
   }

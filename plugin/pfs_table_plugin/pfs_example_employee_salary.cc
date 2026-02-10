@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@ std::vector<Esalary_Record> esalary_records_vector;
  * in performance schema is opened.
  */
 PSI_table_handle *esalary_open_table(PSI_pos **pos) {
-  Esalary_Table_Handle *temp = new Esalary_Table_Handle();
+  auto *temp = new Esalary_Table_Handle();
   temp->current_row.e_number.is_null = true;
   temp->current_row.e_salary.is_null = true;
   temp->current_row.e_dob_length = 0;
@@ -53,7 +53,7 @@ PSI_table_handle *esalary_open_table(PSI_pos **pos) {
  * in performance schema is closed.
  */
 void esalary_close_table(PSI_table_handle *handle) {
-  Esalary_Table_Handle *temp = (Esalary_Table_Handle *)handle;
+  auto *temp = (Esalary_Table_Handle *)handle;
   delete temp;
 }
 
@@ -69,7 +69,7 @@ static void copy_record(Esalary_Record *dest, Esalary_Record *source) {
 
 /* Define implementation of PFS_engine_table_proxy. */
 int esalary_rnd_next(PSI_table_handle *handle) {
-  Esalary_Table_Handle *h = (Esalary_Table_Handle *)handle;
+  auto *h = (Esalary_Table_Handle *)handle;
 
   for (h->m_pos.set_at(&h->m_next_pos); h->m_pos.has_more(); h->m_pos.next()) {
     Esalary_Record *record = &esalary_records_vector.at(h->m_pos.get_index());
@@ -90,7 +90,7 @@ int esalary_rnd_init(PSI_table_handle *h [[maybe_unused]],
 }
 
 int esalary_rnd_pos(PSI_table_handle *handle) {
-  Esalary_Table_Handle *h = (Esalary_Table_Handle *)handle;
+  auto *h = (Esalary_Table_Handle *)handle;
   Esalary_Record *record = &esalary_records_vector[h->m_pos.get_index()];
 
   if (record->m_exist) {
@@ -126,16 +126,15 @@ int esalary_index_next(PSI_table_handle *handle [[maybe_unused]]) {
 
 /* Reset cursor position */
 void esalary_reset_position(PSI_table_handle *handle) {
-  Esalary_Table_Handle *h = (Esalary_Table_Handle *)handle;
+  auto *h = (Esalary_Table_Handle *)handle;
   h->m_pos.reset();
   h->m_next_pos.reset();
-  return;
 }
 
 /* Read current row from the current_row and display them in the table */
 int esalary_read_column_value(PSI_table_handle *handle, PSI_field *field,
                               uint index) {
-  Esalary_Table_Handle *h = (Esalary_Table_Handle *)handle;
+  auto *h = (Esalary_Table_Handle *)handle;
 
   switch (index) {
     case 0: /* EMPLOYEE_NUMBER */
@@ -162,16 +161,16 @@ int esalary_read_column_value(PSI_table_handle *handle, PSI_field *field,
 
 /* Store row data into records array */
 int esalary_write_row_values(PSI_table_handle *handle) {
-  Esalary_Table_Handle *h = (Esalary_Table_Handle *)handle;
+  auto *h = (Esalary_Table_Handle *)handle;
   bool found = false;
 
   mysql_mutex_lock(&LOCK_esalary_records_array);
 
   h->current_row.m_exist = true;
-  int size = esalary_records_vector.size();
+  int const size = esalary_records_vector.size();
   for (int i = 0; i < size; i++) {
     Esalary_Record *record = &esalary_records_vector.at(i);
-    if (record->m_exist == false) {
+    if (!record->m_exist) {
       copy_record(record, &h->current_row);
       found = true;
       break;
@@ -190,7 +189,7 @@ int esalary_write_row_values(PSI_table_handle *handle) {
 /* Read field data from Field and store that into buffer */
 int esalary_write_column_value(PSI_table_handle *handle, PSI_field *field,
                                unsigned int index) {
-  Esalary_Table_Handle *h = (Esalary_Table_Handle *)handle;
+  auto *h = (Esalary_Table_Handle *)handle;
   char *dob_val = &h->current_row.e_dob[0];
   unsigned int *dob_len = &h->current_row.e_dob_length;
   char *tob_val = &h->current_row.e_tob[0];
@@ -219,7 +218,7 @@ int esalary_write_column_value(PSI_table_handle *handle, PSI_field *field,
 
 /* Update row data in records array */
 int esalary_update_row_values(PSI_table_handle *handle) {
-  Esalary_Table_Handle *h = (Esalary_Table_Handle *)handle;
+  auto *h = (Esalary_Table_Handle *)handle;
 
   Esalary_Record *cur = &esalary_records_vector[h->m_pos.get_index()];
 
@@ -234,7 +233,7 @@ int esalary_update_row_values(PSI_table_handle *handle) {
 
 int esalary_update_column_value(PSI_table_handle *handle, PSI_field *field,
                                 unsigned int index) {
-  Esalary_Table_Handle *h = (Esalary_Table_Handle *)handle;
+  auto *h = (Esalary_Table_Handle *)handle;
   char *dob_val = &h->current_row.e_dob[0];
   unsigned int *dob_len = &h->current_row.e_dob_length;
   char *tob_val = &h->current_row.e_tob[0];
@@ -263,7 +262,7 @@ int esalary_update_column_value(PSI_table_handle *handle, PSI_field *field,
 
 /* Delete row data from records array */
 int esalary_delete_row_values(PSI_table_handle *handle) {
-  Esalary_Table_Handle *h = (Esalary_Table_Handle *)handle;
+  auto *h = (Esalary_Table_Handle *)handle;
 
   Esalary_Record *cur = &esalary_records_vector.at(h->m_pos.get_index());
 
@@ -277,7 +276,7 @@ int esalary_delete_row_values(PSI_table_handle *handle) {
   return 0;
 }
 
-int esalary_delete_all_rows(void) {
+int esalary_delete_all_rows() {
   mysql_mutex_lock(&LOCK_esalary_records_array);
   esalary_records_vector.clear();
   esalary_rows_in_table = 0;
@@ -285,7 +284,7 @@ int esalary_delete_all_rows(void) {
   return 0;
 }
 
-unsigned long long esalary_get_row_count(void) { return esalary_rows_in_table; }
+unsigned long long esalary_get_row_count() { return esalary_rows_in_table; }
 
 void init_esalary_share(PFS_engine_table_share_proxy *share) {
   share->m_table_name = "pfs_example_employee_salary";

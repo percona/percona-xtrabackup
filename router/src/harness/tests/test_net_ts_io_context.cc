@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -676,6 +676,44 @@ TEST(NetTS_io_context, pending_timer_on_destroy) {
 
   // The io_context is destroyed here when goes out of scope. The test idea is
   // to make sure it does not lead to a crash or deadlock.
+}
+
+/*
+ * check that a pending-timer cleans up nicely at shutdown.
+ */
+TEST(NetTS_io_context, pending_timer_cleanup) {
+  net::io_context io_ctx;
+
+  EXPECT_FALSE(io_ctx.stopped());
+
+  using namespace std::chrono_literals;
+
+  {
+    // shared_ptr<> is important for this test to ensure that
+    // the pending-timer's destruction leads to the destruction
+    // of the Timer, and not the other way around.
+    //
+    // With the shared_ptr<> the Timer is owned by
+    // the completion-function (the lambda below).
+    auto t1 = std::make_shared<net::steady_timer>(io_ctx);
+    t1->expires_after(10s);  // ensure it is pending.
+
+    t1->async_wait([shared_t1 = t1](std::error_code ec) {
+      if (ec == std::errc::operation_canceled) {
+        return;
+      }
+
+      // it doesn't matter what happens here.
+    });
+
+    // destructs the shared_ptr<> here, but the timer continues to live inside
+    // the lambda above until the io-context is destructed.
+  }
+
+  // don't run the io-context as the timer should stay pending up until
+  // shutdown.
+
+  // ASAN should not report anything here.
 }
 
 // net::is_executor_v<> chokes with solaris-ld on

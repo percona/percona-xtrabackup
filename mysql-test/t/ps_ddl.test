@@ -1951,6 +1951,19 @@ drop table t1;
 deallocate prepare stmt;
 
 --echo #
+--echo # SQLCOM_SHOW_STATUS_LIBRARY
+--echo #
+
+create table t1 (a int);
+prepare stmt from "show library status where (1) in (select * from t1)";
+execute stmt;
+drop table t1;
+create table t1 (x int);
+execute stmt;
+drop table t1;
+deallocate prepare stmt;
+
+--echo #
 --echo # SQLCOM_SHOW_STATUS_PROC
 --echo #
 
@@ -2057,7 +2070,7 @@ drop table t1;
 deallocate prepare stmt;
 --echo # Intermediate result: number of reprepares matches the number
 --echo # of tests
-call p_verify_reprepare_count(18);
+call p_verify_reprepare_count(19);
 
 --echo #
 --echo # SQLCOM_ALTER_VIEW
@@ -2083,7 +2096,7 @@ drop view if exists v1, v2;
 --echo #
 --echo # Additional coverage for refactoring which was made as part of work
 --echo # on bug '27480: Extend CREATE TEMPORARY TABLES privilege to allow
---echo # temp table operations'. 
+--echo # temp table operations'.
 --echo #
 --echo # Check that we don't try to pre-open temporary tables for the elements
 --echo # from prelocking list, as this can lead to unwarranted ER_CANT_REOPEN

@@ -11,7 +11,6 @@
 # It makes all statements can be executed parallel.
 --let $set_commit_parent_100= 1
 
---let $mts_parallel_type= "LOGICAL_CLOCK"
 --source common/rpl/mta_transaction_retry.inc
 
 --source include/rpl/deinit.inc

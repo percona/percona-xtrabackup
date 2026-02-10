@@ -57,6 +57,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 Warnings:
 Note	1276	Field or reference 'test.ot.pk' of SELECT #2 was resolved in SELECT #1
 Note	1003	/* select#1 */ select `test`.`ot`.`pk` AS `pk` from `test`.`t2` `ot` anti join (`test`.`t1` `it`) on((`test`.`it`.`uk` = `test`.`ot`.`pk`)) where (`test`.`ot`.`pk` < 25)
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON SELECT pk FROM t2 as ot
 WHERE NOT EXISTS (SELECT * FROM t1 AS it WHERE it.uk=ot.pk)
 AND ot.pk<25;
@@ -194,6 +195,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 Warnings:
 Note	1276	Field or reference 'test.ot.pk' of SELECT #2 was resolved in SELECT #1
 Note	1003	/* select#1 */ select `test`.`ot`.`pk` AS `pk` from `test`.`t2` `ot` anti join (`test`.`t1` `it`) on((`<subquery2>`.`uk` = `test`.`ot`.`pk`)) where (`test`.`ot`.`pk` < 25)
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON SELECT pk FROM t2 as ot
 WHERE NOT EXISTS (SELECT * FROM t1 AS it WHERE it.uk=ot.pk)
 AND ot.pk<25;
@@ -624,9 +626,9 @@ Note	1003	/* select#1 */ select /*+ NO_SEMIJOIN(@`select#2`) */ `test`.`t1`.`a` 
 EXPLAIN SELECT * FROM t1 WHERE NOT ((t1.a IN (SELECT /*+ NO_SEMIJOIN() */ t3.a FROM t1 t3)) IS TRUE);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	t1	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
-2	DEPENDENT SUBQUERY	t3	NULL	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where
+2	DEPENDENT SUBQUERY	t3	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
 Warnings:
-Note	1003	/* select#1 */ select /*+ NO_SEMIJOIN(@`select#2`) */ `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where <in_optimizer>(`test`.`t1`.`a`,<exists>(/* select#2 */ select `test`.`t3`.`a` from `test`.`t1` `t3` where (<cache>(`test`.`t1`.`a`) = `test`.`t3`.`a`)) is not true)
+Note	1003	/* select#1 */ select /*+ NO_SEMIJOIN(@`select#2`) */ `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where <in_optimizer>(`test`.`t1`.`a`,<exists>(/* select#2 */ select `test`.`t3`.`a` from `test`.`t1` `t3` where <if>(outer_field_is_not_null, ((<cache>(`test`.`t1`.`a`) = `test`.`t3`.`a`) or (`test`.`t3`.`a` is null)), true) having <if>(outer_field_is_not_null, <is_not_null_test>(`test`.`t3`.`a`), true)) is not true)
 DROP TABLE t1;
 #
 # Bug#29387313 WL#4245: SIG11 AT QEP_SHARED_OWNER::LAST_INNER() AT SQL/SQL_OPT_EXEC_SHARED.H
@@ -725,7 +727,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 3	SUBQUERY	sj1	NULL	index	NULL	PRIMARY	4	NULL	1	100.00	Using index
 Warnings:
 Note	1249	Select 5 was reduced during optimization
-Note	1003	/* select#1 */ select `test`.`alias1`.`pk` AS `pk` from `test`.`t1` `alias1` left join (`test`.`t1` join `test`.`t1` `alias2`) on(((`test`.`alias2`.`pk` = `test`.`alias1`.`col_int`) and exists(/* select#4 */ select 1 from `test`.`t1` `sj2` where false) is false and exists(/* select#3 */ select `test`.`sj1`.`pk` from `test`.`t1` `sj1`) is false)) where true
+Note	1003	/* select#1 */ select `test`.`alias1`.`pk` AS `pk` from `test`.`t1` `alias1` left join (`test`.`t1` join `test`.`t1` `alias2`) on(((`test`.`alias2`.`pk` = `test`.`alias1`.`col_int`) and (not exists(/* select#4 */ select 1 from `test`.`t1` `sj2` where false)) and (not exists(/* select#3 */ select `test`.`sj1`.`pk` from `test`.`t1` `sj1`)))) where true
 SELECT alias1.pk
 FROM t1 AS alias1 LEFT JOIN
 (SELECT alias2.*
@@ -903,7 +905,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 3	SUBQUERY	t4	NULL	index	NULL	PRIMARY	4	NULL	1	100.00	Using index
 2	UNCACHEABLE SUBQUERY	t3	NULL	index	NULL	PRIMARY	4	NULL	1	100.00	Using index
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`pk` AS `pk`,`test`.`t1`.`col_int` AS `col_int`,`test`.`t2`.`pk` AS `pk`,`test`.`t2`.`col_int` AS `col_int` from `test`.`t1` left join `test`.`t1` `t2` on(((`test`.`t1`.`col_int` > (/* select#2 */ select (@`var`) from `test`.`t1` `t3`)) and exists(/* select#3 */ select 1 from `test`.`t1` `t4`) is false)) where true
+Note	1003	/* select#1 */ select `test`.`t1`.`pk` AS `pk`,`test`.`t1`.`col_int` AS `col_int`,`test`.`t2`.`pk` AS `pk`,`test`.`t2`.`col_int` AS `col_int` from `test`.`t1` left join `test`.`t1` `t2` on(((`test`.`t1`.`col_int` > (/* select#2 */ select (@`var`) from `test`.`t1` `t3`)) and (not exists(/* select#3 */ select 1 from `test`.`t1` `t4`)))) where true
 SELECT * FROM t1 LEFT JOIN t1 AS t2
 ON 1 AND t1.col_int > ( SELECT @var FROM t1 as t3 ) AND
 NOT EXISTS ( SELECT * FROM t1 as t4);
@@ -994,7 +996,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 2	SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Impossible WHERE
 Warnings:
 Note	1249	Select 3 was reduced during optimization
-Note	1003	/* select#1 */ select `test`.`alias1`.`col_int` AS `field1`,`test`.`alias2`.`col_varchar_key` AS `field2`,`test`.`alias1`.`col_datetime_key` AS `field3` from `test`.`t1` `alias1` left join `test`.`t1` `alias2` on(exists(/* select#2 */ select 1 from `test`.`t1` `alias3` where false) is false) where true
+Note	1003	/* select#1 */ select `test`.`alias1`.`col_int` AS `field1`,`test`.`alias2`.`col_varchar_key` AS `field2`,`test`.`alias1`.`col_datetime_key` AS `field3` from `test`.`t1` `alias1` left join `test`.`t1` `alias2` on((not exists(/* select#2 */ select 1 from `test`.`t1` `alias3` where false))) where true
 SELECT alias1.col_int AS field1 , alias2.col_varchar_key AS field2 ,
 alias1.col_datetime_key AS field3
 FROM t1 AS alias1 LEFT JOIN t1 AS alias2

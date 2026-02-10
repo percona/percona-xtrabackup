@@ -26,7 +26,7 @@ VARIABLE_NAME LIKE '%source%') AND
 'innodb_master_thread_disabled_debug', 'innodb_replication_delay'))
 ORDER BY VARIABLE_NAME;
 
-include/assert.inc [Expect 108 variables in the table.]
+include/assert.inc [Expect 106 variables in the table.]
 
 # Test SET PERSIST
 SET PERSIST binlog_cache_size = @@GLOBAL.binlog_cache_size;
@@ -127,10 +127,6 @@ SET PERSIST replica_load_tmpdir = @@GLOBAL.replica_load_tmpdir;
 ERROR HY000: Variable 'replica_load_tmpdir' is a read only variable
 SET PERSIST replica_max_allowed_packet = @@GLOBAL.replica_max_allowed_packet;
 SET PERSIST replica_net_timeout = @@GLOBAL.replica_net_timeout;
-SET PERSIST replica_parallel_type = @@GLOBAL.replica_parallel_type;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET PERSIST replica_parallel_workers = @@GLOBAL.replica_parallel_workers;
 SET PERSIST replica_pending_jobs_size_max = @@GLOBAL.replica_pending_jobs_size_max;
 SET PERSIST replica_preserve_commit_order = @@GLOBAL.replica_preserve_commit_order;
@@ -190,10 +186,6 @@ SET PERSIST slave_net_timeout = @@GLOBAL.slave_net_timeout;
 Warnings:
 Warning	1287	'@@slave_net_timeout' is deprecated and will be removed in a future release. Please use replica_net_timeout instead.
 Warning	1287	'@@slave_net_timeout' is deprecated and will be removed in a future release. Please use replica_net_timeout instead.
-SET PERSIST slave_parallel_type = @@GLOBAL.slave_parallel_type;
-Warnings:
-Warning	1287	'@@slave_parallel_type' is deprecated and will be removed in a future release. Please use replica_parallel_type instead.
-Warning	1287	'@@slave_parallel_type' is deprecated and will be removed in a future release. Please use replica_parallel_type instead.
 SET PERSIST slave_parallel_workers = @@GLOBAL.slave_parallel_workers;
 Warnings:
 Warning	1287	'@@slave_parallel_workers' is deprecated and will be removed in a future release. Please use replica_parallel_workers instead.
@@ -238,16 +230,16 @@ Warning	1287	'@@sync_relay_log_info' is deprecated and will be removed in a futu
 Warning	1287	'@@sync_relay_log_info' is deprecated and will be removed in a future release.
 SET PERSIST sync_source_info = @@GLOBAL.sync_source_info;
 
-include/assert.inc [Expect 86 persisted variables in persisted_variables table.]
+include/assert.inc [Expect 84 persisted variables in persisted_variables table.]
 
 ############################################################
 # 2. Restart server, it must preserve the persisted variable
 #    settings. Verify persisted configuration.
 # restart
 
-include/assert.inc [Expect 86 persisted variables in persisted_variables table.']
-include/assert.inc [Expect 86 persisted variables shown as PERSISTED in variables_info table.']
-include/assert.inc [Expect 86 persisted variables with matching persisted and global values.]
+include/assert.inc [Expect 84 persisted variables in persisted_variables table.']
+include/assert.inc [Expect 84 persisted variables shown as PERSISTED in variables_info table.']
+include/assert.inc [Expect 84 persisted variables with matching persisted and global values.]
 
 ############################################################
 # 3. Test RESET PERSIST IF EXISTS. Verify persisted variable
@@ -350,7 +342,6 @@ Warnings:
 Warning	3615	Variable replica_load_tmpdir does not exist in persisted config file
 RESET PERSIST IF EXISTS replica_max_allowed_packet;
 RESET PERSIST IF EXISTS replica_net_timeout;
-RESET PERSIST IF EXISTS replica_parallel_type;
 RESET PERSIST IF EXISTS replica_parallel_workers;
 RESET PERSIST IF EXISTS replica_pending_jobs_size_max;
 RESET PERSIST IF EXISTS replica_preserve_commit_order;
@@ -406,9 +397,6 @@ Warning	3615	Variable slave_max_allowed_packet does not exist in persisted confi
 RESET PERSIST IF EXISTS slave_net_timeout;
 Warnings:
 Warning	3615	Variable slave_net_timeout does not exist in persisted config file
-RESET PERSIST IF EXISTS slave_parallel_type;
-Warnings:
-Warning	3615	Variable slave_parallel_type does not exist in persisted config file
 RESET PERSIST IF EXISTS slave_parallel_workers;
 Warnings:
 Warning	3615	Variable slave_parallel_workers does not exist in persisted config file

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ class THD;
 struct MEM_ROOT;
 struct TABLE;
 
-class GeometryIndexRangeScanIterator : public IndexRangeScanIterator {
+class GeometryIndexRangeScanIterator final : public IndexRangeScanIterator {
  public:
   GeometryIndexRangeScanIterator(THD *thd, TABLE *table, ha_rows *examined_rows,
                                  double expected_rows, uint index_arg,
@@ -46,9 +46,9 @@ class GeometryIndexRangeScanIterator : public IndexRangeScanIterator {
                                reuse_handler_arg, return_mem_root,
                                mrr_flags_arg, mrr_buf_size_arg, ranges_arg),
         m_examined_rows(examined_rows) {}
-  int Read() override;
 
  private:
+  int DoRead() override;
   ha_rows *m_examined_rows;
 };
 

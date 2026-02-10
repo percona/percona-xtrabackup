@@ -1,4 +1,5 @@
 SET @@session.sql_mode = 'NO_ENGINE_SUBSTITUTION';
+include/rpl/set_gtid_mode_off.inc
 USE test;
 drop table if exists tb2 ;
 create table tb2 (
@@ -24707,3 +24708,4 @@ DROP DATABASE IF EXISTS test2;
 DROP DATABASE IF EXISTS test3;
 DROP DATABASE test1;
 DROP TABLE test.tb2;
+include/rpl/set_gtid_mode_on.inc

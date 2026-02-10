@@ -68,6 +68,7 @@ DROP PREPARE p;
 --echo #
 CREATE TABLE t1(a INT);
 INSERT INTO t1 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11);
+ANALYZE TABLE t1;
 let $query = ((SELECT a AS c FROM t1 LIMIT 10) LIMIT 6) ORDER BY c+1 LIMIT 5;
 eval $query;
 --replace_regex $elide_costs
@@ -266,6 +267,7 @@ DROP TABLE r, s, t;
 --echo #
 CREATE TABLE t(a INT);
 INSERT INTO t VALUES (1), (2);
+ANALYZE TABLE t;
 
 let $query =
     WITH RECURSIVE cte (n) AS

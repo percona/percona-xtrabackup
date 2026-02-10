@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,7 @@ bool printGET_TABINFO_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const GetTabInfoReq *sig = (const GetTabInfoReq *)theData;
+  const auto *sig = (const GetTabInfoReq *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");
@@ -57,7 +57,7 @@ bool printGET_TABINFO_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const GetTabInfoConf *sig = (const GetTabInfoConf *)theData;
+  const auto *sig = (const GetTabInfoConf *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");
@@ -92,7 +92,7 @@ bool printGET_TABINFO_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const GetTabInfoRef *sig = (const GetTabInfoRef *)theData;
+  const auto *sig = (const GetTabInfoRef *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");

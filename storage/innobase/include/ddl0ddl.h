@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -130,17 +130,52 @@ struct Index_defn {
 
 /** Structure for reporting duplicate records. */
 struct Dup {
-  /** Report a duplicate key.
-  @param[in] entry              For reporting duplicate key. */
+  Dup() = default;
+
+  /** Constructor.
+  @param[in] index     the index being sorted.
+  @param[in] table     MySQL table, for reporting duplicate key
+                       value, if applicable
+  @param[in] col_map   Mapping of old column numbers to new
+                       ones, or nullptr if old_table == new_table
+  @param[in] n_dup     number of duplicates. */
+  Dup(dict_index_t *index, TABLE *table, const ulint *col_map, size_t n_dup)
+      : m_index(index),
+        m_table(table),
+        m_col_map(col_map),
+        m_n_dup(n_dup),
+        m_entry(nullptr) {}
+
+  /** Report a duplicate key. This function will report the duplicate key
+  to the m_table->record[0].  Care needs to be taken when multiple threads
+  call this function, which could result in corruption of the record in
+  m_table->record[0].
+  @param[in] entry              the duplicate key. */
   void report(const dfield_t *entry) noexcept;
 
-  /** Report a duplicate key.
-  @param[in] entry              For reporting duplicate key.
+  /** Report a duplicate key, saved in m_entry member.  This function
+  will report the duplicate key to the m_table->record[0].  Care needs to
+  be taken when multiple threads call this function, which could result
+  in corruption of the record in m_table->record[0]. */
+  void report() noexcept;
+
+  /** Report a duplicate key. This function will report the duplicate key
+  to the m_table->record[0].  Care needs to be taken when multiple threads
+  call this function, which could result in corruption of the record in
+  m_table->record[0].
+  @param[in] entry              the duplicate key.
   @param[in] offsets            Row offsets */
   void report(const mrec_t *entry, const ulint *offsets) noexcept;
 
   /** @return true if no duplicates reported yet. */
   [[nodiscard]] bool empty() const noexcept { return m_n_dup == 0; }
+
+  /** Save the duplicate tuple information.
+  @param[in]  entry    duplicate tuple of index m_index */
+  void save_duplicate(const dfield_t *entry) {
+    m_n_dup++;
+    m_entry = entry;
+  }
 
   /** Index being sorted */
   dict_index_t *m_index{};
@@ -154,6 +189,10 @@ struct Dup {
 
   /** Number of duplicates */
   size_t m_n_dup{};
+
+ private:
+  /** The duplicate tuple of index m_index. */
+  const dfield_t *m_entry{nullptr};
 };
 
 /** Captures ownership and manages lifetime of an already opened OS file
@@ -420,7 +459,7 @@ struct Context {
   ~Context() noexcept;
 
   /** @return the DDL error status. */
-  dberr_t get_error() const noexcept { return m_err; }
+  dberr_t get_error() const noexcept { return m_err.load(); }
 
   /** Set the error code, when it's not specific to an index.
   @param[in] err                Error code. */
@@ -436,8 +475,9 @@ struct Context {
 
   /** Set the error code and index number where the error occurred.
   @param[in] err                Error code.
-  @param[in] id                 Index ordinal value where error occurred. */
-  void set_error(dberr_t err, size_t id) noexcept {
+  @param[in] id                 Index ordinal value where error occurred.
+  @return true iff this thread successfully set the error code.*/
+  bool set_error(dberr_t err, size_t id) noexcept {
     /* This should only be settable by the the thread that encounters the
     first error, therefore try only once. */
 
@@ -448,7 +488,10 @@ struct Context {
     if (m_err.compare_exchange_strong(expected, err)) {
       ut_ad(m_err_key_number == std::numeric_limits<size_t>::max());
       m_err_key_number = m_key_numbers[id];
+      return true;
     }
+
+    return false;
   }
 
   /** Build the indexes.
@@ -550,8 +593,10 @@ struct Context {
 
   /** Handle auto increment.
   @param[in] row                Row with autoinc column.
+  @param[in] heap               Heap to use for allocation of autoinc column.
   @return DB_SUCCESS or error code. */
-  [[nodiscard]] dberr_t handle_autoinc(const dtuple_t *row) noexcept;
+  [[nodiscard]] dberr_t handle_autoinc(const dtuple_t *row,
+                                       mem_heap_t *heap) noexcept;
 
   /** @return true if any virtual columns are involved. */
   [[nodiscard]] bool has_virtual_columns() const noexcept;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,7 +60,7 @@ INSTANTIATE_TEST_SUITE_P(Foo, Float4Test,
                                            -numeric_limits<float>::min(),
                                            -numeric_limits<float>::max(),
                                            -numeric_limits<float>::epsilon(),
-                                           -1.0f, 0.0f, 1.0f));
+                                           -1.0F, 0.0F, 1.0F));
 /*
   The actual test case for float: store and get some values.
  */
@@ -282,8 +282,8 @@ TYPED_TEST(IntegralTest, PutAndGet) {
     put_integral(this->buf, this->input);
     get_integral(this->output, this->buf);
     // Visual studio rejects: EXPECT_EQ(this->input, this->output);
-    TypeParam myinput = this->input;
-    TypeParam myoutput = this->output;
+    TypeParam const myinput = this->input;
+    TypeParam const myoutput = this->output;
     EXPECT_EQ(myinput, myoutput);
   }
 }

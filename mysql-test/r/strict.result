@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 set @org_mode=@@sql_mode;
 set @@sql_mode='ansi,traditional';
 select @@sql_mode;
@@ -1965,3 +1966,4 @@ select str_to_date('2023-02-31', '%Y-%m-%d');
 str_to_date('2023-02-31', '%Y-%m-%d')
 2023-02-31
 SET sql_mode=@org_mode;
+include/rpl/set_gtid_mode_on.inc

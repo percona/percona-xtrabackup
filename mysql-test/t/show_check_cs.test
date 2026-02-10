@@ -14,6 +14,8 @@ if (!$require_case_insensitive_file_system)
 {
   --source include/have_case_sensitive_file_system.inc
 }
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 #
 # Test of some show commands
@@ -1270,7 +1272,7 @@ SHOW CONTRIBUTORS;
 --echo #
 
 CREATE TABLE t1 (i CHAR(3),
-                 n CHAR(20) CHARACTER SET utf8mb3 GENERATED ALWAYS AS (md5(i)));
+                 n CHAR(20) CHARACTER SET utf8mb3 GENERATED ALWAYS AS (sha2(i,256)));
 
 --echo # Use SHOW CREATE TABLE output below unmodified to re-create table
 SHOW CREATE TABLE t1;
@@ -1279,7 +1281,7 @@ DROP TABLE t1;
 
 CREATE TABLE `t1` (
   `i` char(3) DEFAULT NULL,
-  `n` char(20) CHARACTER SET utf8mb3 GENERATED ALWAYS AS (md5(i)) VIRTUAL
+  `n` char(20) CHARACTER SET utf8mb3 GENERATED ALWAYS AS (sha2(i,256)) VIRTUAL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 DROP TABLE t1;
@@ -1405,3 +1407,5 @@ DROP TABLE t3;
 SET @@global.log_output = @old_log_output;
 TRUNCATE TABLE mysql.general_log;
 TRUNCATE TABLE mysql.slow_log;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -142,6 +142,8 @@ typedef ndbd_exit_classification_enum ndbd_exit_classification;
 #define NDBD_EXIT_SR_OUT_OF_DATAMEMORY 6800
 /* LQH 7200-> */
 #define NDBD_EXIT_LCP_SCAN_WATCHDOG_FAIL 7200
+/* QMGR 7400-> */
+#define NDBD_EXIT_API_FAIL_HANDLING_TIMEOUT 7400
 
 /* Errorcodes for NDB filesystem */
 #define NDBD_EXIT_AFS_NOPATH 2801

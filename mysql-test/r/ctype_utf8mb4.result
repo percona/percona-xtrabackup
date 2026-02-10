@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 drop table if exists t1,t2;
 #
 # Start of 5.5 tests
@@ -2341,9 +2342,9 @@ DROP TABLE t2;
 CREATE TABLE t1 (utf8mb4 VARCHAR(10) CHARACTER SET utf8mb4);
 INSERT INTO t1 VALUES (x'f48fbfbf');
 SELECT CONCAT(utf8mb4, _utf8mb3 '¿') FROM t1;
-ERROR HY000: Cannot convert string '\xBF' from utf8mb4 to utf8mb3
+ERROR HY000: Cannot convert string '\xBF' from utf8mb3 to utf8mb4
 SELECT CONCAT('a', _utf8mb3 '¿') FROM t1;
-ERROR HY000: Cannot convert string '\xBF' from utf8mb4 to utf8mb3
+ERROR HY000: Cannot convert string '\xBF' from utf8mb3 to utf8mb4
 DROP TABLE t1;
 #
 # Bug#51675 Server crashes on inserting 4 byte char.
@@ -3308,3 +3309,4 @@ SELECT a FROM t1 WHERE a = 'aaa ';
 a
 aaa
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc

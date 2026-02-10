@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -170,10 +170,8 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery,
       deferred_events(nullptr),
       workers(PSI_NOT_INSTRUMENTED),
       workers_array_initialized(false),
-      curr_group_assigned_parts(PSI_NOT_INSTRUMENTED),
       curr_group_da(PSI_NOT_INSTRUMENTED),
       curr_group_seen_begin(false),
-      mts_end_group_sets_max_dbs(false),
       replica_parallel_workers(0),
       exit_counter(0),
       max_updated_index(0),
@@ -220,7 +218,6 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery,
   ign_master_log_name_end[0] = 0;
   set_timespec_nsec(&last_clock, 0);
   cached_charset_invalidate();
-  inited_hash_workers = false;
   commit_timestamps_status = COMMIT_TS_UNKNOWN;
 
   if (!rli_fake) {
@@ -410,7 +407,7 @@ void Relay_log_info::reset_notified_checkpoint(ulong shift, time_t new_ts,
     Then the new checkpoint sequence is updated by subtracting the number
     of consecutive jobs that were successfully processed.
   */
-  assert(current_mts_submode->get_type() != MTS_PARALLEL_TYPE_DB_NAME ||
+  assert(current_mts_submode->get_type() == MTS_PARALLEL_TYPE_LOGICAL_CLOCK ||
          !(shift == 0 && rli_checkpoint_seqno != 0));
   rli_checkpoint_seqno = rli_checkpoint_seqno - shift;
   DBUG_PRINT("mta", ("reset_notified_checkpoint shift --> %lu, "
@@ -2670,10 +2667,6 @@ ulong Relay_log_info::adapt_to_master_version_updown(ulong master_version,
   }
 
   return master_version;
-}
-
-bool is_mts_db_partitioned(Relay_log_info *rli) {
-  return (rli->current_mts_submode->get_type() == MTS_PARALLEL_TYPE_DB_NAME);
 }
 
 const char *Relay_log_info::get_for_channel_str(bool upper_case) const {

@@ -1,0 +1,513 @@
+#
+# Bug#33472935 dict_stats_analyze_index() may always discard optimal index-based access paths
+#
+# Tests that make sure that index statistics are not empty for non-empty tables.
+# Calculation of index statistics can be time consuming for large tables and reading
+# them in some contexts (i.e. query optimization) is not locking. Before the fix of Bug#33472935
+# it was possible to get empty statistics for not empty tables. It was caused by the
+# lack of locking during stats calculation and clearing them before time-consuming
+# calculation. Or by error happening during that process. Those tests make sure it
+# works at every point of the statistics calculation process.
+#
+
+--source include/have_debug.inc
+--source include/have_debug_sync.inc
+
+
+
+#
+# Verify error return: undefined tree size.
+#
+
+CREATE TABLE t1 (a int primary key auto_increment, b int, key(b));
+insert t1 values (1,1), (2,2);
+
+SET SESSION DEBUG='+d,dict_stats_simulate_undefined_size';
+
+analyze table t1;
+--sorted_result
+--replace_column 1 #
+select n_rows,clustered_index_size from mysql.innodb_table_stats where table_name = 't1';
+--sorted_result
+--replace_column 3 #
+select index_name, stat_name, stat_value, sample_size, stat_description from mysql.innodb_index_stats where table_name = 't1';
+
+SET SESSION DEBUG='-d,dict_stats_simulate_undefined_size';
+drop table t1;
+
+
+
+#
+# Verify error return: tree change.
+#
+
+create table t1 (a int, b int, key(b));
+# Prepare 16384 rows to get a tree with more than one level ...
+--disable_query_log
+insert t1 values (1, 1);
+let $i=14;
+while ($i)
+{
+  --eval insert t1 select * from t1;
+  dec $i;
+}
+--enable_query_log
+
+SET SESSION DEBUG='+d,dict_stats_simulate_tree_change';
+
+analyze table t1;
+--sorted_result
+--replace_column 1 #
+select n_rows,clustered_index_size from mysql.innodb_table_stats where table_name = 't1';
+--sorted_result
+--replace_column 3 #
+select index_name, stat_name, stat_value, sample_size, stat_description from mysql.innodb_index_stats where table_name = 't1';
+
+SET SESSION DEBUG='-d,dict_stats_simulate_tree_change';
+drop table t1;
+
+
+
+#
+# Zero n_diff during analyze may disable REF access paths.
+#
+
+connect (other,localhost,root,,);
+
+create table t1 (a int primary key auto_increment, b int);
+create table t2 (a int primary key auto_increment, b int, c int, key(b));
+# Prepare data ...
+--disable_query_log
+insert t1 values (1,1), (2,2);
+let $i=16;
+while ($i)
+{
+  --eval insert t2 values ($i,$i,$i)
+  dec $i;
+}
+--enable_query_log
+analyze table t1;
+analyze table t2;
+
+# Simulate HA_STATUS_CONST in fetch_number_of_rows(), because
+# ha_innobase::open() is only invoked on table cache miss.
+SET SESSION DEBUG='+d,fetch_number_of_rows_info_const';
+
+# With correct n_diff, ref access is used for t2.
+
+# Favor index statistics over index dive.
+SET eq_range_index_dive_limit = 1;
+EXPLAIN select * from t2 where b = 1;
+SET eq_range_index_dive_limit = DEFAULT;
+
+EXPLAIN select * from t1 join t2 using (b);
+
+connection other;
+# Let ANALYZE pause right after dict_stats_empty_index() on the first secondary index.
+SET DEBUG_SYNC='dict_stats_analyze_index_empty_sk wait_for continue_analyze execute 1';
+--send analyze table t2
+
+connection default;
+
+# With temporary zero n_diff, table scan is used for t2.
+# With correct n_diff, ref access is used for t2.
+
+# Favor index statistics over index dive.
+SET eq_range_index_dive_limit = 1;
+EXPLAIN select * from t2 where b = 1;
+SET eq_range_index_dive_limit = DEFAULT;
+
+EXPLAIN select * from t1 join t2 using (b);
+
+SET DEBUG_SYNC = "now signal continue_analyze";
+
+connection other;
+--reap
+
+connection default;
+disconnect other;
+
+SET SESSION DEBUG='-d,fetch_number_of_rows_info_const';
+
+drop table t1, t2;
+SET DEBUG_SYNC = 'RESET';
+
+
+
+#
+# Check stats during online ALTER
+#
+
+connect (other,localhost,root,,);
+
+connection default;
+create table t1 (a int primary key auto_increment, x int, b int, c char(64), d int, key(b), key(d));
+insert t1 values (1,1,1,'x',1),(2,2,2,'x',2);
+insert t1(x,b,c,d) select x,b,c,d from t1 where b = 1;
+insert t1(x,b,c,d) select x,b,c,d from t1 where b = 1;
+insert t1(x,b,c,d) select x,b,c,d from t1 where b = 1;
+insert t1(x,b,c,d) select x,b,c,d from t1 where b = 1;
+insert t1(x,b,c,d) select x,b,c,d from t1 where b = 1;
+insert t1(x,b,c,d) select x,b,c,d from t1 where b = 2;
+insert t1(x,b,c,d) select x,b,c,d from t1 where b = 2;
+insert t1(x,b,c,d) select x,b,c,d from t1 where b = 2;
+insert t1(x,b,c,d) select x,b,c,d from t1 where b = 2;
+analyze table t1;
+
+connection other;
+SET DEBUG_SYNC = "innodb_inplace_alter_table_enter signal ddl_in_progress wait_for finish_ddl execute 1";
+--send alter table t1 drop column x
+
+connection default;
+SET DEBUG_SYNC = "now wait_for ddl_in_progress";
+# Use non-blocking ANALYZE to simulate async invocation of dict_stats_update() in the background stats thread.
+# Otherwise, the next query waits the completion of the online alter which corrects the stats.
+SET DEBUG = '+d,skip_flush_for_analyze';
+analyze table t1;
+SET DEBUG = '-d,skip_flush_for_analyze';
+--sorted_result
+--replace_column 1 #
+select n_rows,clustered_index_size from mysql.innodb_table_stats where table_name = 't1';
+--sorted_result
+--replace_column 3 #
+select index_name, stat_name, stat_value, sample_size, stat_description from mysql.innodb_index_stats where table_name = 't1';
+# With zero stat_n_rows, it is table scan (2.45) even if the real table might be very big.
+# With correct stat_n_rows, it is range access.
+explain select * from t1 where b >= 2;
+SET DEBUG_SYNC = "now signal finish_ddl";
+
+connection other;
+--reap
+
+connection default;
+--sorted_result
+--replace_column 1 #
+select n_rows,clustered_index_size from mysql.innodb_table_stats where table_name = 't1';
+--sorted_result
+--replace_column 3 #
+select index_name, stat_name, stat_value, sample_size, stat_description from mysql.innodb_index_stats where table_name = 't1';
+# With stat_n_rows corrected by the completion of the online alter, it is range access again.
+explain select * from t1 where b >= 2;
+
+drop table t1;
+
+SET DEBUG_SYNC = 'RESET';
+
+
+
+#
+# Check stats and query plan during inconsistent read of them.
+#
+
+connection default;
+create table t1 (a int primary key auto_increment, b int, c int, key(b));
+create table t2 (a int primary key auto_increment, b int);
+insert t1 values (1,1,1);
+insert t2 values (1, 1);
+delete from t1; # After full delete stats are cleared
+delete from t2; # After full delete stats are cleared
+
+--sorted_result
+--replace_column 1 #
+select n_rows,clustered_index_size from mysql.innodb_table_stats where table_name = 't1';
+--sorted_result
+--replace_column 3 #
+select index_name, stat_name, stat_value, sample_size, stat_description from mysql.innodb_index_stats where table_name = 't1';
+
+SET eq_range_index_dive_limit = 1;
+explain select * from t1 where b = 1;
+SET eq_range_index_dive_limit = DEFAULT;
+explain select * from t2 join t1 using (b);
+
+--disable_query_log
+insert t2 values (1, 1);
+insert t2 values (2, 2);
+let $i=1024;
+while ($i)
+{
+  --eval insert t1 values ($i,$i,$i)
+  dec $i;
+}
+--enable_query_log
+
+analyze table t1;
+analyze table t2;
+
+--sorted_result
+--replace_column 1 #
+select n_rows,clustered_index_size from mysql.innodb_table_stats where table_name = 't1';
+--sorted_result
+--replace_column 3 #
+select index_name, stat_name, stat_value, sample_size, stat_description from mysql.innodb_index_stats where table_name = 't1';
+
+connection other;
+SET DEBUG_SYNC='inconsistent_secondary_stats_copy SIGNAL ready EXECUTE 1';
+--send analyze table t1;
+connection default;
+SET DEBUG_SYNC='now WAIT_FOR ready';
+SET eq_range_index_dive_limit = 1;
+explain select * from t1 where b = 2;
+SET eq_range_index_dive_limit = DEFAULT;
+explain select * from t2 join t1 using (b);
+SET DEBUG_SYNC = 'now SIGNAL finish';
+
+connection other;
+--reap
+
+connection default;
+
+analyze table t1;
+analyze table t2;
+
+--sorted_result
+--replace_column 1 #
+select n_rows,clustered_index_size from mysql.innodb_table_stats where table_name = 't1';
+--sorted_result
+--replace_column 3 #
+select index_name, stat_name, stat_value, sample_size, stat_description from mysql.innodb_index_stats where table_name = 't1';
+
+SET eq_range_index_dive_limit = 1;
+explain select * from t1 where b = 2;
+SET eq_range_index_dive_limit = DEFAULT;
+explain select * from t2 join t1 using (b);
+
+drop table t1, t2;
+
+SET DEBUG_SYNC = 'RESET';
+
+
+
+#
+# Check stats and query plan during interrupted read and no auto recalc.
+#
+
+SET GLOBAL innodb_stats_auto_recalc = OFF;
+
+create table t1 (a int primary key auto_increment, b int);
+create table t2 (a int primary key auto_increment, b int, c int, key key_c(c), key key_b(b));
+
+# Prepare data ...
+--disable_query_log
+insert t1 values (1,1), (2,2);
+let $i=16;
+while ($i)
+{
+  # Make index values equal to force table scan
+  --eval insert t2 values ($i,1,1)
+  dec $i;
+}
+--enable_query_log
+
+analyze table t1;
+analyze table t2;
+
+# Favor index statistics over index dive.
+SET eq_range_index_dive_limit = 1;
+EXPLAIN select * from t2 where b = 1;
+SET eq_range_index_dive_limit = DEFAULT;
+
+EXPLAIN select * from t1 join t2 using (b);
+
+connection other;
+# Let ANALYZE pause right after dict_stats_empty_index() on the first secondary index.
+SET DEBUG_SYNC='begin_of_index_stats_read signal run_query execute 1';
+--send analyze table t2;
+
+connection default;
+
+SET DEBUG_SYNC='now wait_for run_query';
+
+# With zero n_diff, table scan is used for t1 and t2.
+
+# Favor index statistics over index dive.
+ALTER TABLE t2 DROP INDEX key_b;
+SET eq_range_index_dive_limit = 1;
+EXPLAIN select * from t2 where b = 1;
+SET eq_range_index_dive_limit = DEFAULT;
+
+EXPLAIN select * from t1 join t2 using (b);
+
+connection other;
+--reap
+
+connection default;
+
+drop table t1, t2;
+SET DEBUG_SYNC = 'RESET';
+
+SET GLOBAL innodb_stats_auto_recalc = DEFAULT;
+
+
+
+#
+# Check stats and query plan during interrupted read and no auto recalc.
+#
+
+SET GLOBAL innodb_stats_auto_recalc = OFF;
+SET GLOBAL innodb_stats_persistent = OFF;
+
+create table t1 (a int primary key auto_increment, b int);
+create table t2 (a int primary key auto_increment, b int, c int, key(b));
+
+# Prepare data ...
+--disable_query_log
+insert t1 values (1,1), (2,2);
+let $i=16;
+while ($i)
+{
+  --eval insert t2 values ($i,$i,$i)
+  dec $i;
+}
+--enable_query_log
+analyze table t1;
+analyze table t2;
+
+# With correct n_diff, ref access is used for t2.
+
+# Favor index statistics over index dive.
+SET eq_range_index_dive_limit = 1;
+EXPLAIN select * from t2 where b = 1;
+SET eq_range_index_dive_limit = DEFAULT;
+
+EXPLAIN select * from t1 join t2 using (b);
+
+connection other;
+# Let ANALYZE pause on the first secondary index.
+SET DEBUG_SYNC='dict_stats_analyze_index_empty_sk wait_for continue_analyze execute 1';
+--send analyze table t2;
+
+connection default;
+
+# With zero n_diff, table scan is used for t2.
+# With correct n_diff, ref access is used for t2.
+
+# Favor index statistics over index dive.
+#SET DEBUG_SYNC="now wait_for ready"
+SET eq_range_index_dive_limit = 1;
+EXPLAIN select * from t2 where b = 1;
+SET eq_range_index_dive_limit = DEFAULT;
+
+EXPLAIN select * from t1 join t2 using (b);
+
+SET DEBUG_SYNC = "now signal continue_analyze";
+
+connection other;
+--reap
+
+connection default;
+
+drop table t1, t2;
+SET DEBUG_SYNC = 'RESET';
+
+SET GLOBAL innodb_stats_auto_recalc = DEFAULT;
+SET GLOBAL innodb_stats_persistent = DEFAULT;
+
+
+
+#
+# Check stats and query plan during interrupted read and partitions.
+# There is an separate logic for reading stats for partitioned tables.
+#
+
+create table t1 (a int primary key auto_increment, b int)
+PARTITION BY RANGE (a) (
+  PARTITION p0 VALUES LESS THAN (2),
+  PARTITION p1 VALUES LESS THAN MAXVALUE
+);
+
+create table t2 (a int primary key auto_increment, b int, c int, key(b))
+PARTITION BY RANGE (a) (
+  PARTITION p0 VALUES LESS THAN (100),
+  PARTITION p1 VALUES LESS THAN (200),
+  PARTITION p2 VALUES LESS THAN (300),
+  PARTITION p3 VALUES LESS THAN (400),
+  PARTITION p4 VALUES LESS THAN (500),
+  PARTITION p5 VALUES LESS THAN (600),
+  PARTITION p6 VALUES LESS THAN (700),
+  PARTITION p7 VALUES LESS THAN (800),
+  PARTITION p8 VALUES LESS THAN (900),
+  PARTITION p9 VALUES LESS THAN MAXVALUE
+);
+
+# Prepare 4096 rows to get a tree with more than one level ...
+--disable_query_log
+insert t1 values (1, 1), (2, 2);
+let $i=1024;
+while ($i)
+{
+  --eval insert t2 values($i, $i, $i);
+  dec $i;
+}
+--enable_query_log
+select * from t2;
+
+ANALYZE TABLE t1;
+ANALYZE TABLE t2;
+
+SET eq_range_index_dive_limit = 1;
+explain select * from t1 where b = 2;
+SET eq_range_index_dive_limit = DEFAULT;
+explain select * from t2 join t1 using (b);
+
+
+connection other;
+SET DEBUG_SYNC='partial_stats_copy SIGNAL ready EXECUTE 1';
+--send analyze table t1;
+connection default;
+SET eq_range_index_dive_limit = 1;
+explain select * from t1 where b = 2;
+SET eq_range_index_dive_limit = DEFAULT;
+explain select * from t2 join t1 using (b);
+SET DEBUG_SYNC = 'now SIGNAL finish';
+
+connection other;
+--reap
+
+connection default;
+disconnect other;
+
+drop table t1, t2;
+SET DEBUG_SYNC = 'RESET';
+
+
+#
+# Check if there are no races between analyze command
+# and background thread.
+#
+CREATE TABLE t1 (
+  pk INT NOT NULL AUTO_INCREMENT,
+  c1 varchar(100) DEFAULT NULL,
+  c2 INT NOT NULL,
+  PRIMARY KEY (pk),
+  UNIQUE KEY ukey (c2,c1)
+);
+
+# Somewhere during data entry stats compute will be triggered.
+# We wish to pause it right after computation but before storing the stats.
+# The computed statistics will be based on some of these. Or
+# perhaps all.
+SET GLOBAL DEBUG='+d,syncpoint_completed_stats_computation';
+INSERT INTO t1(pk, c2) VALUES (100, 0), (101, 0), (102, 0), (103, 0);
+SET DEBUG_SYNC='now WAIT_FOR reached_completed_stats_computation';
+# the mechanism did its job, disable it, so it doesn't trigger for ANALYZE
+SET GLOBAL DEBUG='-d,syncpoint_completed_stats_computation';
+# We now insert some more rows, which the previous computation didn't see.
+INSERT INTO t1(pk, c2) VALUES (104, 0), (105, 0), (106, 0), (107, 0);
+# We now request update of the stats:
+ANALYZE TABLE t1;
+# And then unpause the old background thread that calculates
+# statistics based on those partial data:
+SET DEBUG_SYNC='now SIGNAL continue_completed_stats_computation';
+let query1= SELECT COUNT(DISTINCT(c2)) FROM t1 WHERE pk IN (102, 101);
+let query2= SELECT COUNT(DISTINCT(c2)) FROM t1 WHERE pk IN (102, 100);
+eval EXPLAIN $query1;
+eval EXPLAIN $query2;
+
+
+drop table t1;
+
+
+--disable_query_log
+call mtr.add_suppression("Detected too long lock waiting around");
+call mtr.add_suppression("debug sync point wait timed out");
+--enable_query_log

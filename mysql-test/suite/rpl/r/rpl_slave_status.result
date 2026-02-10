@@ -31,6 +31,8 @@ n
 [on master]
 DROP USER rpluser_with_length_32_123456789@127.0.0.1;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 [on slave]
 include/rpl/sync_to_replica.inc
 ==== Restart replica without privileges =====
@@ -53,6 +55,8 @@ include/rpl/start_replica.inc
 [on master]
 DROP USER rpluser_plain@127.0.0.1;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 [on slave]
 include/rpl/stop_replica.inc
 # Resetting replication user to root
@@ -110,6 +114,8 @@ USER()	CURRENT_USER()
 u2@localhost	u2@%
 [on master]
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Ensure that affect of FLUSH PRIVILEGE is propagated and cache from slave is also cleaned
 mysql: [Warning] Using a password on the command line interface can be insecure.
 ERROR 2061 (HY000): Authentication plugin 'caching_sha2_password' reported error: Authentication requires secure connection.
@@ -155,6 +161,8 @@ USER()	CURRENT_USER()
 u3@localhost	u3@%
 [on master]
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Ensure that affect of FLUSH PRIVILEGE is prpoagated and cache from slave is also cleaned
 mysql: [Warning] Using a password on the command line interface can be insecure.
 ERROR 2061 (HY000): Authentication plugin 'caching_sha2_password' reported error: Authentication requires secure connection.

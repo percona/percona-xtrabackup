@@ -45,6 +45,7 @@ var options = {
   gr_id: "uuid",
   group_replication_members: group_replication_members_online,
   innodb_cluster_instances: cluster_nodes,
+  router_id: 1,
 };
 
 var common_responses = undefined;
@@ -69,13 +70,15 @@ if (mysqld.global.use_new_metadata === 1) {
         "router_select_group_membership",
         "router_check_member_state",
         "router_select_members_count",
+        "get_guidelines_router_info",
+        "get_routing_guidelines",
       ],
       options);
 
   common_responses_regex = common_stmts.prepare_statement_responses_regex(
       [
         "router_update_attributes_v2",
-        "router_update_last_check_in_v2",
+        "router_update_last_check_in_v2_4",
       ],
       options);
 } else {
@@ -84,6 +87,8 @@ if (mysqld.global.use_new_metadata === 1) {
         "router_set_session_options",
         "router_set_gr_consistency_level",
         "router_select_schema_version",
+        "get_guidelines_router_info",
+        "get_routing_guidelines",
       ],
       options);
 

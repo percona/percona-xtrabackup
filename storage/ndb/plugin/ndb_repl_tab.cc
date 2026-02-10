@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,8 @@
 
 #include "storage/ndb/plugin/ndb_repl_tab.h"
 
-#include <stdio.h>
+#include <climits>
+#include <cstdio>
 
 #include "mf_wcomp.h"
 #include "mysql/strings/m_ctype.h"
@@ -69,9 +70,9 @@ int Ndb_rep_tab_key::attempt_match(const char *keyptr, const uint keylen,
                    (const uchar *)candidateptr, candidatelen) == 0) {
     /* Exact match */
     return exactmatchvalue;
-  } else if (my_wildcmp(system_charset_info, keyptr, keyptr + keylen,
-                        candidateptr, candidateptr + candidatelen, '\\',
-                        wild_one, wild_many) == 0) {
+  }
+  if (my_wildcmp(system_charset_info, keyptr, keyptr + keylen, candidateptr,
+                 candidateptr + candidatelen, '\\', wild_one, wild_many) == 0) {
     /* Wild match */
     return 0;
   }
@@ -136,6 +137,9 @@ const char *Ndb_rep_tab_reader::nrt_db = "db";
 const char *Ndb_rep_tab_reader::nrt_table_name = "table_name";
 const char *Ndb_rep_tab_reader::nrt_server_id = "server_id";
 const char *Ndb_rep_tab_reader::nrt_binlog_type = "binlog_type";
+const char *Ndb_rep_tab_reader::nrt_binlog_row_slice_count =
+    "binlog_row_slice_count";
+const char *Ndb_rep_tab_reader::nrt_binlog_row_slice_id = "binlog_row_slice_id";
 const char *Ndb_rep_tab_reader::nrt_conflict_fn = "conflict_fn";
 
 Ndb_rep_tab_reader::Ndb_rep_tab_reader()
@@ -149,32 +153,52 @@ int Ndb_rep_tab_reader::check_schema(const NdbDictionary::Table *reptab,
   *error_str = nullptr;
 
   const NdbDictionary::Column *col_db, *col_table_name, *col_server_id,
-      *col_binlog_type, *col_conflict_fn;
+      *col_binlog_type, *col_binlog_row_slice_count, *col_binlog_row_slice_id,
+      *col_conflict_fn;
   if (reptab->getNoOfPrimaryKeys() != 3) {
     *error_str = "Wrong number of primary key parts, expected 3";
     return -2;
   }
   col_db = reptab->getColumn(*error_str = nrt_db);
   if (col_db == nullptr || !col_db->getPrimaryKey() ||
-      col_db->getType() != NdbDictionary::Column::Varbinary)
+      col_db->getType() != NdbDictionary::Column::Varbinary) {
     return -1;
+  }
   col_table_name = reptab->getColumn(*error_str = nrt_table_name);
   if (col_table_name == nullptr || !col_table_name->getPrimaryKey() ||
-      col_table_name->getType() != NdbDictionary::Column::Varbinary)
+      col_table_name->getType() != NdbDictionary::Column::Varbinary) {
     return -1;
+  }
   col_server_id = reptab->getColumn(*error_str = nrt_server_id);
   if (col_server_id == nullptr || !col_server_id->getPrimaryKey() ||
-      col_server_id->getType() != NdbDictionary::Column::Unsigned)
+      col_server_id->getType() != NdbDictionary::Column::Unsigned) {
     return -1;
+  }
   col_binlog_type = reptab->getColumn(*error_str = nrt_binlog_type);
   if (col_binlog_type == nullptr || col_binlog_type->getPrimaryKey() ||
-      col_binlog_type->getType() != NdbDictionary::Column::Unsigned)
+      col_binlog_type->getType() != NdbDictionary::Column::Unsigned) {
     return -1;
+  }
+  // The following columns are optional
+  col_binlog_row_slice_count =
+      reptab->getColumn(*error_str = nrt_binlog_row_slice_count);
+  if (col_binlog_row_slice_count != nullptr &&
+      col_binlog_row_slice_count->getType() !=
+          NdbDictionary::Column::Unsigned) {
+    return -1;
+  }
+  col_binlog_row_slice_id =
+      reptab->getColumn(*error_str = nrt_binlog_row_slice_id);
+  if (col_binlog_row_slice_id != nullptr &&
+      col_binlog_row_slice_id->getType() != NdbDictionary::Column::Unsigned) {
+    return -1;
+  }
   col_conflict_fn = reptab->getColumn(*error_str = nrt_conflict_fn);
   if (col_conflict_fn != nullptr) {
     if ((col_conflict_fn->getPrimaryKey()) ||
-        (col_conflict_fn->getType() != NdbDictionary::Column::Varbinary))
+        (col_conflict_fn->getType() != NdbDictionary::Column::Varbinary)) {
       return -1;
+    }
   }
 
   return 0;
@@ -206,8 +230,14 @@ int Ndb_rep_tab_reader::scan_candidates(Ndb *ndb,
       break;
     }
     NdbRecAttr *ra_binlog_type = nullptr;
+    NdbRecAttr *ra_binlog_row_slice_count = nullptr;
+    NdbRecAttr *ra_binlog_row_slice_id = nullptr;
     NdbRecAttr *ra_conflict_fn_spec = nullptr;
     Ndb_rep_tab_row row;
+    bool have_binlog_row_slice_count =
+        (reptab->getColumn(nrt_binlog_row_slice_count) != nullptr);
+    bool have_binlog_row_slice_id =
+        (reptab->getColumn(nrt_binlog_row_slice_id) != nullptr);
     bool have_conflict_fn_col = (reptab->getColumn(nrt_conflict_fn) != nullptr);
 
     /* Define scan op on ndb_replication */
@@ -225,6 +255,14 @@ int Ndb_rep_tab_reader::scan_candidates(Ndb *ndb,
          nullptr) ||
         ((ra_binlog_type = scanOp->getValue(
               nrt_binlog_type, (char *)&row.binlog_type)) == nullptr) ||
+        (have_binlog_row_slice_count &&
+         ((ra_binlog_row_slice_count = scanOp->getValue(
+               nrt_binlog_row_slice_count,
+               (char *)&row.binlog_row_slice_count)) == nullptr)) ||
+        (have_binlog_row_slice_id &&
+         ((ra_binlog_row_slice_id = scanOp->getValue(
+               nrt_binlog_row_slice_id, (char *)&row.binlog_row_slice_id)) ==
+          nullptr)) ||
         (have_conflict_fn_col &&
          ((ra_conflict_fn_spec = scanOp->getValue(
                nrt_conflict_fn, (char *)row.conflict_fn_spec)) == nullptr))) {
@@ -256,6 +294,12 @@ int Ndb_rep_tab_reader::scan_candidates(Ndb *ndb,
     while ((scan_rc = scanOp->nextResult(true)) == 0) {
       if (ra_binlog_type->isNULL() == 1) {
         row.binlog_type = NBT_DEFAULT;
+      }
+      if (!ra_binlog_row_slice_count || ra_binlog_row_slice_count->isNULL()) {
+        row.binlog_row_slice_count = UINT_MAX;
+      }
+      if (!ra_binlog_row_slice_id || ra_binlog_row_slice_id->isNULL()) {
+        row.binlog_row_slice_id = UINT_MAX;
       }
       if (ra_conflict_fn_spec) {
         row.set_conflict_fn_spec_null(ra_conflict_fn_spec->isNULL() == 1);
@@ -343,6 +387,8 @@ int Ndb_rep_tab_reader::lookup(Ndb *ndb,
 
   /* Set results to defaults */
   binlog_flags = NBT_DEFAULT;
+  binlog_row_slice_count = 0;
+  binlog_row_slice_id = 0;
   conflict_fn_spec = nullptr;
   warning_msg = nullptr;
 
@@ -356,11 +402,10 @@ int Ndb_rep_tab_reader::lookup(Ndb *ndb,
         DBUG_PRINT("info",
                    ("No %s.%s table", ndb_rep_db, ndb_replication_table));
         return 0;
-      } else {
-        error = 0;
-        ndberror = ndbtab_g.getNdbError();
-        break;
       }
+      error = 0;
+      ndberror = ndbtab_g.getNdbError();
+      break;
     }
 
     if ((error = check_schema(reptab, &error_str)) != 0) {
@@ -389,7 +434,39 @@ int Ndb_rep_tab_reader::lookup(Ndb *ndb,
       /* Ensure VARCHARs are usable as strings */
       best_match_row.null_terminate_strings();
 
-      binlog_flags = (enum Ndb_binlog_type)best_match_row.binlog_type;
+      binlog_flags =
+          static_cast<enum Ndb_binlog_type>(best_match_row.binlog_type);
+      binlog_row_slice_count = best_match_row.binlog_row_slice_count;
+      binlog_row_slice_id = best_match_row.binlog_row_slice_id;
+
+      // Validate row slice values if one of the members is not null
+      if (binlog_row_slice_count != UINT_MAX ||
+          binlog_row_slice_id != UINT_MAX) {
+        // At least one parameters is specified
+        if (binlog_row_slice_count == UINT_MAX) {
+          // Count must not be NULL when slice-id is set
+          error_str = "NULL binlog_row_slice_count.";
+          error = -2;
+          break;
+        }
+        if (binlog_row_slice_count > 256) {
+          // Maximum count is 256
+          error_str = "Invalid binlog_row_slice_count value. Range: [1,256].";
+          error = -2;
+          break;
+        }
+        if (binlog_row_slice_id >= binlog_row_slice_count) {
+          // Maximum id is count - 1
+          error_str =
+              "Invalid binlog_row_slice_id value. Range: [0, slice_count).";
+          error = -2;
+          break;
+        }
+      } else {
+        // defaults
+        binlog_row_slice_count = 1;
+        binlog_row_slice_id = 0;
+      }
 
       if (best_match_row.cfs_is_null) {
         DBUG_PRINT("info", ("Conflict FN SPEC is Null"));
@@ -408,7 +485,7 @@ int Ndb_rep_tab_reader::lookup(Ndb *ndb,
         conflict_fn_spec = conflict_fn_buffer;
       }
     }
-  } while (0);
+  } while (false);
 
   /* Error handling */
   if (error == 0) {
@@ -441,20 +518,12 @@ int Ndb_rep_tab_reader::lookup(Ndb *ndb,
     error = 0; /* No real error, just use defaults */
   }
 
-  DBUG_PRINT("info",
-             ("Rc : %d Retrieved Binlog flags : %u and function spec : %s",
-              error, binlog_flags,
-              (conflict_fn_spec != nullptr ? conflict_fn_spec : "NULL")));
+  DBUG_PRINT(
+      "info",
+      ("Rc : %d Retrieved Binlog flags : %u , Binlog Row-Slice : %u/%u , "
+       "function spec : %s",
+       error, binlog_flags, binlog_row_slice_id, binlog_row_slice_count,
+       (conflict_fn_spec != nullptr ? conflict_fn_spec : "NULL")));
 
   return error;
-}
-
-Uint32 Ndb_rep_tab_reader::get_binlog_flags() const { return binlog_flags; }
-
-const char *Ndb_rep_tab_reader::get_conflict_fn_spec() const {
-  return conflict_fn_spec;
-}
-
-const char *Ndb_rep_tab_reader::get_warning_message() const {
-  return warning_msg;
 }

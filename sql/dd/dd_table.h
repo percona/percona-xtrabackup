@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -516,5 +516,22 @@ bool get_implicit_tablespace_options(THD *thd, const Table *table,
   @param  table           dd::Table instance of referenced table
 */
 bool check_non_standard_key_exists_in_fk(THD *thd, const Table *table);
+
+/**
+  Check whether a table has constraints, virtual columns,
+  default, or partitions that may use functions. If so, we may
+  wish to try to open the table during upgrade to see whether
+  we can (or whether any of the functions have changed in such
+  a way that opening the table is no longer possible).
+
+  @param  table_def    The table to examine.
+  @param  schema_name  The name of the schema, or nullptr.
+  @param  debug        A String_type to return debug_info in, or nullptr.
+  @return true         The table definition potentially uses functions.
+  @return false        The table is basic.
+*/
+bool uses_functions(const Table *table_def, const char *schema_name = nullptr,
+                    String_type *debug = nullptr);
+
 }  // namespace dd
 #endif  // DD_TABLE_INCLUDED

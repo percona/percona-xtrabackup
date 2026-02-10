@@ -1,5 +1,6 @@
 {
     "common": {
+        "accept_external_connections": true,
         "bind_address": "0.0.0.0",
         "client_connect_timeout": 9,
         "client_ssl_cipher": "",
@@ -40,6 +41,7 @@
     },
     "endpoints": {
         "bootstrap_ro": {
+            "accept_external_connections": true,
             "bind_address": "0.0.0.0",
             "bind_port": 6447,
             "client_connect_timeout": 9,
@@ -50,7 +52,7 @@
             "connect_timeout": 5,
             "connection_sharing": false,
             "connection_sharing_delay": 1.0,
-            "destinations": "metadata-cache://mycluster/?role=SECONDARY",
+            "destinations": "metadata-cache://my-cluster/?role=SECONDARY",
             "max_connect_errors": 100,
             "max_connections": 0,
             "net_buffer_length": 16384,
@@ -71,6 +73,7 @@
             "wait_for_my_writes_timeout": 2
         },
         "bootstrap_rw": {
+            "accept_external_connections": true,
             "bind_address": "0.0.0.0",
             "bind_port": 6446,
             "client_connect_timeout": 9,
@@ -81,7 +84,7 @@
             "connect_timeout": 5,
             "connection_sharing": false,
             "connection_sharing_delay": 1.0,
-            "destinations": "metadata-cache://mycluster/?role=PRIMARY",
+            "destinations": "metadata-cache://my-cluster/?role=PRIMARY",
             "max_connect_errors": 100,
             "max_connections": 0,
             "net_buffer_length": 16384,
@@ -102,6 +105,7 @@
             "wait_for_my_writes_timeout": 2
         },
         "bootstrap_rw_split": {
+            "accept_external_connections": true,
             "access_mode": "auto",
             "bind_address": "0.0.0.0",
             "bind_port": 6450,
@@ -113,7 +117,7 @@
             "connect_timeout": 5,
             "connection_sharing": true,
             "connection_sharing_delay": 1.0,
-            "destinations": "metadata-cache://mycluster/?role=PRIMARY_AND_SECONDARY",
+            "destinations": "metadata-cache://my-cluster/?role=PRIMARY_AND_SECONDARY",
             "max_connect_errors": 100,
             "max_connections": 0,
             "net_buffer_length": 16384,
@@ -134,6 +138,7 @@
             "wait_for_my_writes_timeout": 2
         },
         "bootstrap_x_ro": {
+            "accept_external_connections": true,
             "bind_address": "0.0.0.0",
             "bind_port": 6449,
             "client_connect_timeout": 9,
@@ -144,7 +149,7 @@
             "connect_timeout": 5,
             "connection_sharing": false,
             "connection_sharing_delay": 1.0,
-            "destinations": "metadata-cache://mycluster/?role=SECONDARY",
+            "destinations": "metadata-cache://my-cluster/?role=SECONDARY",
             "max_connect_errors": 100,
             "max_connections": 0,
             "net_buffer_length": 16384,
@@ -165,6 +170,7 @@
             "wait_for_my_writes_timeout": 2
         },
         "bootstrap_x_rw": {
+            "accept_external_connections": true,
             "bind_address": "0.0.0.0",
             "bind_port": 6448,
             "client_connect_timeout": 9,
@@ -175,7 +181,7 @@
             "connect_timeout": 5,
             "connection_sharing": false,
             "connection_sharing_delay": 1.0,
-            "destinations": "metadata-cache://mycluster/?role=PRIMARY",
+            "destinations": "metadata-cache://my-cluster/?role=PRIMARY",
             "max_connect_errors": 100,
             "max_connections": 0,
             "net_buffer_length": 16384,
@@ -234,6 +240,7 @@
     "metadata_cache": {
         "auth_cache_refresh_interval": 2.0,
         "auth_cache_ttl": -1.0,
+        "close_connection_after_refresh": false,
         "connect_timeout": 5,
         "read_timeout": 30,
         "ssl_ca": "",

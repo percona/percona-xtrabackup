@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -81,6 +81,14 @@ class ROUTING_EXPORT DestinationTlsContext {
    * set allowed ciphers.
    */
   void ciphers(const std::string &ciphers);
+
+  SslVerify get_verify();
+  const std::string &get_ca_file();
+  const std::string &get_ca_path();
+  const std::string &get_crl_file();
+  const std::string &get_crl_path();
+  const std::string &get_curves();
+  const std::string &get_ciphers();
 
   /**
    * set client-key and its cert.

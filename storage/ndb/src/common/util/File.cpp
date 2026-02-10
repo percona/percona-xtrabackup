@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@
 
 #include <ndb_global.h>
 
-#include <time.h>
+#include <ctime>
 
 #include <EventLogger.hpp>
 #include <NdbOut.hpp>
@@ -42,8 +42,7 @@ time_t File_class::mtime(const char *aFileName) {
 
 bool File_class::exists(const char *aFileName) {
   struct stat s;
-  if (stat(aFileName, &s) != 0) return false;
-  return true;
+  return stat(aFileName, &s) == 0;
 }
 
 ndb_off_t File_class::size(FILE *f) {
@@ -53,10 +52,10 @@ ndb_off_t File_class::size(FILE *f) {
 }
 
 bool File_class::rename(const char *currFileName, const char *newFileName) {
-  return ::rename(currFileName, newFileName) == 0 ? true : false;
+  return ::rename(currFileName, newFileName) == 0;
 }
 bool File_class::remove(const char *aFileName) {
-  return ::remove(aFileName) == 0 ? true : false;
+  return ::remove(aFileName) == 0;
 }
 
 File_class::File_class() : m_file(nullptr), m_fileMode("r") {}

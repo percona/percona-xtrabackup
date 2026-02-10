@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,8 +73,8 @@ bool NdbOperation::isNdbRecordOperation() {
   /* All scans are 'NdbRecord'.  For PK and UK access
    * check if we've got an m_attribute_record set
    */
-  return !(((m_type == PrimaryKeyAccess) || (m_type == UniqueIndexAccess)) &&
-           (m_attribute_record == nullptr));
+  return ((m_type != PrimaryKeyAccess) && (m_type != UniqueIndexAccess)) ||
+         (m_attribute_record != nullptr);
 }
 
 int NdbOperation::incCheck(const NdbColumnImpl *tNdbColumnImpl) {
@@ -86,7 +86,7 @@ int NdbOperation::incCheck(const NdbColumnImpl *tNdbColumnImpl) {
 
   if (theInterpretIndicator == 1) {
     if (tNdbColumnImpl == nullptr) goto inc_check_error1;
-    if ((tNdbColumnImpl->getInterpretableType() != true) ||
+    if ((!tNdbColumnImpl->getInterpretableType()) ||
         (tNdbColumnImpl->m_nullable))
       goto inc_check_error2;
     if (theStatus == ExecInterpretedValue) {
@@ -104,10 +104,10 @@ int NdbOperation::incCheck(const NdbColumnImpl *tNdbColumnImpl) {
       m_flags &= ~(Uint8)OF_NO_DISK;
     }
     return tNdbColumnImpl->m_attrId;
-  } else {
-    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
-      setErrorCodeAbort(4200);
   }
+  if (theNdbCon->theCommitStatus == NdbTransaction::Started)
+    setErrorCodeAbort(4200);
+
   return -1;
 
 inc_check_error1:
@@ -136,8 +136,7 @@ int NdbOperation::write_attrCheck(const NdbColumnImpl *tNdbColumnImpl) {
 
   if (theInterpretIndicator == 1) {
     if (tNdbColumnImpl == nullptr) goto write_attr_check_error1;
-    if (tNdbColumnImpl->getInterpretableType() == false)
-      goto write_attr_check_error2;
+    if (!tNdbColumnImpl->getInterpretableType()) goto write_attr_check_error2;
     if (theStatus == ExecInterpretedValue) {
       ;  // Simply continue with interpretation
     } else if (theStatus == SubroutineExec) {
@@ -150,10 +149,10 @@ int NdbOperation::write_attrCheck(const NdbColumnImpl *tNdbColumnImpl) {
       m_flags &= ~(Uint8)OF_NO_DISK;
     }
     return tNdbColumnImpl->m_attrId;
-  } else {
-    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
-      setErrorCodeAbort(4200);
   }
+  if (theNdbCon->theCommitStatus == NdbTransaction::Started)
+    setErrorCodeAbort(4200);
+
   return -1;
 
 write_attr_check_error1:
@@ -161,7 +160,7 @@ write_attr_check_error1:
   return -1;
 
 write_attr_check_error2:
-  if (tNdbColumnImpl->getInterpretableType() == false) {
+  if (!tNdbColumnImpl->getInterpretableType()) {
     setErrorCodeAbort(4217);
     return -1;
   }  // if
@@ -178,8 +177,7 @@ int NdbOperation::read_attrCheck(const NdbColumnImpl *tNdbColumnImpl) {
 
   if (theInterpretIndicator == 1) {
     if (tNdbColumnImpl == nullptr) goto read_attr_check_error1;
-    if (tNdbColumnImpl->getInterpretableType() == false)
-      goto read_attr_check_error2;
+    if (!tNdbColumnImpl->getInterpretableType()) goto read_attr_check_error2;
     if (theStatus == ExecInterpretedValue) {
       ;  // Simply continue with interpretation
     } else if (theStatus == GetValue) {
@@ -195,10 +193,10 @@ int NdbOperation::read_attrCheck(const NdbColumnImpl *tNdbColumnImpl) {
       m_flags &= ~(Uint8)OF_NO_DISK;
     }
     return tNdbColumnImpl->m_attrId;
-  } else {
-    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
-      setErrorCodeAbort(4200);
   }
+  if (theNdbCon->theCommitStatus == NdbTransaction::Started)
+    setErrorCodeAbort(4200);
+
   return -1;
 
 read_attr_check_error1:
@@ -206,7 +204,7 @@ read_attr_check_error1:
   return -1;
 
 read_attr_check_error2:
-  if (tNdbColumnImpl->getInterpretableType() == false)
+  if (!tNdbColumnImpl->getInterpretableType())
     setErrorCodeAbort(4217);
   else
     setErrorCodeAbort(4219);
@@ -223,21 +221,23 @@ int NdbOperation::initial_interpreterCheck() {
   if (theInterpretIndicator == 1) {
     if (theStatus == ExecInterpretedValue) {
       return 0;  // Simply continue with interpretation
-    } else if (theStatus == GetValue) {
+    }
+    if (theStatus == GetValue) {
       theInitialReadSize = theTotalCurrAI_Len - AttrInfo::SectionSizeInfoLength;
       theStatus = ExecInterpretedValue;
       return 0;
-    } else if (theStatus == SubroutineExec) {
-      return 0;  // Simply continue with interpretation
-    } else {
-      setErrorCodeAbort(4231);
-      return -1;
     }
+    if (theStatus == SubroutineExec) {
+      return 0;  // Simply continue with interpretation
+    }
+    setErrorCodeAbort(4231);
+    return -1;
+
     return 0;
-  } else {
-    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
-      setErrorCodeAbort(4200);
   }
+  if (theNdbCon->theCommitStatus == NdbTransaction::Started)
+    setErrorCodeAbort(4200);
+
   return -1;
 }
 
@@ -251,23 +251,26 @@ int NdbOperation::labelCheck() {
   if (theInterpretIndicator == 1) {
     if (theStatus == ExecInterpretedValue) {
       return 0;  // Simply continue with interpretation
-    } else if (theStatus == GetValue) {
+    }
+    if (theStatus == GetValue) {
       theInitialReadSize = theTotalCurrAI_Len - AttrInfo::SectionSizeInfoLength;
       theStatus = ExecInterpretedValue;
       return 0;
-    } else if (theStatus == SubroutineExec) {
+    }
+    if (theStatus == SubroutineExec) {
       return 0;  // Simply continue with interpretation
-    } else if (theStatus == SubroutineEnd) {
+    }
+    if (theStatus == SubroutineEnd) {
       theStatus = SubroutineExec;
     } else {
       setErrorCodeAbort(4231);
       return -1;
     }
     return 0;
-  } else {
-    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
-      setErrorCodeAbort(4200);
   }
+  if (theNdbCon->theCommitStatus == NdbTransaction::Started)
+    setErrorCodeAbort(4200);
+
   return -1;
 }
 
@@ -281,17 +284,18 @@ int NdbOperation::intermediate_interpreterCheck() {
   if (theInterpretIndicator == 1) {
     if (theStatus == ExecInterpretedValue) {
       return 0;  // Simply continue with interpretation
-    } else if (theStatus == SubroutineExec) {
-      return 0;  // Simply continue with interpretation
-    } else {
-      setErrorCodeAbort(4231);
-      return -1;
     }
+    if (theStatus == SubroutineExec) {
+      return 0;  // Simply continue with interpretation
+    }
+    setErrorCodeAbort(4231);
+    return -1;
+
     return 0;
-  } else {
-    if (theNdbCon->theCommitStatus == NdbTransaction::Started)
-      setErrorCodeAbort(4200);
   }
+  if (theNdbCon->theCommitStatus == NdbTransaction::Started)
+    setErrorCodeAbort(4200);
+
   return -1;
 }
 
@@ -923,7 +927,7 @@ int NdbOperation::branch_col(Uint32 type, Uint32 ColId, const void *val,
 
   if (initial_interpreterCheck() == -1) DBUG_RETURN(-1);
 
-  Interpreter::BinaryCondition c = (Interpreter::BinaryCondition)type;
+  auto c = (Interpreter::BinaryCondition)type;
 
   const NdbColumnImpl *col = m_currentTable->getColumn(ColId);
 

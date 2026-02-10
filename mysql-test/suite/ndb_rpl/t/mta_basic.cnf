@@ -6,5 +6,3 @@ ndb-log-transaction-dependency=ON
 
 # Use several workers (current default)
 replica-parallel-workers=4
-# Use LOGICAL_CLOCK as parallel_type (current default and setting deprecated)
-replica-parallel-type=LOGICAL_CLOCK

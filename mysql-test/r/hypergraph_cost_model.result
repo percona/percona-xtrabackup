@@ -383,14 +383,14 @@ test.t3	histogram	status	Histogram statistics created for column 'c5'.
 # Increasing the number of probes and resulting rows increases cost.
 EXPLAIN FORMAT=TREE SELECT * FROM t3 AS a JOIN t3 AS b ON a.c1 = b.c1;
 EXPLAIN
--> Inner hash join (a.c1 = b.c1)  (cost=198..278 rows=100)
+-> Inner hash join (a.c1 = b.c1)  (cost=81.5..144 rows=100)
     -> Table scan on a  (cost=0.47..47 rows=100)
     -> Hash
         -> Table scan on b  (cost=0.47..47 rows=100)
 
 EXPLAIN FORMAT=TREE SELECT * FROM t2 AS a JOIN t3 AS b ON a.c1 = b.c1;
 EXPLAIN
--> Inner hash join (a.c1 = b.c1)  (cost=198..360 rows=200)
+-> Inner hash join (a.c1 = b.c1)  (cost=81.5..206 rows=200)
     -> Table scan on a  (cost=0.47..94 rows=200)
     -> Hash
         -> Table scan on b  (cost=0.47..47 rows=100)
@@ -398,7 +398,7 @@ EXPLAIN
 # Hashing 100 more rows is significantly more expensive than probing 100 more rows.
 EXPLAIN FORMAT=TREE SELECT * FROM t2 AS a JOIN t2 AS b ON a.c1 = b.c1;
 EXPLAIN
--> Inner hash join (a.c1 = b.c1)  (cost=394..557 rows=200)
+-> Inner hash join (a.c1 = b.c1)  (cost=162..287 rows=200)
     -> Table scan on a  (cost=0.47..94 rows=200)
     -> Hash
         -> Table scan on b  (cost=0.47..94 rows=200)
@@ -406,21 +406,21 @@ EXPLAIN
 # Increasing the number of result rows increases cost.
 EXPLAIN FORMAT=TREE SELECT * FROM t1 JOIN t2 ON t1.c1 = t2.c1;
 EXPLAIN
--> Inner hash join (t1.c1 = t2.c1)  (cost=394..1209 rows=1000)
+-> Inner hash join (t1.c1 = t2.c1)  (cost=162..789 rows=1000)
     -> Table scan on t1  (cost=0.47..470 rows=1000)
     -> Hash
         -> Table scan on t2  (cost=0.47..94 rows=200)
 
 EXPLAIN FORMAT=TREE SELECT * FROM t1 JOIN t2 ON t1.c1 = t2.c5;
 EXPLAIN
--> Inner hash join (t1.c1 = t2.c5)  (cost=394..1762 rows=5000)
+-> Inner hash join (t1.c1 = t2.c5)  (cost=162..884 rows=5000)
     -> Table scan on t1  (cost=0.47..470 rows=1000)
     -> Hash
         -> Table scan on t2  (cost=0.47..94 rows=200)
 
 EXPLAIN FORMAT=TREE SELECT * FROM t1 JOIN t2 ON t1.c1 = t2.c10;
 EXPLAIN
--> Inner hash join (t1.c1 = t2.c10)  (cost=394..2453 rows=10000)
+-> Inner hash join (t1.c1 = t2.c10)  (cost=162..1002 rows=10000)
     -> Table scan on t1  (cost=0.47..470 rows=1000)
     -> Hash
         -> Table scan on t2  (cost=0.47..94 rows=200)

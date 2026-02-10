@@ -1,0 +1,32 @@
+RESET BINARY LOGS AND GTIDS;
+
+--source include/have_router.inc
+--let $extra_mrs_router_id=1
+
+--echo ## Run parametric tests, where REST object column under test is
+--echo ## DATETIME, and its compared against dates encoded inside a JsonObject using "$date" key.
+--let $test_encode_date_begin={"\\\$date":
+--let $test_encode_date_end=}
+--let $test_time_type=DATETIME
+--source ../include/test/test_table_type_datetime.inc
+
+--echo ## Run parametric tests, where REST object column under test is
+--echo ## TIMESTAMP, and its compared against dates encoded inside a JsonObject using "$date" key.
+--let $test_encode_date_begin={"\\\$date":
+--let $test_encode_date_end=}
+--let $test_time_type=TIMESTAMP
+--source ../include/test/test_table_type_datetime.inc
+
+--echo ## Run parametric tests, where REST object column under test is
+--echo ## DATETIME, and its compared against dates encoded inside a JsonString.
+--let $test_encode_date_begin=
+--let $test_encode_date_end=
+--let $test_time_type=DATETIME
+--source ../include/test/test_table_type_datetime.inc
+
+--echo ## Run parametric tests, where REST object column under test is
+--echo ## TIMESTAMP, and its compared against dates encoded inside a JsonString.
+--let $test_encode_date_begin=
+--let $test_encode_date_end=
+--let $test_time_type=TIMESTAMP
+--source ../include/test/test_table_type_datetime.inc

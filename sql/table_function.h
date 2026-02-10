@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -158,6 +158,17 @@ class Table_function {
 
   virtual bool walk(Item_processor processor, enum_walk walk, uchar *arg) = 0;
 
+  /**
+    Fix after tables have been moved from one query_block level to the parent
+    level, e.g by semijoin conversion.
+
+    @param parent_query_block  query_block that tables are moved to.
+    @param removed_query_block query_block that tables are moved away from,
+                          child of parent_query_block.
+  */
+  void fix_after_pullout(Query_block *parent_query_block,
+                         Query_block *removed_query_block);
+
  private:
   /**
     Get the list of fields to create the result table
@@ -173,6 +184,8 @@ class Table_function {
   virtual bool do_init_args() = 0;
   friend bool Table_ref::setup_table_function(THD *thd);
   virtual void do_cleanup() {}
+  virtual void do_fix_after_pullout(Query_block *parent_query_block,
+                                    Query_block *removed_query_block) = 0;
 };
 
 /****************************************************************************
@@ -347,6 +360,11 @@ class Table_function_json final : public Table_function {
     Returns function's name
   */
   const char *func_name() const override { return "json_table"; }
+
+  List<Json_table_column> get_columns() { return *m_columns; }
+
+  Item *get_source() { return source; }
+
   /**
     Initialize the table function before creation of result table
 
@@ -431,6 +449,8 @@ class Table_function_json final : public Table_function {
   List<Create_field> *get_field_list() override;
   bool do_init_args() override;
   void do_cleanup() override;
+  void do_fix_after_pullout(Query_block *parent_query_block,
+                            Query_block *removed_query_block) override;
 };
 
 /**

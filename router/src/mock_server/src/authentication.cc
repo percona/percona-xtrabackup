@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -55,12 +55,12 @@ static std::optional<std::vector<uint8_t>> scramble(
     std::string_view nonce, std::string_view password,
     const EVP_MD *digest_func, bool nonce_before_double_hashed_password) {
   // in case of empty password, the hash is empty too
-  if (password.size() == 0) return std::vector<uint8_t>{};
+  if (password.empty()) return std::vector<uint8_t>{};
 
   const auto digest_size = EVP_MD_size(digest_func);
 
 #if OPENSSL_VERSION_NUMBER >= 0x1010000fL
-  std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> digest_ctx(
+  std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> const digest_ctx(
       EVP_MD_CTX_new(), &EVP_MD_CTX_free);
 #else
   std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_destroy)> digest_ctx(
@@ -69,7 +69,8 @@ static std::optional<std::vector<uint8_t>> scramble(
 
   std::vector<uint8_t> hashed_password(digest_size);
   std::vector<uint8_t> double_hashed_password(digest_size);
-  std::vector<uint8_t> hashed_nonce_and_double_hashed_password(digest_size);
+  std::vector<uint8_t> const hashed_nonce_and_double_hashed_password(
+      digest_size);
 
   int ok{1};
   ok &= EVP_DigestInit_ex(digest_ctx.get(), digest_func, nullptr);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
 
 #include "my_config.h"
 
-#include <ctype.h>
 #include <mysql/plugin_ftparser.h>
-#include <stdlib.h>
+#include <cctype>
+#include <cstdlib>
 
 #include "my_compiler.h"
 #include "mysql/strings/m_ctype.h"
@@ -176,7 +176,8 @@ static int simple_parser_parse(MYSQL_FTPARSER_PARAM *param) {
     if (end == docend) {
       if (end > start) add_word(param, start, end - start);
       break;
-    } else if (my_isspace(param->cs, *end)) {
+    }
+    if (my_isspace(param->cs, *end)) {
       if (end > start) add_word(param, start, end - start);
       start = end + 1;
     }

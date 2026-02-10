@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -39,8 +39,8 @@ DEFINE_BOOL_METHOD(example_math_wrapping_imp::calculate_gcd,
   /* Retrieve a default Service Implementation for the example_math Service. We
     assume that Service Implementation we acquire is not the one that this
     implementation is. */
-  my_service<SERVICE_TYPE(example_math)> service("example_math",
-                                                 mysql_service_registry);
+  my_service<SERVICE_TYPE(example_math)> const service("example_math",
+                                                       mysql_service_registry);
   if (service) {
     return true;
   }

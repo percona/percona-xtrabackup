@@ -76,6 +76,8 @@ CREATE USER 'user02'@'localhost' IDENTIFIED BY '';
 # Insert the OPTIMIZE_LOCAL_TABLE privilege in global_grants and check if user has the priv.
 INSERT INTO mysql.global_grants VALUES('user02', 'localhost', 'OPTIMIZE_LOCAL_TABLE', 'Y');
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW GRANTS FOR 'user02'@'localhost';
 Grants for user02@localhost
 GRANT USAGE ON *.* TO `user02`@`localhost`

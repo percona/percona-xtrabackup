@@ -1,6 +1,6 @@
 #ifndef DD_SP_INCLUDED
 #define DD_SP_INCLUDED
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,12 +33,13 @@ struct st_sp_chistics;
   Method to prepare sp_chistics object using the dd::Routine object read
   from the Data Dictionary.
 
+  @param[in]  thd         Thread object.
   @param[in]  routine     Routine object read from the Data Dictionary.
   @param[out] sp_chistics st_sp_chistics type's object to be prepared from the
                           routine param.
 */
 
-void prepare_sp_chistics_from_dd_routine(const dd::Routine *routine,
+void prepare_sp_chistics_from_dd_routine(THD *thd, const dd::Routine *routine,
                                          st_sp_chistics *sp_chistics);
 
 /**

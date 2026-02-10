@@ -26,12 +26,17 @@ if ($_ds_databases == '')
 }
 
 # generate command line
+--disable_query_log
+--let $saved_sql_mode=`SELECT @@SESSION.SQL_MODE`
+SET SESSION SQL_MODE= 'NO_BACKSLASH_ESCAPES';
 --let $_ds_arg= --defaults-group-suffix=.
 --let $_ds_number_pos= `SELECT LOCATE('$_ds_arg', '$MYSQL_DUMP') + LENGTH('$_ds_arg')`
 --let $_ds_pre_command= `SELECT SUBSTR('$MYSQL_DUMP', 1, $_ds_number_pos - 1)`
 --let $_ds_post_command= `SELECT SUBSTR('$MYSQL_DUMP', $_ds_number_pos + 1)`
 --let $_ds_post_command= $_ds_post_command --compact --order-by-primary --skip-extended-insert --no-create-info --databases $_ds_databases
 --let $_ds_prev_outfile=
+--eval SET SESSION SQL_MODE = '$saved_sql_mode';
+--enable_query_log
 
 # iterate over servers
 --let $_ds_servers= $diff_servers

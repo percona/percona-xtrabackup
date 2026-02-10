@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,7 +44,6 @@
 #include "mysql/containers/buffers/buffer_view.h"           // Buffer_view
 #include "mysql/containers/buffers/grow_calculator.h"       // Grow_calculator
 #include "mysql/containers/buffers/grow_status.h"           // Grow_status
-#include "mysql/utils/nodiscard.h"                          // NODISCARD
 
 #include "mysql/binlog/event/wrapper_functions.h"  // BAPI_TRACE
 

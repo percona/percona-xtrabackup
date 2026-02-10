@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,8 +32,8 @@
 
 #include <fcntl.h>
 #include <mysql/plugin.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cstdlib>
 
 #include "m_string.h"
 #include "my_dbug.h"
@@ -132,7 +132,7 @@ static void test_sql() {
 
     test_context->log_test("\nQuery ", session_id_text, ": ");
 
-    snprintf(&(buffer[0]), buffer.length(),
+    snprintf(buffer.data(), buffer.length(),
              "SET SESSION test_session_attach_var_int = %i;",
              expected_session_variable_value(i));
 
@@ -158,7 +158,7 @@ static void test_sql() {
     }
 
     test_context->log_test_line("Verify Session ", i + 1, " variable");
-    auto session_thd = srv_session_info_get_thd(sessions[session_index]);
+    auto *session_thd = srv_session_info_get_thd(sessions[session_index]);
 
     if (expected_session_variable_value(session_index) !=
         THDVAR(session_thd, var_int)) {
@@ -202,8 +202,7 @@ struct test_thread_context {
 };
 
 static void *test_sql_threaded_wrapper(void *param) {
-  struct test_thread_context *thread_context =
-      (struct test_thread_context *)param;
+  auto *thread_context = (struct test_thread_context *)param;
 
   test_context->separator();
   test_context->log_test_line("init thread");

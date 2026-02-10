@@ -124,6 +124,14 @@ int ProtobufMain(int argc, char* argv[]) {
 }  // namespace protobuf
 }  // namespace google
 
+#ifdef HAVE_ASAN_WIN32_VS
+// Some of our .proto files generate ASAN failures, disable them.
+// https://github.com/google/sanitizers/wiki/addresssanitizerflags
+const char *__asan_default_options() {
+  return "new_delete_type_mismatch=false";
+}
+#endif
+
 int main(int argc, char* argv[]) {
   return google::protobuf::compiler::ProtobufMain(argc, argv);
 }

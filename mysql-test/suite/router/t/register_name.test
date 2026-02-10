@@ -1,0 +1,65 @@
+--source include/have_router.inc
+
+--write_file $MYSQL_TMP_DIR/extra_router_config.cnf
+[DEFAULT]
+name=custom_name
+EOF
+
+# Set the router-id, to generate statistics
+# this way we can wait until router detects
+# changes to DB_OBJECTS.
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Check how router_name is registered in the metadata
+--echo #
+--echo # 1. verify that default router_name is set to <hostname>:<http_port>
+--echo # 2. verify that name gets updated when custom name is used
+--echo #
+--echo #
+
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc1"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+# Workaround: the end_object_definition, needs at least one db_object
+# to sync to its refresh.
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic_schema
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/obj
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+
+--echo
+--echo #
+--echo # I.1
+--replace_regex /^.+:\d+$/"Name found"/
+select router_name from mysql_rest_service_metadata.router;
+
+
+--echo
+--echo #
+--echo # I.2
+--connect (router_conn,127.0.0.1,root,,test,$ROUTING_STATIC_BIND_PORT)
+--replace_regex /restart: (.*\/)*/restart: %PARAMETERS%/
+--let $router_restart_parameters= restart: -a $MYSQL_TMP_DIR/extra_router_config.cnf
+--source ../include/mysqlrouter_restart.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+select router_name from mysql_rest_service_metadata.router;
+
+
+# Cleanup
+remove_file $MYSQL_TMP_DIR/extra_router_config.cnf;
+--source ../include/mrs/cleanup.inc

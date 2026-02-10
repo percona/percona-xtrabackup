@@ -3,80 +3,99 @@ Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
 [connection master]
+[connection slave]
 include/rpl/stop_replica.inc
-set @save.replica_parallel_workers= @@global.replica_parallel_workers;
-set @@global.replica_parallel_workers= 4;
+SET GLOBAL innodb_lock_wait_timeout = 300;
+SET GLOBAL replica_parallel_workers = 4;
 include/rpl/start_replica.inc
-create database d1;
-create database d2;
-create database d3;
-create table d1.t1 (a int auto_increment primary key) engine=innodb;
-create table d2.t1 (a int auto_increment primary key) engine=innodb;
-create table d3.t1 (a int auto_increment primary key) engine=innodb;
+[connection master]
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE DATABASE db3;
+CREATE TABLE db1.t1 (c1 INT PRIMARY KEY);
+CREATE TABLE db2.t1 (c1 INT PRIMARY KEY);
+CREATE TABLE db3.t1 (c1 INT PRIMARY KEY);
+BEGIN;
+INSERT INTO db1.t1 VALUES (1);
+INSERT INTO db2.t1 VALUES (1);
+INSERT INTO db3.t1 VALUES (1);
+COMMIT;
 include/rpl/sync_to_replica.inc
-begin;
-insert into d2.t1 values (1);
-begin;
-use d1;
-insert into d1.t1 values (null);
-use d2;
-insert into d2.t1 values (1);
-commit;
-begin;
-use d3;
-insert into d3.t1 values (null);
-use d1;
-insert into d1.t1 values (null);
-commit;
-Either the coordinator is waiting for a worker to unlock d1
-(binlog transaction compression OFF) or the coordinator
-has scheduled the 2nd transaction to the sane worker (binlog
-transaction compression ON)
-rollback;
+[connection slave]
+BEGIN;
+SELECT * FROM db1.t1 WHERE c1 = 1 FOR UPDATE;
+c1
+1
+[connection slave1]
+BEGIN;
+SELECT * FROM db3.t1 WHERE c1 = 1 FOR UPDATE;
+c1
+1
+[connection master]
+BEGIN;
+UPDATE db1.t1 SET c1 = 100 WHERE c1 = 1;
+COMMIT;
+UPDATE db2.t1 SET c1 = 100 WHERE c1 = 1;
+BEGIN;
+UPDATE db1.t1 SET c1 = 1000 WHERE c1 = 100;
+UPDATE db3.t1 SET c1 = 100 WHERE c1 = 1;
+COMMIT;
+[connection slave]
+[connection slave]
+ROLLBACK;
+[connection slave1]
+ROLLBACK;
+[connection slave]
+[connection master]
+DROP DATABASE db1;
+DROP DATABASE db2;
+DROP DATABASE db3;
+include/rpl/reset.inc
+[connection slave]
+include/rpl/stop_replica.inc
+SET GLOBAL replica_preserve_commit_order = FALSE;
+include/rpl/start_replica.inc
+[connection master]
+CREATE TABLE t1 (c1 INT PRIMARY KEY);
+INSERT INTO t1 VALUES (1), (2), (3);
 include/rpl/sync_to_replica.inc
-select count(*) from d1.t1 into @d1;
-select count(*) from d2.t1 into @d2;
-select count(*) from d3.t1 into @d3;
-use d1;
-create table `exists_only_on_slave` (a int);
-begin;
-insert into d1.t1 values (null);
-insert into d2.t1 values (null);
-insert into d3.t1 values (null);
-begin;
-use d1;
-insert into d1.t1 values (null);
-commit;
-begin;
-use d2;
-insert into d2.t1 values (null);
-commit;
-begin;
-use d3;
-insert into d3.t1 values (null);
-commit;
-use d1;
-drop table if exists `exists_only_on_slave`;
-select sleep(1);
-sleep(1)
-0
-select count(*) - @d1 as 'zero' from d1.t1;
-zero
-0
-select count(*) - @d2 as 'zero' from d2.t1;
-zero
-0
-select count(*) - @d3 as 'zero' from d3.t1;
-zero
-0
-use d1;
-select count(*) as 'zero' from `exists_only_on_slave`;
-zero
-0
-rollback;
-drop database d1;
-drop database d2;
-drop database d3;
+[connection slave]
+CREATE TABLE `exists_only_on_replica` (c1 INT);
+BEGIN;
+INSERT INTO exists_only_on_replica VALUES (1);
+[connection slave1]
+BEGIN;
+SELECT * FROM t1 FOR UPDATE;
+c1
+1
+2
+3
+[connection master]
+UPDATE t1 SET c1 = 100 WHERE c1 = 1;
+UPDATE t1 SET c1 = 200 WHERE c1 = 2;
+UPDATE t1 SET c1 = 300 WHERE c1 = 3;
+DROP TABLE IF EXISTS `exists_only_on_replica`;
+Warnings:
+Note	1051	Unknown table 'test.exists_only_on_replica'
+[connection slave]
+[connection slave1]
+ROLLBACK;
+[connection slave]
+include/assert.inc [Assert that table `exists_only_on_replica` still exists]
+ROLLBACK;
+include/assert.inc [Assert that table `exists_only_on_replica` is no more]
+[connection master]
+DROP TABLE t1;
 include/rpl/sync_to_replica.inc
-set @@global.replica_parallel_workers= @save.replica_parallel_workers;
+[connection slave]
+include/rpl/stop_replica.inc
+SET GLOBAL replica_preserve_commit_order = 1;
+include/rpl/start_replica.inc
+[connection master]
+include/rpl/reset.inc
+[connection slave]
+include/rpl/stop_replica.inc
+SET GLOBAL innodb_lock_wait_timeout = SAVED_INNODB_LOCK_WAIT_TIMEOUT;
+SET GLOBAL replica_parallel_workers = SAVED_REPLICA_PARALLEL_WORKERS;;
+include/rpl/start_replica.inc
 include/rpl/deinit.inc

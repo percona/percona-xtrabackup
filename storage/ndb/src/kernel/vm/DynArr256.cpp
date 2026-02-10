@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +25,9 @@
 
 #include "DynArr256.hpp"
 #include <NdbTick.h>
-#include <assert.h>
-#include <stdio.h>
 #include <NdbOut.hpp>
+#include <cassert>
+#include <cstdio>
 #include "pc.hpp"
 #include "util/require.h"
 
@@ -123,7 +123,7 @@ DynArr256Pool::DynArr256Pool() {
   m_type_id = RNIL;
   m_first_free = RNIL;
   m_last_free = RNIL;
-  m_memroot = 0;
+  m_memroot = nullptr;
   m_inuse_nodes = 0;
   m_pg_count = 0;
   m_used = 0;
@@ -131,7 +131,7 @@ DynArr256Pool::DynArr256Pool() {
 }
 
 void DynArr256Pool::init(Uint32 type_id, const Pool_context &pc) {
-  init(0, type_id, pc);
+  init(nullptr, type_id, pc);
 }
 
 void DynArr256Pool::init(NdbMutex *m, Uint32 type_id, const Pool_context &pc) {
@@ -146,14 +146,14 @@ inline bool DA256Page::get(Uint32 node, Uint32 idx, Uint32 type_id,
   Uint32 *magic_ptr, p;
   if (idx != 255) {
     Uint32 line = div15(idx);
-    Uint32 *ptr = (Uint32 *)(m_nodes + node);
+    auto *ptr = (Uint32 *)(m_nodes + node);
 
     p = 0;
     val_ptr = (ptr + 1 + idx + line);
     magic_ptr = (ptr + (idx & ~15));
   } else {
     Uint32 b = (node + 1) >> 4;
-    Uint32 *ptr = (Uint32 *)(m_header + b);
+    auto *ptr = (Uint32 *)(m_header + b);
 
     p = node - (b << 4) + b;
     val_ptr = (ptr + 1 + p);
@@ -186,7 +186,7 @@ Uint32 *DynArr256::get_dirty(Uint32 pos) const {
   Uint32 type_id = (~m_pool->m_type_id) & 0xFFFF;
 
   if (unlikely(pos >= g_max_sizes[sz])) {
-    return 0;
+    return nullptr;
   }
 
 #ifdef DA256_USE_PX
@@ -197,7 +197,7 @@ Uint32 *DynArr256::get_dirty(Uint32 pos) const {
   Uint32 *retVal = &m_head.m_ptr_i;
   for (; sz--;) {
     if (unlikely(ptrI == RNIL)) {
-      return 0;
+      return nullptr;
     }
 #ifdef DA256_USE_PX
     Uint32 p0 = px[sz];
@@ -217,7 +217,7 @@ Uint32 *DynArr256::get_dirty(Uint32 pos) const {
   return retVal;
 err:
   require(false);
-  return 0;
+  return nullptr;
 }
 
 Uint32 *DynArr256::set(Uint32 pos) {
@@ -227,7 +227,7 @@ Uint32 *DynArr256::set(Uint32 pos) {
 
   if (unlikely(pos >= g_max_sizes[sz])) {
     if (unlikely(!expand(pos))) {
-      return 0;
+      return nullptr;
     }
     sz = m_head.m_sz;
   }
@@ -250,10 +250,10 @@ Uint32 *DynArr256::set(Uint32 pos) {
       if (ERROR_INSERTED(3005)) {
         // Demonstrate Bug#25851801 7.6.2(DMR2):: COMPLETE CLUSTER CRASHED
         // DURING UNIQUE KEY CREATION ... Simulate m_pool->seize() failed.
-        return 0;
+        return nullptr;
       }
       if (unlikely((ptrI = m_pool->seize()) == RNIL)) {
-        return 0;
+        return nullptr;
       }
       m_head.m_no_of_nodes++;
       *retVal = ptrI;
@@ -276,10 +276,10 @@ Uint32 *DynArr256::set(Uint32 pos) {
 
 err:
   require(false);
-  return 0;
+  return nullptr;
 }
 
-static inline void initpage(DA256Page *p, Uint32 page_no, Uint32 type_id) {
+static inline void initpage(DA256Page *p, Uint32 type_id) {
   Uint32 i, j;
 #ifdef DA256_USE_PREFETCH
 #if defined(__GNUC__) && !(__GNUC__ == 2 && __GNUC_MINOR__ < 96)
@@ -409,7 +409,7 @@ Uint32 DynArr256::truncate(Uint32 trunc_pos, ReleaseIterator &iter,
       require(false);
     }
     assert(refPtr != NULL);
-    if (ptrVal != NULL) {
+    if (ptrVal != nullptr) {
       *ptrVal = *refPtr;
     } else if (is_value && *refPtr != RNIL) {
       return 0;
@@ -449,7 +449,7 @@ Uint32 DynArr256::truncate(Uint32 trunc_pos, ReleaseIterator &iter,
 #if defined VM_TRACE || defined ERROR_INSERT
       if (iter.m_pos < m_head.m_high_pos) m_head.m_high_pos = iter.m_pos;
 #endif
-      if (is_value && ptrVal != NULL) return 1;
+      if (is_value && ptrVal != nullptr) return 1;
     } else {  // sz++
       assert(iter.m_ptr_i[iter.m_sz + 1] == RNIL);
       iter.m_sz++;
@@ -464,7 +464,7 @@ static inline bool seizenode(DA256Page *page, Uint32 idx, Uint32 type_id) {
   Uint32 b = (idx + 1) >> 4;
   Uint32 p = idx - (b << 4) + b;
 
-  DA256Node *ptr = (DA256Node *)(page->m_nodes + idx);
+  auto *ptr = (DA256Node *)(page->m_nodes + idx);
 
 #ifdef DA256_USE_PREFETCH
 #if defined(__GNUC__) && !(__GNUC__ == 2 && __GNUC_MINOR__ < 96)
@@ -512,7 +512,7 @@ static bool releasenode(DA256Page *page, Uint32 idx, Uint32 type_id) {
   Uint32 b = (idx + 1) >> 4;
   Uint32 p = idx - (b << 4) + b;
 
-  DA256Node *ptr = (DA256Node *)(page->m_nodes + idx);
+  auto *ptr = (DA256Node *)(page->m_nodes + idx);
 
 #ifdef DA256_USE_PREFETCH
 #if defined(__GNUC__) && !(__GNUC__ == 2 && __GNUC_MINOR__ < 96)
@@ -561,8 +561,8 @@ Uint32 DynArr256Pool::seize() {
   if (ff == RNIL) {
     Uint32 page_no;
     if (likely((page = (DA256Page *)m_ctx.alloc_page27(type_id, &page_no)) !=
-               0)) {
-      initpage(page, page_no, type_id);
+               nullptr)) {
+      initpage(page, type_id);
       m_pg_count++;
 #ifdef UNIT_TEST
       allocatedpages++;
@@ -578,7 +578,7 @@ Uint32 DynArr256Pool::seize() {
   }
 
   Uint32 idx = page->first_free();
-  DA256Free *ptr = (DA256Free *)(page->m_nodes + idx);
+  auto *ptr = (DA256Free *)(page->m_nodes + idx);
   if (likely(ptr->m_magic == type_id)) {
     Uint32 last_free = page->last_free();
     Uint32 next_page = ((DA256Free *)(page->m_nodes + last_free))->m_next_free;
@@ -616,7 +616,7 @@ void DynArr256Pool::release(Uint32 ptrI) {
   Uint32 page_idx = ptrI & DA256_MASK;
   DA256Page *memroot = m_memroot;
   DA256Page *page = memroot + page_no;
-  DA256Free *ptr = (DA256Free *)(page->m_nodes + page_idx);
+  auto *ptr = (DA256Free *)(page->m_nodes + page_idx);
 
   Guard2 g(m_mutex);
   Uint32 last_free = page->last_free();
@@ -632,7 +632,7 @@ void DynArr256Pool::release(Uint32 ptrI) {
 
       if (lf != RNIL) {
         page = memroot + lf;
-        DA256Free *pptr = (DA256Free *)(page->m_nodes + page->last_free());
+        auto *pptr = (DA256Free *)(page->m_nodes + page->last_free());
         pptr->m_next_free = page_no;
       }
     } else if (page->is_empty()) {
@@ -673,7 +673,7 @@ void DynArr256Pool::release(Uint32 ptrI) {
   require(false);
 }
 
-const DynArr256Pool::Info DynArr256Pool::getInfo() const {
+DynArr256Pool::Info DynArr256Pool::getInfo() const {
   Info info;
   info.pg_count = m_pg_count;
   info.pg_byte_sz = static_cast<Uint32>(sizeof(DA256Page));

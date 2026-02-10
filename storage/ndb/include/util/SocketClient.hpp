@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +45,7 @@ class SocketClient {
     m_connect_timeout_millisec = timeout_millisec;
   }
   int bind(ndb_sockaddr local);
-  NdbSocket connect(ndb_sockaddr server_addr);
+  NdbSocket connect(const ndb_sockaddr &server_addr);
   int authenticate(const NdbSocket &);
 
   ndb_socket_t m_sockfd;

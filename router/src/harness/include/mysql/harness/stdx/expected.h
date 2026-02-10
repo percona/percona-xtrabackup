@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -638,14 +638,11 @@ class expected {
 
   // value accessors
 
-  // the macro only exists for clang-format-10 to not get the formatting wrong.
-#define LIKELY(x) (x) [[likely]]
-
   // (1)
   constexpr value_type &value() & {
     static_assert(std::is_copy_constructible_v<E>,
                   "error-type must be copy-constructible");
-    if LIKELY (has_value()) {
+    if (has_value()) [[likely]] {
       return val_;
     }
 
@@ -657,7 +654,7 @@ class expected {
     static_assert(std::is_copy_constructible_v<E>,
                   "error-type must be copy-constructible");
 
-    if LIKELY (has_value()) {
+    if (has_value()) [[likely]] {
       return val_;
     }
 
@@ -669,7 +666,7 @@ class expected {
     static_assert(std::is_copy_constructible_v<E> &&
                   std::is_constructible_v<E, decltype(std::move(error()))>);
 
-    if LIKELY (has_value()) {
+    if (has_value()) [[likely]] {
       return std::move(val_);
     }
 
@@ -681,14 +678,12 @@ class expected {
     static_assert(std::is_copy_constructible_v<E> &&
                   std::is_constructible_v<E, decltype(std::move(error()))>);
 
-    if LIKELY (has_value()) {
+    if (has_value()) [[likely]] {
       return std::move(val_);
     }
 
     throw bad_expected_access(std::move(error()));
   }
-
-#undef LIKELY
 
   // unchecked value access
 
@@ -1272,9 +1267,10 @@ class expected<T, E> {
     }
   }
 
+  struct S {};
+
   union {
-    struct {
-    } dummy_;
+    S dummy_;
     E unex_;
   };
 

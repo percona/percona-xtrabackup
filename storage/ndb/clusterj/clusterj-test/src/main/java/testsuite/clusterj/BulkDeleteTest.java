@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -86,7 +86,8 @@ public class BulkDeleteTest extends AbstractClusterJModelTest {
         int result = 0;
         do {
             result = query.deletePersistentAll();
-            System.out.println("Batch result: " + result);
+            if(logger.isInfoEnabled())
+                logger.info("Batch result: " + result);
         } while(result == DeleteBatchSize);
     }
 }

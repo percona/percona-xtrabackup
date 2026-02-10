@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,11 +27,10 @@
 
 #include "sql/stateless_allocator.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Key_column_usage &Key_column_usage::instance() {
-  static Key_column_usage *s_instance = new Key_column_usage();
+  static auto *s_instance = new Key_column_usage();
   return *s_instance;
 }
 
@@ -106,5 +105,4 @@ Key_column_usage::Key_column_usage() {
       "col.options)");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

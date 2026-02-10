@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,7 @@ void aggregated_stats_buffer::flush() {
   com_stmt_reset = 0ULL;
   com_stmt_reprepare = 0ULL;
   com_stmt_send_long_data = 0ULL;
-  for (std::size_t i = 0; i < (std::size_t)SQLCOM_END; i++) com_stat[i] = 0ULL;
+  for (auto &i : com_stat) i = 0ULL;
   table_open_cache_hits = 0ULL;
   table_open_cache_misses = 0ULL;
   table_open_cache_overflows = 0ULL;
@@ -137,7 +137,6 @@ void aggregated_stats_buffer::add_from(aggregated_stats_buffer &shard) {
 }
 
 uint64_t aggregated_stats_buffer::get_counter(std::size_t offset) {
-  std::atomic_uint64_t *counter =
-      pointer_cast<std::atomic_uint64_t *>((char *)this + offset);
+  auto *counter = pointer_cast<std::atomic_uint64_t *>((char *)this + offset);
   return counter->load();
 }

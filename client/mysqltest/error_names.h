@@ -1,7 +1,7 @@
 #ifndef ERROR_NAMES_INCLUDED
 #define ERROR_NAMES_INCLUDED
 
-// Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -40,7 +40,7 @@ struct st_error {
 /// @param error_name Error name string
 ///
 /// @retval -1 if error name is unknown, error code otherwise.
-int get_errcode_from_name(std::string error_name);
+int get_errcode_from_name(const std::string &error_name);
 
 /// Get an error name from an error code.
 ///

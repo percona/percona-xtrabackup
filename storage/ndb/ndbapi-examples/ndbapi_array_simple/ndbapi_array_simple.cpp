@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -105,7 +105,7 @@ static int get_byte_array(const NdbRecAttr *attr, const char *&first_byte,
       bytes = (size_t)(aRef[1]) * 256 + (size_t)(aRef[0]);
       return 0;
     default:
-      first_byte = NULL;
+      first_byte = nullptr;
       bytes = 0;
       return -1;
   }
@@ -117,7 +117,7 @@ static int get_byte_array(const NdbRecAttr *attr, const char *&first_byte,
  */
 static int get_string(const NdbRecAttr *attr, string &str) {
   size_t attr_bytes;
-  const char *data_start_ptr = NULL;
+  const char *data_start_ptr = nullptr;
 
   /* get stored length and data using get_byte_array */
   if (get_byte_array(attr, data_start_ptr, attr_bytes) == 0) {
@@ -125,7 +125,7 @@ static int get_string(const NdbRecAttr *attr, string &str) {
     str = string(data_start_ptr, attr_bytes);
     if (attr->getType() == NdbDictionary::Column::Char) {
       /* Fixed Char : remove blank spaces at the end */
-      size_t endpos = str.find_last_not_of(" ");
+      size_t endpos = str.find_last_not_of(' ');
       if (string::npos != endpos) {
         str = str.substr(0, endpos + 1);
       }
@@ -164,10 +164,10 @@ static void do_insert(Ndb &ndb) {
   const NdbDictionary::Dictionary *dict = ndb.getDictionary();
   const NdbDictionary::Table *table = dict->getTable("api_array_simple");
 
-  if (table == NULL) APIERROR(dict->getNdbError());
+  if (table == nullptr) APIERROR(dict->getNdbError());
 
   NdbTransaction *transaction = ndb.startTransaction();
-  if (transaction == NULL) APIERROR(ndb.getNdbError());
+  if (transaction == nullptr) APIERROR(ndb.getNdbError());
 
   /* Create and initialize sample data */
   const string meter = 50 * string("''''-,,,,|");
@@ -181,7 +181,7 @@ static void do_insert(Ndb &ndb) {
   for (int i = 0; i <= 20; i++) {
     RowData data;
     NdbOperation *myOperation = transaction->getNdbOperation(table);
-    if (myOperation == NULL) APIERROR(transaction->getNdbError());
+    if (myOperation == nullptr) APIERROR(transaction->getNdbError());
     data.attr1 = i;
 
     // Fill CHAR(20) with 'i' chars from meter
@@ -254,13 +254,13 @@ static void do_read(Ndb &ndb) {
   const NdbDictionary::Dictionary *dict = ndb.getDictionary();
   const NdbDictionary::Table *table = dict->getTable("api_array_simple");
 
-  if (table == NULL) APIERROR(dict->getNdbError());
+  if (table == nullptr) APIERROR(dict->getNdbError());
 
   NdbTransaction *transaction = ndb.startTransaction();
-  if (transaction == NULL) APIERROR(ndb.getNdbError());
+  if (transaction == nullptr) APIERROR(ndb.getNdbError());
 
   NdbOperation *operation = transaction->getNdbOperation(table);
-  if (operation == NULL) APIERROR(transaction->getNdbError());
+  if (operation == nullptr) APIERROR(transaction->getNdbError());
 
   /* create and execute a read operation */
   operation->readTuple(NdbOperation::LM_Read);
@@ -271,8 +271,8 @@ static void do_read(Ndb &ndb) {
   attr.reserve(column_count);
   attr.push_back(nullptr);
   for (int i = 1; i < column_count; i++) {
-    attr.push_back(operation->getValue(i, NULL));
-    if (attr[i] == NULL) APIERROR(transaction->getNdbError());
+    attr.push_back(operation->getValue(i, nullptr));
+    if (attr[i] == nullptr) APIERROR(transaction->getNdbError());
   }
 
   if (transaction->execute(NdbTransaction::Commit) == -1)
@@ -281,7 +281,7 @@ static void do_read(Ndb &ndb) {
   /* print the fetched data */
   cout << "Row ID : 17\n";
   for (int i = 1; i < column_count; i++) {
-    if (attr[i] != NULL) {
+    if (attr[i] != nullptr) {
       NdbDictionary::Column::Type column_type = attr[i]->getType();
       cout << "Column id: " << i
            << ", name: " << attr[i]->getColumn()->getName()

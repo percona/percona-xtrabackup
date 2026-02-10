@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -388,13 +388,16 @@ class Codec<borrowable::message::server::Ok<Borrowed>>
       }
     }
 
-    if (this->caps().test(capabilities::pos::session_track)) {
+    // if there is only empty "message" or "session-data", skip the rest.
+    const bool has_session_track_cap =
+        this->caps().test(capabilities::pos::session_track);
+
+    if (!v_.message().empty() || has_session_track_cap) {
       accu.step(bw::VarString<Borrowed>(v_.message()));
-      if (v_.status_flags().test(status::pos::session_state_changed)) {
+      if (has_session_track_cap &&
+          v_.status_flags().test(status::pos::session_state_changed)) {
         accu.step(bw::VarString<Borrowed>(v_.session_changes()));
       }
-    } else {
-      accu.step(bw::String<Borrowed>(v_.message()));
     }
 
     return accu.result();
@@ -460,24 +463,20 @@ class Codec<borrowable::message::server::Ok<Borrowed>>
       }
     }
 
-    stdx::expected<bw::String<Borrowed>, std::error_code> message_res;
     stdx::expected<bw::VarString<Borrowed>, std::error_code>
         session_changes_res;
-    if (caps[capabilities::pos::session_track]) {
-      // if there is more data.
-      const auto var_message_res =
-          accu.template try_step<bw::VarString<Borrowed>>();
-      if (var_message_res) {
-        // set the message from the var-string
-        message_res = var_message_res.value();
-      }
-
-      if (status_flags_res->value() &
-          status::session_state_changed.to_ulong()) {
-        session_changes_res = accu.template step<bw::VarString<Borrowed>>();
+    // if there is more data.
+    auto message_res = accu.template try_step<bw::VarString<Borrowed>>();
+    if (message_res) {
+      if (caps[capabilities::pos::session_track]) {
+        if (status_flags_res->value() &
+            status::session_state_changed.to_ulong()) {
+          session_changes_res = accu.template step<bw::VarString<Borrowed>>();
+        }
       }
     } else {
-      message_res = accu.template step<bw::String<Borrowed>>();
+      // no message field == empty message.
+      message_res = {};
     }
 
     if (!accu.result()) return stdx::unexpected(accu.result().error());

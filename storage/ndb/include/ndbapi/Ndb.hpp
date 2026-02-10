@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -2222,13 +2222,13 @@ class Ndb {
   static BaseString internalize_table_name(const char *db_name,
                                            const char *schema,
                                            const char *table_name);
-  const BaseString internalize_table_name(const char *external_name) const;
+  BaseString internalize_table_name(const char *external_name) const;
 
   static const char *externalizeIndexName(const char *internalIndexName,
                                           bool fullyQualifiedNames);
 
-  static const BaseString getDatabaseFromInternalName(const char *internalName);
-  static const BaseString getSchemaFromInternalName(const char *internalName);
+  static BaseString getDatabaseFromInternalName(const char *internalName);
+  static BaseString getSchemaFromInternalName(const char *internalName);
 
   Uint64 allocate_transaction_id();
 

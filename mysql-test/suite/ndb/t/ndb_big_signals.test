@@ -6,7 +6,7 @@ source include/have_ndb.inc;
 #   API 16,32,48,49,63,127
 
 # Save now to only look at new info in EventLog
-select now() into @now;
+select utc_timestamp() into @now;
 
 # DUMP signals in use:
 # CmvmiRelayDumpStateOrd(103003) to-node dump-state-ord ...
@@ -182,16 +182,20 @@ eval
   (output_line, @dummy);
 enable_query_log;
 
+select locate(' ',substring(output_line, 20))+20 into @tslen
+from ndb_output where output_line like '____-__-_____:__:__% %' limit 1;
+select @tslen as 'timestamp length'; # utc: 29
+
 select
-  substr(output_line, 21)
+  substr(output_line, @tslen)
 from ndb_output
 where
   output_line like '%Dummy%'
-  and substr(output_line, 1, 20) >= @now
+  and replace(substr(output_line, 1, 19),'T',' ') >= @now
 group by output_line
 order by
   substr(output_line, instr(output_line, 'size')),
-  substr(output_line, 21) desc;
+  substr(output_line, @tslen) desc;
 
 drop table ndb_output;
 

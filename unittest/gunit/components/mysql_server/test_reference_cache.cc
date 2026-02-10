@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -22,15 +22,15 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "test_reference_cache.h"
-#include <assert.h>
-#include <limits.h>
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/my_service.h>
 #include <mysql/components/services/reference_caching.h>
-#include <stdio.h>
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <chrono>
+#include <climits>
+#include <cstdio>
 #include <thread>
 #include <vector>
 
@@ -90,10 +90,8 @@ class foo_cache {
       for (const my_h_service *svc = refs; *svc; svc++) {
         SERVICE_TYPE(mysql_test_foo) *f =
             reinterpret_cast<SERVICE_TYPE(mysql_test_foo) *>(*svc);
-        if (f->emit(arg))
-          break;
-        else
-          called++;
+        if (f->emit(arg)) break;
+        called++;
       }
     }
     return called;  // the reference wasn't valid or the service call failed
@@ -129,7 +127,7 @@ static DEFINE_BOOL_METHOD(mysql_test_ref_cache_release_cache, ()) {
 }
 
 static DEFINE_BOOL_METHOD(mysql_test_ref_cache_produce_event, (int arg)) {
-  int result = 0;
+  int const result = 0;
   foo_cache *c = foo_cache::get_foo_cache();
   if (c) {
     return c->call(arg);
@@ -176,7 +174,7 @@ static DEFINE_BOOL_METHOD(mysql_test_ref_cache_benchmark_run,
 
   std::vector<std::thread> thds;
   for (long long i = 0; i < n_threads; i++)
-    thds.push_back(std::thread([n_reps, n_sleep, n_flush]() {
+    thds.emplace_back([n_reps, n_sleep, n_flush]() {
       foo_cache *c = foo_cache::get_foo_cache();
       for (long long arg = 0; n_reps == 0 || arg < n_reps; arg++) {
         /* take again to measure the effect of fetching a populated cache */
@@ -192,7 +190,7 @@ static DEFINE_BOOL_METHOD(mysql_test_ref_cache_benchmark_run,
       }
 
       foo_cache::release_foo_cache();
-    }));
+    });
 
   std::for_each(thds.begin(), thds.end(), [](std::thread &t) { t.join(); });
   return 0;
@@ -204,13 +202,16 @@ static DEFINE_BOOL_METHOD(mysql_test_ref_cache_benchmark_kill, ()) {
 }
 
 static mysql_service_status_t init() {
-  const char *service_names[] = {"mysql_test_foo", nullptr};
-  if (mysql_service_reference_caching_channel->create(service_names, &channel))
-    channel = nullptr;
+  // channel is created by mysql_test_ref_cache post load init
+  // since reference_caching_channel service provided by
+  // component_reference_cache can not be acquired yet cause we are before
+  // dyloader register step here
   return 0;
 }
 
 static mysql_service_status_t deinit() {
+  // although init() is empty, we still need to deinit,
+  // because channel was created by mysql_test_ref_cache_init post load init
   if (channel != nullptr) {
     if (!mysql_service_reference_caching_channel->destroy(channel)) {
       channel = nullptr;
@@ -226,6 +227,13 @@ static DEFINE_BOOL_METHOD(mysql_test_foo_emit, (int /*arg*/)) {
   return false;
 }
 
+static DEFINE_BOOL_METHOD(mysql_test_ref_cache_init, ()) {
+  const char *service_names[] = {"mysql_test_foo", nullptr};
+  if (mysql_service_reference_caching_channel->create(service_names, &channel))
+    channel = nullptr;
+  return false;
+}
+
 static DEFINE_BOOL_METHOD(mysql_test_ref_cache_consumer_counter_reset, ()) {
   ctr = 0;
   return false;
@@ -238,6 +246,10 @@ static DEFINE_BOOL_METHOD(mysql_test_ref_cache_consumer_counter_get, ()) {
 BEGIN_SERVICE_IMPLEMENTATION(test_reference_cache, mysql_test_foo)
 mysql_test_foo_emit END_SERVICE_IMPLEMENTATION();
 
+BEGIN_SERVICE_IMPLEMENTATION(test_reference_cache,
+                             test_ref_cache_post_load_init)
+mysql_test_ref_cache_init END_SERVICE_IMPLEMENTATION();
+
 BEGIN_SERVICE_IMPLEMENTATION(test_reference_cache, test_ref_cache_producer)
 mysql_test_ref_cache_produce_event, mysql_test_ref_cache_flush,
     mysql_test_ref_cache_release_cache, mysql_test_ref_cache_benchmark_run,
@@ -248,8 +260,9 @@ mysql_test_ref_cache_consumer_counter_reset,
     mysql_test_ref_cache_consumer_counter_get END_SERVICE_IMPLEMENTATION();
 
 BEGIN_COMPONENT_PROVIDES(test_reference_cache)
-PROVIDES_SERVICE(test_reference_cache, mysql_test_foo)
-, PROVIDES_SERVICE(test_reference_cache, test_ref_cache_producer),
+PROVIDES_SERVICE(test_reference_cache, mysql_test_foo),
+    PROVIDES_SERVICE(test_reference_cache, test_ref_cache_post_load_init),
+    PROVIDES_SERVICE(test_reference_cache, test_ref_cache_producer),
     PROVIDES_SERVICE(test_reference_cache, test_ref_cache_consumer),
     END_COMPONENT_PROVIDES();
 

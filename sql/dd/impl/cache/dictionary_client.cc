@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,12 @@
 #include "sql/dd/cache/dictionary_client.h"
 
 #include <stdio.h>
+#include <algorithm>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <string_view>
+#include <thread>
 
 #include "lex_string.h"
 #include "m_string.h"
@@ -79,6 +82,7 @@
 #include "sql/dd/types/event.h"              // Event
 #include "sql/dd/types/function.h"           // Function
 #include "sql/dd/types/index_stat.h"         // Index_stat
+#include "sql/dd/types/library.h"            // Library
 #include "sql/dd/types/procedure.h"          // Procedure
 #include "sql/dd/types/resource_group.h"     // Resource_group
 #include "sql/dd/types/routine.h"
@@ -101,9 +105,176 @@
 #include "sql/tztime.h"  // Time_zone, my_tz_OFFSET0
 
 namespace {
+#ifndef NDEBUG
+/**
+  Conveniece wrapper for checking if the MDL of an MDL_descriptor is held.
+*/
+[[nodiscard]] bool is_locked(THD *thd, const dd::cache::MDL_descriptor &mdld) {
+  return mdld.m_mdl_type != MDL_TYPE_END &&
+         thd->mdl_context.owns_equal_or_stronger_lock(&mdld.m_mdl_key,
+                                                      mdld.m_mdl_type);
+}
+
+/** Convenience function to temporarily acquire the schema and run a
+callable which uses it. */
+decltype(auto) with_schema_of(dd::cache::Dictionary_client *dc,
+                              const auto &schema_member, const auto &clos) {
+  dd::cache::Dictionary_client::Auto_releaser releaser(dc);
+
+  const dd::Schema *s = nullptr;
+  if (dc->acquire(schema_member.schema_id(), &s) || s == nullptr) {
+    return decltype(clos(*s)){};
+  }
+  return clos(*s);
+}
+
+/** Compile-time function to determine if a DD type has its own MDL key. */
+template <typename DDT>
+constexpr bool HAS_MDL_KEY() {
+  return !std::is_same_v<DDT, dd::Charset> &&
+         !std::is_same_v<DDT, dd::Collation>;
+}
+
+/** Compile-time function to obtain the enum_mld_type value to use for
+ * read-locking. */
+template <typename DDT>
+constexpr enum_mdl_type READ_LOCK_MDL_TYPE() {
+  return (std::is_same_v<DDT, dd::Schema> ||
+          std::is_same_v<DDT, dd::Tablespace> ||
+          std::is_same_v<DDT, dd::Resource_group>)
+             ? MDL_INTENTION_EXCLUSIVE
+             : MDL_SHARED;
+}
+
+// The following overloads creates  MDL key suitable for locking the
+// corresponding DD object.
+MDL_key make_mdl_key(THD *thd, const dd::Abstract_table &at) {
+  return with_schema_of(thd->dd_client(), at, [&](const dd::Schema &s) {
+    // We must take l_c_t_n into account when reconstructing the MDL key
+    // from the schema and table name, and we need buffers for this purpose.
+    char table_name_buf[NAME_LEN + 1];
+    char schema_name_buf[NAME_LEN + 1];
+
+    const char *table_name = at.name().c_str();
+    const char *schema_name = dd::Object_table_definition_impl::fs_name_case(
+        s.name(), schema_name_buf);
+
+    // Information schema tables and views are always locked in upper
+    // case independently of lower_case_table_names. At this point, the
+    // table name should aldready be converted to upper case. This is
+    // asserted in the mdl system when checking the lock below. For non-
+    // I_S tables, the table name must be converted to the appropriate
+    // character case.
+    if (my_strcasecmp(system_charset_info, s.name().c_str(),
+                      "information_schema")) {
+      table_name = dd::Object_table_definition_impl::fs_name_case(
+          at.name(), table_name_buf);
+    }
+    return MDL_key{MDL_key::TABLE, schema_name, table_name};
+  });
+}
+
+MDL_key make_mdl_key(THD *thd, const dd::Event &event) {
+  return with_schema_of(thd->dd_client(), event, [&](const dd::Schema &s) {
+    MDL_key mdl_key;
+    char schema_name_buf[NAME_LEN + 1];
+    dd::Event::create_mdl_key(
+        // FIXME.dt: Temporary dd::String_type from const char*
+        dd::Object_table_definition_impl::fs_name_case(s.name(),
+                                                       schema_name_buf),
+        event.name(), &mdl_key);
+    return mdl_key;
+  });
+}
+
+MDL_key make_mdl_key(THD *thd, const dd::Routine &routine) {
+  return with_schema_of(thd->dd_client(), routine, [&](const dd::Schema &s) {
+    MDL_key mdl_key;
+    char schema_name_buf[NAME_LEN + 1];
+    dd::Routine::create_mdl_key(
+        routine.type(),
+        // FIXME.dt: Temporary dd::String_type from const char*
+        dd::Object_table_definition_impl::fs_name_case(s.name(),
+                                                       schema_name_buf),
+        routine.name(), &mdl_key);
+    return mdl_key;
+  });
+}
+
+MDL_key make_mdl_key(THD *, const dd::Schema &schema) {
+  // We must take l_c_t_n into account when reconstructing the
+  // MDL key from the schema name.
+  char name_buf[NAME_LEN + 1];
+  return {
+      MDL_key::SCHEMA,
+      dd::Object_table_definition_impl::fs_name_case(schema.name(), name_buf),
+      ""};
+}
+
+MDL_key make_mdl_key(THD *, const dd::Spatial_reference_system &srs) {
+  assert(srs.id() <= UINT_MAX32);
+  char id_str[11];  // uint32 => max 10 digits + \0
+  longlong10_to_str(srs.id(), id_str, 10);
+  return {MDL_key::SRID, "", id_str};
+}
+
+MDL_key make_mdl_key(THD *, const dd::Tablespace &ts) {
+  return {MDL_key::TABLESPACE, "", ts.name().c_str()};
+}
+
+MDL_key make_mdl_key(THD *, const dd::Resource_group &rg) {
+  MDL_key mdl_key;
+  dd::Resource_group::create_mdl_key(rg.name(), &mdl_key);
+  return mdl_key;
+}
+
+/** Wrapper which creates and MDL_descriptor with the correct
+key and the enum_mdl_type value provided as a template argument.
+*/
+template <enum_mdl_type MDL_TYPE>
+dd::cache::MDL_descriptor make_mdl_descriptor(THD *thd, const auto &object) {
+  return {make_mdl_key(thd, object), MDL_TYPE};
+}
+
+/** dd::Column_statistics need a special overload of this function
+as the exact MDL_key and enum_mdl_type which guards is determined
+at runtime and depends on which other locks are held for the table. */
+template <enum_mdl_type MDL_TYPE>
+dd::cache::MDL_descriptor make_mdl_descriptor(
+    THD *thd, const dd::Column_statistics &col_stat) {
+  // Take l_c_t_n into account when constructing the MDL key for table.
+  char schema_name_buf[NAME_LEN + 1];
+  char table_name_buf[NAME_LEN + 1];
+  const char *schema_name = dd::Object_table_definition_impl::fs_name_case(
+      col_stat.schema_name(), schema_name_buf);
+  const char *table_name = dd::Object_table_definition_impl::fs_name_case(
+      col_stat.table_name(), table_name_buf);
+
+  /*
+    We don't require any column statistics MDL if thread owns exclusive
+    lock on the table. This allows to save on column statistics MDL in
+    cases like DROP DATABASE that would have required acquiring lots of
+    such locks in extreme cases otherwise.
+
+    In order to be able to do this we have to enforce that thread which
+    acquires locks on statistics for table's column also needs to have
+    at least shared MDL on the table.
+  */
+  MDL_key mdl_key{MDL_key::TABLE, schema_name, table_name};
+  if (thd->mdl_context.owns_equal_or_stronger_lock(&mdl_key, MDL_EXCLUSIVE)) {
+    return {.m_mdl_key = mdl_key, .m_mdl_type = MDL_EXCLUSIVE};
+  }
+
+  if (!thd->mdl_context.owns_equal_or_stronger_lock(&mdl_key, MDL_SHARED)) {
+    return {};
+  }
+
+  col_stat.create_mdl_key(&mdl_key);
+  return {.m_mdl_key = mdl_key, .m_mdl_type = MDL_TYPE};
+}
 
 /**
-  Helper class providing overloaded functions asserting that we have proper
+  Providing generic functions asserting that we have proper
   MDL locks in place. Please note that the functions cannot be called
   until after we have the name of the object, so if we acquire an object
   by id, the asserts must be delayed until the object is retrieved.
@@ -112,489 +283,29 @@ namespace {
         thread because the server is not multi threaded at this stage.
 */
 
-class MDL_checker {
- private:
-  /**
-    Private helper function for asserting MDL for tables.
-
-    @note We need to retrieve the schema name, since this is required
-          for the MDL key.
-
-    @param   thd          Thread context.
-    @param   table        Table object.
-    @param   lock_type    Weakest lock type accepted.
-
-    @return true if we have the required lock, otherwise false.
-  */
-
-  static bool is_locked(THD *thd, const dd::Abstract_table *table,
-                        enum_mdl_type lock_type) {
-    // At this stage of the call stack, getting table==nullptr is highly
-    // unlikely, but if it did happen, a crash would be more appropriate.
-    assert(table != nullptr);
-
-    // The schema must be auto released to avoid disturbing the context
-    // at the origin of the function call.
-    dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-    const dd::Schema *schema = nullptr;
-
-    // If the schema acquisition fails, we cannot assure that we have a lock,
-    // and therefore return false.
-    if (thd->dd_client()->acquire(table->schema_id(), &schema)) return false;
-
-    // Skip check for temporary tables.
-    if (is_prefix(table->name().c_str(), tmp_file_prefix)) return true;
-
-    // Likewise, if there is no schema, we cannot have a proper lock.
-    // This may in theory happen during bootstrapping since the meta data for
-    // the system schema is not stored yet; however, this is prevented by
-    // surrounding code calling this function only if
-    // '!thd->is_dd_system_thread' i.e., this is not a bootstrapping thread.
-    assert(!thd->is_dd_system_thread());
-    assert(schema);
-
-    // We must take l_c_t_n into account when reconstructing the MDL key
-    // from the schema and table name, and we need buffers for this purpose.
-    char table_name_buf[NAME_LEN + 1];
-    char schema_name_buf[NAME_LEN + 1];
-
-    const char *table_name = table->name().c_str();
-    const char *schema_name = dd::Object_table_definition_impl::fs_name_case(
-        schema->name(), schema_name_buf);
-
-    // Information schema tables and views are always locked in upper
-    // case independently of lower_case_table_names. At this point, the
-    // table name should aldready be converted to upper case. This is
-    // asserted in the mdl system when checking the lock below. For non-
-    // I_S tables, the table name must be converted to the appropriate
-    // character case.
-    if (my_strcasecmp(system_charset_info, schema->name().c_str(),
-                      "information_schema")) {
-      table_name = dd::Object_table_definition_impl::fs_name_case(
-          table->name(), table_name_buf);
-    }
-
-    return thd->mdl_context.owns_equal_or_stronger_lock(
-        MDL_key::TABLE, schema_name, table_name, lock_type);
+namespace MDL_checker {
+/** Predicate which returns true if a DD object is suitably read locked. */
+template <typename DDT>
+[[nodiscard]] bool is_read_locked(THD *thd, const DDT *objectp) {
+  if constexpr (HAS_MDL_KEY<DDT>()) {
+    return thd->is_dd_system_thread() || objectp == nullptr ||
+           ::is_locked(thd, make_mdl_descriptor<READ_LOCK_MDL_TYPE<DDT>()>(
+                                thd, *objectp));
   }
+  return true;
+}
 
-  /**
-    Private helper function for asserting MDL for events.
-
-    @note We need to retrieve the schema name, since this is required
-          for the MDL key.
-
-    @param   thd          Thread context.
-    @param   event        Event object.
-    @param   lock_type    Weakest lock type accepted.
-
-    @return true if we have the required lock, otherwise false.
-  */
-
-  static bool is_locked(THD *thd, const dd::Event *event,
-                        enum_mdl_type lock_type) {
-    // The schema must be auto released to avoid disturbing the context
-    // at the origin of the function call.
-    dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-    const dd::Schema *schema = nullptr;
-
-    // If the schema acquisition fails, we cannot assure that we have a lock,
-    // and therefore return false.
-    if (thd->dd_client()->acquire(event->schema_id(), &schema)) return false;
-    assert(schema);
-
-    MDL_key mdl_key;
-    char schema_name_buf[NAME_LEN + 1];
-    dd::Event::create_mdl_key(dd::Object_table_definition_impl::fs_name_case(
-                                  schema->name(), schema_name_buf),
-                              event->name(), &mdl_key);
-    return thd->mdl_context.owns_equal_or_stronger_lock(&mdl_key, lock_type);
+/** Predicate which returns true if a DD object is suitably write locked. */
+template <typename DDT>
+[[nodiscard]] bool is_write_locked(THD *thd, const DDT *objectp) {
+  if constexpr (HAS_MDL_KEY<DDT>()) {
+    return thd->is_dd_system_thread() || objectp == nullptr ||
+           ::is_locked(thd, make_mdl_descriptor<MDL_EXCLUSIVE>(thd, *objectp));
   }
-
-  /**
-    Private helper function for asserting MDL for routines.
-
-    @note We need to retrieve the schema name, since this is required
-          for the MDL key.
-
-    @param   thd          Thread context.
-    @param   routine      Routine object.
-    @param   lock_type    Weakest lock type accepted.
-
-    @return true if we have the required lock, otherwise false.
-  */
-
-  static bool is_locked(THD *thd, const dd::Routine *routine,
-                        enum_mdl_type lock_type) {
-    // The schema must be auto released to avoid disturbing the context
-    // at the origin of the function call.
-    dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-    const dd::Schema *schema = nullptr;
-
-    // If the schema acquisition fails, we cannot assure that we have a lock,
-    // and therefore return false.
-    if (thd->dd_client()->acquire(routine->schema_id(), &schema)) return false;
-
-    assert(schema);
-
-    MDL_key mdl_key;
-    char schema_name_buf[NAME_LEN + 1];
-    dd::Routine::create_mdl_key(routine->type(),
-                                dd::Object_table_definition_impl::fs_name_case(
-                                    schema->name(), schema_name_buf),
-                                routine->name(), &mdl_key);
-    return thd->mdl_context.owns_equal_or_stronger_lock(&mdl_key, lock_type);
-  }
-
-  /**
-    Private helper function for asserting MDL for schemata.
-
-    @param   thd          Thread context.
-    @param   schema       Schema object.
-    @param   lock_type    Weakest lock type accepted.
-
-    @return true if we have the required lock, otherwise false.
-  */
-
-  static bool is_locked(THD *thd, const dd::Schema *schema,
-                        enum_mdl_type lock_type) {
-    if (!schema) return true;
-
-    // We must take l_c_t_n into account when reconstructing the
-    // MDL key from the schema name.
-    char name_buf[NAME_LEN + 1];
-    return thd->mdl_context.owns_equal_or_stronger_lock(
-        MDL_key::SCHEMA,
-        dd::Object_table_definition_impl::fs_name_case(schema->name(),
-                                                       name_buf),
-        "", lock_type);
-  }
-
-  /**
-    Private helper function for asserting MDL for spatial reference systems.
-
-    @param   thd          Thread context.
-    @param   srs          Spatial reference system object.
-    @param   lock_type    Weakest lock type accepted.
-
-    @return true if we have the required lock, otherwise false.
-  */
-
-  static bool is_locked(THD *thd, const dd::Spatial_reference_system *srs,
-                        enum_mdl_type lock_type) {
-    if (!srs) return true;
-
-    // Check that the SRID is within the legal range to make sure we
-    // don't overflow id_str below. The ID is unsigned, so we only
-    // need to check the upper bound.
-    assert(srs->id() <= UINT_MAX32);
-
-    char id_str[11];  // uint32 => max 10 digits + \0
-    longlong10_to_str(srs->id(), id_str, 10);
-
-    return thd->mdl_context.owns_equal_or_stronger_lock(MDL_key::SRID, "",
-                                                        id_str, lock_type);
-  }
-
-  /**
-    Private helper function for asserting MDL for column statistics.
-
-    @param   thd               Thread context.
-    @param   column_statistics Column statistic object.
-    @param   lock_type         Weakest lock type accepted.
-
-    @return true if we have the required lock, otherwise false.
-  */
-
-  static bool is_locked(THD *thd,
-                        const dd::Column_statistics *column_statistics,
-                        enum_mdl_type lock_type) {
-    if (!column_statistics) return true; /* purecov: deadcode */
-
-    // Take l_c_t_n into account when constructing the MDL key for table.
-    char schema_name_buf[NAME_LEN + 1];
-    char table_name_buf[NAME_LEN + 1];
-    const char *schema_name = dd::Object_table_definition_impl::fs_name_case(
-        column_statistics->schema_name(), schema_name_buf);
-    const char *table_name = dd::Object_table_definition_impl::fs_name_case(
-        column_statistics->table_name(), table_name_buf);
-
-    /*
-      We don't require any column statistics MDL if thread owns exclusive
-      lock on the table. This allows to save on column statistics MDL in
-      cases like DROP DATABASE that would have required acquiring lots of
-      such locks in extreme cases otherwise.
-
-      In order to be able to do this we have to enforce that thread which
-      acquires locks on statistics for table's column also needs to have
-      at least shared MDL on the table.
-    */
-    if (thd->mdl_context.owns_equal_or_stronger_lock(
-            MDL_key::TABLE, schema_name, table_name, MDL_EXCLUSIVE))
-      return true;
-
-    if (!thd->mdl_context.owns_equal_or_stronger_lock(
-            MDL_key::TABLE, schema_name, table_name, MDL_SHARED))
-      return false;
-
-    MDL_key mdl_key;
-    column_statistics->create_mdl_key(&mdl_key);
-
-    return thd->mdl_context.owns_equal_or_stronger_lock(&mdl_key, lock_type);
-  }
-
-  /**
-    Private helper function for asserting MDL for tablespaces.
-
-    @note We need to retrieve the schema name, since this is required
-          for the MDL key.
-
-    @param   thd          Thread context.
-    @param   tablespace   Tablespace object.
-    @param   lock_type    Weakest lock type accepted.
-
-    @return true if we have the required lock, otherwise false.
-  */
-
-  static bool is_locked(THD *thd, const dd::Tablespace *tablespace,
-                        enum_mdl_type lock_type) {
-    if (!tablespace) return true;
-
-    return thd->mdl_context.owns_equal_or_stronger_lock(
-        MDL_key::TABLESPACE, "", tablespace->name().c_str(), lock_type);
-  }
-
- public:
-  // Releasing arbitrary dictionary objects is not checked.
-  static bool is_release_locked(THD *, const dd::Entity_object *) {
-    return true;
-  }
-
-  // Reading a table object should be governed by MDL_SHARED.
-  static bool is_read_locked(THD *thd, const dd::Abstract_table *table) {
-    return thd->is_dd_system_thread() || is_locked(thd, table, MDL_SHARED);
-  }
-
-  // Writing a table object should be governed by MDL_EXCLUSIVE.
-  static bool is_write_locked(THD *thd, const dd::Abstract_table *table) {
-    return thd->is_dd_system_thread() || is_locked(thd, table, MDL_EXCLUSIVE);
-  }
-
-#ifdef EXTRA_DD_DEBUG  // Too intrusive/expensive to have enabled by default.
-  // Releasing a table object should be covered in the same way as for reading.
-  static bool is_release_locked(THD *thd, const dd::Abstract_table *table) {
-    if (thd->is_dd_system_thread()) return true;
-    dd::Schema *schema = nullptr;
-    if (thd->dd_client()->acquire_uncached(table->schema_id(), &schema))
-      return false;
-    if (schema == nullptr) return false;
-    dd::Schema_MDL_locker mdl_locker(thd);
-    if (mdl_locker.ensure_locked(schema->name().c_str())) return false;
-    return is_read_locked(thd, table);
-  }
-#endif  // EXTRA_DD_DEBUG
-
-  // Reading a spatial reference system object should be governed by MDL_SHARED.
-  static bool is_read_locked(THD *thd,
-                             const dd::Spatial_reference_system *srs) {
-    return thd->is_dd_system_thread() || is_locked(thd, srs, MDL_SHARED);
-  }
-
-  // Writing a spatial reference system  object should be governed by
-  // MDL_EXCLUSIVE.
-  static bool is_write_locked(THD *thd,
-                              const dd::Spatial_reference_system *srs) {
-    return !mysqld_server_started || is_locked(thd, srs, MDL_EXCLUSIVE);
-  }
-
-  // Releasing a spatial reference system object should be covered
-  // in the same way as for reading.
-  static bool is_release_locked(THD *thd,
-                                const dd::Spatial_reference_system *srs) {
-    return is_read_locked(thd, srs);
-  }
-
-  // Reading a column_statistics object should be governed by MDL_SHARED.
-  static bool is_read_locked(THD *thd,
-                             const dd::Column_statistics *column_statistics) {
-    return thd->is_dd_system_thread() ||
-           is_locked(thd, column_statistics, MDL_SHARED);
-  }
-
-  // Writing a column_statistics  object should be governed by
-  // MDL_EXCLUSIVE.
-  static bool is_write_locked(THD *thd,
-                              const dd::Column_statistics *column_statistics) {
-    return !mysqld_server_started ||
-           is_locked(thd, column_statistics, MDL_EXCLUSIVE);
-  }
-
-  // Releasing a column_statistics object should be covered
-  // in the same way as for reading.
-  static bool is_release_locked(
-      THD *thd, const dd::Column_statistics *column_statistics) {
-    return is_read_locked(thd, column_statistics);
-  }
-
-  // No MDL namespace for character sets.
-  static bool is_read_locked(THD *, const dd::Charset *) { return true; }
-
-  // No MDL namespace for character sets.
-  static bool is_write_locked(THD *, const dd::Charset *) { return true; }
-
-  // No MDL namespace for collations.
-  static bool is_read_locked(THD *, const dd::Collation *) { return true; }
-
-  // No MDL namespace for collations.
-  static bool is_write_locked(THD *, const dd::Collation *) { return true; }
-
-  /*
-    Reading a schema object should be governed by at least
-    MDL_INTENTION_EXCLUSIVE. IX is acquired when a schema is
-    being accessed when creating/altering table; while opening
-    a table before we know whether the table exists, and when
-    explicitly acquiring a schema object for reading.
-  */
-  static bool is_read_locked(THD *thd, const dd::Schema *schema) {
-    return thd->is_dd_system_thread() ||
-           is_locked(thd, schema, MDL_INTENTION_EXCLUSIVE);
-  }
-
-  // Writing a schema object should be governed by MDL_EXCLUSIVE.
-  static bool is_write_locked(THD *thd, const dd::Schema *schema) {
-    return thd->is_dd_system_thread() || is_locked(thd, schema, MDL_EXCLUSIVE);
-  }
-
-  // Releasing a schema object should be covered in the same way as for reading.
-  static bool is_release_locked(THD *thd, const dd::Schema *schema) {
-    return is_read_locked(thd, schema);
-  }
-
-  /*
-    Reading a tablespace object should be governed by at least
-    MDL_INTENTION_EXCLUSIVE. IX is acquired when a tablespace is
-    being accessed when creating/altering table.
-  */
-  static bool is_read_locked(THD *thd, const dd::Tablespace *tablespace) {
-    return thd->is_dd_system_thread() ||
-           is_locked(thd, tablespace, MDL_INTENTION_EXCLUSIVE);
-  }
-
-  // Writing a tablespace object should be governed by MDL_EXCLUSIVE.
-  static bool is_write_locked(THD *thd, const dd::Tablespace *tablespace) {
-    return thd->is_dd_system_thread() ||
-           is_locked(thd, tablespace, MDL_EXCLUSIVE);
-  }
-
-  // Releasing a tablespace object should be covered in the same way as for
-  // reading.
-  static bool is_release_locked(THD *thd, const dd::Tablespace *tablespace) {
-    return is_read_locked(thd, tablespace);
-  }
-
-  // Reading a Event object should be governed at least MDL_SHARED.
-  static bool is_read_locked(THD *thd, const dd::Event *event) {
-    return (thd->is_dd_system_thread() || is_locked(thd, event, MDL_SHARED));
-  }
-
-  // Writing a Event object should be governed by MDL_EXCLUSIVE.
-  static bool is_write_locked(THD *thd, const dd::Event *event) {
-    return (thd->is_dd_system_thread() || is_locked(thd, event, MDL_EXCLUSIVE));
-  }
-
-#ifdef EXTRA_DD_DEBUG  // Too intrusive/expensive to have enabled by default.
-  // Releasing an Event object should be covered in the same way as for reading.
-  static bool is_release_locked(THD *thd, const dd::Event *event) {
-    if (thd->is_dd_system_thread()) return true;
-    dd::Schema *schema = nullptr;
-    if (thd->dd_client()->acquire_uncached(event->schema_id(), &schema))
-      return false;
-    if (schema == nullptr) return false;
-    dd::Schema_MDL_locker mdl_locker(thd);
-    if (mdl_locker.ensure_locked(schema->name().c_str())) return false;
-    return is_read_locked(thd, event);
-  }
-#endif  // EXTRA_DD_DEBUG
-
-  // Reading a Routine object should be governed at least MDL_SHARED.
-  static bool is_read_locked(THD *thd, const dd::Routine *routine) {
-    return (thd->is_dd_system_thread() || is_locked(thd, routine, MDL_SHARED));
-  }
-
-  // Writing a Routine object should be governed by MDL_EXCLUSIVE.
-  static bool is_write_locked(THD *thd, const dd::Routine *routine) {
-    return (thd->is_dd_system_thread() ||
-            is_locked(thd, routine, MDL_EXCLUSIVE));
-  }
-
-#ifdef EXTRA_DD_DEBUG  // Too intrusive/expensive to have enabled by default.
-  // Releasing a Routine object should be covered in the same way as for
-  // reading.
-  static bool is_release_locked(THD *thd, const dd::Routine *routine) {
-    if (thd->is_dd_system_thread()) return true;
-    dd::Schema *schema = nullptr;
-    if (thd->dd_client()->acquire_uncached(routine->schema_id(), &schema))
-      return false;
-    if (schema == nullptr) return false;
-    dd::Schema_MDL_locker mdl_locker(thd);
-    if (mdl_locker.ensure_locked(schema->name().c_str())) return false;
-    return is_read_locked(thd, routine);
-  }
-#endif  // EXTRA_DD_DEBUG
-
-  /**
-    Private helper function for asserting MDL for resource groups.
-
-    @param   thd              THD context.
-    @param   resource_group   DD Resource group object.
-    @param   lock_type        Weakest lock type accepted.
-
-    @return  true             if we have the required lock, otherwise false.
-  */
-
-  static bool is_locked(THD *thd, const dd::Resource_group *resource_group,
-                        enum_mdl_type lock_type) {
-    if (resource_group == nullptr) return true;
-
-    MDL_key mdl_key;
-    dd::Resource_group::create_mdl_key(resource_group->name(), &mdl_key);
-
-    return thd->mdl_context.owns_equal_or_stronger_lock(&mdl_key, lock_type);
-  }
-
-  /**
-    Check whether a resource group object holds at least
-    MDL_INTENTION_EXCLUSIVE. IX is acquired when a resource group is being
-    accessed when creating/altering a resource group.
-
-    @param   thd                   THD context.
-    @param   resource_group        Pointer to DD resource group object.
-
-    @return  true if required lock is held else false
-  */
-
-  static bool is_read_locked(THD *thd,
-                             const dd::Resource_group *resource_group) {
-    return thd->is_dd_system_thread() ||
-           is_locked(thd, resource_group, MDL_INTENTION_EXCLUSIVE);
-  }
-
-  /**
-    Check if MDL_EXCLUSIVE lock is held by DD Resource group object.
-    Writing a resource group object should be governed by MDL_EXCLUSIVE.
-
-    @param    thd                 THD context
-    @param    resource_group      Pointer to DD resource group object.
-
-    @return   true if required lock is held else false.
-  */
-
-  static bool is_write_locked(THD *thd,
-                              const dd::Resource_group *resource_group) {
-    return thd->is_dd_system_thread() ||
-           is_locked(thd, resource_group, MDL_EXCLUSIVE);
-  }
-};
+  return true;
+}
+}  // namespace MDL_checker
+#endif /* not NDEBUG */
 
 constexpr const auto innodb_engine_name =
     std::string_view(STRING_WITH_LEN("InnoDB"));
@@ -734,6 +445,16 @@ bool is_cached(const SPI_lru_cache_owner_ptr &cache, Object_id id,
 template <typename T>
 void Dictionary_client::Auto_releaser::transfer_release(const T *object) {
   assert(object);
+#ifndef NDEBUG
+  auto fit = std::ranges::find_if(m_release_locks,
+                                  [&](const Release_lock_descriptor &rld) {
+                                    return rld.m_object == object;
+                                  });
+  if (fit != m_release_locks.end()) {
+    m_prev->m_release_locks.push_back(std::move(*fit));
+    m_release_locks.erase(fit);
+  }
+#endif /* not NDEBUG */
   // Remove the object, which must be present.
   Cache_element<T> *element = nullptr;
   m_release_registry.get(object, &element);
@@ -753,6 +474,15 @@ Dictionary_client::Auto_releaser *Dictionary_client::Auto_releaser::remove(
     Cache_element<T> *e = nullptr;
     releaser->m_release_registry.get(element->object(), &e);
     if (e == element) {
+#ifndef NDEBUG
+      auto fit = std::ranges::find_if(
+          m_release_locks, [&](const Release_lock_descriptor &rld) {
+            return rld.m_object == element->object();
+          });
+      if (fit != m_release_locks.end()) {
+        m_release_locks.erase(fit);
+      }
+#endif /* not NDEBUG */
       releaser->m_release_registry.remove(element);
       return releaser;
     }
@@ -784,6 +514,29 @@ Dictionary_client::Auto_releaser::Auto_releaser(Dictionary_client *client)
 Dictionary_client::Auto_releaser::~Auto_releaser() {
   // Make sure that we destroy auto_releaser object in LIFO order.
   assert(m_client->m_current_releaser == this);
+  DBUG_LOG("dd_release_lock",
+           "~Auto_releaser(" << this << ") with m_asserted_mdl_keys.size():"
+                             << m_release_locks.size()
+                             << " m_release_registry.size_all():"
+                             << m_release_registry.size_all());
+
+#ifndef NDEBUG
+  // Some extra debug before calling DC::release.
+  for (const Release_lock_descriptor &rld : m_release_locks) {
+    const MDL_key &mdlk = rld.m_mdld.m_mdl_key;
+    auto s = std::string_view{mdlk.db_name(), mdlk.db_name_length()};
+    auto t = std::string_view{mdlk.name(), mdlk.name_length()};
+    DBUG_LOG("dd_release_lock",
+             "Checking release MDL on object ("
+                 << rld.m_object->id() << "," << rld.m_object->name()
+                 << ") using key (" << ((int)mdlk.mdl_namespace()) << ", " << s
+                 << "." << t
+                 << "): locked: " << is_locked(m_client->m_thd, rld.m_mdld));
+    if (!is_locked(m_client->m_thd, rld.m_mdld)) {
+      LogErr(ERROR_LEVEL, ER_CONDITIONAL_DEBUG, "Lock not held at release!");
+    }
+  }
+#endif /* not NDEBUG */
 
   // Release all objects registered.
   m_client->release<Abstract_table>(&m_release_registry);
@@ -796,6 +549,26 @@ Dictionary_client::Auto_releaser::~Auto_releaser() {
   m_client->release<Routine>(&m_release_registry);
   m_client->release<Spatial_reference_system>(&m_release_registry);
   m_client->release<Resource_group>(&m_release_registry);
+
+#ifndef NDEBUG
+  // Make sure we still have some meta data lock. This is checked to
+  // catch situations where we have released the lock before releasing
+  // the cached element. This will happen if we, e.g., declare a
+  // Schema_MDL_locker after the Auto_releaser which keeps track of when
+  // the elements are to be released. In that case, the instances will
+  // be deleted in the opposite order, hence there will be a short period
+  // where the schema locker is deleted (and hence, its MDL ticket is
+  // released) while the actual schema object is still not released. This
+  // means that there may be situations where we have a different thread
+  // getting an X meta data lock on the schema name, while the reference
+  // counter of the corresponding cache element is already > 0, which may
+  // again trigger asserts in the shared cache and allow for improper object
+  // usage.
+  assert(std::ranges::all_of(m_release_locks,
+                             [this](const Release_lock_descriptor &rld) {
+                               return is_locked(m_client->m_thd, rld.m_mdld);
+                             }));
+#endif /* not NDEBUG */
 
   // Restore the client's previous releaser.
   m_client->m_current_releaser = m_prev;
@@ -937,12 +710,33 @@ bool Dictionary_client::acquire(const K &key, const T **object,
     }
 
     assert(element->object() && element->object()->id());
+
     // Sign up for auto release.
     m_registry_committed.put(element);
     m_current_releaser->auto_release(element);
     *object = element->object();
+
+#ifndef NDEBUG
     // Check proper MDL lock.
-    assert(MDL_checker::is_read_locked(m_thd, *object));
+    if constexpr (HAS_MDL_KEY<T>()) {
+      if (!m_thd->is_dd_system_thread()) {
+        m_current_releaser->m_release_locks.emplace_back(
+            make_mdl_descriptor<READ_LOCK_MDL_TYPE<T>()>(m_thd, **object),
+            *object);
+
+        DBUG_LOG("dd_release_lock", "Making release descriptor for ("
+                                        << (*object)->id() << ","
+                                        << (*object)->name() << ")");
+
+        // Same as asserting on MDL_checker::is_read_locked(), but since we
+        // already have the MDL_descriptor available, we call is_locked() on
+        // that.
+        assert(m_thd->is_dd_system_thread() ||
+               is_locked(m_thd,
+                         m_current_releaser->m_release_locks.back().m_mdld));
+      }
+    }
+#endif /* not NDEBUG */
   }
   return false;
 }
@@ -1011,32 +805,11 @@ size_t Dictionary_client::release(Object_registry *registry) {
     else
       (void)m_current_releaser->remove(element);
 
-      // Clone the object before releasing it. The object is needed for checking
-      // the meta data lock afterwards. This is an expensive check, so only
-      // do it if EXTRA_DD_DEBUG is set.
-#ifdef EXTRA_DD_DEBUG
-    std::unique_ptr<const T> object_clone(element->object()->clone());
-#endif
-
     // Release the element from the shared cache.
     Shared_dictionary_cache::instance()->release(element);
 
-    // Make sure we still have some meta data lock. This is checked to
-    // catch situations where we have released the lock before releasing
-    // the cached element. This will happen if we, e.g., declare a
-    // Schema_MDL_locker after the Auto_releaser which keeps track of when
-    // the elements are to be released. In that case, the instances will
-    // be deleted in the opposite order, hence there will be a short period
-    // where the schema locker is deleted (and hence, its MDL ticket is
-    // released) while the actual schema object is still not released. This
-    // means that there may be situations where we have a different thread
-    // getting an X meta data lock on the schema name, while the reference
-    // counter of the corresponding cache element is already > 0, which may
-    // again trigger asserts in the shared cache and allow for improper object
-    // usage.
-#ifdef EXTRA_DD_DEBUG
-    assert(MDL_checker::is_release_locked(m_thd, object_clone.get()));
-#endif
+    // We no longer check that the MDL is held here, but do it for all
+    // objects being released in ~Auto_releaser().
   }
   return num_released;
 }
@@ -1220,12 +993,11 @@ bool Dictionary_client::acquire_uncached_uncommitted_impl(Object_id id,
   }
 
   if (uncommitted_object != nullptr) {
-    // Dynamic cast may legitimately return NULL if we e.g. asked
-    // for a dd::Table and got a dd::View in return, but in this
-    // case, we cannot delete the stored_object since it is present
-    // in the uncommitted registry.
-    // It is caller's responsibility to manage life time of the returned
-    // object e.g. by registering it for auto-deletion.
+    // Dynamic cast may legitimately return NULL if we e.g. asked for a
+    // dd::Table and got a dd::View in return, but in this case, we cannot
+    // delete the stored_object since it is present in the uncommitted registry.
+    // It is caller's responsibility to manage life time of the returned object
+    // e.g. by registering it for auto-deletion.
     *object =
         const_cast<T *>(dynamic_cast<const T *>(uncommitted_object->clone()));
     return false;
@@ -1269,6 +1041,9 @@ bool Dictionary_client::acquire_uncached_uncommitted(
 template <typename T>
 bool Dictionary_client::acquire(const String_type &object_name,
                                 const T **object) {
+  assert(m_current_releaser != &m_default_releaser);
+  assert(m_current_releaser->m_prev != nullptr);
+
   // Create the name key for the object.
   typename T::Name_key key;
   bool error = T::update_name_key(&key, object_name);
@@ -1348,6 +1123,9 @@ template <typename T>
 bool Dictionary_client::acquire(const String_type &schema_name,
                                 const String_type &object_name,
                                 const T **object) {
+  assert(m_current_releaser != &m_default_releaser);
+  assert(m_current_releaser->m_prev != nullptr);
+
   // We must make sure the schema is released and unlocked in the right order.
   Schema_MDL_locker mdl_locker(m_thd);
   Auto_releaser releaser(this);
@@ -2083,6 +1861,22 @@ bool Dictionary_client::fetch_schema_table_names_not_hidden_by_se(
       m_thd, schema, names, fetch_criteria);
 }
 
+// Fetch the server base table names (not views) that belong to schema, except
+// for SE specific tables.
+bool Dictionary_client::fetch_schema_base_table_names_not_hidden_by_se(
+    const Schema *schema, std::vector<String_type> *names) const {
+  auto fetch_criteria = [&](Raw_record *r) -> bool {
+    return static_cast<dd::Abstract_table::enum_hidden_type>(
+               r->read_int(dd::tables::Tables::FIELD_HIDDEN)) !=
+               dd::Abstract_table::HT_HIDDEN_SE &&
+           static_cast<dd::enum_table_type>(
+               r->read_int(dd::tables::Tables::FIELD_TYPE)) ==
+               dd::enum_table_type::BASE_TABLE;
+  };
+  return fetch_schema_component_names_by_criteria<Abstract_table>(
+      m_thd, schema, names, fetch_criteria);
+}
+
 // Fetch the table names that belong to schema, except for HIDDEN tables.
 template <>
 bool Dictionary_client::fetch_schema_component_names<Abstract_table>(
@@ -2115,6 +1909,18 @@ bool Dictionary_client::fetch_schema_component_names<Function>(
     return static_cast<dd::Routine::enum_routine_type>(
                r->read_int(dd::tables::Routines::FIELD_TYPE)) ==
            dd::Routine::RT_FUNCTION;  // Select only FUNCTIONs.
+  };
+  return fetch_schema_component_names_by_criteria<Routine>(m_thd, schema, names,
+                                                           fetch_criteria);
+}
+
+template <>
+bool Dictionary_client::fetch_schema_component_names<Library>(
+    const Schema *schema, std::vector<String_type> *names) const {
+  auto fetch_criteria = [&](Raw_record *r) {
+    return static_cast<dd::Routine::enum_routine_type>(
+               r->read_int(dd::tables::Routines::FIELD_TYPE)) ==
+           dd::Routine::RT_LIBRARY;  // Select only LIBRARIES.
   };
   return fetch_schema_component_names_by_criteria<Routine>(m_thd, schema, names,
                                                            fetch_criteria);
@@ -3212,6 +3018,20 @@ template bool Dictionary_client::drop(const Procedure *);
 template bool Dictionary_client::store(Procedure *);
 template bool Dictionary_client::update(Procedure *);
 
+template bool Dictionary_client::acquire_uncached(Object_id, Library **);
+template bool Dictionary_client::acquire(Object_id, const Library **);
+template bool Dictionary_client::acquire_for_modification(Object_id,
+                                                          Library **);
+template void Dictionary_client::remove_uncommitted_objects<Library>(bool);
+template bool Dictionary_client::acquire(const String_type &,
+                                         const String_type &, const Library **);
+template bool Dictionary_client::acquire_for_modification(const String_type &,
+                                                          const String_type &,
+                                                          Library **);
+template bool Dictionary_client::drop(const Library *);
+template bool Dictionary_client::store(Library *);
+template bool Dictionary_client::update(Library *);
+
 template bool Dictionary_client::drop(const Routine *);
 template void Dictionary_client::remove_uncommitted_objects<Routine>(bool);
 template bool Dictionary_client::update(Routine *);
@@ -3224,9 +3044,14 @@ template bool Dictionary_client::acquire<Function>(
 template bool Dictionary_client::acquire<Procedure>(
     const String_type &, const String_type &,
     const Procedure::Cache_partition **);
+template bool Dictionary_client::acquire<Library>(
+    const String_type &, const String_type &,
+    const Procedure::Cache_partition **);
 template bool Dictionary_client::acquire_for_modification<Function>(
     const String_type &, const String_type &, Function::Cache_partition **);
 template bool Dictionary_client::acquire_for_modification<Procedure>(
+    const String_type &, const String_type &, Procedure::Cache_partition **);
+template bool Dictionary_client::acquire_for_modification<Library>(
     const String_type &, const String_type &, Procedure::Cache_partition **);
 
 template bool Dictionary_client::acquire_uncached(Object_id, Routine **);

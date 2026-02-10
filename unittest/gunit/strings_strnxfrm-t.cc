@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,9 +30,9 @@
  */
 
 #include <gtest/gtest.h>
-#include <inttypes.h>
 #include <sys/types.h>
 #include <algorithm>
+#include <cinttypes>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -96,10 +96,10 @@ CHARSET_INFO *init_collation(const char *name) {
 
 int compare_through_strxfrm(CHARSET_INFO *cs, const char *a, const char *b) {
   uchar abuf[256], bbuf[256];
-  int alen = my_strnxfrm(cs, abuf, sizeof(abuf), pointer_cast<const uchar *>(a),
-                         strlen(a));
-  int blen = my_strnxfrm(cs, bbuf, sizeof(bbuf), pointer_cast<const uchar *>(b),
-                         strlen(b));
+  int const alen = my_strnxfrm(cs, abuf, sizeof(abuf),
+                               pointer_cast<const uchar *>(a), strlen(a));
+  int const blen = my_strnxfrm(cs, bbuf, sizeof(bbuf),
+                               pointer_cast<const uchar *>(b), strlen(b));
 
   if (false)  // Enable this for debugging.
   {
@@ -109,14 +109,13 @@ int compare_through_strxfrm(CHARSET_INFO *cs, const char *a, const char *b) {
     print_array(bbuf, blen);
   }
 
-  int cmp = memcmp(abuf, bbuf, std::min(alen, blen));
+  int const cmp = memcmp(abuf, bbuf, std::min(alen, blen));
   if (cmp != 0) return cmp;
 
   if (alen == blen) {
     return 0;
-  } else {
-    return (alen < blen) ? -1 : 1;
   }
+  return (alen < blen) ? -1 : 1;
 }
 
 #if defined(__cpp_char8_t) && __cpp_char8_t
@@ -163,52 +162,56 @@ INSTANTIATE_TEST_SUITE_P(Strnxfrm, StrnxfrmTest,
 TEST_P(StrnxfrmTest, OriginalSrcDst) {
   CHARSET_INFO *cs = init_collation("latin1_swedish_ci");
   for (size_t ix = 0; ix < num_iterations; ++ix)
-    strnxfrm_orig(cs, &m_dst[0], m_length, m_length, &m_src[0], m_length, 192);
+    strnxfrm_orig(cs, m_dst.data(), m_length, m_length, m_src.data(), m_length,
+                  192);
 }
 
 TEST_P(StrnxfrmTest, OriginalUnrolledSrcDst) {
   CHARSET_INFO *cs = init_collation("latin1_swedish_ci");
   for (size_t ix = 0; ix < num_iterations; ++ix)
-    strnxfrm_orig_unrolled(cs, &m_dst[0], m_length, m_length, &m_src[0],
+    strnxfrm_orig_unrolled(cs, m_dst.data(), m_length, m_length, m_src.data(),
                            m_length, 192);
 }
 
 TEST_P(StrnxfrmTest, ModifiedSrcDst) {
   CHARSET_INFO *cs = init_collation("latin1_swedish_ci");
   for (size_t ix = 0; ix < num_iterations; ++ix)
-    strnxfrm_new(cs, &m_dst[0], m_length, m_length, &m_src[0], m_length, 192);
+    strnxfrm_new(cs, m_dst.data(), m_length, m_length, m_src.data(), m_length,
+                 192);
 }
 
 TEST_P(StrnxfrmTest, ModifiedUnrolledSrcDst) {
   CHARSET_INFO *cs = init_collation("latin1_swedish_ci");
   for (size_t ix = 0; ix < num_iterations; ++ix)
-    strnxfrm_new_unrolled(cs, &m_dst[0], m_length, m_length, &m_src[0],
+    strnxfrm_new_unrolled(cs, m_dst.data(), m_length, m_length, m_src.data(),
                           m_length, 192);
 }
 
 TEST_P(StrnxfrmTest, OriginalSrcSrc) {
   CHARSET_INFO *cs = init_collation("latin1_swedish_ci");
   for (size_t ix = 0; ix < num_iterations; ++ix)
-    strnxfrm_orig(cs, &m_src[0], m_length, m_length, &m_src[0], m_length, 192);
+    strnxfrm_orig(cs, m_src.data(), m_length, m_length, m_src.data(), m_length,
+                  192);
 }
 
 TEST_P(StrnxfrmTest, OriginalUnrolledSrcSrc) {
   CHARSET_INFO *cs = init_collation("latin1_swedish_ci");
   for (size_t ix = 0; ix < num_iterations; ++ix)
-    strnxfrm_orig_unrolled(cs, &m_src[0], m_length, m_length, &m_src[0],
+    strnxfrm_orig_unrolled(cs, m_src.data(), m_length, m_length, m_src.data(),
                            m_length, 192);
 }
 
 TEST_P(StrnxfrmTest, ModifiedSrcSrc) {
   CHARSET_INFO *cs = init_collation("latin1_swedish_ci");
   for (size_t ix = 0; ix < num_iterations; ++ix)
-    strnxfrm_new(cs, &m_src[0], m_length, m_length, &m_src[0], m_length, 192);
+    strnxfrm_new(cs, m_src.data(), m_length, m_length, m_src.data(), m_length,
+                 192);
 }
 
 TEST_P(StrnxfrmTest, ModifiedUnrolledSrcSrc) {
   CHARSET_INFO *cs = init_collation("latin1_swedish_ci");
   for (size_t ix = 0; ix < num_iterations; ++ix)
-    strnxfrm_new_unrolled(cs, &m_src[0], m_length, m_length, &m_src[0],
+    strnxfrm_new_unrolled(cs, m_src.data(), m_length, m_length, m_src.data(),
                           m_length, 192);
 }
 
@@ -500,8 +503,8 @@ TEST(StrXfrmTest, NullPointer) {
   cs->coll->strnxfrm(cs, buf, sizeof(buf), sizeof(buf), nullptr, 0,
                      MY_STRXFRM_PAD_TO_MAXLEN);
 
-  for (size_t i = 0; i < sizeof(buf); ++i) {
-    EXPECT_EQ(0, buf[i]);
+  for (unsigned char &i : buf) {
+    EXPECT_EQ(0, i);
   }
 }
 
@@ -2031,7 +2034,7 @@ static void BM_UTF8MB4_0900_bin(size_t num_iterations) {
       "✌️🐶👩🏽";
   const int len = strlen(content);
 
-  uchar *dest = new uchar[len];
+  auto *dest = new uchar[len];
 
   StartBenchmarkTiming();
   for (size_t i = 0; i < num_iterations; ++i) {
@@ -2219,15 +2222,15 @@ TEST(BitfiddlingTest, DISABLED_FastOutOfRange) {
         bytes[2] = c;
         for (int d = 0; d < 256; ++d) {
           bytes[3] = d;
-          bool any_out_of_range_slow =
+          bool const any_out_of_range_slow =
               (a < 0x20 || a > 0x7e) || (b < 0x20 || b > 0x7e) ||
               (c < 0x20 || c > 0x7e) || (d < 0x20 || d > 0x7e);
 
           uint32 four_bytes;
           memcpy(&four_bytes, bytes, sizeof(four_bytes));
-          bool any_out_of_range_fast =
-              (((four_bytes + 0x01010101u) & 0x80808080) ||
-               ((four_bytes - 0x20202020u) & 0x80808080));
+          bool const any_out_of_range_fast =
+              (((four_bytes + 0x01010101U) & 0x80808080) ||
+               ((four_bytes - 0x20202020U) & 0x80808080));
 
           EXPECT_EQ(any_out_of_range_slow, any_out_of_range_fast);
         }
@@ -2246,12 +2249,12 @@ TEST(BitfiddlingTest, FastOutOfRange16) {
     bytes[0] = a;
     for (int b = 0; b < 256; ++b) {
       bytes[1] = b;
-      bool any_out_of_range_slow =
+      bool const any_out_of_range_slow =
           (a < 0x20 || a > 0x7e) || (b < 0x20 || b > 0x7e);
 
       uint16 two_bytes;
       memcpy(&two_bytes, bytes, sizeof(two_bytes));
-      bool any_out_of_range_fast =
+      bool const any_out_of_range_fast =
           (((two_bytes + uint16{0x0101}) & uint16{0x8080}) ||
            ((two_bytes - uint16{0x2020}) & uint16{0x8080}));
 
@@ -2335,11 +2338,11 @@ void test_strnxfrmlen(CHARSET_INFO *cs) {
   const size_t max_len = cs->coll->strnxfrmlen(cs, cs->mbmaxlen);
 
   for (my_wc_t ch = 0; ch <= 0x10ffff; ++ch) {
-    size_t in_len = cs->cset->wc_mb(cs, ch, inbuf, inbuf + sizeof(inbuf));
+    size_t const in_len = cs->cset->wc_mb(cs, ch, inbuf, inbuf + sizeof(inbuf));
     if (in_len <= 0) {
       continue;  // Not representable in this character set.
     }
-    size_t out_len =
+    size_t const out_len =
         cs->coll->strnxfrm(cs, outbuf, sizeof(outbuf), 1, inbuf, in_len, 0);
     EXPECT_LE(out_len, max_len);
     if (out_len > max_len) {
@@ -2687,7 +2690,7 @@ TEST(StrmxfrmHashTest, HashStability) {
 
       char buf[4096];
       uint errors;
-      size_t len =
+      size_t const len =
           my_convert(buf, sizeof(buf), cs, test_str.data(), test_str.size(),
                      &my_charset_utf8mb4_0900_ai_ci, &errors);
       ASSERT_EQ(0, errors);

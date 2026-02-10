@@ -50,7 +50,6 @@ CALL mtr.add_suppression("Replica SQL for channel '': worker thread retried tran
 # Backup the original value of the variables
 SET @saved_innodb_lock_wait_timeout = @@GLOBAL.innodb_lock_wait_timeout;
 SET @saved_replica_parallel_workers = @@GLOBAL.replica_parallel_workers;
-SET @saved_replica_parallel_type = @@GLOBAL.replica_parallel_type;
 SET @saved_max_relay_log_size = @@GLOBAL.max_relay_log_size;
 SET @saved_replica_transaction_retries = @@GLOBAL.replica_transaction_retries;
 
@@ -63,9 +62,6 @@ SET GLOBAL replica_parallel_workers = 2;
 SET GLOBAL max_relay_log_size = 4096;
 
 --source include/rpl/stop_applier.inc
-
-eval SET GLOBAL replica_parallel_type = $mts_parallel_type;
-
 --source include/rpl/start_applier.inc
 
 --echo #
@@ -236,7 +232,6 @@ SET GLOBAL max_relay_log_size = @saved_max_relay_log_size;
 SET GLOBAL replica_transaction_retries = @saved_replica_transaction_retries;
 
 --source include/rpl/stop_applier.inc
-SET GLOBAL replica_parallel_type= @saved_replica_parallel_type;
 --source include/rpl/start_applier.inc
 
 --source include/rpl/connection_source.inc

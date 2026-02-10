@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -39,9 +39,9 @@ ADD_DEFINITIONS(-DPFS_DIRECT_CALL)
 IF(MSVC AND NOT WIN32_CLANG)
   # Treat warnings as errors on MSVC for InnoDB
   ADD_COMPILE_OPTIONS("/WX")
-  # Remove /W3 from the flags to avoid the redefined option warning
-  STRING(REPLACE "/W3" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-  STRING(REPLACE "/W3" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+  # Remove /Wn from the flags to avoid the redefined option warning
+  REMOVE_CMAKE_COMPILER_FLAGS(CMAKE_CXX_FLAGS "/W[01234]")
+  REMOVE_CMAKE_COMPILER_FLAGS(CMAKE_C_FLAGS "/W[01234]")
   # Add warnings from level 4
   ADD_COMPILE_OPTIONS("/W4")
   # Disable C4324: structure was padded due to __declspec(align())
@@ -268,7 +268,7 @@ SET(INNOBASE_SOURCES
   ut/ut0wqueue.cc)
 
 # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98753
-IF(MY_COMPILER_IS_GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 11)
+IF(MY_COMPILER_IS_GNU)
   ADD_COMPILE_FLAGS(
     pars/pars0grm.cc
     COMPILE_FLAGS "-Wno-free-nonheap-object")
@@ -352,7 +352,7 @@ MYSQL_ADD_PLUGIN(innobase
   MANDATORY
   MODULE_OUTPUT_NAME ha_innodb
   LINK_LIBRARIES sql_dd sql_gis ext::zlib ext::lz4 ${NUMA_LIBRARY}
-                 extra::rapidjson)
+                 extra::rapidjson library_mysys)
 
 # On linux: /usr/include/stdio.h:#define BUFSIZ 8192
 # On Solaris: /usr/include/iso/stdio_iso.h:#define    BUFSIZ  1024
@@ -392,7 +392,30 @@ IF(MSVC AND NOT WIN32_CLANG)
   ENDFOREACH()
   TARGET_COMPILE_OPTIONS(innodb_zipdecompress PRIVATE "/wd4100")
 ENDIF()
+<<<<<<< HEAD
 
 # Must be after all ADD_DEFINITIONS() to be inherited by the
 # 'xtrabackup' subdirectory
 ADD_SUBDIRECTORY(xtrabackup)
+||||||| 61a3a1d8ef1
+=======
+
+IF(MY_COMPILER_IS_GNU AND FPROFILE_USE)
+  ADD_COMPILE_FLAGS(page/page0zip.cc COMPILE_FLAGS
+    "-Wno-array-bounds"
+    "-Wno-restrict"
+    "-Wno-stringop-overflow"
+    )
+  ADD_COMPILE_FLAGS(lock/lock0lock.cc COMPILE_FLAGS
+    "-Wno-alloc-size-larger-than"
+    )
+  # This is needed for innodb_zipdecompress
+  ADD_COMPILE_FLAGS(
+    rem/rem0wrec.cc
+    COMPILE_FLAGS "-Wno-stringop-overflow"
+    )
+  IF(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14)
+    STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-error=alloc-size-larger-than=")
+  ENDIF()
+ENDIF()
+>>>>>>> tags/mysql-9.6.0

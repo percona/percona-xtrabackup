@@ -1,0 +1,1171 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `proc_schema` - created
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+CREATE USER user_root@'%' IDENTIFIED BY 'secretpass';
+
+
+## I.  Verify error messages while providing faulty configuration to rest procedure
+#
+# 1. Verify that too long TEXT results in BadRequest (in-out parameter limit is 64Kbytes)
+#
+## II. Verify handling of different MYSQL types used in stored procedure
+##    in-out parameter, when they are transfered in GET requests
+#
+# 1. Verify if input TEXT was concatanated in output of stored procedure
+# 2. Verify if input TINY-TEXT value was concatanated in output of stored procedure
+# 3. Verify if input VARCHAR value was concatanated in output of stored procedure
+# 4. Verify if input DATE value was incremented in output of stored procedure
+# 5. Verify if input YEAR value was incremented in output of stored procedure
+# 6. Verify if input TIME value was incremented in output of stored procedure
+# 7. Verify if input BIT(1) was inverted in output of stored procedure
+# 8. Verify if input INT value was incremented in output of stored procedure
+# 9. Verify if input TINYINT(1) was incremented in output of stored procedure
+# 10. Verify if input TINYINT(8) was incremented in output of stored procedure
+# 11. Verify if input DECIMAL was incremented in output of stored procedure
+# 12. Verify if input FLOAT was incremented in output of stored procedure
+# 13. Verify if input DOUBLE was incremented in output of stored procedure
+# 14. Verify if input SET was concatanated in output of stored procedure
+# 15. Verify if input ENUM changed to next value in output of stored procedure
+# 16. Verify if input VECTOR changed to next value in output of stored procedure
+#
+#
+## III. Verify handling of different MYSQL types used in stored procedure
+##     in-out parameter, when they are transfered in PUT requests
+#
+# 1. Verify if input TEXT was concatanated in output of stored procedure
+# 2. Verify if input TINY-TEXT value was concatanated in output of stored procedure
+# 3. Verify if input VARCHAR value was concatanated in output of stored procedure
+# 4. Verify if input DATE value was incremented in output of stored procedure
+# 5. Verify if input YEAR value was incremented in output of stored procedure
+# 6. Verify if input TIME value was incremented in output of stored procedure
+# 7. Verify if input BIT(1) was inverted in output of stored procedure
+# 8. Verify if input INT value was incremented in output of stored procedure
+# 9. Verify if input TINYINT(1) was incremented in output of stored procedure
+# 10. Verify if input TINYINT(8) was incremented in output of stored procedure
+# 11. Verify if input DECIMAL was incremented in output of stored procedure
+# 12. Verify if input FLOAT was incremented in output of stored procedure
+# 13. Verify if input DOUBLE was incremented in output of stored procedure
+# 14. Verify if input SET was concatanated in output of stored procedure
+# 15. Verify if input ENUM changed to next value in output of stored procedure
+# 16. Verify if input VECTOR changed to next value in output of stored procedure
+#
+#
+## IV. Verify handling of different MYSQL types used in stored procedure
+##     in-out parameter, when they are not set in GET requests
+#
+# 1. Verify if null TEXT in input, generates null in output of stored procedure
+# 2. Verify if null TINY-TEXT in input, generates null in output of stored procedure
+# 3. Verify if null VARCHAR in input, generates null in output of stored procedure
+# 4. Verify if null DATE in input, generates null in output of stored procedure
+# 5. Verify if null YEAR in input, generates null in output of stored procedure
+# 6. Verify if null TIME in input, generates null in output of stored procedure
+# 7. Verify if null BIT(1) in input, generates true in output of stored procedure
+# 8. Verify if null INT in input, generates null in output of stored procedure
+# 9. Verify if null TINYINT(1) in input, generates null in output of stored procedure
+# 10. Verify if null TINYINT(8) in input, generates null in output of stored procedure
+# 11. Verify if null DECIMAL in input, generates null in output of stored procedure
+# 12. Verify if null FLOAT in input, generates null in output of stored procedure
+# 13. Verify if null DOUBLE in input, generates null in output of stored procedure
+# 14. Verify if null SET in input, generates null in output of stored procedure
+# 15. Verify if null ENUM in input, generates null in output of stored procedure
+# 16. Verify if null VECTOR in input, generates null in output of stored procedure
+#
+#
+## V. Verify handling of different MYSQL types used in stored procedure
+##     in-out parameter, when they are not set in PUT requests
+#
+# 1. Verify if null TEXT in input, generates null in output of stored procedure
+# 2. Verify if null TINY-TEXT in input, generates null in output of stored procedure
+# 3. Verify if null VARCHAR in input, generates null in output of stored procedure
+# 4. Verify if null DATE in input, generates null in output of stored procedure
+# 5. Verify if null YEAR in input, generates null in output of stored procedure
+# 6. Verify if null TIME in input, generates null in output of stored procedure
+# 7. Verify if null BIT(1) in input, generates true in output of stored procedure
+# 8. Verify if null INT in input, generates null in output of stored procedure
+# 9. Verify if null TINYINT(1) in input, generates null in output of stored procedure
+# 10. Verify if null TINYINT(8) in input, generates null in output of stored procedure
+# 11. Verify if null DECIMAL in input, generates null in output of stored procedure
+# 12. Verify if null FLOAT in input, generates null in output of stored procedure
+# 13. Verify if null DOUBLE in input, generates null in output of stored procedure
+# 14. Verify if null SET in input, generates null in output of stored procedure
+# 15. Verify if null ENUM in input, generates null in output of stored procedure
+# 16. Verify if null VECTOR in input, generates null in output of stored procedure
+#
+#
+## VI. Verify handling of few MYSQL types used in stored procedure
+##     in-out parameter, when they are set to json-null in PUT requests
+#
+# 1. Verify if null TEXT in input, generates null in output of stored procedure
+# 2. Verify if null INT in input, generates null in output of stored procedure
+#
+## VII. Verify missing param handling
+# 1. Missing param is treated as NULL and generates null in output of stored procedure
+# 2. VARCHAR empty parameter is valid.
+#
+## VIII. Verify authentication and authorization with regard to rest procedures.
+#
+# 1. User is not authenticated.
+# 2. User is authenticated and authorized.
+# 3. User is authenticated and not authorized.
+#
+## IX. Check procedure with multiple resultsets and inout params.
+#
+# Registered MRS ROLE: ReadOnly
+# Registered MRS Role Grant: /svc * * => READ
+# Registered MRS ROLE: AccessAll
+# Registered MRS Role Grant: /svc * * => READ,CREATE,UPDATE,DELETE
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/proc
+# Registred AUTH APP at path: /svc
+# Registred MRS USER: 'user1'
+# Registred MRS USER: 'user_root'
+# Registred DB_OBJECT at path: /svc/proc/inc_text
+# Registred DB_OBJECT at path: /svc/proc/inc_ttext
+# Registred DB_OBJECT at path: /svc/proc/inc_enum
+# Registred DB_OBJECT at path: /svc/proc/inc_set
+# Registred DB_OBJECT at path: /svc/proc/inc_char
+# Registred DB_OBJECT at path: /svc/proc/inc_int
+# Registred DB_OBJECT at path: /svc/proc/inc_varchar
+# Registred DB_OBJECT at path: /svc/proc/inc_date
+# Registred DB_OBJECT at path: /svc/proc/inc_year
+# Registred DB_OBJECT at path: /svc/proc/inc_time
+# Registred DB_OBJECT at path: /svc/proc/inc_bit
+# Registred DB_OBJECT at path: /svc/proc/inc_tinyint1
+# Registred DB_OBJECT at path: /svc/proc/inc_tinyint8
+# Registred DB_OBJECT at path: /svc/proc/inc_decimal
+# Registred DB_OBJECT at path: /svc/proc/inc_float
+# Registred DB_OBJECT at path: /svc/proc/inc_double
+# Registred DB_OBJECT at path: /svc/proc/set_vector
+# Registred DB_OBJECT at path: /svc/proc/nothing
+# Registred DB_OBJECT at path: /svc/proc/string_in
+# Registred DB_OBJECT at path: /svc/proc/mix
+# Registred DB_OBJECT at path: /svc/proc/auth_proc
+SET @db_object_id_func=@db_object_id;
+GET /svc/proc/nothing
+{
+    "resultSets": []
+}
+OK
+
+#
+# I.1
+PUT /svc/proc/inc_text (payload-size:66013)
+{
+    "message": "'in-out' parameter is too long, the internal buffer is 65535 bytes long.",
+    "status": 400
+}
+OK
+
+#
+# II.1
+GET /svc/proc/inc_text?result=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "10B"
+    }
+}
+OK
+
+#
+# II.2
+GET /svc/proc/inc_ttext?result=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "10B"
+    }
+}
+OK
+
+#
+# II.3
+GET /svc/proc/inc_varchar?result=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "10 a"
+    }
+}
+OK
+
+#
+# II.4
+GET /svc/proc/inc_date?result=2010-10-21
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "2010-10-31"
+    }
+}
+OK
+
+#
+# II.5
+GET /svc/proc/inc_year?result=2010
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "2020"
+    }
+}
+OK
+
+#
+# II.6
+GET /svc/proc/inc_time?result=10:22
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "20:22:00"
+    }
+}
+OK
+
+#
+# II.7
+GET /svc/proc/inc_bit?result=1
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": false
+    }
+}
+OK
+GET /svc/proc/inc_bit?result=0
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+GET /svc/proc/inc_bit?result=true
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": false
+    }
+}
+OK
+GET /svc/proc/inc_bit?result=false
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+
+#
+# II.8
+GET /svc/proc/inc_int?result=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# II.9
+GET /svc/proc/inc_tinyint1?result=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# II.10
+GET /svc/proc/inc_tinyint8?result=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# II.11
+GET /svc/proc/inc_decimal?result=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# II.12
+GET /svc/proc/inc_float?result=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# II.13
+GET /svc/proc/inc_double?result=10
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# II.14
+# To be fixed, the test generates BASE64 responce
+GET /svc/proc/inc_set?result=one
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "one,two"
+    }
+}
+OK
+
+#
+# II.15
+# To be fixed, the test generates BASE64 responce
+GET /svc/proc/inc_enum?result=one
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "two"
+    }
+}
+OK
+
+#
+# II.16
+GET /svc/proc/set_vector?result=%5B10,20%5D
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": [
+            10.0,
+            20.0,
+            1.0,
+            2.0,
+            3.0
+        ]
+    }
+}
+OK
+
+#
+# III.1
+PUT /svc/proc/inc_text (payload-size:13)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "10B"
+    }
+}
+OK
+
+#
+# III.2
+PUT /svc/proc/inc_ttext (payload-size:13)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "10B"
+    }
+}
+OK
+
+#
+# III.3
+PUT /svc/proc/inc_varchar (payload-size:13)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "10 a"
+    }
+}
+OK
+
+#
+# III.4
+PUT /svc/proc/inc_date (payload-size:23)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "2010-10-31"
+    }
+}
+OK
+
+#
+# III.5
+PUT /svc/proc/inc_year (payload-size:15)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "2020"
+    }
+}
+OK
+
+#
+# III.6
+PUT /svc/proc/inc_time (payload-size:18)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "20:22:00"
+    }
+}
+OK
+
+#
+# III.7
+PUT /svc/proc/inc_bit (payload-size:12)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": false
+    }
+}
+OK
+PUT /svc/proc/inc_bit (payload-size:12)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+PUT /svc/proc/inc_bit (payload-size:15)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": false
+    }
+}
+OK
+PUT /svc/proc/inc_bit (payload-size:16)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+
+#
+# III.8
+PUT /svc/proc/inc_int (payload-size:13)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# III.9
+PUT /svc/proc/inc_tinyint1 (payload-size:13)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# III.10
+PUT /svc/proc/inc_tinyint8 (payload-size:13)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# III.11
+PUT /svc/proc/inc_decimal (payload-size:13)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# III.12
+PUT /svc/proc/inc_float (payload-size:13)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# III.13
+PUT /svc/proc/inc_double (payload-size:13)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 11
+    }
+}
+OK
+
+#
+# III.14
+# To be fixed, the test generates BASE64 response
+PUT /svc/proc/inc_set (payload-size:16)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "one,two"
+    }
+}
+OK
+
+#
+# III.15
+# To be fixed, the test generates BASE64 response
+PUT /svc/proc/inc_enum (payload-size:16)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "two"
+    }
+}
+OK
+
+#
+# III.16
+PUT /svc/proc/set_vector (payload-size:18)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": [
+            10.0,
+            20.0,
+            1.0,
+            2.0,
+            3.0
+        ]
+    }
+}
+OK
+
+#
+# IV.1
+GET /svc/proc/inc_text
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.2
+GET /svc/proc/inc_ttext
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.3
+GET /svc/proc/inc_varchar
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.4
+GET /svc/proc/inc_date
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.5
+GET /svc/proc/inc_year
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.6
+GET /svc/proc/inc_time
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.7
+GET /svc/proc/inc_bit
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+GET /svc/proc/inc_bit
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+GET /svc/proc/inc_bit
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+GET /svc/proc/inc_bit
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+
+#
+# IV.8
+GET /svc/proc/inc_int
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.9
+GET /svc/proc/inc_tinyint1
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.10
+GET /svc/proc/inc_tinyint8
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.11
+GET /svc/proc/inc_decimal
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.12
+GET /svc/proc/inc_float
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.13
+GET /svc/proc/inc_double
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.14
+# To be fixed, the test generates BASE64 responce
+GET /svc/proc/inc_set
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.15
+# To be fixed, the test generates BASE64 responce
+GET /svc/proc/inc_enum
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# IV.16
+GET /svc/proc/set_vector
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.1
+PUT /svc/proc/inc_text (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.2
+PUT /svc/proc/inc_ttext (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.3
+PUT /svc/proc/inc_varchar (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.4
+PUT /svc/proc/inc_date (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.5
+PUT /svc/proc/inc_year (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.6
+PUT /svc/proc/inc_time (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.7
+PUT /svc/proc/inc_bit (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+PUT /svc/proc/inc_bit (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+PUT /svc/proc/inc_bit (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+PUT /svc/proc/inc_bit (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": true
+    }
+}
+OK
+
+#
+# V.8
+PUT /svc/proc/inc_int (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.9
+PUT /svc/proc/inc_tinyint1 (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.10
+PUT /svc/proc/inc_tinyint8 (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.11
+PUT /svc/proc/inc_decimal (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.12
+PUT /svc/proc/inc_float (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.13
+PUT /svc/proc/inc_double (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.14
+# To be fixed, the test generates BASE64 responce
+PUT /svc/proc/inc_set (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.15
+# To be fixed, the test generates BASE64 responce
+PUT /svc/proc/inc_enum (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# V.16
+PUT /svc/proc/set_vector (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.1
+PUT /svc/proc/inc_text (payload-size:15)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VI.2
+PUT /svc/proc/inc_int (payload-size:15)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VII.1
+PUT /svc/proc/inc_int (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": null
+    }
+}
+OK
+
+#
+# VII.2
+PUT /svc/proc/string_in (payload-size:15)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "1": 1
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "1",
+                        "type": "BIGINT"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# VIII.1
+GET /svc/proc/auth_proc
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+
+#
+# VIII.2
+GET /svc/authentication/login
+
+OK
+PUT /svc/proc/auth_proc (payload-size:2)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "first content": "first content"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "first content",
+                        "type": "VARCHAR(13)"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# VIII.3
+GET /svc/authentication/login
+
+OK
+PUT /svc/proc/auth_proc (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+
+#
+# IX
+PUT /svc/proc/mix (payload-size:13)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "min(id)": 1
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "min(id)",
+                        "type": " INTEGER"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "items1",
+            "items": [
+                {
+                    "max(id)": 27
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "max(id)",
+                        "type": " INTEGER"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "items2",
+            "items": [
+                {
+                    "id": 27,
+                    "name": "27th row",
+                    "comments": "...",
+                    "date": "2023-11-12 00:00:00"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "id",
+                        "type": " INTEGER"
+                    },
+                    {
+                        "name": "name",
+                        "type": "VARCHAR(255)"
+                    },
+                    {
+                        "name": "comments",
+                        "type": "VARCHAR(512)"
+                    },
+                    {
+                        "name": "date",
+                        "type": "DATETIME"
+                    }
+                ]
+            }
+        }
+    ],
+    "outParameters": {
+        "a": 1,
+        "b": 2,
+        "c": 10
+    }
+}
+OK
+drop user user1@'%';
+drop user user_root@'%';
+DROP SCHEMA proc_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

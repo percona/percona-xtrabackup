@@ -22,6 +22,8 @@ grant ALL on *.* to user3@localhost;
 grant ALL on *.* to user4@localhost;
 
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 
 use test;
 create table test.t1 (s1 int, s2 int, s3 int, s4 int);
@@ -64,6 +66,7 @@ Id	User	Host	db	Command	Time	State	Info
 <Id>	event_scheduler	<Host>	NULL	<Command>	<Time>	<State>	NULL
 <Id>	root	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	root	<Host>	test	Query	<Time>	<State>	SHOW FULL PROCESSLIST
+<Id>	system user	<Host>	NULL	<Command>	<Time>	<State>	NULL
 <Id>	user1	<Host>	test	Query	<Time>	<State>	insert into test.t1 values (0, 0, 0, 0)
 <Id>	user2	<Host>	test	Query	<Time>	<State>	update test.t1 set s1 = s1 + 1, s2 = s2 + 2, s3 = s3 + 3, s4 = ((s4 + 4) * (s4 + 5)) + 12345 + 67890 + 11111 + 22222 + 33333 + 44444 + 55555 + 99999
 <Id>	user3	<Host>	test	Query	<Time>	<State>	delete from test.t1 where s1 = 3
@@ -76,6 +79,7 @@ ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO	EXECUTION_ENGINE
 <Id>	event_scheduler	<Host>	NULL	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	root	<Host>	test	Query	<Time>	<State>	select * from performance_schema.processlist order by user, id	PRIMARY
 <Id>	root	<Host>	test	<Command>	<Time>	<State>	NULL	PRIMARY
+<Id>	system user	<Host>	NULL	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	user1	<Host>	test	Query	<Time>	<State>	insert into test.t1 values (0, 0, 0, 0)	PRIMARY
 <Id>	user2	<Host>	test	Query	<Time>	<State>	update test.t1 set s1 = s1 + 1, s2 = s2 + 2, s3 = s3 + 3, s4 = ((s4 + 4) * (s4 + 5)) + 12345 + 67890 + 11111 + 22222 + 33333 + 44444 + 55555 + 99999	PRIMARY
 <Id>	user3	<Host>	test	Query	<Time>	<State>	delete from test.t1 where s1 = 3	PRIMARY
@@ -121,6 +125,7 @@ ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO	EXECUTION_ENGINE
 <Id>	event_scheduler	<Host>	NULL	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	root	<Host>	test	Query	<Time>	<State>	select * from performance_schema.processlist order by user, id	PRIMARY
 <Id>	root	<Host>	test	<Command>	<Time>	<State>	NULL	PRIMARY
+<Id>	system user	<Host>	NULL	<Command>	<Time>	<State>	NULL	PRIMARY
 <Id>	user1	<Host>	test	Query	<Time>	<State>	insert into test.t1 values (0, 0, 0, 0)	PRIMARY
 <Id>	user2	<Host>	test	Query	<Time>	<State>	update test.t1 set s1 = s1 + 1, s2 = s2 + 2, s3 = s3 + 3, s4 = ((s4 + 4) * (s4 + 5)) + 12345 + 67890 + 11111 + 22222 + 33333 + 44444 + 55555 + 99999	PRIMARY
 <Id>	user3	<Host>	test	Query	<Time>	<State>	delete from test.t1 where s1 = 3	PRIMARY
@@ -161,6 +166,7 @@ Id	User	Host	db	Command	Time	State	Info
 <Id>	event_scheduler	<Host>	NULL	<Command>	<Time>	<State>	<Info>
 <Id>	root	<Host>	test	<Command>	<Time>	<State>	<Info>
 <Id>	root	<Host>	test	<Command>	<Time>	<State>	<Info>
+<Id>	system user	<Host>	NULL	<Command>	<Time>	<State>	<Info>
 <Id>	user1	<Host>	test	<Command>	<Time>	<State>	<Info>
 <Id>	user2	<Host>	test	<Command>	<Time>	<State>	<Info>
 <Id>	user3	<Host>	test	<Command>	<Time>	<State>	<Info>

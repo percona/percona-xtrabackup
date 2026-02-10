@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -207,6 +207,7 @@ bool Strict_error_handler::handle_condition(
     case ER_WARN_NULL_TO_NOTNULL:
     case ER_CUT_VALUE_GROUP_CONCAT:
     case ER_DATETIME_FUNCTION_OVERFLOW:
+    case ER_TEMPORAL_FUNCTION_OVERFLOW:
     case ER_WARN_TOO_FEW_RECORDS:
     case ER_WARN_TOO_MANY_RECORDS:
     case ER_INVALID_ARGUMENT_FOR_LOGARITHM:

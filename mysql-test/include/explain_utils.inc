@@ -58,6 +58,7 @@ SHOW STATUS WHERE (Variable_name LIKE 'Sort%' OR
                    Variable_name = 'Handler_write' OR
                    Variable_name = 'Handler_update' OR
                    Variable_name = 'Handler_delete') AND Value <> 0;
+SET explain_json_format_version = 1;
 --enable_warnings
 --enable_query_log
 
@@ -69,7 +70,7 @@ if ($innodb) {
 }
 --eval EXPLAIN FORMAT=JSON $query;
 --disable_result_log
---exec $MYSQL -S $MASTER_MYSOCK -u root -r test -e "EXPLAIN FORMAT=JSON $query;" > $MYSQLTEST_VARDIR/tmp/explain.json
+--exec $MYSQL -S $MASTER_MYSOCK -u root -r test -e "SET explain_json_format_version=1; EXPLAIN FORMAT=JSON $query;" > $MYSQLTEST_VARDIR/tmp/explain.json
 --exec perl $MYSQL_TEST_DIR/suite/opt_trace/validate_json.pl $MYSQLTEST_VARDIR/tmp/explain.json
 --remove_file '$MYSQLTEST_VARDIR/tmp/explain.json'
 --enable_result_log
@@ -100,7 +101,7 @@ if ($innodb) {
 }
 --eval EXPLAIN FORMAT=JSON $select;
 --disable_result_log
---exec $MYSQL -S $MASTER_MYSOCK -u root -r test -e "EXPLAIN FORMAT=JSON $select;" > $MYSQLTEST_VARDIR/tmp/explain.json
+--exec $MYSQL -S $MASTER_MYSOCK -u root -r test -e "SET explain_json_format_version=1; EXPLAIN FORMAT=JSON $select;" > $MYSQLTEST_VARDIR/tmp/explain.json
 --exec perl $MYSQL_TEST_DIR/suite/opt_trace/validate_json.pl $MYSQLTEST_VARDIR/tmp/explain.json
 --remove_file '$MYSQLTEST_VARDIR/tmp/explain.json'
 --enable_result_log
@@ -146,6 +147,8 @@ SHOW STATUS WHERE (Variable_name LIKE 'Sort%' OR
                    Variable_name = 'Handler_write' OR
                    Variable_name = 'Handler_update' OR
                    Variable_name = 'Handler_delete') AND Value <> 0;
+
+SET explain_json_format_version = DEFAULT;
 
 --enable_warnings
 --let $query=

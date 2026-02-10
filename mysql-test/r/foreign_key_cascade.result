@@ -1,0 +1,930 @@
+# FR 1.9: With multi-level foreign keys CASCADE clause, if CASCADE
+# chain exceeds 15, it must report error ER_FK_DEPTH_EXCEEDED.
+# FR 1.9.1) Test UPDATE and DELETE CASCADE multi level foreign keys
+# report ER_FK_DEPTH_EXCEEDED for depth 15.
+# Create a chain of 17 tables (t1 to t17) with foreign key constraints.
+# Insert data into the tables.
+# Perform UPDATE and DELETE operations on t1 and verify that ER_FK_DEPTH_EXCEEDED is reported.
+CALL mtr.add_suppression("Cannot delete/update rows with cascading foreign key constraints that exceed max depth of 15. Please drop excessive foreign constraints and try again");
+CREATE TABLE t1 (f1 INT PRIMARY KEY);
+INSERT INTO t1 VALUES (1), (2);
+CREATE TABLE t2 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t1 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t2 VALUES (1), (2);
+CREATE TABLE t3 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t2 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t3 VALUES (1), (2);
+CREATE TABLE t4 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t3 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t4 VALUES (1), (2);
+CREATE TABLE t5 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t4 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t5 VALUES (1), (2);
+CREATE TABLE t6 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t5 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t6 VALUES (1), (2);
+CREATE TABLE t7 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t6 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t7 VALUES (1), (2);
+CREATE TABLE t8 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t7 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t8 VALUES (1), (2);
+CREATE TABLE t9 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t8 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t9 VALUES (1), (2);
+CREATE TABLE t10 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t9 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t10 VALUES (1), (2);
+CREATE TABLE t11 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t10 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t11 VALUES (1), (2);
+CREATE TABLE t12 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t11 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t12 VALUES (1), (2);
+CREATE TABLE t13 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t12 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t13 VALUES (1), (2);
+CREATE TABLE t14 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t13 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t14 VALUES (1), (2);
+CREATE TABLE t15 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t14 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t15 VALUES (1), (2);
+CREATE TABLE t16 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t15 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t16 VALUES (1), (2);
+CREATE TABLE t17 (f1 INT UNIQUE KEY,
+FOREIGN KEY (f1) REFERENCES t16 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t17 VALUES (1), (2);
+UPDATE t1 SET f1=5 where f1=2;
+ERROR HY000: Foreign key cascade delete/update exceeds max depth of 15.
+DELETE FROM t1 where f1=1;
+ERROR HY000: Foreign key cascade delete/update exceeds max depth of 15.
+SELECT * from t1 ORDER BY f1;
+f1
+1
+2
+DELETE FROM t16;
+UPDATE t1 SET f1=5 where f1=2;
+DELETE FROM t1 where f1=1;
+SELECT * from t1 ORDER BY f1;
+f1
+5
+DROP TABLE t17, t16, t15, t14, t13, t12, t11, t10, t9, t8, t7, t6, t5, t4, t3, t2, t1;
+# FR 1.9.2) Test foreign key support with multi-level foreign keys and
+# ON UPDATE/DELETE SET NULL reports ER_FK_DEPTH_EXCEEDED for depth 15.
+# Create a chain of 16 tables (p1 to p16 and q1 to q16) with foreign key constraints.
+# Insert data into the tables.
+# Perform UPDATE and DELETE operations on p1 and q1 and verify that ON UPDATE/DELETE SET NULL cascades correctly up to depth 15.
+# Add one more table to the chain and verify that ER_FK_DEPTH_EXCEEDED is reported.
+Warnings:
+Warning	4166	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release. Foreign key referring to non-unique or partial keys is unsafe and may break replication.
+Warnings:
+Warning	1681	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release.
+SELECT * FROM p1;
+c1_p1
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT * FROM p15;
+c1_p15
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+CALL count_nulls_in_p(2,14);
+p2 NULL count
+0
+p3 NULL count
+0
+p4 NULL count
+0
+p5 NULL count
+0
+p6 NULL count
+0
+p7 NULL count
+0
+p8 NULL count
+0
+p9 NULL count
+0
+p10 NULL count
+0
+p11 NULL count
+0
+p12 NULL count
+0
+p13 NULL count
+0
+p14 NULL count
+0
+UPDATE p1 SET c1_p1 = 55 where c1_p1 = 5;
+SELECT * FROM p1;
+c1_p1
+1
+2
+3
+4
+6
+7
+8
+9
+10
+55
+SELECT * FROM p15 order by c1_p15;
+c1_p15
+NULL
+1
+2
+3
+4
+6
+7
+8
+9
+10
+CALL count_nulls_in_p(2,14);
+p2 NULL count
+1
+p3 NULL count
+1
+p4 NULL count
+1
+p5 NULL count
+1
+p6 NULL count
+1
+p7 NULL count
+1
+p8 NULL count
+1
+p9 NULL count
+1
+p10 NULL count
+1
+p11 NULL count
+1
+p12 NULL count
+1
+p13 NULL count
+1
+p14 NULL count
+1
+SELECT c1,c2,c3,c5 FROM q1;
+c1	c2	c3	c5
+1	aaaaaaaaaa	1.5	bbbbbbbbbb
+2	aaaaaaaaaa	2.5	bbbbbbbbbb
+3	aaaaaaaaaa	3.5	bbbbbbbbbb
+4	aaaaaaaaaa	4.5	bbbbbbbbbb
+5	aaaaaaaaaa	5.5	bbbbbbbbbb
+6	aaaaaaaaaa	6.5	bbbbbbbbbb
+7	aaaaaaaaaa	7.5	bbbbbbbbbb
+8	aaaaaaaaaa	8.5	bbbbbbbbbb
+9	aaaaaaaaaa	9.5	bbbbbbbbbb
+10	aaaaaaaaaa	10.5	bbbbbbbbbb
+SELECT c1,c2,c3,c5 FROM q15;
+c1	c2	c3	c5
+1	aaaaaaaaaa	1.5	bbbbbbbbbb
+2	aaaaaaaaaa	2.5	bbbbbbbbbb
+3	aaaaaaaaaa	3.5	bbbbbbbbbb
+4	aaaaaaaaaa	4.5	bbbbbbbbbb
+5	aaaaaaaaaa	5.5	bbbbbbbbbb
+6	aaaaaaaaaa	6.5	bbbbbbbbbb
+7	aaaaaaaaaa	7.5	bbbbbbbbbb
+8	aaaaaaaaaa	8.5	bbbbbbbbbb
+9	aaaaaaaaaa	9.5	bbbbbbbbbb
+10	aaaaaaaaaa	10.5	bbbbbbbbbb
+CALL count_nulls_in_q(2,14);
+q2 NULL count
+0
+q3 NULL count
+0
+q4 NULL count
+0
+q5 NULL count
+0
+q6 NULL count
+0
+q7 NULL count
+0
+q8 NULL count
+0
+q9 NULL count
+0
+q10 NULL count
+0
+q11 NULL count
+0
+q12 NULL count
+0
+q13 NULL count
+0
+q14 NULL count
+0
+UPDATE q1 SET c2 = 'bb' where c1 = 7;
+SELECT c1,c2,c3,c5 FROM q1;
+c1	c2	c3	c5
+1	aaaaaaaaaa	1.5	bbbbbbbbbb
+2	aaaaaaaaaa	2.5	bbbbbbbbbb
+3	aaaaaaaaaa	3.5	bbbbbbbbbb
+4	aaaaaaaaaa	4.5	bbbbbbbbbb
+5	aaaaaaaaaa	5.5	bbbbbbbbbb
+6	aaaaaaaaaa	6.5	bbbbbbbbbb
+7	bb	7.5	bbbbbbbbbb
+8	aaaaaaaaaa	8.5	bbbbbbbbbb
+9	aaaaaaaaaa	9.5	bbbbbbbbbb
+10	aaaaaaaaaa	10.5	bbbbbbbbbb
+SELECT c1,c2,c3,c5 FROM q15;
+c1	c2	c3	c5
+1	aaaaaaaaaa	1.5	bbbbbbbbbb
+2	aaaaaaaaaa	2.5	bbbbbbbbbb
+3	aaaaaaaaaa	3.5	bbbbbbbbbb
+4	aaaaaaaaaa	4.5	bbbbbbbbbb
+5	aaaaaaaaaa	5.5	bbbbbbbbbb
+6	aaaaaaaaaa	6.5	bbbbbbbbbb
+NULL	NULL	NULL	bbbbbbbbbb
+8	aaaaaaaaaa	8.5	bbbbbbbbbb
+9	aaaaaaaaaa	9.5	bbbbbbbbbb
+10	aaaaaaaaaa	10.5	bbbbbbbbbb
+CALL count_nulls_in_q(2,14);
+q2 NULL count
+1
+q3 NULL count
+1
+q4 NULL count
+1
+q5 NULL count
+1
+q6 NULL count
+1
+q7 NULL count
+1
+q8 NULL count
+1
+q9 NULL count
+1
+q10 NULL count
+1
+q11 NULL count
+1
+q12 NULL count
+1
+q13 NULL count
+1
+q14 NULL count
+1
+DELETE FROM p1 where c1_p1 = 2;
+SELECT * FROM p1;
+c1_p1
+1
+3
+4
+6
+7
+8
+9
+10
+55
+SELECT * FROM p15 order by c1_p15;
+c1_p15
+NULL
+NULL
+1
+3
+4
+6
+7
+8
+9
+10
+CALL count_nulls_in_p(2,14);
+p2 NULL count
+2
+p3 NULL count
+2
+p4 NULL count
+2
+p5 NULL count
+2
+p6 NULL count
+2
+p7 NULL count
+2
+p8 NULL count
+2
+p9 NULL count
+2
+p10 NULL count
+2
+p11 NULL count
+2
+p12 NULL count
+2
+p13 NULL count
+2
+p14 NULL count
+2
+DELETE FROM q1 WHERE c1=3;
+SELECT c1,c2,c3,c5 FROM q1;
+c1	c2	c3	c5
+1	aaaaaaaaaa	1.5	bbbbbbbbbb
+2	aaaaaaaaaa	2.5	bbbbbbbbbb
+4	aaaaaaaaaa	4.5	bbbbbbbbbb
+5	aaaaaaaaaa	5.5	bbbbbbbbbb
+6	aaaaaaaaaa	6.5	bbbbbbbbbb
+7	bb	7.5	bbbbbbbbbb
+8	aaaaaaaaaa	8.5	bbbbbbbbbb
+9	aaaaaaaaaa	9.5	bbbbbbbbbb
+10	aaaaaaaaaa	10.5	bbbbbbbbbb
+SELECT c1,c2,c3,c5 FROM q15;
+c1	c2	c3	c5
+1	aaaaaaaaaa	1.5	bbbbbbbbbb
+2	aaaaaaaaaa	2.5	bbbbbbbbbb
+NULL	NULL	NULL	bbbbbbbbbb
+4	aaaaaaaaaa	4.5	bbbbbbbbbb
+5	aaaaaaaaaa	5.5	bbbbbbbbbb
+6	aaaaaaaaaa	6.5	bbbbbbbbbb
+NULL	NULL	NULL	bbbbbbbbbb
+8	aaaaaaaaaa	8.5	bbbbbbbbbb
+9	aaaaaaaaaa	9.5	bbbbbbbbbb
+10	aaaaaaaaaa	10.5	bbbbbbbbbb
+CALL count_nulls_in_q(2,14);
+q2 NULL count
+2
+q3 NULL count
+2
+q4 NULL count
+2
+q5 NULL count
+2
+q6 NULL count
+2
+q7 NULL count
+2
+q8 NULL count
+2
+q9 NULL count
+2
+q10 NULL count
+2
+q11 NULL count
+2
+q12 NULL count
+2
+q13 NULL count
+2
+q14 NULL count
+2
+# Add 1 more table to the collections of related tables and check
+# that the relevant error message is generated when the 
+# ON UPDATE SET NULL cascade reaches its limit.
+CALL mtr.add_suppression("Cannot delete/update rows with cascading foreign key constraints that exceed max depth of 15. Please drop excessive foreign constraints and try again");
+CALL delete_from_tables(15,1);
+SET restrict_fk_on_non_standard_key=OFF;
+Warnings:
+Warning	4166	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release. Foreign key referring to non-unique or partial keys is unsafe and may break replication.
+CALL create_table(16,16);
+SET restrict_fk_on_non_standard_key=ON;
+Warnings:
+Warning	1681	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release.
+CALL populate_tables(1,16,1,10);
+UPDATE p1 SET c1_p1 = 55 WHERE c1_p1 = 5;
+ERROR HY000: Foreign key cascade delete/update exceeds max depth of 15.
+SELECT * FROM p1;
+c1_p1
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT * FROM p16;
+c1_p16
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+CALL count_nulls_in_p(2,15);
+p2 NULL count
+0
+p3 NULL count
+0
+p4 NULL count
+0
+p5 NULL count
+0
+p6 NULL count
+0
+p7 NULL count
+0
+p8 NULL count
+0
+p9 NULL count
+0
+p10 NULL count
+0
+p11 NULL count
+0
+p12 NULL count
+0
+p13 NULL count
+0
+p14 NULL count
+0
+p15 NULL count
+0
+UPDATE q1 SET c2 = 'bb' WHERE c1 = 7;
+ERROR HY000: Foreign key cascade delete/update exceeds max depth of 15.
+SELECT c1,c2,c3,c5 FROM q1;
+c1	c2	c3	c5
+1	aaaaaaaaaa	1.5	bbbbbbbbbb
+2	aaaaaaaaaa	2.5	bbbbbbbbbb
+3	aaaaaaaaaa	3.5	bbbbbbbbbb
+4	aaaaaaaaaa	4.5	bbbbbbbbbb
+5	aaaaaaaaaa	5.5	bbbbbbbbbb
+6	aaaaaaaaaa	6.5	bbbbbbbbbb
+7	aaaaaaaaaa	7.5	bbbbbbbbbb
+8	aaaaaaaaaa	8.5	bbbbbbbbbb
+9	aaaaaaaaaa	9.5	bbbbbbbbbb
+10	aaaaaaaaaa	10.5	bbbbbbbbbb
+SELECT c1,c2,c3,c5 FROM q16;
+c1	c2	c3	c5
+1	aaaaaaaaaa	1.5	bbbbbbbbbb
+2	aaaaaaaaaa	2.5	bbbbbbbbbb
+3	aaaaaaaaaa	3.5	bbbbbbbbbb
+4	aaaaaaaaaa	4.5	bbbbbbbbbb
+5	aaaaaaaaaa	5.5	bbbbbbbbbb
+6	aaaaaaaaaa	6.5	bbbbbbbbbb
+7	aaaaaaaaaa	7.5	bbbbbbbbbb
+8	aaaaaaaaaa	8.5	bbbbbbbbbb
+9	aaaaaaaaaa	9.5	bbbbbbbbbb
+10	aaaaaaaaaa	10.5	bbbbbbbbbb
+CALL count_nulls_in_q(2,15);
+q2 NULL count
+0
+q3 NULL count
+0
+q4 NULL count
+0
+q5 NULL count
+0
+q6 NULL count
+0
+q7 NULL count
+0
+q8 NULL count
+0
+q9 NULL count
+0
+q10 NULL count
+0
+q11 NULL count
+0
+q12 NULL count
+0
+q13 NULL count
+0
+q14 NULL count
+0
+q15 NULL count
+0
+DELETE FROM p1 WHERE c1_p1 = 2;
+ERROR HY000: Foreign key cascade delete/update exceeds max depth of 15.
+SELECT * FROM p1;
+c1_p1
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT * FROM p16;
+c1_p16
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+CALL count_nulls_in_p(2,15);
+p2 NULL count
+0
+p3 NULL count
+0
+p4 NULL count
+0
+p5 NULL count
+0
+p6 NULL count
+0
+p7 NULL count
+0
+p8 NULL count
+0
+p9 NULL count
+0
+p10 NULL count
+0
+p11 NULL count
+0
+p12 NULL count
+0
+p13 NULL count
+0
+p14 NULL count
+0
+p15 NULL count
+0
+DELETE FROM q1 WHERE c1 = 9;
+ERROR HY000: Foreign key cascade delete/update exceeds max depth of 15.
+SELECT c1,c2,c3,c5 FROM q1;
+c1	c2	c3	c5
+1	aaaaaaaaaa	1.5	bbbbbbbbbb
+2	aaaaaaaaaa	2.5	bbbbbbbbbb
+3	aaaaaaaaaa	3.5	bbbbbbbbbb
+4	aaaaaaaaaa	4.5	bbbbbbbbbb
+5	aaaaaaaaaa	5.5	bbbbbbbbbb
+6	aaaaaaaaaa	6.5	bbbbbbbbbb
+7	aaaaaaaaaa	7.5	bbbbbbbbbb
+8	aaaaaaaaaa	8.5	bbbbbbbbbb
+9	aaaaaaaaaa	9.5	bbbbbbbbbb
+10	aaaaaaaaaa	10.5	bbbbbbbbbb
+SELECT c1,c2,c3,c5 FROM q16;
+c1	c2	c3	c5
+1	aaaaaaaaaa	1.5	bbbbbbbbbb
+2	aaaaaaaaaa	2.5	bbbbbbbbbb
+3	aaaaaaaaaa	3.5	bbbbbbbbbb
+4	aaaaaaaaaa	4.5	bbbbbbbbbb
+5	aaaaaaaaaa	5.5	bbbbbbbbbb
+6	aaaaaaaaaa	6.5	bbbbbbbbbb
+7	aaaaaaaaaa	7.5	bbbbbbbbbb
+8	aaaaaaaaaa	8.5	bbbbbbbbbb
+9	aaaaaaaaaa	9.5	bbbbbbbbbb
+10	aaaaaaaaaa	10.5	bbbbbbbbbb
+CALL count_nulls_in_q(2,15);
+q2 NULL count
+0
+q3 NULL count
+0
+q4 NULL count
+0
+q5 NULL count
+0
+q6 NULL count
+0
+q7 NULL count
+0
+q8 NULL count
+0
+q9 NULL count
+0
+q10 NULL count
+0
+q11 NULL count
+0
+q12 NULL count
+0
+q13 NULL count
+0
+q14 NULL count
+0
+q15 NULL count
+0
+DROP DATABASE test1;
+use test;
+# FR 1.9.3) Multiple CASCADE
+# Test foreign key support with multiple CASCADE clauses from different tables.
+# Create tables t1, t2, and t3 with foreign key constraints.
+# Insert data into the tables.
+# Perform DELETE and UPDATE operations on t1 and t2 and verify that CASCADE works correctly.
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT);
+INSERT INTO t1 VALUES (1,1), (2,2), (3,3);
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT);
+INSERT INTO t2 VALUES (1,1), (2,2), (3,3);
+CREATE TABLE t3 (f1 INT, f2 INT, f3 INT, f4 INT,
+FOREIGN KEY (f1) REFERENCES t1 (f1) ON DELETE CASCADE ON UPDATE CASCADE,
+FOREIGN KEY (f2) REFERENCES t2 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t3 VALUES (1,1,1,1);
+INSERT INTO t3 VALUES (2,2,2,2);
+INSERT INTO t3 VALUES (3,3,3,3);
+DELETE FROM t1 WHERE f1=1;
+UPDATE t2 set f1=5 where f1=2;
+SELECT * FROM t1;
+f1	f2
+2	2
+3	3
+SELECT * FROM t2;
+f1	f2
+1	1
+3	3
+5	2
+SELECT * FROM t3;
+f1	f2	f3	f4
+2	5	2	2
+3	3	3	3
+DROP TABLE t1, t2, t3;
+# FR 1.9.4) Grandchild constraints affecting cascades
+# Test foreign key support with grandchild constraints affecting cascades.
+# Create tables t1, t2, t3, and t4 with foreign key constraints.
+# Insert data into the tables.
+# Perform DELETE and UPDATE operations on t1 and verify that the operations are prevented 
+#  by the grandchild table's FK RESTRICT.
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT);
+INSERT INTO t1 VALUES (1,1), (2,2);
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT,
+FOREIGN KEY (f1) REFERENCES t1 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t2 VALUES (1,1), (2,2);
+CREATE TABLE t3 (f1 INT PRIMARY KEY, f2 INT,
+FOREIGN KEY (f1) REFERENCES t2 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t3 VALUES (1,1), (2,2);
+CREATE TABLE t4 (f1 INT PRIMARY KEY, f2 INT,
+FOREIGN KEY (f1) REFERENCES t3 (f1) ON DELETE RESTRICT ON UPDATE RESTRICT);
+INSERT INTO t4 VALUES (1,1), (2,2);
+DELETE FROM t1 WHERE f1=1;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t4`, CONSTRAINT `t4_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `t3` (`f1`) ON DELETE RESTRICT ON UPDATE RESTRICT)
+UPDATE t1 set f1=3 where f1=2;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t4`, CONSTRAINT `t4_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `t3` (`f1`) ON DELETE RESTRICT ON UPDATE RESTRICT)
+SELECT * FROM t1;
+f1	f2
+1	1
+2	2
+SELECT * FROM t4;
+f1	f2
+1	1
+2	2
+DROP TABLE t4, t3, t2, t1;
+# FR 1.9.5) Mixed Multi level cascades
+# Test foreign key support with mixed multi-level cascades.
+# Create tables t1, t2, and t3 with foreign key constraints.
+# Insert data into the tables.
+# Perform DELETE operation on t1 and verify that the operation is cascaded differently to t2 and t3.
+CREATE TABLE t1(s1 INT PRIMARY KEY);
+CREATE TABLE t2(s1 INT, FOREIGN KEY (s1) REFERENCES t1(s1) ON DELETE CASCADE);
+SET restrict_fk_on_non_standard_key=OFF;
+Warnings:
+Warning	4166	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release. Foreign key referring to non-unique or partial keys is unsafe and may break replication.
+CREATE TABLE t3(s1 INT, FOREIGN KEY (s1) REFERENCES t2(s1) ON DELETE SET NULL);
+Warnings:
+Warning	6124	Foreign key 't3_ibfk_1' refers to non-unique key or partial key. This is deprecated and will be removed in a future release.
+SET restrict_fk_on_non_standard_key=ON;
+Warnings:
+Warning	1681	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release.
+INSERT INTO t1 VALUES (1),(2),(3);
+INSERT INTO t2 VALUES (1),(2),(3);
+INSERT INTO t3 VALUES (1),(2),(3);
+SELECT * FROM t1;
+s1
+1
+2
+3
+SELECT * FROM t2;
+s1
+1
+2
+3
+SELECT * FROM t3;
+s1
+1
+2
+3
+DELETE FROM t1 WHERE s1=2;
+SELECT * FROM t1 ORDER BY s1;
+s1
+1
+3
+SELECT * FROM t2 ORDER BY s1;
+s1
+1
+3
+SELECT * FROM t3 ORDER BY s1;
+s1
+NULL
+1
+3
+DROP TABLE t3, t2, t1;
+# FR 1.9.6) Test foreign key support with multi-level DELETE CASCADE using different columns.
+# Create tables country, state, and city with foreign key constraints.
+# Insert data into the tables.
+# Perform DELETE operation on country and verify that the operation is cascaded to city.
+CREATE TABLE country(countryid INT PRIMARY KEY);
+CREATE TABLE state(stateid INT, countryid INT, PRIMARY KEY(stateid),
+FOREIGN KEY (countryid) REFERENCES country(countryid) ON UPDATE CASCADE ON DELETE CASCADE);
+CREATE TABLE city(cityid INT, stateid INT, PRIMARY KEY(cityid),
+FOREIGN KEY (stateid) REFERENCES state(stateid) ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO country VALUES (1);
+INSERT INTO country VALUES (2);
+INSERT INTO state VALUES (10, 1);
+INSERT INTO state VALUES (20, 2);
+INSERT INTO city VALUES (100, 10);
+INSERT INTO city VALUES (200, 20);
+DELETE FROM country where countryid=2;
+SELECT * FROM city;
+cityid	stateid
+100	10
+DROP TABLE city, state, country;
+# FR 1.9.7) Test foreign key support with UPDATE CASCADE and an expression in the SET clause.
+# Create tables parent, child, and grandchild with foreign key constraints.
+# Insert data into the tables.
+# Perform UPDATE operation on parent and verify that the operation is cascaded to child and grandchild.
+CREATE TABLE parent(f1 INT PRIMARY KEY);
+CREATE TABLE child (f1 INT, UNIQUE KEY(f1),
+FOREIGN KEY(f1) REFERENCES parent(f1) ON UPDATE CASCADE);
+CREATE TABLE grandchild (f1 INT, UNIQUE KEY(f1),
+FOREIGN KEY(f1) REFERENCES parent(f1) ON UPDATE CASCADE);
+INSERT INTO parent (f1) VALUES (1),(2);
+INSERT INTO child (f1) VALUES (1),(2);
+INSERT INTO grandchild (f1) VALUES (1),(2);
+UPDATE parent SET f1=f1+100 WHERE f1=1;
+SELECT * FROM parent;
+f1
+2
+101
+SELECT * FROM child;
+f1
+2
+101
+SELECT * FROM grandchild;
+f1
+2
+101
+DROP TABLE parent, child, grandchild;
+# FR 1.9.8) Test foreign key support with cascading NULL values from parent to child.
+# Create tables parent and child with foreign key constraints.
+# Insert data into the tables.
+# Perform UPDATE operation on parent and verify that NULL values are cascaded to child.
+CREATE TABLE parent (idp INT NOT NULL PRIMARY KEY, namep CHAR(20) UNIQUE);
+CREATE TABLE child (idc INT NOT NULL PRIMARY KEY, namec CHAR(20),
+FOREIGN KEY (namec) REFERENCES parent(namep) ON UPDATE CASCADE);
+INSERT INTO parent (idp, namep) VALUE (1,'one'), (2,'two'), (3,'three');
+INSERT INTO child (idc, namec) VALUE (1,'one'), (11,'one'), (2,'two'),
+(22,'two'), (3,'three'), (33,'three');
+UPDATE parent SET idp = 4,namep = 'four' WHERE idp = 3;
+SELECT * FROM parent ORDER BY idp;
+idp	namep
+1	one
+2	two
+4	four
+SELECT * FROM child ORDER BY idc;
+idc	namec
+1	one
+2	two
+3	four
+11	one
+22	two
+33	four
+UPDATE parent SET namep = NULL WHERE idp = 4;
+SELECT idp, namep, ISNULL(namep) FROM parent ORDER BY idp;
+idp	namep	ISNULL(namep)
+1	one	0
+2	two	0
+4	NULL	1
+SELECT idc, namec, ISNULL(namec) FROM child ORDER BY idc;
+idc	namec	ISNULL(namec)
+1	one	0
+2	two	0
+3	NULL	1
+11	one	0
+22	two	0
+33	NULL	1
+DROP TABLE child;
+DROP TABLE parent;
+# FR 1.9.9) Test foreign key support with cascading NULL values to non-nullable fields.
+# Create tables parent and child with foreign key constraints.
+# Insert data into the tables.
+# Perform UPDATE operation on parent and verify that attempting to cascade NULL 
+#  to a non-nullable field is handled gracefully.
+CREATE TABLE parent(
+id INT AUTO_INCREMENT PRIMARY KEY,
+f1 INT, UNIQUE INDEX (f1));
+CREATE TABLE child(
+id INT AUTO_INCREMENT PRIMARY KEY,
+f2 INT NOT NULL,
+FOREIGN KEY (f2) REFERENCES parent(f1) ON UPDATE CASCADE
+);
+INSERT INTO parent (f1) VALUE (2),(4),(8);
+INSERT INTO child (f2) VALUE (2),(4),(8);
+UPDATE parent SET f1=NULL WHERE id=1;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f2`) REFERENCES `parent` (`f1`) ON UPDATE CASCADE)
+DROP TABLE child;
+DROP TABLE parent;
+# FR 1.9.10) Test foreign key support with cascading NULL values to non-nullable
+#         fields in composite foreign keys.
+# Create tables parent and child with composite foreign key constraints.
+# Insert data into the tables.
+# Perform UPDATE operation on parent and verify that attempting to cascade NULL 
+#  to a non-nullable field is handled gracefully.
+CREATE TABLE parent(
+id INT AUTO_INCREMENT PRIMARY KEY,
+p1 INT, p2 INT, p3 INT,
+UNIQUE INDEX (p1,p2,p3));
+CREATE TABLE child(
+id INT AUTO_INCREMENT PRIMARY KEY,
+c1 INT, c2 INT NOT NULL, c3 INT,
+FOREIGN KEY (c1,c2,c3) REFERENCES parent(p1,p2,p3) ON UPDATE CASCADE
+);
+INSERT INTO parent (p1,p2,p3) VALUE (1,2,3),(4,5,6),(7,8,9);
+INSERT INTO child  (c1,c2,c3) VALUE (1,2,3),(4,5,6),(7,8,9);
+SELECT * FROM parent;
+id	p1	p2	p3
+1	1	2	3
+2	4	5	6
+3	7	8	9
+SELECT * FROM child;
+id	c1	c2	c3
+1	1	2	3
+2	4	5	6
+3	7	8	9
+UPDATE parent SET p2=42 WHERE id=2;
+SELECT * FROM parent;
+id	p1	p2	p3
+1	1	2	3
+2	4	42	6
+3	7	8	9
+SELECT * FROM child;
+id	c1	c2	c3
+1	1	2	3
+2	4	42	6
+3	7	8	9
+UPDATE parent SET p1=NULL WHERE id=1;
+SELECT * FROM parent;
+id	p1	p2	p3
+1	NULL	2	3
+2	4	42	6
+3	7	8	9
+SELECT * FROM child;
+id	c1	c2	c3
+1	NULL	2	3
+2	4	42	6
+3	7	8	9
+UPDATE parent SET p2=NULL WHERE id=3;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`c1`, `c2`, `c3`) REFERENCES `parent` (`p1`, `p2`, `p3`) ON UPDATE CASCADE)
+DROP TABLE child;
+DROP TABLE parent;
+# FR 1.9.11) Test foreign key support with cascading timestamp values from parent to child.
+# Create tables parent and child with foreign key constraints.
+# Insert data into the tables.
+# Perform UPDATE operation on parent and verify that timestamp values are cascaded to child.
+CREATE TABLE parent (
+idp INT NOT NULL PRIMARY KEY,
+tsp TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP UNIQUE
+);
+CREATE TABLE child (
+idc INT NOT NULL PRIMARY KEY,
+tsc TIMESTAMP,
+FOREIGN KEY (tsc) REFERENCES parent(tsp) ON UPDATE CASCADE
+);
+INSERT INTO parent (idp) VALUE (1);
+INSERT INTO child (idc, tsc) SELECT * FROM parent;
+DELETE FROM parent WHERE idp = 1;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`tsc`) REFERENCES `parent` (`tsp`) ON UPDATE CASCADE)
+UPDATE parent SET tsp = NULL WHERE idp = 1;
+SELECT * FROM parent;
+idp	tsp
+1	NULL
+SELECT * FROM child;
+idc	tsc
+1	NULL
+UPDATE parent SET tsp = '2025-02-11 11:26:49' WHERE idp = 1;
+SELECT * FROM parent;
+idp	tsp
+1	2025-02-11 11:26:49
+SELECT * FROM child;
+idc	tsc
+1	NULL
+UPDATE child SET tsc = '2025-02-11 11:00:00' WHERE idc = 1;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`tsc`) REFERENCES `parent` (`tsp`) ON UPDATE CASCADE)
+UPDATE child SET tsc = '2025-02-11 11:26:49' WHERE idc = 1;
+DROP TABLE child;
+DROP TABLE parent;

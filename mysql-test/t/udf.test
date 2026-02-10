@@ -931,3 +931,47 @@ SELECT metaphon(CONCAT(sys.SESS_VAR(@query), sys.SESS_VAR(@query2)));
 DROP FUNCTION sys.SESS_VAR_COUNT;
 DROP FUNCTION sys.SESS_VAR;
 DROP FUNCTION metaphon;
+
+--echo
+--echo Bug#37839325 Assertion `!null_value || is_nullable()' failed
+--echo
+
+--replace_result $UDF_EXAMPLE_LIB UDF_EXAMPLE_LIB
+eval CREATE AGGREGATE FUNCTION my_median
+RETURNS INTEGER SONAME "$UDF_EXAMPLE_LIB";
+
+CREATE TABLE t1 (
+  c1 int NOT NULL,
+  c2 varchar(3) DEFAULT NULL
+);
+
+INSERT INTO t1 VALUES (1001,'BAL');
+
+SELECT
+my_median ( CAST( c1 AS UNSIGNED ) )
+FROM t1
+WHERE
+( STRCMP( ( CAST(NULL AS BINARY) ) , c2 ) ) ;
+
+DROP TABLE t1;
+DROP FUNCTION my_median;
+
+--replace_result $UDF_EXAMPLE_LIB UDF_EXAMPLE_LIB
+eval CREATE AGGREGATE FUNCTION avgcost RETURNS REAL
+     SONAME "$UDF_EXAMPLE_LIB";
+
+CREATE TABLE t1 (
+  c1 real NOT NULL,
+  c2 varchar(3) DEFAULT NULL
+);
+
+INSERT INTO t1 VALUES (1001,'BAL');
+
+SELECT
+avgcost ( CAST( c1 AS UNSIGNED ) , c1 )
+FROM t1
+WHERE
+( STRCMP( ( CAST(NULL AS BINARY) ) , c2 ) ) ;
+
+DROP TABLE t1;
+DROP FUNCTION avgcost;

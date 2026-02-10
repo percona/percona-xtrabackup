@@ -3,7 +3,7 @@ var gr_memberships = require("gr_memberships");
 
 
 if (mysqld.global.cluster_name == undefined) {
-  mysqld.global.cluster_name = "mycluster";
+  mysqld.global.cluster_name = "my-cluster";
 }
 
 var options = {
@@ -46,9 +46,11 @@ var common_responses_regex = common_stmts.prepare_statement_responses_regex(
       "router_grant_on_pfs_db",
       "router_grant_on_routers",
       "router_grant_on_v2_routers",
+      "router_grant_on_router_stats",
       "router_update_router_options_in_metadata",
       "router_select_config_defaults_stored_gr_cluster",
       "router_update_routers_in_metadata",
+      "router_update_local_cluster_in_metadata",
     ],
     options);
 

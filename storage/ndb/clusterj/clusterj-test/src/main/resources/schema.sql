@@ -1,4 +1,4 @@
--- Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+-- Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License, version 2.0,
@@ -158,6 +158,20 @@ create table binarypk (
  number int not null,
  name varchar(10) not null
 ) ENGINE=ndbcluster DEFAULT CHARSET=latin1;
+
+drop table if exists varcharpk;
+create table varcharpk (
+ id varchar(25) primary key not null,
+ number int not null,
+ name varchar(10) not null
+) ENGINE=ndbcluster DEFAULT CHARSET=utf8;
+
+drop table if exists longvarcharpk;
+create table longvarcharpk (
+ id varchar(512) primary key not null,
+ number int not null,
+ name varchar(10) not null
+) ENGINE=ndbcluster DEFAULT CHARSET=utf8;
 
 drop table if exists varbinarypk;
 create table varbinarypk (
@@ -809,6 +823,32 @@ create table timetypes (
 
 ) ENGINE=ndbcluster DEFAULT CHARSET=latin1;
 
+drop table if exists datetypes_pk;
+create table datetypes_pk (
+ id int not null,
+ pk_key_date date,
+
+ date_null_hash date,
+ date_null_btree date,
+ date_null_both date,
+ date_null_none date,
+
+ date_not_null_hash date,
+ date_not_null_btree date,
+ date_not_null_both date,
+ date_not_null_none date,
+
+ unique key idx_date_null_hash (date_null_hash) using hash,
+ key idx_date_null_btree (date_null_btree),
+ unique key idx_date_null_both (date_null_both),
+
+ unique key idx_date_not_null_hash (date_not_null_hash) using hash,
+ key idx_date_not_null_btree (date_not_null_btree),
+ unique key idx_date_not_null_both (date_not_null_both),
+
+ PRIMARY KEY (id, pk_key_date)
+) ENGINE=ndbcluster DEFAULT CHARSET=latin1;
+
 drop table if exists datetypes;
 create table datetypes (
  id int not null primary key,
@@ -1015,6 +1055,26 @@ create table `hope` (
   PRIMARY KEY (partition_id, id)
   ) ENGINE=ndbcluster DEFAULT CHARSET=latin1 partition by key (partition_id);
 
+CREATE TABLE `fgtest` (
+  `id` int NOT NULL,
+  `col_1` int DEFAULT NULL,
+  `col_2` varchar(1000) CHARACTER SET utf8 COLLATE utf8_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=ndbcluster;
+
+CREATE TABLE `notnulltable` (
+  `id` int NOT NULL,
+  `value` varchar(50) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=ndbcluster;
+
+drop table if exists same_table;
+create table same_table (
+  id int not null,
+  name varchar(32),
+  primary key(id)
+) ENGINE=ndbcluster;
+
 create database if not exists test2;
 use test2;
 drop table if exists t_basic2;
@@ -1024,8 +1084,35 @@ create table t_basic2 (
   age int,
   magic int not null,
   primary key(id),
-
   unique key idx_unique_hash_magic (magic) using hash,
   key idx_btree_age (age)
 ) ENGINE=ndbcluster;
+
+drop table if exists same_table;
+create table same_table (
+  id int not null,
+  name varchar(32),
+  primary key(id)
+) ENGINE=ndbcluster;
+
+create database if not exists test3;
+use test3;
+drop table if exists t_basic3;
+create table t_basic3 (
+  id int not null,
+  name varchar(32),
+  age int,
+  magic int not null,
+  primary key(id),
+  unique key idx_unique_hash_magic (magic) using hash,
+  key idx_btree_age (age)
+) ENGINE=ndbcluster;
+
+drop table if exists same_table;
+create table same_table (
+  id int not null,
+  name varchar(32),
+  primary key(id)
+) ENGINE=ndbcluster;
+
 use test;

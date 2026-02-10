@@ -12,6 +12,7 @@ if (`SELECT @@global.log_bin AND @@global.binlog_format = 'ROW'`)
   --enable_query_log
 }
 
+--source include/not_asan_mac.inc
 --source include/have_example_plugin.inc
 --source include/have_debug.inc
 --source include/have_debug_sync.inc

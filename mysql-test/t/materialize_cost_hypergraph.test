@@ -1,4 +1,221 @@
 # Non-hypergraph results are tested in materialize_cost.test.
 --source include/have_hypergraph.inc
 --source include/materialize_cost.inc
+
+# WL#16117: Hypergraph cost model complete coverage for materialization,
+# streaming, and aggregation
+
+CREATE TABLE tv(id INT, id2 INT, id3 INT);
+INSERT INTO tv VALUES (1, 2, 3), (4, 5, 6), (7, 8, 9), (10, 11, 12);
+INSERT INTO tv SELECT * FROM tv;
+INSERT INTO tv SELECT * FROM tv;
+ANALYZE TABLE tv;
+
+delimiter ||;
+CREATE FUNCTION get_cost(jobj json, jval varchar(200)) returns float
+  DETERMINISTIC
+main_block:
+BEGIN
+  DECLARE val, children_cost float;
+  DECLARE childobj json;
+  DECLARE i int;
+  DECLARE json_field varchar(100);
+
+  set children_cost = 0;
+  set @jval = jval;
+  set @i = 0;
+  label1: WHILE true DO
+    set json_field = concat("$.inputs[", @i, "]");
+    set childobj = json_extract(jobj, json_field);
+    if childobj is null then
+      leave label1;
+    end if;
+    set children_cost = children_cost + json_extract(childobj, @jval);
+    set @i=(SELECT @i + 1);
+  END WHILE label1;
+
+  select (json_extract(jobj, @jval) - children_cost) into val;
+  return val;
+END ||
+
+CREATE FUNCTION get_child_cost(rootobj json, jval varchar(200)) returns float
+  DETERMINISTIC
+main_block:
+BEGIN
+  DECLARE childobj json;
+  set childobj = rootobj->"$.query_plan.inputs[0]";
+
+  return get_cost(childobj, jval);
+END
+||
+delimiter ;||
+
+
+let $query_prefix=
+EXPLAIN FORMAT=JSON INTO @jsonstr;
+let $store_cost=
+SELECT get_cost(json_extract(@jsonstr, "$.query_plan"), "$.estimated_total_cost") est INTO;
+let $store_child_cost=
+SELECT get_child_cost(@jsonstr, "$.estimated_total_cost") est INTO;
+let print_access_type=
+SELECT json_extract(@jsonstr, "$.query_plan.access_type") access_type;
+let print_child_access_type=
+SELECT json_extract(@jsonstr, "$.query_plan.inputs[0].access_type") access_type;
+
+# With various Accesspaths, verify that the estimated cost increases with rows,
+# aggregation functions and GROUP-BY or DISTINCT columns.
+
+
+#
+# Temp table aggregation
+#
+
+eval $query_prefix SELECT SQL_SMALL_RESULT avg(id) FROM tv s GROUP BY id2;
+eval $print_child_access_type;
+eval $store_child_cost @cost1;
+# More aggregation functions.
+eval $query_prefix SELECT SQL_SMALL_RESULT avg(id),avg(id) FROM tv s GROUP BY id2;
+eval $store_child_cost @cost2;
+SELECT @cost1 < @cost2;
+# More GROUP BY fields.
+eval $query_prefix SELECT SQL_SMALL_RESULT avg(id),avg(id) FROM tv s GROUP BY id2, id3;
+eval $store_child_cost @cost3;
+SELECT @cost2 < @cost3;
+# More input rows.
+INSERT INTO tv SELECT * FROM tv;
+ANALYZE TABLE tv;
+eval $query_prefix SELECT SQL_SMALL_RESULT avg(id),avg(id) FROM tv s GROUP BY id2, id3;
+eval $store_child_cost @cost4;
+SELECT @cost3 < @cost4;
+SELECT round(@cost4, 1);
+
+#
+# Streaming aggregation (aggregation over sorted input)
+# Note: This is for AGGREGATE path, not the STREAM path.
+# For STREAM path, see # Stream below instead.
+#
+eval $query_prefix SELECT SQL_BIG_RESULT avg(id) FROM tv s GROUP BY id2;
+eval $print_access_type;
+eval $store_cost @cost1;
+# More aggregation functions.
+eval $query_prefix SELECT SQL_BIG_RESULT avg(id),avg(id) FROM tv s GROUP BY id2;
+eval $store_cost @cost2;
+SELECT @cost1 < @cost2;
+# More GROUP BY fields.
+eval $query_prefix SELECT SQL_BIG_RESULT avg(id),avg(id) FROM tv s GROUP BY id2, id3;
+eval $store_cost @cost3;
+SELECT @cost2 < @cost3;
+# More input rows.
+INSERT INTO tv SELECT * FROM tv;
+ANALYZE TABLE tv;
+eval $query_prefix SELECT SQL_BIG_RESULT avg(id),avg(id) FROM tv s GROUP BY id2, id3;
+eval $store_cost @cost4;
+SELECT @cost3 < @cost4;
+SELECT round(@cost4, 1);
+
+
+
+#
+# Materialization with deduplication
+#
+eval $query_prefix SELECT SQL_SMALL_RESULT DISTINCT id FROM tv s;
+eval $print_child_access_type;
+eval $store_child_cost @cost1;
+# More DISTINCT fields
+eval $query_prefix SELECT SQL_SMALL_RESULT DISTINCT id,id2 FROM tv s;
+eval $store_child_cost @cost2;
+SELECT @cost1 < @cost2;
+# More input rows.
+INSERT INTO tv SELECT * FROM tv limit 10;
+ANALYZE TABLE tv;
+eval $query_prefix SELECT SQL_SMALL_RESULT DISTINCT id,id2 FROM tv s;
+eval $store_child_cost @cost3;
+SELECT @cost2 < @cost3;
+SELECT round(@cost3, 1);
+
+#
+# Materialization without deduplication
+#
+eval $query_prefix WITH v AS
+  (VALUES ROW(1) UNION ALL SELECT id FROM tv) SELECT * FROM v;
+eval $print_child_access_type;
+eval $store_child_cost @cost1;
+# More fields
+eval $query_prefix WITH v AS
+  (VALUES ROW(1,2) UNION ALL SELECT id,id2 FROM tv) SELECT * FROM v;
+eval $store_child_cost @cost2;
+SELECT @cost1 < @cost2;
+# More input rows.
+INSERT INTO tv SELECT * FROM tv limit 10;
+ANALYZE TABLE tv;
+eval $query_prefix WITH v AS
+  (VALUES ROW(1,2) UNION ALL SELECT id,id2 FROM tv) SELECT * FROM v;
+eval $store_child_cost @cost3;
+SELECT @cost2 < @cost3;
+SELECT round(@cost3, 1);
+
+#
+# Stream
+#
+eval $query_prefix
+  SELECT SQL_BIG_RESULT count(id) a FROM tv GROUP BY id ORDER BY a;
+eval $print_child_access_type;
+eval $store_child_cost @cost1;
+# More fields
+eval $query_prefix
+  SELECT SQL_BIG_RESULT count(id), any_value(id2) a FROM tv GROUP BY id ORDER BY a;
+eval $store_child_cost @cost2;
+SELECT @cost1 < @cost2;
+# More input rows. rand() is used to get many distinct rows, so that estimated
+# output row count for Aggregate increases, and thus more input row count for
+# Stream. This will work even without rand, because the estimated distinct
+# count without histogram would fallback to sqrt(N). Still we are keeping
+# rand() here for sake of being closer to long-term desired scenario where
+# all row estimates are correct.
+INSERT INTO tv(id, id2) SELECT 1000*rand(), 1000*rand() FROM tv;
+ANALYZE TABLE tv;
+eval $query_prefix
+  SELECT SQL_BIG_RESULT count(id), any_value(id2) a FROM tv GROUP BY id ORDER BY a;
+eval $store_child_cost @cost3;
+SELECT @cost2 < @cost3;
+SELECT round(@cost3, 1);
+
+# Bug#37373959: Add rough InnoDB cost into temp-table-aggregation [postfix WL#16117]
+# Estimated cost should gradually increase as estimated temp table size
+# approaches @@tmp_table_size
+select @@tmp_table_size into @orig_tmp_table_size;
+TRUNCATE tv;
+INSERT INTO tv WITH RECURSIVE cte (n) AS
+  (SELECT 1 UNION ALL SELECT n + 1 FROM cte WHERE n < 1000)
+    SELECT n,n,n FROM cte order by rand();
+ANALYZE TABLE tv;
+
+eval $query_prefix SELECT SQL_SMALL_RESULT avg(id) FROM tv GROUP BY id2, id3;
+eval $store_child_cost @cost1;
+
+# estimated size less than 90% of tmp_table_size; no change in cost.
+set tmp_table_size=34000;
+eval $query_prefix SELECT SQL_SMALL_RESULT avg(id) FROM tv GROUP BY id2, id3;
+eval $store_child_cost @cost2;
+SELECT round(@cost1) = round(@cost2);
+
+# estimated size = 95% of tmp_table_size. Cost increases.
+set tmp_table_size=30000;
+eval $query_prefix SELECT SQL_SMALL_RESULT avg(id) FROM tv GROUP BY id2, id3;
+eval $store_child_cost @cost3;
+SELECT @cost3 / @cost2 between 3 and 4;
+
+# estimated size more than tmp_table_size. Cost increases 5 times.
+set tmp_table_size=24000;
+eval $query_prefix SELECT SQL_SMALL_RESULT avg(id) FROM tv GROUP BY id2, id3;
+eval $store_child_cost @cost4;
+SELECT round(@cost4 / @cost2);
+
+set tmp_table_size=@orig_tmp_table_size;
+
+# Cleanup
+DROP TABLE tv;
+DROP FUNCTION get_cost;
+DROP FUNCTION get_child_cost;
+
 --source include/disable_hypergraph.inc

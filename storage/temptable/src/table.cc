@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -39,6 +39,7 @@ TempTable Table implementation. */
 #include "mysqld_error.h"
 #include "sql/field.h"
 #include "sql/key.h"
+#include "sql/sql_class.h"
 #include "sql/table.h"
 #include "storage/temptable/include/temptable/allocator.h"
 #include "storage/temptable/include/temptable/block.h"
@@ -73,7 +74,8 @@ Table::Table(TABLE *mysql_table, Block *shared_block,
       m_index_entries(0, m_allocator),
       m_insert_undo(m_allocator),
       m_columns(m_allocator),
-      m_mysql_table_share(mysql_table->s) {
+      m_mysql_table_share(mysql_table->s),
+      m_owner_id(mysql_table->in_use->thread_id()) {
   const size_t number_of_indexes = mysql_table->s->keys;
   const size_t number_of_columns = mysql_table->s->fields;
   const unsigned char *mysql_row = nullptr;
@@ -261,6 +263,8 @@ Result Table::remove(const unsigned char *mysql_row_must_be,
 
   return Result::OK;
 }
+
+my_thread_id Table::owner_id() const { return m_owner_id; }
 
 void Table::indexes_create() {
   assert(m_index_entries.empty());

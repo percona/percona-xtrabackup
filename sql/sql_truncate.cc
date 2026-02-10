@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,7 +57,7 @@
 #include "sql/sql_const.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
-#include "sql/sql_show.h"   // append_identifier()
+#include "sql/sql_show.h"   // append_identifier_*
 #include "sql/sql_table.h"  // write_bin_log
 #include "sql/system_variables.h"
 #include "sql/table.h"        // TABLE
@@ -91,13 +91,14 @@ static const char *fk_info_str(const THD *thd,
     `db`.`tbl`, CONSTRAINT `id`
   */
 
-  append_identifier(&str, fk_p->child_schema_name().c_str(),
-                    fk_p->child_schema_name().length());
+  append_identifier_with_backtick(&str, fk_p->child_schema_name().c_str(),
+                                  fk_p->child_schema_name().length());
   res |= str.append(".");
-  append_identifier(&str, fk_p->child_table_name().c_str(),
-                    fk_p->child_table_name().length());
+  append_identifier_with_backtick(&str, fk_p->child_table_name().c_str(),
+                                  fk_p->child_table_name().length());
   res |= str.append(", CONSTRAINT ");
-  append_identifier(&str, fk_p->fk_name().c_str(), fk_p->fk_name().length());
+  append_identifier_with_backtick(&str, fk_p->fk_name().c_str(),
+                                  fk_p->fk_name().length());
 
   return res ? nullptr : thd->strmake(str.ptr(), str.length());
 }

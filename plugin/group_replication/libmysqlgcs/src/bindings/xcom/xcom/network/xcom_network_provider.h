@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -79,7 +79,8 @@ class Xcom_network_provider : public Network_provider {
   }
 
   bool configure_secure_connections(
-      const Network_configuration_parameters &params) override {
+      const Network_configuration_parameters &params
+      [[maybe_unused]]) override {
 #ifndef XCOM_WITHOUT_OPENSSL
     bool const successful =
         (Xcom_network_provider_ssl_library::xcom_init_ssl(

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -47,7 +47,7 @@ ha_checksum mi_checksum(MI_INFO *info, const uchar *buf) {
         break;
       }
       case FIELD_VARCHAR: {
-        uint pack_length = HA_VARCHAR_PACKLENGTH(rec->length - 1);
+        uint const pack_length = HA_VARCHAR_PACKLENGTH(rec->length - 1);
         if (pack_length == 1)
           length = (ulong)*buf;
         else

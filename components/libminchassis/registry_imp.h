@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -101,6 +101,23 @@ class mysql_registry_imp : public mysql_registry_no_lock_imp {
     Registers a new Service Implementation. If it is the first Service
     Implementation for the specified Service then it is made a default one.
 
+    @note Called by register_service API and the dyloader
+
+    @param service_implementation_name Name of the Service Implementation to
+      register.
+    @param ptr Pointer to the Service Implementation structure.
+    @return Status of performed operation
+    @retval false success
+    @retval true failure
+   */
+  static bool register_service_sans_notify(
+      const char *service_implementation_name, my_h_service ptr);
+
+  /**
+    Implementation of the top level register service call.
+    In addition to @ref register_service_sans_notify also calls the loaded
+    notification.
+
     @param service_implementation_name Name of the Service Implementation to
       register.
     @param ptr Pointer to the Service Implementation structure.
@@ -117,6 +134,21 @@ class mysql_registry_imp : public mysql_registry_no_lock_imp {
     the default one for specified Service then any one still registered is made
     default. If there is no other, the default entry is removed from the
     Registry too.
+
+    @note Called by the unregister_service API and the dyloader
+
+    @param service_implementation_name Name of the Service Implementation to
+      unregister.
+    @return Status of performed operation
+    @retval false success
+    @retval true Failure. May happen when Service is still being referenced.
+  */
+  static bool unregister_sans_notify(const char *service_implementation_name);
+
+  /**
+    Implementation of the top level unregister service call.
+    In addition to @ref unregister_sans_notify also calls the unloaded
+    notification.
 
     @param service_implementation_name Name of the Service Implementation to
       unregister.

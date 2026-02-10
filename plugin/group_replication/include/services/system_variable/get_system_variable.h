@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,8 @@ class Get_system_variable_parameters : public Mysql_thread_body_parameters {
     VAR_GTID_EXECUTED,
     VAR_GTID_PURGED,
     VAR_READ_ONLY,
-    VAR_SUPER_READ_ONLY
+    VAR_SUPER_READ_ONLY,
+    VAR_MOST_UPTODATE
   };
 
   Get_system_variable_parameters(System_variable_service service)
@@ -127,6 +128,19 @@ class Get_system_variable : Mysql_thread_body {
   int get_global_super_read_only(bool &value);
 
   /**
+    Method to return the global value of
+    'group_replication_primary_failover.most_uptodate' by executing
+    the get_variables component service.
+
+    @param [out] value The variable where the value will be set
+
+    @return the error value returned
+    @retval 0      OK
+    @retval !=0    Error
+    */
+  int get_most_uptodate(bool &value);
+
+  /**
     Method that will be run on mysql_thread.
 
     @param [in, out] parameters Values used by method to get service variable.
@@ -149,16 +163,17 @@ class Get_system_variable : Mysql_thread_body {
   /**
     Method to return the server system variable specified on variable.
 
-    @param [in]  variable The system variable name to be retrieved
-    @param [out] value    The string where the result will be set
+    @param [in]  component        The component where variable is defined
+    @param [in]  variable         The system variable name to be retrieved
+    @param [out] value            The string where the result will be set
     @param [in]  value_max_length The maximum string value length
 
     @return the error value returned
     @retval 0      OK
     @retval !=0    Error
     */
-  int internal_get_system_variable(std::string variable, std::string &value,
-                                   size_t value_max_length);
+  int internal_get_system_variable(std::string component, std::string variable,
+                                   std::string &value, size_t value_max_length);
 };
 
 #endif  // GR_GET_SYSTEM_VARIABLE

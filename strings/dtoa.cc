@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -753,7 +753,7 @@ static void Bfree(Bigint *v, Stack_alloc *alloc) {
 
 static char *dtoa_alloc(int i, Stack_alloc *alloc) {
   char *rv;
-  int aligned_size = MY_ALIGN(i, SIZEOF_CHARP);
+  int const aligned_size = MY_ALIGN(i, SIZEOF_CHARP);
   if (alloc->free + aligned_size <= alloc->end) {
     rv = alloc->free;
     alloc->free += aligned_size;
@@ -821,7 +821,7 @@ static Bigint *s2b(const char *s, int nd0, int nd, uint32_t y9,
   int i, k;
   int32_t y = 0;
 
-  int32_t x = (nd + 8) / 9;
+  int32_t const x = (nd + 8) / 9;
   for (k = 0, y = 1; x > y; y <<= 1, k++)
     ;
   b = Balloc(k, alloc);
@@ -1001,7 +1001,7 @@ static Bigint p5_a[] = {
 static Bigint *pow5mult(Bigint *b, int k, Stack_alloc *alloc) {
   Bigint *b1, *p5, *p51 = nullptr;
   int i;
-  static int p05[3] = {5, 25, 125};
+  static int const p05[3] = {5, 25, 125};
   bool overflow = false;
 
   if ((i = k & 3)) b = multadd(b, p05[i - 1], 0, alloc);
@@ -1126,7 +1126,7 @@ static Bigint *diff(Bigint *a, Bigint *b, Stack_alloc *alloc) {
 static double ulp(U *x) {
   U u;
 
-  int32_t L = (word0(x) & Exp_mask) - (P - 1) * Exp_msk1;
+  int32_t const L = (word0(x) & Exp_mask) - (P - 1) * Exp_msk1;
   word0(&u) = L;
   word1(&u) = 0;
   return dval(&u);
@@ -1146,7 +1146,7 @@ static double b2d(Bigint *a, int *e) {
   *e = 32 - k;
   if (k < Ebits) {
     d0 = Exp_1 | y >> (Ebits - k);
-    uint32_t w = xa > xa0 ? *--xa : 0;
+    uint32_t const w = xa > xa0 ? *--xa : 0;
     d1 = y << ((32 - Ebits) + k) | w >> (Ebits - k);
     goto ret_d;
   }

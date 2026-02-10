@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -44,6 +45,18 @@ class Name;
 }  // namespace collation
 
 namespace collation_internals {
+
+using id_hash_map = std::unordered_map<unsigned, CHARSET_INFO *>;
+
+struct string_hash {
+  using is_transparent = void;
+  [[nodiscard]] size_t operator()(std::string_view txt) const {
+    return std::hash<std::string_view>{}(txt);
+  }
+};
+
+using sv_hash_map = std::unordered_map<std::string, CHARSET_INFO *, string_hash,
+                                       std::equal_to<>>;
 
 /**
   Helper class: implementation of character set/collation library
@@ -240,21 +253,9 @@ class Collations final {
   const std::string m_charset_dir;
 
   /**
-    Common parametric type to map character set/collation names or their ids
-    to CHARSET_INFO object pointers
-
-    @tparam Key         Name or id type (std::string or unsigned respectively)
-
-    TODO(gleb): it would be good to use mysql::collation::Name instead of
-                std::string for Key.
-  */
-  template <typename Key>
-  using Hash = std::unordered_map<Key, CHARSET_INFO *>;
-
-  /**
     Maps collation ids to CHARSET_INFO object pointers
   */
-  Hash<unsigned> m_all_by_id;
+  id_hash_map m_all_by_id;
 
   /**
     Maps normalized strings of all known character set names, collation names,
@@ -263,7 +264,7 @@ class Collations final {
     @note see old_conv and get_old_charset_by_name() for exclusions
     @see old_conv(), get_old_charset_by_name()
   */
-  Hash<std::string> m_all_by_collation_name;
+  sv_hash_map m_all_by_collation_name;
 
   /**
     Maps normalized strings of character set names to CHARSET_INFO object
@@ -272,7 +273,7 @@ class Collations final {
     @note In MySQL, CHARSET_INFO object of character set is also an object
     of its primary collation.
   */
-  Hash<std::string> m_primary_by_cs_name;
+  sv_hash_map m_primary_by_cs_name;
 
   /**
     Maps normalized strings of character set names to CHARSET_INFO objects
@@ -281,7 +282,7 @@ class Collations final {
     @note utf8mb4 has two separate binary collations, so m_binary_by_cs_name
           contains a reference to utf8mb4_bin only.
   */
-  Hash<std::string> m_binary_by_cs_name;
+  sv_hash_map m_binary_by_cs_name;
 
   /**
     False if m_loader references external MY_CHARSET_LOADER, otherwise true.

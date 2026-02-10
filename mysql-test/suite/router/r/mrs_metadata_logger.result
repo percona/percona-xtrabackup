@@ -1,0 +1,136 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+*******************************************************
+# Create an example service "svc"
+*******************************************************
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+# Registred DB_OBJECT at path: /svc/basic/t1
+
+
+## I.  Verify the Router logs to the router_general_log metadata table when it is configured
+#
+# 1. Verify there are log entries in the table
+# 2. Verify the fields the Router is supposed to fill are set to non null values (only check those that are not forced NOT NULL by the schema definition)
+# 3. Verify that in debug mode there are no SQL statements cused by the logging itself logged
+# 4. Verify the log level can be changed dynamically and is honored by the metadata logger
+#
+## II.  Verify that the logger configuration can be changed dynamically, is verified and expected warnings are logged if invalid
+#
+# 1. Verify that WARNING is logged and when logLevel is invalid value
+# 2. Verify that WARNING is logged and when flushInterval is invalid type
+# 3. Verify that WARNING is logged and when flushInterval is less than allowed minumum
+# 4. Verify that WARNING is logged and when flushInterval is greater than allowed maximum
+# 5. Verify that WARNING is logged and when bufferSize is invalid type
+# 6. Verify that WARNING is logged and when bufferSize is less than allowed minumum
+# 7. Verify that WARNING is logged and when bufferSize is greater than allowed maximum
+
+## III.  Verify that the logger reports the dropped logs when the buffer gets full and there is no way to write to the server
+#
+#
+
+#
+# I.1
+
+#
+# I.2
+Check that all the fields that the Router is supposed to set are not null (we only check those that are not forced NOT NULL by the schema definition)
+
+#
+# I.3
+Check that there are no SQL logs caused by the metadata logger itself
+
+#
+# I.4
+Set the log_level in the global config to INFO, also set the bufferSize to invalid value to trigger WARNING messages
+UPDATE mysql_rest_service_metadata.config SET data =
+JSON_SET(IFNULL(data, "{}"), "$.mrsMetadataLogger",
+JSON_OBJECT("logLevel", "INFO", "flushInterval", 1, "bufferSize", "inv"));
+Wait for the MRS to read that change
+Wait for the flush of the logs
+Delete all the logs so far
+truncate mysql_rest_service_metadata.router_general_log;
+Wait for the MRS schema monitor to do another round so that there are some new debug logs triggered
+Make sure there are no DEBUG level logs
+
+#
+# II.1
+UPDATE mysql_rest_service_metadata.config SET data =
+JSON_SET(IFNULL(data, "{}"),
+"$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INVALID",
+"flushInterval", 1));
+
+#
+# II.2
+UPDATE mysql_rest_service_metadata.config SET data =
+JSON_SET(IFNULL(data, "{}"),
+"$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+"flushInterval", "inv",
+"bufferSize", 1));
+
+#
+# II.3
+UPDATE mysql_rest_service_metadata.config SET data =
+JSON_SET(IFNULL(data, "{}"),
+"$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+"flushInterval", 0,
+"bufferSize", 1));
+
+#
+# II.4
+UPDATE mysql_rest_service_metadata.config SET data =
+JSON_SET(IFNULL(data, "{}"),
+"$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+"flushInterval", 86401,
+"bufferSize", 1));
+
+#
+# II.5
+UPDATE mysql_rest_service_metadata.config SET data =
+JSON_SET(IFNULL(data, "{}"),
+"$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+"flushInterval", "1",
+"bufferSize", "inv"));
+
+#
+# II.6
+UPDATE mysql_rest_service_metadata.config SET data =
+JSON_SET(IFNULL(data, "{}"),
+"$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+"flushInterval", 1,
+"bufferSize", 0));
+
+#
+# II.7
+UPDATE mysql_rest_service_metadata.config SET data =
+JSON_SET(IFNULL(data, "{}"),
+"$.mrsMetadataLogger", JSON_OBJECT("logLevel", "INFO",
+"flushInterval", 1,
+"bufferSize", 10001));
+
+#
+# III.
+set the options to valid values again (buffer size to a small value)
+UPDATE mysql_rest_service_metadata.config SET data =
+JSON_SET(IFNULL(data, "{}"),
+"$.mrsMetadataLogger", JSON_OBJECT("logLevel", "DEBUG",
+"flushInterval", 1,
+"bufferSize", 1));
+Wait for the MRS to read that change
+Delete all the logs so far
+truncate mysql_rest_service_metadata.router_general_log;
+Set the global mode to read-only to make the logging to metadata impossible
+SET GLOBAL super_read_only = 1;
+Wait until the Router notices it (based on the filelog)
+include/wait_for_pattern_in_file.inc [.*WARNING .* Node .* is read-only, stopping the REST service.*]
+Turn off the ro mode
+SET GLOBAL super_read_only = 0;
+SET GLOBAL read_only = 0;
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

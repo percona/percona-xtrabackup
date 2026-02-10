@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 create table t1 (id int(8), name varchar(32));
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
@@ -114,7 +115,7 @@ CREATE TABLE `t1` (
 
 LOCK TABLES `t1` WRITE;
 /*!40000 ALTER TABLE `t1` DISABLE KEYS */;
-INSERT  IGNORE INTO `t1` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
+INSERT IGNORE INTO `t1` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
 /*!40000 ALTER TABLE `t1` ENABLE KEYS */;
 UNLOCK TABLES;
 DROP TABLE IF EXISTS `t2`;
@@ -128,7 +129,7 @@ CREATE TABLE `t2` (
 
 LOCK TABLES `t2` WRITE;
 /*!40000 ALTER TABLE `t2` DISABLE KEYS */;
-INSERT  IGNORE INTO `t2` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
+INSERT IGNORE INTO `t2` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
 /*!40000 ALTER TABLE `t2` ENABLE KEYS */;
 UNLOCK TABLES;
 DROP TABLE IF EXISTS `t3`;
@@ -142,7 +143,7 @@ CREATE TABLE `t3` (
 
 LOCK TABLES `t3` WRITE;
 /*!40000 ALTER TABLE `t3` DISABLE KEYS */;
-INSERT  IGNORE INTO `t3` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
+INSERT IGNORE INTO `t3` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
 /*!40000 ALTER TABLE `t3` ENABLE KEYS */;
 UNLOCK TABLES;
 DROP TABLE IF EXISTS `t4`;
@@ -156,7 +157,7 @@ CREATE TABLE `t4` (
 
 LOCK TABLES `t4` WRITE;
 /*!40000 ALTER TABLE `t4` DISABLE KEYS */;
-INSERT  IGNORE INTO `t4` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
+INSERT IGNORE INTO `t4` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
 /*!40000 ALTER TABLE `t4` ENABLE KEYS */;
 UNLOCK TABLES;
 DROP TABLE IF EXISTS `t5`;
@@ -170,7 +171,7 @@ CREATE TABLE `t5` (
 
 LOCK TABLES `t5` WRITE;
 /*!40000 ALTER TABLE `t5` DISABLE KEYS */;
-INSERT  IGNORE INTO `t5` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
+INSERT IGNORE INTO `t5` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
 /*!40000 ALTER TABLE `t5` ENABLE KEYS */;
 UNLOCK TABLES;
 DROP TABLE IF EXISTS `t6`;
@@ -184,7 +185,7 @@ CREATE TABLE `t6` (
 
 LOCK TABLES `t6` WRITE;
 /*!40000 ALTER TABLE `t6` DISABLE KEYS */;
-INSERT  IGNORE INTO `t6` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
+INSERT IGNORE INTO `t6` VALUES (1,'first value'),(2,'first value'),(3,'first value'),(4,'first value'),(5,'first value');
 /*!40000 ALTER TABLE `t6` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -1347,3 +1348,4 @@ COUNT(*)
 1
 DROP VIEW  v1;
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -37,6 +37,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "clone0api.h"
 #include "clone0clone.h"
+#include "debug_sync.h" /* CONDITIONAL_SYNC_POINT */
 #include "dict0dd.h"
 #include "fil0fil.h"
 #include "fsp0fsp.h"
@@ -234,6 +235,43 @@ void trx_purge_sys_mem_create() {
   purge_sys->heap = mem_heap_create(8 * 1024, UT_LOCATION_HERE);
 }
 
+/** Updates the purge_sys->view and purge_sys->m_lowest_needed_trx_no, to the
+safe, most current estimates which are based on oldest currently open read view
+and progress of GTID persistor.
+Because the value of lowest needed transaction number returned by
+Clone_persist_gtid::get_oldest_trx_no() is not monotone over time, the
+m_lowest_needed_trx_no may sometimes get smaller, perhaps smaller than already
+purged trx no - when this happens it doesn't mean that we've lost important data
+as the value returned by GTID persistor in such cases is lower than really
+needed.
+The estimates should eventually converge on the right value if system is idle.
+This function is called at startup and then periodically by purge thread, to
+learn how much can be purged - which is limited by m_lowest_needed_trx_no.
+Note that m_lowest_needed_trx_no might be lower than needed by purge_sys->view
+in case GTID persistor is lagging. */
+static void trx_purge_update_oldest_needed() {
+  rw_lock_x_lock(&purge_sys->latch, UT_LOCATION_HERE);
+  trx_sys->mvcc->clone_oldest_view(&purge_sys->view);
+  const auto needed_by_purge_view = purge_sys->view.low_limit_no();
+  /* The Clone_persist_gtid::get_oldest_trx_no() can return TRX_ID_MAX, if there
+  are no GTIDs pending to be persisted. It is crucial for correctness, that
+  get_oldest_trx_no() must be called after the oldest view was cloned, so that
+  in case it returns TRX_ID_MAX, we properly cap it to no more than
+  trx_sys->serialisation_min_trx_no seen at an earlier moment (which is an upper
+  bound for purge_sys->view->low_limit_no() on the one hand, and at
+  the same time a lower bound for trx->no of any trx assigned a new GTID since
+  then and at the same time ). If we do that in opposite order, it could be the
+  case that new GTIDs were assigned after the get_oldest_trx_no() has returned
+  TRX_ID_MAX and we clone an oldest read view even later and thus decide to
+  remove all Undo Logs not needed by this read view, including the Undo Log
+  Header which stored the newly assigned GTID, before it is persisted.*/
+  const auto needed_by_persistor =
+      clone_sys->get_gtid_persistor().get_oldest_trx_no();
+  purge_sys->m_lowest_needed_trx_no =
+      std::min(needed_by_purge_view, needed_by_persistor);
+  rw_lock_x_unlock(&purge_sys->latch);
+}
+
 void trx_purge_sys_initialize(uint32_t n_purge_threads,
                               purge_pq_t *purge_queue) {
   /* Take ownership of purge_queue, we are responsible for freeing it. */
@@ -260,8 +298,7 @@ void trx_purge_sys_initialize(uint32_t n_purge_threads,
   purge_sys->query = trx_purge_graph_build(purge_sys->trx, n_purge_threads);
 
   new (&purge_sys->view) ReadView();
-
-  trx_sys->mvcc->clone_oldest_view(&purge_sys->view);
+  trx_purge_update_oldest_needed();
 
   purge_sys->rseg_iter = ut::new_withkey<TrxUndoRsegsIterator>(
       UT_NEW_THIS_FILE_PSI_KEY, purge_sys);
@@ -766,7 +803,7 @@ bool Tablespace::needs_truncation() {
 /** Change the space_id from its current value.
 @param[in]  space_id  The new undo tablespace ID */
 void Tablespace::set_space_id(space_id_t space_id) {
-  ut_ad(m_num == id2num(space_id));
+  ut_ad_eq(num(), id2num(space_id));
   m_id = space_id;
 }
 
@@ -844,9 +881,6 @@ void Tablespace::set_file_name(const char *file_name) {
   Fil_path::normalize(norm_fn);
   std::string tmp_fn{norm_fn};
 
-  /* Explicit undo tablespaces use an IBU extension. */
-  m_implicit = (Fil_path::has_suffix(IBU, tmp_fn) ? false : true);
-
   /* This name can come in three forms: absolute path, relative path,
   and basename. ADD DATAFILE for undo tablespaces does not accept a
   relative path. If a relative path comes in here, it was the scanned
@@ -905,7 +939,8 @@ void Tablespace::alter_active() {
   if (m_rsegs->is_empty()) {
     m_rsegs->set_active();
   } else if (m_rsegs->is_inactive_explicit()) {
-    if (purge_sys->undo_trunc.get_marked_space_num() == m_num) {
+    if (purge_sys->undo_trunc.is_marked() &&
+        purge_sys->undo_trunc.get_marked_space_num() == num()) {
       m_rsegs->set_inactive_implicit();
     } else {
       m_rsegs->set_active();
@@ -942,7 +977,6 @@ dberr_t start_logging(Tablespace *undo_space) {
   }
 #endif /* UNIV_DEBUG */
 
-  dberr_t err;
   char *log_file_name = undo_space->log_file_name();
 
   /* Delete the log file if it exists. */
@@ -969,7 +1003,7 @@ dberr_t start_logging(Tablespace *undo_space) {
 
   request.disable_compression();
 
-  err = os_file_write(request, log_file_name, handle, buf, 0, sz);
+  const dberr_t err = os_file_write(request, log_file_name, handle, buf, 0, sz);
 
   os_file_flush(handle);
   os_file_close(handle);
@@ -978,18 +1012,11 @@ dberr_t start_logging(Tablespace *undo_space) {
   return (err);
 }
 
-/** Mark completion of undo truncate action by writing magic number
-to the log file and then removing it from the disk.
-If we are going to remove it from disk then why write magic number?
-This is to safeguard from unlink (file-system) anomalies that will
-keep the link to the file even after unlink action is successful
-and ref-count = 0.
-@param[in]  space_num  number of the undo tablespace to truncate. */
 void done_logging(space_id_t space_num) {
-  dberr_t err;
-  /* Calling id2num(space_num) will return the first space_id for this
-  space_num. That is good enough since we only need the log_file_name. */
-  Tablespace undo_space(id2num(space_num));
+  /* Get the first space id for this space_num. That is good enough since we
+  only need the log_file_name. */
+  Tablespace undo_space(num2id(space_num, 0));
+
   char *log_file_name = undo_space.log_file_name();
 
   /* If this file does not exist, there is nothing to do. */
@@ -997,8 +1024,7 @@ void done_logging(space_id_t space_num) {
     return;
   }
 
-  /* Open log file and write magic number to indicate
-  done phase. */
+  /* Open log file and write magic number to indicate done phase. */
   bool ret;
   pfs_os_file_t handle = os_file_create_simple_no_error_handling(
       innodb_log_file_key, log_file_name, OS_FILE_OPEN, OS_FILE_READ_WRITE,
@@ -1023,7 +1049,7 @@ void done_logging(space_id_t space_num) {
 
   request.disable_compression();
 
-  err = os_file_write(request, log_file_name, handle, buf, 0, sz);
+  const dberr_t err = os_file_write(request, log_file_name, handle, buf, 0, sz);
 
   ut_a(err == DB_SUCCESS);
 
@@ -1034,13 +1060,10 @@ void done_logging(space_id_t space_num) {
   os_file_delete_if_exists(innodb_log_file_key, log_file_name, nullptr);
 }
 
-/** Check if TRUNCATE_DDL_LOG file exist.
-@param[in]  space_num  undo tablespace number
-@return true if exist else false. */
 bool is_active_truncate_log_present(space_id_t space_num) {
-  /* Calling id2num(space_num) will return the first space_id for this
-  space_num. That is good enough since we only need the log_file_name. */
-  Tablespace undo_space(id2num(space_num));
+  /* Get the first space id for thus space_num. That is good enough since we
+  only need the log_file_name. */
+  Tablespace undo_space(num2id(space_num, 0));
 
   /* The truncation log file location changed to a new default location.
   Check if it exists in either location. */
@@ -1594,23 +1617,22 @@ static bool trx_purge_truncate_marked_undo() {
 NOTE that when this function is called, the caller must not
 have any latches on undo log pages!
 @param[in]  limit  Truncate limit
-@param[in]  view   Purge view */
-static void trx_purge_truncate_history(purge_iter_t *limit,
-                                       const ReadView *view) {
+*/
+static void trx_purge_truncate_history(purge_iter_t *limit) {
   MONITOR_INC_VALUE(MONITOR_PURGE_TRUNCATE_HISTORY_COUNT, 1);
 
   auto counter_time_truncate_history = std::chrono::steady_clock::now();
-
+  const auto lowest_needed_trx_no = purge_sys->m_lowest_needed_trx_no;
   /* We play safe and set the truncate limit at most to the purge view
   low_limit number, though this is not necessary */
 
-  if (limit->trx_no >= view->low_limit_no()) {
-    limit->trx_no = view->low_limit_no();
+  if (limit->trx_no >= lowest_needed_trx_no) {
+    limit->trx_no = lowest_needed_trx_no;
     limit->undo_no = 0;
     limit->undo_rseg_space = SPACE_UNKNOWN;
   }
 
-  ut_ad(limit->trx_no <= purge_sys->view.low_limit_no());
+  ut_ad(limit->trx_no <= lowest_needed_trx_no);
 
   /* Purge rollback segments in all undo tablespaces.  This may take
   some time and we do not want an undo DDL to attempt an x_lock during
@@ -1639,15 +1661,6 @@ static void trx_purge_truncate_history(purge_iter_t *limit,
   undo::spaces->s_unlock();
   mutex_exit(&undo::ddl_mutex);
 
-  /* Purge rollback segments in the system tablespace, if any.
-  Use an s-lock for the whole list since it can have gaps and
-  may be sorted when added to. */
-  trx_sys->rsegs.s_lock();
-  for (auto rseg : trx_sys->rsegs) {
-    trx_purge_truncate_rseg_history(rseg, limit);
-  }
-  trx_sys->rsegs.s_unlock();
-
   /* Purge rollback segments in the temporary tablespace. */
   trx_sys->tmp_rsegs.s_lock();
   for (auto rseg : trx_sys->tmp_rsegs) {
@@ -1662,12 +1675,6 @@ static void trx_purge_truncate_history(purge_iter_t *limit,
 /** Select an undo tablespace to truncate, make sure it is empty of undo logs,
 then finally truncate it. */
 static void trx_purge_truncate_undo_spaces() {
-  /* If the server has been started for the purpose of upgrading from a
-  previous version, do not do undo truncation. */
-  if (srv_is_upgrade_mode) {
-    return;
-  }
-
   auto &undo_trunc = purge_sys->undo_trunc;
 
   /* Truncate as many undo spaces as can be truncated.
@@ -1894,7 +1901,7 @@ static trx_undo_rec_t *trx_purge_get_next_rec(
   mtr_t mtr;
 
   ut_ad(purge_sys->next_stored);
-  ut_ad(purge_sys->iter.trx_no < purge_sys->view.low_limit_no());
+  ut_ad(purge_sys->iter.trx_no < purge_sys->m_lowest_needed_trx_no);
 
   space = purge_sys->rseg->space_id;
   page_no = purge_sys->page_no;
@@ -2034,6 +2041,7 @@ struct Purge_groups_t {
   void assign(que_thr_t **thrs) {
     const std::size_t n_purge_threads = m_groups.size();
     for (std::size_t grpid = 0; grpid < n_purge_threads; ++grpid) {
+      ut_ad(thrs[grpid] != nullptr);
       purge_node_t *node = static_cast<purge_node_t *>(thrs[grpid]->child);
       ut_a(que_node_get_type(node) == QUE_NODE_PURGE);
       ut_ad(node->recs == nullptr);
@@ -2214,7 +2222,7 @@ void Purge_groups_t::distribute_if_needed() {
     }
   }
 
-  if (purge_sys->iter.trx_no >= purge_sys->view.low_limit_no()) {
+  if (purge_sys->iter.trx_no >= purge_sys->m_lowest_needed_trx_no) {
     return nullptr;
   }
 
@@ -2378,9 +2386,9 @@ static void trx_purge_truncate(void) {
   ut_ad(trx_purge_check_limit());
 
   if (purge_sys->limit.trx_no == 0) {
-    trx_purge_truncate_history(&purge_sys->iter, &purge_sys->view);
+    trx_purge_truncate_history(&purge_sys->iter);
   } else {
-    trx_purge_truncate_history(&purge_sys->limit, &purge_sys->view);
+    trx_purge_truncate_history(&purge_sys->limit);
   }
 
   /* Attempt to truncate an undo tablespace. */
@@ -2405,12 +2413,8 @@ ulint trx_purge(ulint n_purge_threads, /*!< in: number of purge tasks
   /* The number of tasks submitted should be completed. */
   ut_a(purge_sys->n_submitted == purge_sys->n_completed);
 
-  rw_lock_x_lock(&purge_sys->latch, UT_LOCATION_HERE);
-
-  trx_sys->mvcc->clone_oldest_view(&purge_sys->view);
-
-  rw_lock_x_unlock(&purge_sys->latch);
-
+  trx_purge_update_oldest_needed();
+  CONDITIONAL_SYNC_POINT("after_clone_oldest_view");
 #ifdef UNIV_DEBUG
   if (srv_purge_view_update_only_debug) {
     return (0);
@@ -2468,7 +2472,7 @@ ulint trx_purge(ulint n_purge_threads, /*!< in: number of purge tasks
   we rely on purge history length. So truncate the
   undo logs during upgrade to update purge history
   length. */
-  if (truncate || srv_upgrade_old_undo_found) {
+  if (truncate) {
     trx_purge_truncate();
   }
 
@@ -2552,11 +2556,7 @@ void trx_purge_stop(void) {
 }
 
 /** Resume purge, move to PURGE_STATE_RUN. */
-void trx_purge_run(void) {
-  /* Flush any GTIDs to disk so that purge can proceed immediately. */
-  auto &gtid_persistor = clone_sys->get_gtid_persistor();
-  gtid_persistor.wait_flush(false, false, nullptr);
-
+void trx_purge_run() {
   rw_lock_x_lock(&purge_sys->latch, UT_LOCATION_HERE);
 
   switch (purge_sys->state) {

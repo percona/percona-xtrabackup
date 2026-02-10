@@ -1,0 +1,43 @@
+SELECT @@global.debug_a_global_flagset;
+@@global.debug_a_global_flagset
+f1=on,f2=on
+# Not a session
+SELECT @@session.debug_a_global_flagset;
+ERROR HY000: Variable 'debug_a_global_flagset' is a GLOBAL variable
+SELECT @@global.debug_a_global_flagset INTO @save;
+SHOW GLOBAL VARIABLES LIKE 'debug_a_global_flagset';
+Variable_name	Value
+debug_a_global_flagset	f1=on,f2=on
+SELECT * FROM performance_schema.global_variables WHERE variable_name="debug_a_global_flagset";
+VARIABLE_NAME	VARIABLE_VALUE
+debug_a_global_flagset	f1=on,f2=on
+# try a wrong value: should return an error
+SET @@global.debug_a_global_flagset="1";
+ERROR 42000: Variable 'debug_a_global_flagset' can't be set to the value of '1'
+# try wrong value types: should return errors
+SET @@global.debug_a_global_flagset="a";
+ERROR 42000: Variable 'debug_a_global_flagset' can't be set to the value of 'a'
+SET @@global.debug_a_global_flagset=1.1;
+ERROR 42000: Incorrect argument type to variable 'debug_a_global_flagset'
+SET @@global.debug_a_global_flagset=1e1;
+ERROR 42000: Incorrect argument type to variable 'debug_a_global_flagset'
+# try setting global: should pass
+SET GLOBAL debug_a_global_flagset="f1=off";
+SET GLOBAL debug_a_global_flagset=DEFAULT;
+# try setting persist: should pass
+SET PERSIST debug_a_global_flagset="f2=off";
+SELECT VARIABLE_VALUE FROM performance_schema.persisted_variables
+WHERE VARIABLE_NAME='debug_a_global_flagset';
+VARIABLE_VALUE
+f1=on,f2=off
+RESET PERSIST debug_a_global_flagset;
+# try setting persist only: should pass
+SET PERSIST_ONLY debug_a_global_flagset="f1=on";
+SELECT VARIABLE_VALUE FROM performance_schema.persisted_variables
+WHERE VARIABLE_NAME='debug_a_global_flagset';
+VARIABLE_VALUE
+f1=on
+RESET PERSIST debug_a_global_flagset;
+# Cleanup
+SET GLOBAL debug_a_global_flagset=@save;
+# End of Tests

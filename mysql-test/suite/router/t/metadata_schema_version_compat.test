@@ -1,0 +1,61 @@
+# Checks that the Router still accepts metadata when minor and patch version
+# is higher than the version it has embedded (knows)
+
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+--echo Artificially bump up the minor and patch version of the metadata
+--disable_query_log
+--disable_result_log
+
+--let $version_view=schema_version
+
+if ($mrs_schema_version == 4)
+{
+  --let $version_view=msm_schema_version
+}
+
+--let $ver_major = `SELECT major from mysql_rest_service_metadata.$version_view`
+--let $ver_minor = `SELECT minor from mysql_rest_service_metadata.$version_view`
+--let $ver_patch = `SELECT patch from mysql_rest_service_metadata.$version_view`
+
+--let $ver_minor = $ver_minor + 1
+--let $ver_patch = $ver_patch + 1
+
+eval CREATE OR REPLACE SQL SECURITY INVOKER VIEW mysql_rest_service_metadata.schema_version(major, minor, patch) 
+AS SELECT $ver_major, $ver_minor, $ver_patch;
+
+--enable_query_log
+--enable_result_log
+
+--echo Configure a single REST table object
+
+--source ../include/schema/basic_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+--source ../include/mrs/end_object_definition.inc
+
+--let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+--let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port
+
+echo Make sure the MRS starts the service despite the fact
+      that minor and patch version is higher than expected;
+
+exec $MRS_CLIENT_ARGS --wait-until-status 60 --path /svc/basic/tab
+      --display none;
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

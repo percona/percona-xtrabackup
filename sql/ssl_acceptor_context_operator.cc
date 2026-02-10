@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +29,8 @@
 
 #include "sql/ssl_acceptor_context_operator.h"
 
+#include <utility>
+
 Ssl_acceptor_context_container *mysql_main;
 Ssl_acceptor_context_container *mysql_admin;
 
@@ -39,7 +41,7 @@ Ssl_acceptor_context_container::Ssl_acceptor_context_container(
 }
 
 Ssl_acceptor_context_container ::~Ssl_acceptor_context_container() {
-  if (lock_ != nullptr) delete lock_;
+  delete lock_;
   lock_ = nullptr;
 }
 
@@ -49,7 +51,7 @@ void Ssl_acceptor_context_container::switch_data(
 }
 
 bool TLS_channel::singleton_init(Ssl_acceptor_context_container **out,
-                                 std::string channel,
+                                 const std::string &channel,
                                  Ssl_init_callback *callbacks, bool db_init) {
   if (out == nullptr || callbacks == nullptr) return true;
   *out = nullptr;
@@ -60,14 +62,12 @@ bool TLS_channel::singleton_init(Ssl_acceptor_context_container **out,
   if (callbacks->provision_certs()) return true;
 
   enum enum_ssl_init_error error = SSL_INITERR_NOERROR;
-  Ssl_acceptor_context_data *news =
-      new Ssl_acceptor_context_data(channel, callbacks, true, &error);
-  Ssl_acceptor_context_container *new_container =
-      new Ssl_acceptor_context_container(news);
+  auto *news = new Ssl_acceptor_context_data(channel, callbacks, true, &error);
+  auto *new_container = new Ssl_acceptor_context_container(news);
   if (news == nullptr || new_container == nullptr) {
     LogErr(WARNING_LEVEL, ER_SSL_LIBRARY_ERROR,
            "Error initializing the SSL context system structure");
-    if (new_container) delete new_container;
+    delete new_container;
     return true;
   }
 
@@ -101,14 +101,13 @@ void TLS_channel::singleton_flush(Ssl_acceptor_context_container *container,
                                   Ssl_init_callback *callbacks,
                                   enum enum_ssl_init_error *error, bool force) {
   if (container == nullptr) return;
-  Ssl_acceptor_context_data *news =
-      new Ssl_acceptor_context_data(channel, callbacks, false, error);
+  auto *news = new Ssl_acceptor_context_data(std::move(channel), callbacks,
+                                             false, error);
   if (*error != SSL_INITERR_NOERROR && !force) {
     delete news;
     return;
   }
   (void)container->switch_data(news);
-  return;
 }
 
 std::string Lock_and_access_ssl_acceptor_context::show_property(

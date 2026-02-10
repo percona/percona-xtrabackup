@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -33,21 +33,12 @@
   Interface for low level time utilities.
 */
 
-#include "my_config.h"
-
-#include <assert.h>  // assert
+#include <time.h>  // time_t
 #include <algorithm>
-#include <cstddef>  // std::size_t
+#include <cassert>  // assert
 #include <cstdint>  // std::int32_t
 #include <cstring>  // strncpy
 #include <limits>   // std::numeric_limits
-
-#ifdef HAVE_SYS_TIME_H
-#include <sys/time.h>  // struct timeval
-#endif                 /* HAVE_SYS_TIME_H */
-#ifdef _WIN32
-#include <winsock2.h>  // struct timeval
-#endif                 /* _WIN32 */
 
 #include "field_types.h"
 #include "my_time_t.h"
@@ -365,11 +356,9 @@ inline long long int my_packed_time_get_frac_part(long long int i) {
 long long int year_to_longlong_datetime_packed(long year);
 long long int TIME_to_longlong_datetime_packed(const MYSQL_TIME &my_time);
 long long int TIME_to_longlong_date_packed(const MYSQL_TIME &my_time);
-long long int TIME_to_longlong_time_packed(const MYSQL_TIME &my_time);
 long long int TIME_to_longlong_packed(const MYSQL_TIME &my_time);
 
 void TIME_from_longlong_datetime_packed(MYSQL_TIME *ltime, long long int nr);
-void TIME_from_longlong_time_packed(MYSQL_TIME *ltime, long long int nr);
 void TIME_from_longlong_date_packed(MYSQL_TIME *ltime, long long int nr);
 void TIME_set_yymmdd(MYSQL_TIME *ltime, unsigned int yymmdd);
 void TIME_set_hhmmss(MYSQL_TIME *ltime, unsigned int hhmmss);
@@ -378,11 +367,6 @@ void my_datetime_packed_to_binary(long long int nr, unsigned char *ptr,
                                   unsigned int dec);
 long long int my_datetime_packed_from_binary(const unsigned char *ptr,
                                              unsigned int dec);
-
-void my_time_packed_to_binary(long long int nr, unsigned char *ptr,
-                              unsigned int dec);
-long long int my_time_packed_from_binary(const unsigned char *ptr,
-                                         unsigned int dec);
 
 void my_timestamp_to_binary(const my_timeval *tm, unsigned char *ptr,
                             unsigned int dec);
@@ -501,8 +485,15 @@ inline long my_time_fraction_remainder(long nr, unsigned int decimals) {
    @param decimals desired precision
 */
 inline void my_time_trunc(MYSQL_TIME *ltime, unsigned int decimals) {
+  assert(ltime->time_type == MYSQL_TIMESTAMP_TIME || !ltime->neg);
   ltime->second_part -=
       my_time_fraction_remainder(ltime->second_part, decimals);
+  // "Negative zero" time is not defined:
+  if (ltime->time_type == MYSQL_TIMESTAMP_TIME && ltime->neg &&
+      ltime->hour == 0 && ltime->minute == 0 && ltime->second == 0 &&
+      ltime->second_part == 0) {
+    ltime->neg = false;
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,12 +33,13 @@ bool BackupPrinter::table(const TableS &tab) {
   if (m_print || m_print_meta) {
     m_ndbout << tab;
     info.setLevel(254);
-    info << "Successfully printed table: ", tab.m_dictTable->getName();
+    info << "Successfully printed table: " << tab.m_dictTable->getName() << endl
+         << endl;
   }
   return true;
 }
 
-bool BackupPrinter::tuple(const TupleS &tup, Uint32 fragId) {
+bool BackupPrinter::tuple(const TupleS &tup, Uint32 /*fragId*/) {
   m_dataCount++;
   if (m_print || m_print_data) {
     if (m_ndbout.m_out == info.m_out) {
@@ -63,16 +64,17 @@ bool BackupPrinter::logEntry(const LogEntry &logE) {
   return true;
 }
 
-void BackupPrinter::endOfLogEntrys() {
+bool BackupPrinter::endOfLogEntrys() {
   if (m_print || m_print_log || m_print_sql_log) {
     info.setLevel(254);
     info << "Printed " << m_dataCount << " tuples and " << m_logCount
          << " log entries"
          << " to stdout." << endl;
   }
+  return true;
 }
-bool BackupPrinter::update_apply_status(const RestoreMetaData &metaData,
-                                        bool snapshotstart) {
+bool BackupPrinter::update_apply_status(const RestoreMetaData & /*metaData*/,
+                                        bool /*snapshotstart*/) {
   if (m_print) {
   }
   return true;

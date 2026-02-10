@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/services/mysql_string.h>
 #include <mysql/components/services/udf_metadata.h>
-#include <string.h>
+#include <cstring>
 #include <sstream>
 #include <string>
 
@@ -59,13 +59,10 @@ bool Test_udf_charset::prepare_return_udf(UDF_INIT *initid, UDF_ARGS *args,
   // Consider the second UDF argument to determine the charset of return value
   const uint index = 1;
   std::string csname;
-  if (validate_inputs(args, expected_arg_count) ||
-      fetch_charset_or_collation_from_arg(args, index, csname) ||
-      set_return_value_charset_or_collation(initid, csname) ||
-      set_udf_init(initid, args))
-    return true;
-
-  return false;
+  return validate_inputs(args, expected_arg_count) ||
+         fetch_charset_or_collation_from_arg(args, index, csname) ||
+         set_return_value_charset_or_collation(initid, csname) ||
+         set_udf_init(initid, args);
 }
 
 /**
@@ -88,12 +85,9 @@ bool Test_udf_charset::prepare_args_udf(UDF_INIT *initid, UDF_ARGS *args,
   set_ext_type(type);
   const uint index = 1;
   std::string csname;
-  if (validate_inputs(args, expected_arg_count) ||
-      fetch_charset_or_collation_from_arg(args, index, csname) ||
-      set_args_init(args, csname) || set_udf_init(initid, args))
-    return true;
-
-  return false;
+  return validate_inputs(args, expected_arg_count) ||
+         fetch_charset_or_collation_from_arg(args, index, csname) ||
+         set_args_init(args, csname) || set_udf_init(initid, args);
 }
 
 /**
@@ -191,13 +185,10 @@ bool Test_udf_charset_const_value::prepare_return_udf(
   // Consider the second UDF argument to determine the charset of return value
   const uint index = 1;
   std::string csname;
-  if (validate_inputs(args, expected_arg_count) ||
-      fetch_charset_or_collation_from_arg(args, index, csname) ||
-      set_return_value_charset_or_collation(initid, csname) ||
-      set_udf_init(initid, args))
-    return true;
-
-  return false;
+  return validate_inputs(args, expected_arg_count) ||
+         fetch_charset_or_collation_from_arg(args, index, csname) ||
+         set_return_value_charset_or_collation(initid, csname) ||
+         set_udf_init(initid, args);
 }
 
 /**
@@ -219,12 +210,9 @@ bool Test_udf_charset_const_value::prepare_args_udf(
   set_ext_type(type);
   std::string csname;
   const uint index = 1;
-  if (validate_inputs(args, expected_arg_count) ||
-      fetch_charset_or_collation_from_arg(args, index, csname) ||
-      set_args_init(args, csname) || set_udf_init(initid, args))
-    return true;
-
-  return false;
+  return validate_inputs(args, expected_arg_count) ||
+         fetch_charset_or_collation_from_arg(args, index, csname) ||
+         set_args_init(args, csname) || set_udf_init(initid, args);
 }
 
 /**
@@ -412,7 +400,7 @@ bool Test_udf_charset_base::set_udf_init(UDF_INIT *initid, UDF_ARGS *args) {
     Max size of the converted string could be in charset utf16.
     Therefore, allocate the ample memory accordingly.
   */
-  size_t length = args->lengths[0] * 4 + 1;
+  size_t const length = args->lengths[0] * 4 + 1;
   try {
     initid->ptr = new char[length];
   } catch (...) {
@@ -506,25 +494,23 @@ bool Test_udf_charset_base::convert(const std::string &out_charset_name,
   if (mysql_service_mysql_string_factory->create(&out_string)) {
     s_message << "Create string failed.";
     return true;
-  } else {
-    mysql_service_mysql_string_factory->destroy(out_string);
-    if (mysql_service_mysql_string_converter->convert_from_buffer(
-            &out_string, in_buffer.c_str(), in_buffer.length(),
-            in_charset_name.c_str())) {
-      mysql_service_mysql_string_factory->destroy(out_string);
-      s_message << "Failed to retrieve the buffer in charset " +
-                       in_charset_name;
-      return true;
-    }
-    if (mysql_service_mysql_string_converter->convert_to_buffer(
-            out_string, out_buffer, out_buffer_length,
-            out_charset_name.c_str())) {
-      mysql_service_mysql_string_factory->destroy(out_string);
-      s_message << "Failed to convert the buffer in charset " +
-                       out_charset_name;
-      return true;
-    }
   }
+  mysql_service_mysql_string_factory->destroy(out_string);
+  if (mysql_service_mysql_string_converter->convert_from_buffer(
+          &out_string, in_buffer.c_str(), in_buffer.length(),
+          in_charset_name.c_str())) {
+    mysql_service_mysql_string_factory->destroy(out_string);
+    s_message << "Failed to retrieve the buffer in charset " + in_charset_name;
+    return true;
+  }
+  if (mysql_service_mysql_string_converter->convert_to_buffer(
+          out_string, out_buffer, out_buffer_length,
+          out_charset_name.c_str())) {
+    mysql_service_mysql_string_factory->destroy(out_string);
+    s_message << "Failed to convert the buffer in charset " + out_charset_name;
+    return true;
+  }
+
   mysql_service_mysql_string_factory->destroy(out_string);
   return false;
 }

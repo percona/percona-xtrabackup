@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -287,7 +287,7 @@ class Ndb_cluster_connection {
               int verbose = 1);
 
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
-  int start_connect_thread(int (*connect_callback)(void) = nullptr);
+  int start_connect_thread(int (*connect_callback)() = nullptr);
 #endif
 
   /**

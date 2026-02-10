@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,6 +41,7 @@
 #include "sql/item.h"
 #include "sql/item_sum.h"
 #include "sql/join_optimizer/access_path.h"
+#include "sql/join_optimizer/cost_model.h"
 #include "sql/key.h"
 #include "sql/key_spec.h"
 #include "sql/opt_costmodel.h"
@@ -109,11 +110,6 @@ void trace_basic_info_index_skip_scan(THD *thd, const AccessPath *path,
     trace_range.add_utf8(range_info.ptr(), range_info.length());
   }
 }
-
-static void cost_skip_scan(TABLE *table, uint key, uint distinct_key_parts,
-                           ha_rows quick_prefix_records,
-                           Cost_estimate *cost_est, ha_rows *records,
-                           Item *where_cond, Opt_trace_object *trace_idx);
 
 static bool find_skip_scans(
     THD *thd, RANGE_OPT_PARAM *param, SEL_TREE *tree,
@@ -396,7 +392,7 @@ bool find_skip_scans(
     KEY_PART_INFO *cur_part;
     KEY_PART_INFO *end_part;
     Cost_estimate cur_read_cost;
-    ha_rows cur_records;
+    ha_rows cur_records{0};
     SEL_ARG *cur_range_sel_arg = nullptr;
     SEL_ROOT *cur_index_range_tree = nullptr;
     uint cur_eq_prefix_len = 0;
@@ -515,19 +511,28 @@ bool find_skip_scans(
           order_direction, skip_records_in_range, &mrr_flags, &mrr_bufsize,
           &dummy_cost, &is_ror_scan, &is_imerge_scan);
     }
-    cost_skip_scan(table, cur_index, cur_used_key_parts - 1,
-                   quick_prefix_records, &cur_read_cost, &cur_records,
-                   join->where_cond, &trace_idx);
+    if (!find_all_skip_scans) {
+      IndexSkipScanCost skip_scan_cost(table, cur_index, cur_used_key_parts - 1,
+                                       quick_prefix_records, join->where_cond,
+                                       &trace_idx);
+      cur_read_cost = skip_scan_cost.GetCost();
+      cur_records = skip_scan_cost.GetNumRecords();
 
-    trace_idx.add("rows", cur_records).add("cost", cur_read_cost);
+      trace_idx.add("rows", cur_records).add("cost", cur_read_cost);
 
-    min_diff_cost = cur_read_cost;
-    min_diff_cost.multiply(DBL_EPSILON);
-
-    if (find_all_skip_scans) {
+      min_diff_cost = cur_read_cost;
+      min_diff_cost.multiply(DBL_EPSILON);
+    }
+    if (find_all_skip_scans) {  // called by hypergraph optimizer
       IndexSkipScanParameters *cur_skip_scan_info =
           new (param->return_mem_root) IndexSkipScanParameters;
       if (cur_skip_scan_info == nullptr) return true;
+
+      IndexSkipScanCost skip_scan_cost(table, cur_index, cur_used_key_parts - 1,
+                                       quick_prefix_records, join->where_cond,
+                                       &trace_idx);
+      cur_records = skip_scan_cost.GetNumRecords();
+      cur_skip_scan_info->read_cost = skip_scan_cost.GetCostForHypergraph();
 
       cur_skip_scan_info->index = cur_index;
       cur_skip_scan_info->index_info = cur_index_info;
@@ -540,7 +545,6 @@ bool find_skip_scans(
       cur_skip_scan_info->range_part_tracing_only = cur_range_sel_arg->first();
       cur_skip_scan_info->index_range_tree = cur_index_range_tree;
       cur_skip_scan_info->has_aggregate_function = has_aggregate_function;
-      cur_skip_scan_info->read_cost = cur_read_cost.total_cost();
 
       if (!setup_range_for_skip_scan(cur_range_sel_arg, param,
                                      cur_skip_scan_info)) {
@@ -594,6 +598,7 @@ bool find_skip_scans(
     }
   }
   trace_indices.end();
+  trace_group.end();
   return false;
 }
 
@@ -675,71 +680,32 @@ AccessPath *make_skip_scan_path(RANGE_OPT_PARAM *param, bool force_skip_scan,
   return path;
 }
 
-/**
-  Compute the cost of a IndexSkipScanIterator for a particular index.
-
-  SYNOPSIS
-    cost_skip_scan()
-    table                [in] The table being accessed
-    key                  [in] The index used to access the table
-    distinct_key_parts   [in] Number of key_parts used to get distinct prefix
-    quick_prefix_records [in] Number of records processed by prefix ranges
-    cost_est             [out] The cost to retrieve rows via this quick select
-    records              [out] The number of rows retrieved
-    where_cond           [in] WHERE condition
-    trace_idx            [in] optimizer_trace object
-
-  DESCRIPTION
-    This method computes the access cost of an INDEX_SKIP_SCAN access path
-    and the number of rows returned.
-
-  NOTES
-
-    To estimate the size of the groups to read, index statistics
-    from rec_per_key is used. Each equality range decreases
-    number of the groups to read. The total number of processed
-    records from all the groups will be quick_prefix_records if
-    there are equality ranges else it will be the entire table.
-    Number of distinct group is calculated by dividing the
-    number of processed record by the number keys in a group.
-
-    Number of processed records is calculated using following formula:
-
-    records = number_of_distinct_groups * records_per_group * filtering_effect
-
-    where filtering_effect is filtering effect of the range condition.
-
-  RETURN
-    None
-*/
-
-void cost_skip_scan(TABLE *table, uint key, uint distinct_key_parts,
-                    ha_rows quick_prefix_records, Cost_estimate *cost_est,
-                    ha_rows *records, Item *where_cond,
-                    Opt_trace_object *trace_idx) {
+void IndexSkipScanCost::CalcCardinality() {
   ha_rows table_records, skip_scan_records;
-  uint num_groups;
   rec_per_key_t keys_per_group;
-  const KEY *const index_info = &table->key_info[key];
+  const KEY *const index_info = &m_table->key_info[m_key];
   DBUG_TRACE;
 
-  table_records = table->file->stats.records;
-  if (quick_prefix_records == HA_POS_ERROR)
+  table_records = m_table->file->stats.records;
+  if (m_quick_prefix_records == HA_POS_ERROR) {
     skip_scan_records = table_records;
-  else
-    skip_scan_records = quick_prefix_records;
+  } else {
+    skip_scan_records = m_quick_prefix_records;
+  }
 
   /* Compute the number of keys in a group. */
-  if (index_info->has_records_per_key(distinct_key_parts - 1)) {
+  if (index_info->has_records_per_key(m_distinct_key_parts - 1)) {
     // Use index statistics
-    keys_per_group = index_info->records_per_key(distinct_key_parts - 1);
+    keys_per_group = index_info->records_per_key(m_distinct_key_parts - 1);
     assert(keys_per_group >= 0);
   } else
     /* If there is no statistics try to guess */
-    keys_per_group = guess_rec_per_key(table, index_info, distinct_key_parts);
+    keys_per_group =
+        guess_rec_per_key(m_table, index_info, m_distinct_key_parts);
 
-  num_groups = (uint)(skip_scan_records / keys_per_group) + 1;
-  num_groups = std::max(num_groups, 1U);
+  m_cardinality.num_groups =
+      static_cast<uint>(skip_scan_records / keys_per_group) + 1;
+  m_cardinality.num_groups = std::max(m_cardinality.num_groups, 1U);
 
   /* Calculate filtering effect for the range condition */
   {
@@ -749,18 +715,19 @@ void cost_skip_scan(TABLE *table, uint key, uint distinct_key_parts,
     my_bitmap_map *bitbuf =
         static_cast<my_bitmap_map *>(static_cast<void *>(&buf));
     MY_BITMAP ignored_fields;
-    bitmap_init(&ignored_fields, bitbuf, table->s->fields);
+    bitmap_init(&ignored_fields, bitbuf, m_table->s->fields);
     bitmap_set_all(&ignored_fields);
     bitmap_clear_bit(
         &ignored_fields,
-        index_info->key_part[distinct_key_parts].field->field_index());
+        index_info->key_part[m_distinct_key_parts].field->field_index());
 
     /* Compute the number of records per group for the range. */
-    if (index_info->has_records_per_key(distinct_key_parts))
-      keys_per_range = index_info->records_per_key(distinct_key_parts);
-    else
+    if (index_info->has_records_per_key(m_distinct_key_parts)) {
+      keys_per_range = index_info->records_per_key(m_distinct_key_parts);
+    } else {
       keys_per_range =
-          guess_rec_per_key(table, index_info, distinct_key_parts + 1);
+          guess_rec_per_key(m_table, index_info, m_distinct_key_parts + 1);
+    }
     /*
       Calculation of the filtering effect is based on
       Item_field::get_cond_filter_default_probability() where
@@ -769,35 +736,54 @@ void cost_skip_scan(TABLE *table, uint key, uint distinct_key_parts,
     */
     double max_distinct_values = max(
         1.0, static_cast<double>(uint(keys_per_group) / uint(keys_per_range)));
-    float filtering_effect = where_cond->get_filtering_effect(
-        current_thd, table->pos_in_table_list->map(), used_tables,
+    float filtering_effect = m_where_cond->get_filtering_effect(
+        current_thd, m_table->pos_in_table_list->map(), used_tables,
         &ignored_fields, max_distinct_values);
-    *records = max(ha_rows(1), ha_rows(skip_scan_records * filtering_effect));
+    m_cardinality.records =
+        max(ha_rows(1), ha_rows(skip_scan_records * filtering_effect));
   }
 
+  DBUG_PRINT("info", ("table rows: %lu keys/group: %u result rows: %lu",
+                      static_cast<ulong>(table_records),
+                      static_cast<uint>(keys_per_group),
+                      static_cast<ulong>(m_cardinality.records)));
+}
+
+Cost_estimate IndexSkipScanCost::GetCost() const {
+  DBUG_TRACE;
+
   /* Estimate IO cost. */
-  const Cost_model_table *const cost_model = table->cost_model();
-  Cost_estimate cost_skip_scan =
-      table->file->index_scan_cost(key, num_groups, *records);
+  const Cost_model_table *const cost_model = m_table->cost_model();
+  Cost_estimate cost_skip_scan = m_table->file->index_scan_cost(
+      m_key, m_cardinality.num_groups, m_cardinality.records);
 
   /* CPU cost*/
+  ha_rows table_records = m_table->file->stats.records;
   const double tree_height =
       table_records == 0 ? 1.0 : ceil(log2(double(table_records)));
   const double tree_traversal_cost = cost_model->key_compare_cost(tree_height);
   /* Number of re-positions happens twice per group. */
-  trace_idx->add("tree_travel_cost", tree_traversal_cost)
-      .add("num_groups", num_groups);
+  m_trace->add("tree_travel_cost", tree_traversal_cost)
+      .add("num_groups", m_cardinality.num_groups);
   const double cpu_cost =
-      tree_traversal_cost * num_groups * 2 +
-      cost_model->row_evaluate_cost(static_cast<double>(*records)) +
-      cost_model->key_compare_cost(static_cast<double>(*records));
+      tree_traversal_cost * m_cardinality.num_groups * 2 +
+      cost_model->row_evaluate_cost(
+          static_cast<double>(m_cardinality.records)) +
+      cost_model->key_compare_cost(static_cast<double>(m_cardinality.records));
   cost_skip_scan.add_cpu(cpu_cost);
+  m_trace->add("index skip scan cost", cost_skip_scan.total_cost());
 
-  *cost_est = cost_skip_scan;
+  return cost_skip_scan;
+}
 
-  DBUG_PRINT("info",
-             ("table rows: %lu keys/group: %u result rows: %lu",
-              (ulong)table_records, (uint)keys_per_group, (ulong)*records));
+double IndexSkipScanCost::GetCostForHypergraph() const {
+  DBUG_TRACE;
+
+  double cost = EstimateSkipScanCost(m_table, m_key, m_cardinality.num_groups,
+                                     m_cardinality.records);
+  m_trace->add("index skip scan cost in hypergraph", cost);
+
+  return cost;
 }
 
 #ifndef NDEBUG

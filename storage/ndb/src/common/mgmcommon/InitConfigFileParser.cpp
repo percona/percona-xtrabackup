@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -58,9 +58,9 @@ InitConfigFileParser::Context::Context()
 }
 
 InitConfigFileParser::Context::~Context() {
-  if (m_config != nullptr) delete m_config;
+  delete m_config;
 
-  if (m_defaults != nullptr) delete m_defaults;
+  delete m_defaults;
 }
 
 Config *InitConfigFileParser::parseConfig(const char *filename) {
@@ -720,13 +720,13 @@ static bool parse_mycnf_opt(int, const struct my_option *opt, char *) {
    * const my_option object.
    * See load_defaults(Vector<struct my_option>& options, const char* groups[])
    */
-  my_option *mutable_opt = const_cast<my_option *>(opt);
+  auto *mutable_opt = const_cast<my_option *>(opt);
   long *app_type = (long *)&mutable_opt->app_type;
   if (opt->comment)
     (*app_type)++;
   else
     *app_type = order++;
-  return 0;
+  return false;
 }
 
 bool InitConfigFileParser::store_in_properties(
@@ -1046,7 +1046,7 @@ Config *InitConfigFileParser::parse_mycnf(const char *cluster_config_suffix) {
             // HostName specified a second time, check that it matches
             const char *host_name;
             require(ctx.m_currentSection->get("HostName", &host_name));
-            if (strcmp(host_name, list[j].c_str())) {
+            if (strcmp(host_name, list[j].c_str()) != 0) {
               ctx.reportError(
                   "Illegal value 'HostName=%s' specified for "
                   "%s, previously set to '%s'",
@@ -1114,32 +1114,31 @@ int main() {
 
   // Valid multipliers
   ok1(InitConfigFileParser::convertStringToUint64("37k", value));
-  ok1(value == 37ull * 1024);
+  ok1(value == 37ULL * 1024);
   ok1(InitConfigFileParser::convertStringToUint64("37K", value));
-  ok1(value == 37ull * 1024);
+  ok1(value == 37ULL * 1024);
   ok1(InitConfigFileParser::convertStringToUint64("37M", value));
-  ok1(value == 37ull * 1024 * 1024);
+  ok1(value == 37ULL * 1024 * 1024);
   ok1(InitConfigFileParser::convertStringToUint64("37G", value));
-  ok1(value == 37ull * 1024 * 1024 * 1024);
+  ok1(value == 37ULL * 1024 * 1024 * 1024);
 #ifdef NOT_YET
   ok1(InitConfigFileParser::convertStringToUint64("37T", value));
-  ok1(value == 37ull * 1024 * 1024 * 1024 * 1024);
+  ok1(value == 37ULL * 1024 * 1024 * 1024 * 1024);
 #endif
 
   // Invalid multipliers
-  ok1(InitConfigFileParser::convertStringToUint64("10kB", value) == false);
-  ok1(InitConfigFileParser::convertStringToUint64("10 M", value) == false);
-  ok1(InitConfigFileParser::convertStringToUint64("10 \"M12L\"", value) ==
-      false);
-  ok1(InitConfigFileParser::convertStringToUint64("10 'M12L'", value) == false);
-  ok1(InitConfigFileParser::convertStringToUint64("10M12L", value) == false);
-  ok1(InitConfigFileParser::convertStringToUint64("10T'", value) == false);
+  ok1(!InitConfigFileParser::convertStringToUint64("10kB", value));
+  ok1(!InitConfigFileParser::convertStringToUint64("10 M", value));
+  ok1(!InitConfigFileParser::convertStringToUint64("10 \"M12L\"", value));
+  ok1(!InitConfigFileParser::convertStringToUint64("10 'M12L'", value));
+  ok1(!InitConfigFileParser::convertStringToUint64("10M12L", value));
+  ok1(!InitConfigFileParser::convertStringToUint64("10T'", value));
 
-  ok1(InitConfigFileParser::convertStringToUint64("M", value) == false);
-  ok1(InitConfigFileParser::convertStringToUint64("MAX_UINT", value) == false);
-  ok1(InitConfigFileParser::convertStringToUint64("Magnus'", value) == false);
-  ok1(InitConfigFileParser::convertStringToUint64("", value) == false);
-  ok1(InitConfigFileParser::convertStringToUint64("trettisju", value) == false);
+  ok1(!InitConfigFileParser::convertStringToUint64("M", value));
+  ok1(!InitConfigFileParser::convertStringToUint64("MAX_UINT", value));
+  ok1(!InitConfigFileParser::convertStringToUint64("Magnus'", value));
+  ok1(!InitConfigFileParser::convertStringToUint64("", value));
+  ok1(!InitConfigFileParser::convertStringToUint64("trettisju", value));
 
   return exit_status();
 }

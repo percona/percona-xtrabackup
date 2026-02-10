@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -677,9 +677,9 @@ CREATE SQL SECURITY INVOKER VIEW v2_router_rest_accounts AS
 
 --  Public Interface Routines
 --  -------------------------
-DELIMITER //
+DELIMITER $$;
 
-DROP PROCEDURE IF EXISTS _v2_begin_cs_change//
+DROP PROCEDURE IF EXISTS _v2_begin_cs_change$$
 CREATE PROCEDURE _v2_begin_cs_change(
   cs_id VARCHAR(36),
   operation VARCHAR(32),
@@ -730,10 +730,10 @@ BEGIN
           primary_cluster, attributes
       FROM mysql_innodb_cluster_metadata.clusterset_members
       WHERE clusterset_id = cs_id AND view_id = last_csvid;
-END //
+END $$
 
 
-DROP PROCEDURE IF EXISTS v2_cs_created//
+DROP PROCEDURE IF EXISTS v2_cs_created$$
 CREATE PROCEDURE v2_cs_created(
   domain_name VARCHAR(63),
   cluster_id VARCHAR(36),
@@ -772,10 +772,10 @@ BEGIN
   UPDATE mysql_innodb_cluster_metadata.clusters c
     SET c.clusterset_id = cs_id
     WHERE c.cluster_id = cluster_id;
-END//
+END$$
 
 
-DROP PROCEDURE IF EXISTS v2_cs_member_added//
+DROP PROCEDURE IF EXISTS v2_cs_member_added$$
 CREATE PROCEDURE v2_cs_member_added(
   cs_id VARCHAR(36),
   cluster_id VARCHAR(36),
@@ -800,11 +800,11 @@ BEGIN
   UPDATE mysql_innodb_cluster_metadata.clusters c
     SET c.clusterset_id = cs_id
     WHERE c.cluster_id = cluster_id;
-END//
+END$$
 
 
 
-DROP PROCEDURE IF EXISTS v2_cs_member_rejoined//
+DROP PROCEDURE IF EXISTS v2_cs_member_rejoined$$
 CREATE PROCEDURE v2_cs_member_rejoined(
   cs_id VARCHAR(36),
   cluster_id VARCHAR(36),
@@ -824,11 +824,11 @@ BEGIN
     ) VALUES (cs_id, csvid, cluster_id, IF(master_cluster_id='',NULL,master_cluster_id), 0,
       attributes
     );
-END//
+END$$
 
 
 
-DROP PROCEDURE IF EXISTS v2_cs_member_removed//
+DROP PROCEDURE IF EXISTS v2_cs_member_removed$$
 CREATE PROCEDURE v2_cs_member_removed(
   cs_id VARCHAR(36),
   cluster_id VARCHAR(36))
@@ -850,11 +850,11 @@ BEGIN
     SET c.clusterset_id = NULL
     WHERE c.cluster_id = cluster_id;
 
-END//
+END$$
 
 
 
-DROP PROCEDURE IF EXISTS v2_cs_primary_changed//
+DROP PROCEDURE IF EXISTS v2_cs_primary_changed$$
 CREATE PROCEDURE v2_cs_primary_changed(
   cs_id VARCHAR(36),
   primary_cluster_id VARCHAR(36),
@@ -879,11 +879,11 @@ BEGIN
       primary_cluster = 0,
       attributes = JSON_MERGE_PATCH(primary_attributes, attributes)
     WHERE clusterset_id = cs_id AND view_id = csvid AND cluster_id <> primary_cluster_id;
-END //
+END $$
 
 
 
-DROP PROCEDURE IF EXISTS v2_cs_primary_force_changed//
+DROP PROCEDURE IF EXISTS v2_cs_primary_force_changed$$
 CREATE PROCEDURE v2_cs_primary_force_changed(
   cs_id VARCHAR(36),
   primary_cluster_id VARCHAR(36),
@@ -908,11 +908,11 @@ BEGIN
       primary_cluster = 0,
       attributes = JSON_MERGE_PATCH(primary_attributes, attributes)
     WHERE clusterset_id = cs_id AND view_id = csvid AND cluster_id <> primary_cluster_id;
-END //
+END $$
 
 
 
-DROP PROCEDURE IF EXISTS v2_cs_add_invalidated_member//
+DROP PROCEDURE IF EXISTS v2_cs_add_invalidated_member$$
 CREATE PROCEDURE v2_cs_add_invalidated_member(
   cs_id VARCHAR(36),
   cluster_id VARCHAR(36))
@@ -928,10 +928,10 @@ BEGIN
     AND mysql_innodb_cluster_metadata.clusterset_members.view_id = (SELECT MAX(view_id)
         FROM mysql_innodb_cluster_metadata.clusterset_views
         WHERE clusterset_id = cs_id);
-END //
+END $$
 
 
-DROP PROCEDURE IF EXISTS v2_set_global_router_option//
+DROP PROCEDURE IF EXISTS v2_set_global_router_option$$
 CREATE PROCEDURE v2_set_global_router_option(
   id VARCHAR(36),
   option_name VARCHAR(100),
@@ -948,10 +948,10 @@ BEGIN
         SET router_options = JSON_SET(IFNULL(router_options, '{}'), concat('$.', option_name), option_value)
         WHERE clusterset_id = id;
   end if;
-END //
+END $$
 
 
-DROP PROCEDURE IF EXISTS v2_set_routing_option//
+DROP PROCEDURE IF EXISTS v2_set_routing_option$$
 CREATE PROCEDURE v2_set_routing_option(
   router VARCHAR(512),
   clusterset_id VARCHAR(36),
@@ -985,9 +985,9 @@ BEGIN
         SET r.options = JSON_SET(IFNULL(r.options, '{}'), concat('$.', option_name), option_value)
         WHERE r.clusterset_id = clusterset_id AND r.address = router_address AND r.router_name = router_name;
   end if;
-END //
+END $$
 
-DELIMITER ;
+DELIMITER ;$$
 
 
 /*

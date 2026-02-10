@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -181,7 +181,7 @@ class Network_provider_manager : public Network_provider_management_interface,
    * the active provider.
    * @return const std::shared_ptr<Network_provider>
    */
-  const std::shared_ptr<Network_provider> get_provider(
+  std::shared_ptr<Network_provider> get_provider(
       enum_transport_protocol provider);
 
   /**
@@ -191,7 +191,7 @@ class Network_provider_manager : public Network_provider_management_interface,
    * @return const std::shared_ptr<Gcs_network_provider> a shared_ptr to the
    * active provider.
    */
-  const std::shared_ptr<Network_provider> get_active_provider();
+  std::shared_ptr<Network_provider> get_active_provider();
 
   /**
    * @brief Retrieves the active provider for incoming connections.
@@ -201,7 +201,7 @@ class Network_provider_manager : public Network_provider_management_interface,
    * @return const std::shared_ptr<Gcs_network_provider> a shared_ptr to the
    * active provider for incoming connections.
    */
-  const std::shared_ptr<Network_provider> get_incoming_connections_provider();
+  std::shared_ptr<Network_provider> get_incoming_connections_provider();
 
   /**
    * @brief Start the active provider.

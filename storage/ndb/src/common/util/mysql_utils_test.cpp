@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+ Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +25,9 @@
 
 #ifdef TEST_MYSQL_UTILS_TEST
 
-#include <stdio.h>   // not using namespaces yet
-#include <stdlib.h>  // not using namespaces yet
-#include <string.h>  // not using namespaces yet
+#include <cstdio>   // not using namespaces yet
+#include <cstdlib>  // not using namespaces yet
+#include <cstring>  // not using namespaces yet
 
 #include <util/BaseString.hpp>
 #include <util/NdbTap.hpp>
@@ -88,11 +88,13 @@ int test_dbug_utils() {
    */
   BaseString tmp("d,somename:o,");
   const char *tmpd = getenv("TMPDIR");
+  if (tmpd == nullptr) tmpd = getenv("TEMP");
   if (tmpd)
     tmp.append(tmpd);
   else
     tmp.append("/tmp");
-  tmp.append("/somepath");
+  tmp.append(DIR_SEPARATOR);
+  tmp.append("somepath");
   const char *const s2 = tmp.c_str();
   dbugPush(s2);
   s = dbugExplain(buffer, DBUG_BUF_SIZE);

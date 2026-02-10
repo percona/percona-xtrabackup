@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -46,8 +46,8 @@ int replace_all(std::string &input, const std::string &to_find,
 }
 
 void trim(std::string &value, const std::string &whitespace) {
-  std::size_t first = value.find_first_not_of(whitespace);
-  std::size_t last = value.find_last_not_of(whitespace);
+  std::size_t const first = value.find_first_not_of(whitespace);
+  std::size_t const last = value.find_last_not_of(whitespace);
 
   if (first == std::string::npos) {
     value = "";

@@ -1,0 +1,179 @@
+RESET BINARY LOGS AND GTIDS;
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+
+
+## I. Setup db-object-table with caching enabled
+#
+# 1. Show that response-caching is enabled, and update doesn't invalidate the cache
+# 2. Show that after refering to the same object but by using other criteria/URL,
+#    the cache is missed and object for this new URL is fetched from database.
+#
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"responseCache":{"maxCacheSize":100200}}');
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+# Registred DB_OBJECT at path: /svc/basic/t2
+
+#
+# I.1
+GET /svc/basic/t2/?offset=1&limit=1
+{
+    "items": [
+        {
+            "id": 2,
+            "date": "1977-01-21 00:00:00.000000",
+            "name": "Second row",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/basic/t2/2"
+                }
+            ],
+            "comments": null,
+            "_metadata": {
+                "etag": "1B017990C8867C372BABE8FB25CBF888A124F0AB369E93B2BBCE93E54CB95CC0"
+            }
+        }
+    ],
+    "limit": 1,
+    "offset": 1,
+    "hasMore": true,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/basic/t2/?offset=2&limit=1"
+        },
+        {
+            "rel": "prev",
+            "href": "/svc/basic/t2/?offset=0&limit=1"
+        },
+        {
+            "rel": "first",
+            "href": "/svc/basic/t2/?limit=1"
+        }
+    ]
+}
+OK
+PUT /svc/basic/t2/2 (payload-size:327)
+{
+    "id": 2,
+    "date": "2000-01-01 00:00:00.000000",
+    "name": "Updated second row",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/2"
+        }
+    ],
+    "comments": "New comment",
+    "_metadata": {
+        "etag": "88FE3DF2F1BEBE8D0E8B7B1069FCF998ED34947F9B14FE3B649831E08B1B0CAA",
+        "gtid": "GTID"
+    }
+}
+OK
+GET /svc/basic/t2/?offset=1&limit=1
+{
+    "items": [
+        {
+            "id": 2,
+            "date": "1977-01-21 00:00:00.000000",
+            "name": "Second row",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/basic/t2/2"
+                }
+            ],
+            "comments": null,
+            "_metadata": {
+                "etag": "1B017990C8867C372BABE8FB25CBF888A124F0AB369E93B2BBCE93E54CB95CC0"
+            }
+        }
+    ],
+    "limit": 1,
+    "offset": 1,
+    "hasMore": true,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/basic/t2/?offset=2&limit=1"
+        },
+        {
+            "rel": "prev",
+            "href": "/svc/basic/t2/?offset=0&limit=1"
+        },
+        {
+            "rel": "first",
+            "href": "/svc/basic/t2/?limit=1"
+        }
+    ]
+}
+OK
+
+#
+# I.1
+GET /svc/basic/t2/?q=%7B%22name%22:%22Second%20row%22%7D
+{
+    "items": [],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/"
+        }
+    ]
+}
+OK
+GET /svc/basic/t2/?q=%7B%22name%22:%22Updated%20second%20row%22%7D
+{
+    "items": [
+        {
+            "id": 2,
+            "date": "2000-01-01 00:00:00.000000",
+            "name": "Updated second row",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/basic/t2/2"
+                }
+            ],
+            "comments": "New comment",
+            "_metadata": {
+                "etag": "88FE3DF2F1BEBE8D0E8B7B1069FCF998ED34947F9B14FE3B649831E08B1B0CAA"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/"
+        }
+    ]
+}
+OK
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

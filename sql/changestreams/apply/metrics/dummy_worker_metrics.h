@@ -1,30 +1,31 @@
-/*
-   Copyright (c) 2024, Oracle and/or its affiliates.
+// Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License, version 2.0,
+// as published by the Free Software Foundation.
+//
+// This program is designed to work with certain software (including
+// but not limited to OpenSSL) that is licensed under separate terms,
+// as designated in a particular file or component or in included license
+// documentation.  The authors of MySQL hereby grant you an additional
+// permission to link the program and your derivative works with the
+// separately licensed software that they have either included with
+// the program or referenced in the documentation.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License, version 2.0, for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License, version 2.0,
-   as published by the Free Software Foundation.
-
-   This program is also distributed with certain software (including
-   but not limited to OpenSSL) that is licensed under separate terms,
-   as designated in a particular file or component or in included license
-   documentation.  The authors of MySQL hereby grant you an additional
-   permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License, version 2.0, for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
-
-#ifndef CS_DUMMY_WORKER_METRICS_H
-#define CS_DUMMY_WORKER_METRICS_H
+#ifndef CHANGESTREAMS_APPLY_METRICS_DUMMY_WORKER_METRICS_H
+#define CHANGESTREAMS_APPLY_METRICS_DUMMY_WORKER_METRICS_H
 
 #include <cstdint>  // int64_t
+#include "time_based_metric_stub.h"
 #include "worker_metrics.h"
 
 namespace cs::apply::instruments {
@@ -70,18 +71,12 @@ class Dummy_worker_metrics : public Worker_metrics {
 
   /// @brief Gets the total time waited on commit order
   /// @return the sum of the time waited on commit
-  int64_t get_wait_time_on_commit_order() const override;
+  Time_based_metric_interface &get_waits_due_to_commit_order() override;
 
-  /// @brief Increments the number of times waited
-  void inc_waited_time_on_commit_order(unsigned long amount) override;
-
-  /// @brief Get the number of time waiting on commit order
-  /// @return the counter of waits on commit order
-  int64_t get_number_of_waits_on_commit_order() const override;
-
-  /// @brief Increments the number of times waited
-  void inc_number_of_waits_on_commit_order() override;
+ private:
+  /// Stub to return from @c get_waits_due_to_commit_order
+  Time_based_metric_stub m_waits_due_to_commit_order;
 };
 }  // namespace cs::apply::instruments
 
-#endif /* CS_DUMMY_WORKER_METRICS_H */
+#endif /* CHANGESTREAMS_APPLY_METRICS_DUMMY_WORKER_METRICS_H */

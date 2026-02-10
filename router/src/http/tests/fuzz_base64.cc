@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -29,9 +29,9 @@
 #include <system_error>
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
-  std::string b64(Data, Data + Size);
+  std::string const b64(Data, Data + Size);
 
-  std::error_code ec;
+  std::error_code const ec;
 
   std::vector<uint8_t> decoded;
   try {
@@ -40,7 +40,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     return 0;
   }
 
-  std::string encoded = Base64::encode(decoded);
+  std::string const encoded = Base64::encode(decoded);
   if (encoded != b64) {
     throw std::runtime_error("expected " + encoded + " == " + b64);
   }

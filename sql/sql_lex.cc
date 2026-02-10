@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +35,7 @@
 #include "field_types.h"
 #include "m_string.h"
 #include "my_alloc.h"
+#include "my_bitmap.h"
 #include "my_dbug.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysql/service_mysql_alloc.h"
@@ -51,12 +52,14 @@
 #include "sql/lexer_yystype.h"
 #include "sql/mysqld.h"  // table_alias_charset
 #include "sql/nested_join.h"
+#include "sql/olap.h"
 #include "sql/opt_hints.h"
 #include "sql/parse_location.h"
 #include "sql/parse_tree_nodes.h"  // PT_with_clause
 #include "sql/protocol.h"
 #include "sql/select_lex_visitor.h"
 #include "sql/sp_head.h"  // sp_head
+#include "sql/sp_instr_inline.h"
 #include "sql/sql_admin.h"
 #include "sql/sql_base.h"
 #include "sql/sql_class.h"  // THD
@@ -70,7 +73,7 @@
 #include "sql/sql_parse.h"      // add_to_list
 #include "sql/sql_plugin.h"     // plugin_unlock_list
 #include "sql/sql_profile.h"
-#include "sql/sql_show.h"   // append_identifier
+#include "sql/sql_show.h"   // append_identifier_*
 #include "sql/sql_table.h"  // primary_key_name
 #include "sql/sql_yacc.h"
 #include "sql/system_variables.h"
@@ -383,6 +386,12 @@ void Lex_input_stream::reduce_digest_token(uint token_left, uint token_right) {
   }
 }
 
+void Lex_input_stream::adjust_digest_by_numeric_column_token(ulonglong value) {
+  if (m_digest != nullptr) {
+    m_digest = digest_adjust_by_numeric_column_token(m_digest, value);
+  }
+}
+
 void LEX::assert_ok_set_current_query_block() {
   // (2) Only owning thread could change m_current_query_block
   // (1) bypass for bootstrap and "new THD"
@@ -409,7 +418,9 @@ LEX::~LEX() {
 void LEX::reset() {
   // CREATE VIEW
   create_view_mode = enum_view_create_mode::VIEW_CREATE_NEW;
+  create_view_type = enum_view_type::UNDEFINED;
   create_view_algorithm = VIEW_ALGORITHM_UNDEFINED;
+  create_view_materialization = false;
   create_view_suid = true;
 
   context_stack.clear();
@@ -462,6 +473,7 @@ void LEX::reset() {
   explain_format = nullptr;
   is_explain_analyze = false;
   set_using_hypergraph_optimizer(false);
+  m_using_secondary_engine = false;
   is_lex_started = true;
   reset_replica_info.all = false;
   mi.channel = nullptr;
@@ -494,6 +506,8 @@ void LEX::reset() {
   set_execute_only_in_hypergraph_optimizer(
       /*execute_in_hypergraph_optimizer_param=*/false,
       SUPPORTED_IN_BOTH_OPTIMIZERS);
+
+  sp_chistics.reset();
 }
 
 /**
@@ -859,6 +873,10 @@ Yacc_state::~Yacc_state() {
 }
 
 static bool consume_optimizer_hints(Lex_input_stream *lip) {
+  // Just return OK if there is nothing to scan/parse.
+  if (lip->eof()) {
+    return false;
+  }
   const my_lex_states *state_map = lip->query_charset->state_maps->main_map;
   int whitespace = 0;
   uchar c = lip->yyPeek();
@@ -2045,6 +2063,8 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
         state = MY_LEX_CHAR;
         break;
       case MY_LEX_END:
+        /* Unclosed special comments result in a syntax error */
+        if (lip->in_comment == DISCARD_COMMENT) return (ABORT_SYM);
         lip->next_state = MY_LEX_END;
         return (0);  // We found end of input last time
 
@@ -2564,6 +2584,21 @@ bool Query_block::add_item_to_list(Item *item) {
   return false;
 }
 
+/**
+  Add a grouping expression to the query block
+
+  @param thd   thread handle
+  @param item  grouping expression to be added
+
+  @returns false if success, true if error
+*/
+bool Query_block::add_grouping_expr(THD *thd, Item *item) {
+  ORDER *grouping = new (thd->mem_root) ORDER(item);
+  if (grouping == nullptr) return true;
+  group_list.link_in_list(grouping, &grouping->next);
+  return false;
+}
+
 bool Query_block::add_ftfunc_to_list(Item_func_match *func) {
   return !func || ftfunc_list->push_back(func);  // end of memory?
 }
@@ -2586,37 +2621,19 @@ bool Query_block::setup_base_ref_items(THD *thd) {
   // find_order_in_list() may need some extra space, so multiply by two.
   order_group_num *= 2;
 
-  // create_distinct_group() may need some extra space
-  if (is_distinct()) {
-    uint bitcount = 0;
-    for (Item *item : visible_fields()) {
-      /*
-        Same test as in create_distinct_group, when it pushes new items to the
-        end of base_ref_items. An extra test for 'fixed' which, at this
-        stage, will be true only for columns inserted for a '*' wildcard.
-      */
-      if (item->fixed && item->type() == Item::FIELD_ITEM &&
-          item->data_type() == MYSQL_TYPE_BIT)
-        ++bitcount;
-    }
-    order_group_num += bitcount;
-  }
-
-  /*
-    We have to create array in prepared statement memory if it is
-    prepared statement
-  */
   Query_arena *arena = thd->stmt_arena;
   uint n_elems = n_sum_items + n_child_sum_items + fields.size() +
                  select_n_having_items + select_n_where_fields +
                  order_group_num + n_scalar_subqueries;
-
+  if (sp_inl::needs_stored_function_inlining(thd)) {
+    // if inlined, stored function calls can become projection items
+    n_elems += n_stored_func_calls;
+  }
   /*
     If it is possible that we transform IN(subquery) to a join to a derived
-    table, we will be adding DISTINCT (this possibly has the problem of BIT
-    columns as in the logic above), and we will also be adding one expression to
-    the SELECT list per decorrelated equality in WHERE. So we have to allocate
-    more space.
+    table, we will be adding DISTINCT, and we will also be adding one
+    expression to the SELECT list per decorrelated equality in WHERE. So we
+    have to allocate more space.
 
     The number of decorrelatable equalities is bounded by
     select_n_where_fields. Indeed an equality isn't counted in
@@ -2628,14 +2645,13 @@ bool Query_block::setup_base_ref_items(THD *thd) {
     Note that cond_count cannot be used, as setup_cond() hasn't run yet. So we
     use select_n_where_fields instead.
   */
-  if (master_query_expression()->item &&
+  if (master_query_expression()->item != nullptr &&
       (thd->optimizer_switch_flag(OPTIMIZER_SWITCH_SUBQUERY_TO_DERIVED) ||
        (thd->lex->m_sql_cmd != nullptr &&
         thd->secondary_engine_optimization() ==
             Secondary_engine_optimization::SECONDARY))) {
     Item_subselect *subq_predicate = master_query_expression()->item;
-    if (subq_predicate->subquery_type() == Item_subselect::EXISTS_SUBQUERY ||
-        subq_predicate->subquery_type() == Item_subselect::IN_SUBQUERY) {
+    if (subq_predicate->subquery_type() != Item_subselect::SCALAR_SUBQUERY) {
       // might be transformed to derived table, so:
       n_elems +=
           // possible additions to SELECT list from decorrelation of WHERE
@@ -2647,10 +2663,11 @@ bool Query_block::setup_base_ref_items(THD *thd) {
 
   DBUG_PRINT(
       "info",
-      ("setup_ref_array this %p %4u : %4u %4u %4zu %4u %4u %4u %4u", this,
+      ("setup_ref_array this %p %4u : %4u %4u %4zu %4u %4u %4u %4u %4u", this,
        n_elems,  // :
        n_sum_items, n_child_sum_items, fields.size(), select_n_having_items,
-       select_n_where_fields, order_group_num, n_scalar_subqueries));
+       select_n_where_fields, order_group_num, n_scalar_subqueries,
+       n_stored_func_calls));
   if (!base_ref_items.is_null()) {
     /*
       This should not happen, as it's the sign of preparing an already-prepared
@@ -2661,7 +2678,7 @@ bool Query_block::setup_base_ref_items(THD *thd) {
      */
     if (base_ref_items.size() >= n_elems) return false;
   }
-  Item **array = static_cast<Item **>(arena->alloc(sizeof(Item *) * n_elems));
+  Item **array = pointer_cast<Item **>(arena->alloc(sizeof(Item *) * n_elems));
   if (array == nullptr) return true;
 
   base_ref_items = Ref_item_array(array, n_elems);
@@ -3445,18 +3462,49 @@ void Query_block::print_group_by(const THD *thd, String *str,
   // group by & olap
   if (group_list.elements) {
     str->append(STRING_WITH_LEN(" group by "));
-    if (olap == CUBE_TYPE) {
-      str->append(STRING_WITH_LEN("cube ("));
-    }
-    print_order(thd, str, group_list.first, query_type);
     switch (olap) {
-      case ROLLUP_TYPE:
-        str->append(STRING_WITH_LEN(" with rollup"));
+      case CUBE_TYPE: {
+        str->append(STRING_WITH_LEN("cube ("));
         break;
-      case CUBE_TYPE:
+      }
+      case GROUPING_SETS_TYPE: {
+        str->append(STRING_WITH_LEN("grouping sets ("));
+        break;
+      }
+      default:
+        break;
+    }
+    if (is_non_primitive_grouped() && olap == GROUPING_SETS_TYPE) {
+      for (int gs_num = 0; gs_num < m_num_grouping_sets; gs_num++) {
+        str->append(STRING_WITH_LEN("("));
+        bool is_first_element_in_set = true;
+        for (auto *grp = group_list.first; grp != nullptr; grp = grp->next) {
+          /* Check if the GROUP BY element is pat of the current grouping set */
+          if (bitmap_is_set(grp->grouping_set_info, gs_num)) {
+            if (is_first_element_in_set) {
+              is_first_element_in_set = false;
+            } else {
+              str->append(',');
+            }
+            grp->item[0]->print_for_order(thd, str, query_type,
+                                          grp->used_alias);
+          }
+        }
         str->append(STRING_WITH_LEN(")"));
-        break;
-      default:;  // satisfy compiler
+        if (gs_num + 1 < m_num_grouping_sets) {
+          str->append(',');
+        }
+      }
+    } else {
+      print_order(thd, str, group_list.first, query_type);
+    }
+
+    if (is_non_primitive_grouped()) {
+      if (olap == ROLLUP_TYPE) {
+        str->append(STRING_WITH_LEN(" with rollup"));
+      } else {
+        str->append(STRING_WITH_LEN(")"));
+      }
     }
   }
 }
@@ -3657,6 +3705,7 @@ void Query_tables_list::reset_query_tables_list(bool init) {
   sroutines_list.clear();
   sroutines_list_own_last = sroutines_list.next;
   sroutines_list_own_elements = 0;
+  has_stored_functions = false;
   binlog_stmt_flags = 0;
   stmt_accessed_table_flag = 0;
   lock_tables_state = LTS_NOT_LOCKED;
@@ -3763,6 +3812,7 @@ bool LEX::can_use_merged() {
     case SQLCOM_SHOW_KEYS:
     case SQLCOM_SHOW_STATUS_FUNC:
     case SQLCOM_SHOW_STATUS_PROC:
+    case SQLCOM_SHOW_STATUS_LIBRARY:
     case SQLCOM_SHOW_TABLES:
     case SQLCOM_SHOW_TABLE_STATUS:
     case SQLCOM_SHOW_TRIGGERS:
@@ -3927,7 +3977,7 @@ bool Query_expression::is_mergeable() const {
   Query_block *const select = first_query_block();
   return !select->is_grouped() && select->having_cond() == nullptr &&
          !select->is_distinct() && select->has_tables() &&
-         !select->has_limit() && !select->has_windows();
+         !select->has_limit() && !select->has_wfs();
 }
 
 /**
@@ -5279,4 +5329,46 @@ void get_select_options_str(ulonglong options, std::string *str) {
 
   // Delete the last space character.
   if (str->length() > len) str->pop_back();
+}
+
+Acl_type lex_type_to_acl_type(ulong lex_type) {
+  if (lex_type == TYPE_ENUM_FUNCTION) {
+    return Acl_type::FUNCTION;
+  }
+  if (lex_type == TYPE_ENUM_PROCEDURE) {
+    return Acl_type::PROCEDURE;
+  }
+  if (lex_type == TYPE_ENUM_LIBRARY) {
+    return Acl_type::LIBRARY;
+  }
+  assert(false);
+  return Acl_type::INVALID_TYPE;
+}
+
+enum_sp_type acl_type_to_enum_sp_type(Acl_type type) {
+  if (type == Acl_type::FUNCTION) {
+    return enum_sp_type::FUNCTION;
+  }
+  if (type == Acl_type::PROCEDURE) {
+    return enum_sp_type::PROCEDURE;
+  }
+  if (type == Acl_type::LIBRARY) {
+    return enum_sp_type::LIBRARY;
+  }
+  assert(false);
+  return enum_sp_type::INVALID_SP_TYPE;
+}
+
+Acl_type enum_sp_type_to_acl_type(enum_sp_type type) {
+  if (type == enum_sp_type::FUNCTION) {
+    return Acl_type::FUNCTION;
+  }
+  if (type == enum_sp_type::PROCEDURE) {
+    return Acl_type::PROCEDURE;
+  }
+  if (type == enum_sp_type::LIBRARY) {
+    return Acl_type::LIBRARY;
+  }
+  assert(false);
+  return Acl_type::INVALID_TYPE;
 }

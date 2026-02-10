@@ -18109,3 +18109,24 @@ FOUND_ROWS()) <=>
 ANY_VALUE(JSON_OBJECTAGG('{}','{}'));
 ERROR 22008: Datetime function: datetime field overflow
 DROP FUNCTION f;
+#
+# Bug #37462769: NULL-safe equals operator (<=>) exhibits incorrect behavior 
+# when comparing ROW values containing NULL
+#
+CREATE TABLE t1ns(id INT KEY AUTO_INCREMENT, `col_smallint` SMALLINT, `col_int` INT, `col_float` FLOAT);
+INSERT INTO t1ns(col_smallint, col_int, col_float) VALUES(NULL, 3, NULL);
+SELECT `col_smallint`, `col_int`, `col_float` FROM `t1ns`
+  WHERE (`col_smallint`, `col_int`, `col_float`) <=> (SELECT NULL, 1, NULL);
+col_smallint	col_int	col_float
+SELECT `col_smallint`, `col_int`, `col_float` FROM `t1ns`
+  WHERE (`col_int`, `col_smallint`, `col_float`) <=> (SELECT 1, NULL, NULL);
+col_smallint	col_int	col_float
+SELECT `col_smallint`, `col_int`, `col_float` FROM `t1ns`
+  WHERE (`col_smallint`, `col_int`, `col_float`) <=> (SELECT NULL, 3, NULL);
+col_smallint	col_int	col_float
+NULL	3	NULL
+SELECT `col_smallint`, `col_int`, `col_float` FROM `t1ns`
+  WHERE (`col_int`, `col_smallint`, `col_float`) <=> (SELECT 3, NULL, NULL);
+col_smallint	col_int	col_float
+NULL	3	NULL
+DROP TABLE t1ns;

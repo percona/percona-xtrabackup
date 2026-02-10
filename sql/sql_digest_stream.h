@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -35,20 +35,27 @@ union Lexer_yystype;
 */
 struct sql_digest_state {
   /**
-    Index, in the digest token array, of the last identifier seen.
+    Index, in the digest token array, of the last peekable position.
     Reduce rules used in the digest computation can not
-    apply to tokens seen before an identifier.
+    apply to tokens seen before an identifier,
+    because an identifier uses a variable length storage.
+    Likewise, peek code can not backtrack before
+    a by numeric column token, because of the extra value stored.
+    Fortunately, once an id or a by numeric column token is stored,
+    no additional rule will reduce this further,
+    so there is never a need to backtrack in the digest stream
+    on variable length records.
     @sa digest_add_token
   */
-  int m_last_id_index;
+  int m_last_peekable_index;
   sql_digest_storage m_digest_storage;
 
   inline void reset(unsigned char *token_array, uint length) {
-    m_last_id_index = 0;
+    m_last_peekable_index = 0;
     m_digest_storage.reset(token_array, length);
   }
 
-  inline bool is_empty() { return m_digest_storage.is_empty(); }
+  inline bool is_empty() const { return m_digest_storage.is_empty(); }
 };
 typedef struct sql_digest_state sql_digest_state;
 
@@ -57,5 +64,8 @@ sql_digest_state *digest_add_token(sql_digest_state *state, uint token,
 
 sql_digest_state *digest_reduce_token(sql_digest_state *state, uint token_left,
                                       uint token_right);
+
+sql_digest_state *digest_adjust_by_numeric_column_token(sql_digest_state *state,
+                                                        ulonglong value);
 
 #endif

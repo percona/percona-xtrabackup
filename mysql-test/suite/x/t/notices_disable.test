@@ -266,7 +266,7 @@ Mysqlx.Sql.StmtExecute {
 -->stmtsql use test;
 -->recvresult
 
--->stmtsql create table t1 as select 5.05 / 0.014;
+-->stmtsql create table t1 as select 5.05000000000000000000000123456789 + 1;
 -->recvresult
 
 -->stmtsql drop table t1;

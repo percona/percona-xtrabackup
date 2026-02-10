@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,12 +31,14 @@
   and the mysqld server to connect to another MYSQL server.
 */
 
+#include <openssl/evp.h>  // IWYU pragma: keep
 #include "my_dbug.h"
+#include "my_ssl_algo_cache.h"
 #include "my_sys.h"
-#include "sha1.h"
 #include "sql_common.h"
 
 #define MYSQL_NATIVE_PASSWORD_PLUGIN_NAME "mysql_native_password"
+#define SHA1_HASH_SIZE 20 /* Hash size in bytes */
 
 /*****************************************************************************
   The main idea is that no password are sent between client & server on
@@ -94,6 +96,43 @@
 static void my_crypt(char *to, const uchar *s1, const uchar *s2, uint len) {
   const uint8 *s1_end = s1 + len;
   while (s1 < s1_end) *to++ = *s1++ ^ *s2++;
+}
+
+/**
+  Wrapper function to compute SHA1 message digest.
+
+  @param [out] digest  Computed SHA1 digest
+  @param [in] buf      Message to be computed
+  @param [in] len      Length of the message
+*/
+static void compute_sha1_hash(uint8 *digest, const char *buf, size_t len) {
+  EVP_MD_CTX *sha1_context = EVP_MD_CTX_create();
+  EVP_DigestInit_ex(sha1_context, my_EVP_sha1(), nullptr);
+  EVP_DigestUpdate(sha1_context, buf, len);
+  EVP_DigestFinal_ex(sha1_context, digest, nullptr);
+  EVP_MD_CTX_destroy(sha1_context);
+  sha1_context = nullptr;
+}
+
+/**
+  Wrapper function to compute SHA1 message digest for
+  two messages in order to emulate sha1(msg1, msg2).
+
+  @param [out] digest  Computed SHA1 digest
+  @param [in] buf1     First message
+  @param [in] len1     Length of first message
+  @param [in] buf2     Second message
+  @param [in] len2     Length of second message
+*/
+static void compute_sha1_hash_multi(uint8 *digest, const char *buf1, int len1,
+                                    const char *buf2, int len2) {
+  EVP_MD_CTX *sha1_context = EVP_MD_CTX_create();
+  EVP_DigestInit_ex(sha1_context, my_EVP_sha1(), nullptr);
+  EVP_DigestUpdate(sha1_context, buf1, len1);
+  EVP_DigestUpdate(sha1_context, buf2, len2);
+  EVP_DigestFinal_ex(sha1_context, digest, nullptr);
+  EVP_MD_CTX_destroy(sha1_context);
+  sha1_context = nullptr;
 }
 
 /**

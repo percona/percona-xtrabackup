@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@
 
 #include "my_config.h"
 
-#include <assert.h>
+#include <cassert>
 #ifndef WIN32
 #include <lber.h>
 #endif
@@ -128,10 +128,9 @@ bool Sasl_mechanism::create_sasl_mechanism(const char *mechanism_name,
     if (strcmp(mechanism_name, mechanism->m_mechanism_name) == 0) {
       log_dbg("Correct SASL mechanism already exists.");
       return true;
-    } else {
-      log_error("SASL mechanism mismatch.");
-      return false;
     }
+    log_error("SASL mechanism mismatch.");
+    return false;
   }
   log_dbg("Creating object for SASL mechanism ", mechanism_name, ".");
 

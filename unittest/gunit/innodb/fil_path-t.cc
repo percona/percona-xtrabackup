@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 /* See http://code.google.com/p/googletest/wiki/Primer */
 
 #include <gtest/gtest.h>
-#include <stddef.h>
+#include <cstddef>
 
 #include "storage/innobase/include/fil0fil.h"
 extern bool lower_case_file_system;
@@ -34,18 +34,19 @@ namespace innodb_fil_path_unittest {
 static constexpr char SEP = Fil_path::OS_SEPARATOR;
 
 TEST(fil_path, is_absolute_path) {
-  Fil_path current_dir(".");
+  Fil_path const current_dir(".");
   auto abs_current_dir_str = current_dir.abs_path();
   EXPECT_FALSE(current_dir.is_absolute_path());
   EXPECT_EQ(abs_current_dir_str.find_last_of(SEP),
             abs_current_dir_str.size() - 1);
 
-  Fil_path abs_current_dir(abs_current_dir_str);
+  Fil_path const abs_current_dir(abs_current_dir_str);
   EXPECT_TRUE(abs_current_dir.is_absolute_path());
   EXPECT_EQ(abs_current_dir_str, abs_current_dir.abs_path());
 }
 
-void get_existing_path_subtest(std::string abs_path, std::string sub_path) {
+void get_existing_path_subtest(const std::string &abs_path,
+                               const std::string &sub_path) {
   std::string ghost;
   EXPECT_EQ(Fil_path::get_existing_path(abs_path + sub_path, ghost), abs_path);
   EXPECT_EQ(ghost, sub_path);
@@ -74,7 +75,7 @@ static std::string Dot_t_dot_t = ghost2 + SEP + "Some.t.t";
 static std::string Dot_t_sep_t = ghost2 + SEP + "Some.t" + SEP + "t";
 
 TEST(fil_path, get_existing_path) {
-  Fil_path current_dir(".");
+  Fil_path const current_dir(".");
   auto abs_current_dir_str = current_dir.abs_path();
   EXPECT_FALSE(current_dir.is_absolute_path());
   EXPECT_EQ(abs_current_dir_str.find_last_of(SEP),
@@ -90,10 +91,12 @@ TEST(fil_path, get_existing_path) {
   get_existing_path_subtest(abs_current_dir_str, some_txt);
 }
 
-void get_real_path_subsubtest(std::string abs_path, std::string sub_path,
-                              std::string expect_path, bool expect_a_file) {
-  std::string expected_suffix = expect_a_file ? "" : std::string{SEP};
-  std::string relative_path = std::string{"."} + SEP;
+void get_real_path_subsubtest(const std::string &abs_path,
+                              const std::string &sub_path,
+                              const std::string &expect_path,
+                              bool expect_a_file) {
+  const std::string expected_suffix = expect_a_file ? "" : std::string{SEP};
+  const std::string relative_path = std::string{"."} + SEP;
 
   EXPECT_EQ(Fil_path::get_real_path(relative_path + sub_path, false),
             abs_path + expect_path + expected_suffix);
@@ -106,7 +109,7 @@ void get_real_path_subsubtest(std::string abs_path, std::string sub_path,
             abs_path + expect_path + expected_suffix);
 }
 
-void get_real_path_subtest(std::string abs_path,
+void get_real_path_subtest(const std::string &abs_path,
                            bool expect_ghost2_file = false,
                            bool expect_ibd_file = true,
                            bool expect_txt_file = true) {
@@ -129,32 +132,32 @@ void get_real_path_subtest(std::string abs_path,
   }
 }
 
-void mkdir(std::string path) {
+void mkdir(const std::string &path) {
   EXPECT_EQ(::my_mkdir(path.c_str(), 0777, MYF(0)), 0);
 }
 
-void rmdir(std::string path) { EXPECT_EQ(::rmdir(path.c_str()), 0); }
-void unlink(std::string path) { EXPECT_EQ(::unlink(path.c_str()), 0); }
+void rmdir(const std::string &path) { EXPECT_EQ(::rmdir(path.c_str()), 0); }
+void unlink(const std::string &path) { EXPECT_EQ(::unlink(path.c_str()), 0); }
 
-void create_file(std::string path) {
-  auto f = fopen(path.c_str(), "w");
+void create_file(const std::string &path) {
+  auto *f = fopen(path.c_str(), "w");
   EXPECT_NE(f, nullptr);
   fclose(f);
 }
 
 TEST(fil_path, get_real_path) {
 #ifndef _WIN32
-  std::string root{SEP};
+  std::string const root{SEP};
   EXPECT_EQ(Fil_path::get_real_path(root), root);
 #endif
 
-  Fil_path current_dir(".");
+  Fil_path const current_dir(".");
   auto abs_current_dir_str = current_dir.abs_path();
   EXPECT_FALSE(current_dir.is_absolute_path());
   EXPECT_EQ(abs_current_dir_str.find_last_of(SEP),
             abs_current_dir_str.size() - 1);
 
-  std::string relative_path = std::string{"."} + SEP;
+  std::string const relative_path = std::string{"."} + SEP;
 
   EXPECT_EQ(Fil_path::get_real_path("."), abs_current_dir_str);
   EXPECT_EQ(Fil_path::get_real_path(relative_path), abs_current_dir_str);

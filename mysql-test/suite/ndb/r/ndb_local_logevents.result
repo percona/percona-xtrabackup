@@ -1,0 +1,24 @@
+include/assert_grep.inc [Find Connected log event]
+include/assert_grep.inc [Find FIND_NEIGHBOURS log event]
+Restart node 2 to ensure node 1 is master
+Node 2 is being restarted
+
+Node 1: STARTED
+Node 2: STARTED
+include/assert_grep.inc [Find NDBStopCompleted log event]
+select dynamic_id from ndbinfo.ndb$membership where node_id=2 into @old_dynamic_id_2;
+Block node 2 signals to reach node 1 to cause heartbeat issues
+Sending dump signal with data:
+0x00002708 0x00000002 
+
+Wait until node 2 have disconnected or reconnected to cluster.
+Allow node 2 to communicate with node 1 again
+Sending dump signal with data:
+0x00002709 0x00000002 
+
+Node 1: STARTED
+Node 2: STARTED
+include/assert_grep.inc [Find MissedHeartbeat log event]
+include/assert_grep.inc [Find DeadDueToHeartbeat log event]
+include/assert_grep.inc [Find NDBStopForced log event]
+include/assert_grep.inc [Find NodeFailCompleted log event]

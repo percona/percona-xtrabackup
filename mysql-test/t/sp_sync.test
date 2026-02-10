@@ -52,7 +52,7 @@ SET DEBUG_SYNC= 'RESET';
 
 --echo #
 --echo # Field translation items must be cleared in case of back-offs
---echo # for queries that use Information Schema tables. Otherwise 
+--echo # for queries that use Information Schema tables. Otherwise
 --echo # memory allocated in fix_fields() for views may end up referring
 --echo # to freed memory.
 --echo #
@@ -85,7 +85,7 @@ SET DEBUG_SYNC= 'now WAIT_FOR locked';
 --echo # Connection con3
 connection con3;
 let $wait_condition= SELECT COUNT(*)= 1 FROM information_schema.processlist
-  WHERE state= 'Waiting for stored function metadata lock' 
+  WHERE state= 'Waiting for stored function metadata lock'
   AND info='SHOW OPEN TABLES WHERE f1()=0';
 --source include/wait_condition.inc
 --echo # Check that the IS query is blocked before releasing the x-lock
@@ -293,6 +293,36 @@ SET DEBUG_SYNC='now WAIT_FOR locked';
 let $wait_condition= SELECT COUNT(*) > 0 FROM information_schema.processlist
                      WHERE info LIKE 'ALTER PROCEDURE mixedcase%' AND
                      state='Waiting for stored procedure metadata lock';
+source include/wait_condition.inc;
+SET DEBUG_SYNC='now SIGNAL continue';
+
+--CONNECTION default
+--REAP
+
+--CONNECTION con1
+--error ER_SP_DOES_NOT_EXIST
+--REAP
+
+--echo # Case 6: Test case to verify MDL locking from concurrent SHOW LIBRARY
+--echo #         and DROP LIBRARY operation.
+
+--CONNECTION default
+CREATE LIBRARY test_library_6 LANGUAGE JAVASCRIPT AS $$
+export function f(n) {  return n } $$;
+SET DEBUG_SYNC='after_acquiring_mdl_lock_on_routine SIGNAL locked WAIT_FOR continue';
+--SEND DROP LIBRARY test_library_6;
+--echo # At this point we have a exclusive lock on 'test_library_6'
+
+--CONNECTION con1
+SET DEBUG_SYNC='now WAIT_FOR locked';
+--SEND SHOW CREATE LIBRARY test_library_6
+--echo # This statement request for shared lock and it is blocked till DROP
+--echo # statement releases lock.
+
+--CONNECTION con2
+let $wait_condition= SELECT COUNT(*) > 0 FROM information_schema.processlist
+                     WHERE info LIKE 'SHOW CREATE LIBRARY%' AND
+                     state='Waiting for library metadata lock';
 source include/wait_condition.inc;
 SET DEBUG_SYNC='now SIGNAL continue';
 

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -44,7 +44,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "srv0srv.h"
 #include "univ.i"
 #include "ut0byte.h"
-#include "ut0rbt.h"
 
 #include "buf/buf.h"
 
@@ -152,6 +151,18 @@ enum buf_page_state : uint8_t {
   /** Hash index should be removed before putting to the free list */
   BUF_BLOCK_REMOVE_HASH
 };
+
+const std::unordered_map<buf_page_state, std::string_view> buf_page_state_str{
+    /* First three states are for compression pages and are not states we would
+       get as we scan pages through buffer blocks */
+    {BUF_BLOCK_POOL_WATCH, ""},
+    {BUF_BLOCK_ZIP_PAGE, ""},
+    {BUF_BLOCK_ZIP_DIRTY, ""},
+    {BUF_BLOCK_NOT_USED, "NOT_USED"},
+    {BUF_BLOCK_READY_FOR_USE, "READY_FOR_USE"},
+    {BUF_BLOCK_FILE_PAGE, "FILE_PAGE"},
+    {BUF_BLOCK_MEMORY, "MEMORY"},
+    {BUF_BLOCK_REMOVE_HASH, "REMOVE_HASH"}};
 
 /** This structure defines information we will fetch from each buffer pool. It
 will be used to print table IO stats */
@@ -1387,7 +1398,6 @@ class buf_page_t {
   Read under protection of rules described in @see Buf_io_fix_latching_rules */
   copyable_atomic_t<buf_io_fix> io_fix;
 
-#ifdef UNIV_DEBUG
  public:
   /** Checks if io_fix has any of the known enum values.
   @param[in]  io_fix  the value to test
@@ -1404,6 +1414,7 @@ class buf_page_t {
     return false;
   }
 
+#ifdef UNIV_DEBUG
  private:
   /** Checks if io_fix has any of the known enum values.
   @return true iff io_fix has any of the known enum values
@@ -1713,6 +1724,12 @@ class buf_page_t {
   bool in_zip_hash;
 #endif /* UNIV_DEBUG */
 
+  /** Print page metadata in JSON format {"key":"value"}. Asserts that caller
+  holds page mutex and page if file page
+  @param[in,out]  outs  the output stream
+  @param[in]  page  the page whose metadata needs to be printed
+  @return same output stream */
+  friend std::ostream &operator<<(std::ostream &outs, const buf_page_t &page);
 #endif /* !UNIV_HOTBACKUP */
 };
 
@@ -1767,11 +1784,6 @@ struct buf_block_t {
   /** pointer to buffer frame which is of size UNIV_PAGE_SIZE, and aligned
   to an address divisible by UNIV_PAGE_SIZE */
   byte *frame;
-
-  /** Determine whether the page is in new-style compact format.
-  @return true  if the page is in compact format
-  @return false if it is in old-style format */
-  bool is_compact() const;
 
   /** node of the decompressed LRU list; a block is in the unzip_LRU list if
   page.state == BUF_BLOCK_FILE_PAGE and page.zip.data != NULL. Protected by
@@ -1960,6 +1972,12 @@ struct buf_block_t {
     mach_write_to_4(frame + FIL_PAGE_SPACE_ID, page.page_no());
     mach_write_to_4(frame + FIL_PAGE_OFFSET, page.space());
   }
+
+  /** Print control block information in JSON format: {"key":"value"}
+  @param[in,out]  outs    the output stream
+  @param[in]  block   the control block whose information needs to be printed
+  @return same output stream */
+  friend std::ostream &operator<<(std::ostream &outs, const buf_block_t &block);
 #endif /* UNIV_HOTBACKUP */
 
   uint16_t get_page_level() const;
@@ -2372,9 +2390,9 @@ struct buf_pool_t {
 
   /** @{ */
 
-  /** Mutex protecting the flush list access. This mutex protects flush_list,
-  flush_rbt and bpage::list pointers when the bpage is on flush_list. It also
-  protects writes to bpage::oldest_modification and flush_list_hp */
+  /** Mutex protecting the flush list access. This mutex protects flush_list and
+  bpage::list pointers when the bpage is on flush_list. It also protects writes
+  to bpage::oldest_modification and flush_list_hp */
   BufListMutex flush_list_mutex;
 
   /** "Hazard pointer" used during scan of flush_list while doing flush list
@@ -2398,14 +2416,6 @@ struct buf_pool_t {
   /** This is in the set state when there is no flush batch of the given type
   running. Protected by flush_state_mutex. */
   os_event_t no_flush[BUF_FLUSH_N_TYPES];
-
-  /** A red-black tree is used exclusively during recovery to speed up
-  insertions in the flush_list. This tree contains blocks in order of
-  oldest_modification LSN and is kept in sync with the flush_list.  Each
-  member of the tree MUST also be on the flush_list.  This tree is relevant
-  only in recovery and is set to NULL once the recovery is over.  Protected
-  by flush_list_mutex */
-  ib_rbt_t *flush_rbt;
 
   /** A sequence number used to count the number of buffer blocks removed from
   the end of the LRU list; NOTE that this counter may wrap around at 4

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "sql/dd/impl/raw/raw_record.h"
 
-#include <stddef.h>
+#include <cstddef>
 
 #include "my_base.h"
 #include "my_bitmap.h"
@@ -61,7 +61,8 @@ Raw_record::Raw_record(TABLE *table) : m_table(table) {
 bool Raw_record::update() {
   DBUG_TRACE;
 
-  int rc = m_table->file->ha_update_row(m_table->record[1], m_table->record[0]);
+  int const rc =
+      m_table->file->ha_update_row(m_table->record[1], m_table->record[0]);
 
   /**
     We ignore HA_ERR_RECORD_IS_THE_SAME here for following reason.
@@ -98,7 +99,7 @@ bool Raw_record::update() {
 bool Raw_record::drop() {
   DBUG_TRACE;
 
-  int rc = m_table->file->ha_delete_row(m_table->record[1]);
+  int const rc = m_table->file->ha_delete_row(m_table->record[1]);
 
   if (rc) {
     m_table->file->print_error(rc, MYF(0));
@@ -131,7 +132,7 @@ bool Raw_record::store_ref_id(int field_no, Object_id id) {
   }
 
   set_null(field_no, false);
-  type_conversion_status rc = field(field_no)->store(id, true);
+  type_conversion_status const rc = field(field_no)->store(id, true);
 
   assert(rc == TYPE_OK);
   return rc != TYPE_OK;
@@ -153,7 +154,7 @@ bool Raw_record::store(int field_no, const String_type &s, bool is_null) {
 
   if (is_null) return false;
 
-  type_conversion_status rc =
+  type_conversion_status const rc =
       field(field_no)->store(s.c_str(), s.length(), system_charset_info);
 
   assert(rc == TYPE_OK);
@@ -167,7 +168,7 @@ bool Raw_record::store(int field_no, ulonglong ull, bool is_null) {
 
   if (is_null) return false;
 
-  type_conversion_status rc = field(field_no)->store(ull, true);
+  type_conversion_status const rc = field(field_no)->store(ull, true);
 
   assert(rc == TYPE_OK);
   return rc != TYPE_OK;
@@ -180,7 +181,7 @@ bool Raw_record::store(int field_no, longlong ll, bool is_null) {
 
   if (is_null) return false;
 
-  type_conversion_status rc = field(field_no)->store(ll, false);
+  type_conversion_status const rc = field(field_no)->store(ll, false);
 
   assert(rc == TYPE_OK);
   return rc != TYPE_OK;
@@ -215,7 +216,7 @@ bool Raw_record::store_timestamp(int field_no, const my_timeval &tv) {
 ///////////////////////////////////////////////////////////////////////////
 
 bool Raw_record::store_json(int field_no, const Json_wrapper &json) {
-  Field_json *json_field = down_cast<Field_json *>(field(field_no));
+  auto *json_field = down_cast<Field_json *>(field(field_no));
   return json_field->store_json(&json) != TYPE_OK;
 }
 
@@ -258,11 +259,11 @@ Object_id Raw_record::read_ref_id(int field_no) const {
 ///////////////////////////////////////////////////////////////////////////
 
 my_time_t Raw_record::read_time(int field_no) const {
-  MYSQL_TIME time;
+  Date_val date;
   bool not_used;
 
-  field(field_no)->get_date(&time, TIME_DATETIME_ONLY);
-  return my_tz_OFFSET0->TIME_to_gmt_sec(&time, &not_used);
+  field(field_no)->val_date(&date, TIME_DATETIME_ONLY);
+  return my_tz_OFFSET0->TIME_to_gmt_sec(&date, &not_used);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -309,7 +310,7 @@ Raw_new_record::Raw_new_record(TABLE *table) : Raw_record(table) {
 bool Raw_new_record::insert() {
   DBUG_TRACE;
 
-  int rc = m_table->file->ha_write_row(m_table->record[0]);
+  int const rc = m_table->file->ha_write_row(m_table->record[0]);
 
   if (rc) {
     m_table->file->print_error(rc, MYF(0));
@@ -322,7 +323,7 @@ bool Raw_new_record::insert() {
 ///////////////////////////////////////////////////////////////////////////
 
 Object_id Raw_new_record::get_insert_id() const {
-  Object_id id = m_table->file->insert_id_for_cur_row;
+  Object_id const id = m_table->file->insert_id_for_cur_row;
 
   // Objects without primary key should have still get INVALID_OBJECT_ID.
   return id ? id : dd::INVALID_OBJECT_ID;

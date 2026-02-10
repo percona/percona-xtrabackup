@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -81,11 +81,6 @@ char *srv_add_path_separator_if_needed(
 @param[in]  undo_space  Undo tablespace
 @return DB_SUCCESS or error code */
 dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space);
-
-/** Upgrade undo tablespaces by deleting the old undo tablespaces
-referenced by the TRX_SYS page.
-@return error code */
-dberr_t srv_undo_tablespaces_upgrade();
 
 /** Start InnoDB.
 @param[in]      create_new_db           Whether to create a new database

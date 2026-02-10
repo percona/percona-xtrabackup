@@ -1,0 +1,36 @@
+# Variable Name: container_aware
+# Scope: GLOBAL
+# Access Type: STATIC
+# Data Type: BOOL
+# Default Value: OFF
+select @@container_aware;
+
+#
+# only global
+#
+select @@global.container_aware;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+select @@session.container_aware;
+
+show global variables like 'container_aware';
+show session variables like 'container_aware';
+
+select * from performance_schema.global_variables where variable_name='container_aware';
+select * from performance_schema.session_variables where variable_name='container_aware';
+
+#
+# show that it's read-only
+#
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set global container_aware=1;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set session container_aware=1;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set persist container_aware=1;
+
+#
+# show that it's non-persistent read-only
+#
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set persist_only container_aware=1;
+

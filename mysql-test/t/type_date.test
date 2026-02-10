@@ -620,3 +620,11 @@ SELECT * FROM t WHERE a = CURRENT_TIMESTAMP;
 SELECT * FROM t WHERE a = CURRENT_DATE;
 SET timestamp = DEFAULT;
 DROP TABLE t;
+
+--echo #
+--echo # Bug#38531740: Assertion failed: my_time.time_type ==
+--echo #               MYSQL_TIMESTAMP_TIME || my_time.time_type ==
+--echo #               MYSQL_TIMESTAMP_DATE ...
+--echo #
+
+SELECT IFNULL(LAST_DAY('201:34:36.298754'), FROM_DAYS(0)) AS c;

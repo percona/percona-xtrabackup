@@ -179,7 +179,7 @@ SELECT @@global.optimizer_switch;
 index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,duplicateweedout=on,subquery_materialization_cost_based=on,use_index_extensions=on,condition_fanout_filter=on,derived_merge=on,use_invisible_indexes=off,skip_scan=on,hash_join=on,subquery_to_derived=off,prefer_ordering_index=on,hypergraph_optimizer=off,derived_condition_pushdown=on,hash_set_operations=on
 SELECT @@global.enforce_gtid_consistency;
 @@global.enforce_gtid_consistency
-OFF
+ON
 SELECT @@global.sql_mode;
 @@global.sql_mode
 ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
@@ -194,7 +194,7 @@ SELECT * FROM performance_schema.persisted_variables ORDER BY 1;
 VARIABLE_NAME	VARIABLE_VALUE
 binlog_cache_size	32768
 collation_database	utf8mb4_0900_ai_ci
-enforce_gtid_consistency	0
+enforce_gtid_consistency	1
 optimizer_switch	index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,duplicateweedout=on,subquery_materialization_cost_based=on,use_index_extensions=on,condition_fanout_filter=on,derived_merge=on,use_invisible_indexes=off,skip_scan=on,hash_join=on,subquery_to_derived=off,prefer_ordering_index=on,hypergraph_optimizer=off,derived_condition_pushdown=on,hash_set_operations=on
 optimizer_trace_offset	-1
 sql_mode	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
@@ -214,7 +214,7 @@ SELECT @@global.optimizer_switch;
 index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,duplicateweedout=on,subquery_materialization_cost_based=on,use_index_extensions=on,condition_fanout_filter=on,derived_merge=on,use_invisible_indexes=off,skip_scan=on,hash_join=on,subquery_to_derived=off,prefer_ordering_index=on,hypergraph_optimizer=off,derived_condition_pushdown=on,hash_set_operations=on
 SELECT @@global.enforce_gtid_consistency;
 @@global.enforce_gtid_consistency
-OFF
+ON
 SELECT @@global.sql_mode;
 @@global.sql_mode
 ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
@@ -222,7 +222,7 @@ SELECT * FROM performance_schema.persisted_variables ORDER BY 1;
 VARIABLE_NAME	VARIABLE_VALUE
 binlog_cache_size	32768
 collation_database	utf8mb4_0900_ai_ci
-enforce_gtid_consistency	0
+enforce_gtid_consistency	1
 optimizer_switch	index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,duplicateweedout=on,subquery_materialization_cost_based=on,use_index_extensions=on,condition_fanout_filter=on,derived_merge=on,use_invisible_indexes=off,skip_scan=on,hash_join=on,subquery_to_derived=off,prefer_ordering_index=on,hypergraph_optimizer=off,derived_condition_pushdown=on,hash_set_operations=on
 optimizer_trace_offset	-1
 sql_mode	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
@@ -474,22 +474,24 @@ RESET PERSIST;
 # Bug #33388488: NO DEPRECATION WARNING ON SERVER RESTART IF TWO OR MORE
 # PERSISTED OPTIONS
 #
-SET PERSIST temptable_use_mmap=FALSE;
+SET PERSIST delayed_insert_timeout=300;
 Warnings:
-Warning	1287	'temptable_use_mmap' is deprecated and will be removed in a future release.
+Warning	1287	'@@delayed_insert_timeout' is deprecated and will be removed in a future release.
 SET PERSIST delayed_insert_limit=100;
 Warnings:
 Warning	1287	'@@delayed_insert_limit' is deprecated and will be removed in a future release.
 # restart:--log_error=LOG_ERR --no-console
-include/assert_grep.inc [Assert that there is a warning at bootstrap when setting temptable_use_mmap]
+include/assert_grep.inc [Assert that there is a warning at bootstrap when setting delayed_insert_timeout]
 include/assert_grep.inc [Assert that there is a warning at bootstrap when setting delayed_insert_limit]
 RESET PERSIST;
-SET PERSIST_ONLY temptable_use_mmap=FALSE;
+SET PERSIST_ONLY delayed_insert_timeout=300;
+Warnings:
+Warning	1287	'@@delayed_insert_timeout' is deprecated and will be removed in a future release.
 SET PERSIST_ONLY delayed_insert_limit=100;
 Warnings:
 Warning	1287	'@@delayed_insert_limit' is deprecated and will be removed in a future release.
 # restart:--log_error=LOG_ERR --no-console
-include/assert_grep.inc [Assert that there is a warning at bootstrap when setting temptable_use_mmap]
+include/assert_grep.inc [Assert that there is a warning at bootstrap when setting delayed_insert_timeout]
 include/assert_grep.inc [Assert that there is a warning at bootstrap when setting delayed_insert_limit]
 RESET PERSIST;
 # restart:
@@ -527,4 +529,52 @@ ERROR HY000: Trying to persist a NULL into a variable 'report_host' that's setta
 SET PERSIST ssl_crl = NULL;
 RESET PERSIST ssl_crl;
 SET GLOBAL ssl_crl = DEFAULT;
+##
+## Bug#38680162 SET PERSIST creates duplicate variable entries across sections after upgrade
+##
+call mtr.add_suppression("Configuring persisted options failed: \"Variable 'disconnect_on_expired_password' is a read only variable\".");
+## Remove the config file.
+## Create a file with a variable in the invalid sections.
+## mysql_static_variables should be found.
+include/assert_grep.inc [mysql_static_variables/net_buffer_length found.]
+## mysql_dynamic_variables should be found.
+include/assert_grep.inc [mysql_dynamic_variables/disconnect_on_expired_password found.]
+## Restart the server.
+# restart:
+## First value in the config file should be taken.
+SELECT @@global.net_buffer_length;
+@@global.net_buffer_length
+1024
+SHOW VARIABLES LIKE 'disconnect_on_expired_password';
+Variable_name	Value
+disconnect_on_expired_password	ON
+## Replace the variable with the not existing value in the config file.
+SET PERSIST_ONLY net_buffer_length=8192;
+## mysql_static_variables should not be found.
+include/assert_grep.inc [mysql_static_variables/net_buffer_length not found.]
+## mysql_static_parse_early_variables variables should not be found.
+include/assert_grep.inc [mysql_static_parse_early_variables/net_buffer_length not found.]
+## mysql_static_sensitive_variables variables should not be found.
+include/assert_grep.inc [mysql_static_sensitive_variables/net_buffer_length not found.]
+## mysql_static_sensitive_variables variables should not be found.
+include/assert_grep.inc [mysql_dynamic_variables/disconnect_on_expired_password not found.]
+SET PERSIST_ONLY disconnect_on_expired_password = ON;
+## FOUND VARIABLES
+## mysql_dynamic_variables variables should be found.
+include/assert_grep.inc [mysql_dynamic_variables/net_buffer_length found.]
+## mysql_static_variables variables should be found.
+include/assert_grep.inc [mysql_dynamic_variables/disconnect_on_expired_password found.]
+## Remove the config file.
+## Restart the server.
+# restart:
 # End of the 8.0 tests
+#
+# Bug #36854635: Invalid variable error on restart
+#
+RESET PERSIST;
+SET PERSIST_ONLY TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+ERROR HY000: Cannot persist transaction isolation.
+# Should be empty
+SELECT VARIABLE_VALUE FROM performance_schema.persisted_variables;
+VARIABLE_VALUE
+# End of the 9.0 tests

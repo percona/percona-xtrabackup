@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -450,6 +450,31 @@ class Multisource_info {
       else
         return map_it->second.size();
     }
+  }
+
+  /**
+    Get the number of configured asynchronous replication channels,
+    ignoring the Group Replication channels.
+
+    @return The number of channels.
+  */
+  size_t get_number_of_configured_channels() {
+    DBUG_TRACE;
+    m_channel_map_lock->assert_some_lock();
+    size_t count = 0;
+
+    replication_channel_map::iterator map_it =
+        rep_channel_map.find(SLAVE_REPLICATION_CHANNEL);
+
+    for (mi_map::iterator it = map_it->second.begin();
+         it != map_it->second.end(); it++) {
+      Master_info *mi = it->second;
+      if (Master_info::is_configured(mi)) {
+        count++;
+      }
+    }
+
+    return count;
   }
 
   /**

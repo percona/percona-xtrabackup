@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
 
    This program is free software; you can redistribute it and/or modify
@@ -336,12 +336,12 @@ class Ndbd : public Mgmd {
 
   NdbProcess::Args &args() { return m_args; }
 
-  void set_connect_string(BaseString connect_string) {
+  void set_connect_string(const BaseString &connect_string) {
     m_args.add("-c");
     m_args.add(connect_string.c_str());
   }
 
-  bool start(const char *working_dir, BaseString connect_string) {
+  bool start(const char *working_dir, const BaseString &connect_string) {
     set_connect_string(connect_string);
     return Mgmd::start(working_dir, m_args);
   }
@@ -410,11 +410,30 @@ static bool sign_tls_keys(NDBT_Workingdir &wd) {
   return (r && (ret == 0));
 }
 
-static bool create_expired_cert(NDBT_Workingdir &wd) {
+/* Create a certificate for node_type that will expire after cert_duration
+ */
+static bool create_expiring_cert(NDBT_Workingdir &wd, const BaseString &exe,
+                                 const BaseString node_type,
+                                 const BaseString cert_duration) {
   int ret;
 
-  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+  NdbProcess::Args args;
+  args.add("--create-key");
+  args.add("--ndb-tls-search-path=", wd.path());
+  args.add("--passphrase=", "Trondheim");
+  args.add("-l");  // no-config mode
+  args.add("--node-type=", node_type.c_str());
+  args.add("--bind-host=", 0);
+  args.add("--duration=", cert_duration.c_str());
 
+  auto proc = NdbProcess::create("Create Keys", exe, wd.path(), args);
+  bool r = proc->wait(ret, 10000);
+  return (r && (ret == 0));
+}
+
+/* Create an expired certificate for a data node
+ */
+inline bool create_expired_cert(NDBT_Workingdir &wd) {
   /* Find executable */
   BaseString exe;
   NDBT_find_sign_keys(exe);
@@ -422,18 +441,8 @@ static bool create_expired_cert(NDBT_Workingdir &wd) {
   /* Create CA */
   if (!create_CA(wd, exe)) return false;
 
-  /* Create an expired certificate for a data node */
-  NdbProcess::Args args;
-  args.add("--create-key");
-  args.add("--ndb-tls-search-path=", wd.path());
-  args.add("--passphrase=", "Trondheim");
-  args.add("-l");                     // no-config mode
-  args.add("--node-type=", "db");     // type db
-  args.add("--duration=", "-50000");  // negative seconds; already expired
-
-  auto proc = NdbProcess::create("Create Keys", exe, wd.path(), args);
-  bool r = proc->wait(ret, 10000);
-  return (r && (ret == 0));
+  /* use a negative duration to create a cert that has already expired */
+  return create_expiring_cert(wd, exe, "db", "-50000");
 }
 
 /* Print some information about a cert, and check that its validity is at
@@ -1969,6 +1978,142 @@ int runTestStartTls(NDBT_Context *ctx, NDBT_Step *step) {
   return NDBT_OK;
 }
 
+/* Test the TLS INFO statistics after the TLS auth has failed due to an
+   expired server certificate
+*/
+int runTestTlsStats1(NDBT_Context *ctx, NDBT_Step *step) {
+  ndb_mgm_tls_stats stats[3];
+  auto print_stats = [](const ndb_mgm_tls_stats &stats) {
+    printf("TLS Stats -- accepted:%d upgraded:%d current:%d tls:%d\n",
+           stats.accepted, stats.upgraded, stats.current, stats.tls);
+  };
+  NDBT_Workingdir wd("test_tls");  // temporary working directory
+  BaseString exe;
+  NDBT_find_sign_keys(exe);
+
+  /* Create a configuration */
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+  Properties config = ConfigFactory::create();
+  CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
+
+  /* Create certificates that will expire soon */
+  CHECK(create_CA(wd, exe));
+  CHECK(create_expiring_cert(wd, exe, "mgmd", "8"));  // expires in 8 seconds
+  CHECK(create_expiring_cert(wd, exe, "api", "120"));
+
+  /* MGM server */
+  Mgmd mgmd(1);
+  NdbProcess::Args mgmdArgs;
+  mgmd.common_args(mgmdArgs, wd.path());
+  mgmdArgs.add("--ndb-tls-search-path=", wd.path());
+  CHECK(mgmd.start(wd.path(), mgmdArgs));  // Start management node
+  CHECK(mgmd.connect(config));             // Connect to management node
+  CHECK(mgmd.wait_confirmed_config());     // Wait for configuration
+
+  /* Get stats */
+  ndb_mgm_get_tls_stats(mgmd.handle(), &stats[0]);
+  print_stats(stats[0]);
+  CHECK(ndb_mgm_has_tls(mgmd.handle()) == 0);  // Our handle does not use TLS,
+  CHECK(stats[0].current > stats[0].tls);  // so current connections > TLS conns
+
+  /* Now create a second client. It will use TLS */
+  NdbMgmd client;
+  client.use_tls(wd.path(), CLIENT_TLS_STRICT);
+  CHECK(client.connect(mgmd.connectstring(config).c_str(), 1, 0));
+
+  /* Get stats */
+  ndb_mgm_get_tls_stats(mgmd.handle(), &stats[1]);
+  print_stats(stats[1]);
+  CHECK(stats[1].accepted > stats[0].accepted);
+  CHECK(stats[1].upgraded > stats[0].upgraded);
+  CHECK(stats[1].current > stats[0].current);
+  CHECK(stats[1].tls > stats[0].tls);
+
+  /* Wait for the MGMD cert to expire */
+  client.disconnect();
+  printf("Waiting 9 seconds for mgmd server certificate to expire.\n");
+  sleep(9);
+
+  /* Now a client will try to start TLS, and fail. */
+  client.connect(mgmd.connectstring(config).c_str(), 1, 0);
+  CHECK(client.last_error() == NDB_MGM_TLS_HANDSHAKE_FAILED);
+  CHECK(client.is_connected() == false);
+  client.close();
+
+  /* The MGM server's TLS stats should reflect the failed attempt */
+  ndb_mgm_get_tls_stats(mgmd.handle(), &stats[2]);
+  print_stats(stats[2]);
+  CHECK(stats[2].accepted > stats[1].accepted);
+  CHECK(stats[2].upgraded == stats[1].upgraded);
+  CHECK(stats[2].tls == stats[0].tls);
+  CHECK(stats[2].current == stats[0].current);
+
+  return NDBT_OK;
+}
+
+/* Test the TLS INFO statistics after the TLS auth has failed due to an
+   expired client certificate
+*/
+int runTestTlsStats2(NDBT_Context *ctx, NDBT_Step *step) {
+  ndb_mgm_tls_stats stats[2];
+  auto print_stats = [](const ndb_mgm_tls_stats &stats) {
+    printf("TLS Stats -- accepted:%d upgraded:%d current:%d tls:%d\n",
+           stats.accepted, stats.upgraded, stats.current, stats.tls);
+  };
+  NDBT_Workingdir wd("test_tls");  // temporary working directory
+  BaseString exe;
+  NDBT_find_sign_keys(exe);
+
+  /* Create a configuration */
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+  Properties config = ConfigFactory::create();
+  CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
+
+  /* Create certificates that will expire soon */
+  CHECK(create_CA(wd, exe));
+  CHECK(create_expiring_cert(wd, exe, "mgmd", "120"));
+  CHECK(create_expiring_cert(wd, exe, "api", "5"));  // expires in 5 seconds
+
+  /* MGM server */
+  Mgmd mgmd(1);
+  NdbProcess::Args mgmdArgs;
+  mgmd.common_args(mgmdArgs, wd.path());
+  mgmdArgs.add("--ndb-tls-search-path=", wd.path());
+  CHECK(mgmd.start(wd.path(), mgmdArgs));  // Start management node
+  CHECK(mgmd.connect(config));             // Connect to management node
+  CHECK(mgmd.wait_confirmed_config());     // Wait for configuration
+
+  /* Get stats */
+  ndb_mgm_get_tls_stats(mgmd.handle(), &stats[0]);
+  print_stats(stats[0]);
+
+  /* Create a client. Connect, but don't start TLS. */
+  NdbMgmd client;
+  TlsKeyManager tlsKeyManager;
+  tlsKeyManager.init_mgm_client(wd.path());
+  CHECK(client.connect(mgmd.connectstring(config).c_str(), 1, 0, false));
+  CHECK(ndb_mgm_has_tls(client.handle()) == 0);
+
+  /* Wait for the client cert to expire, then try to start TLS.
+     The server's cert is valid, so the client will see auth as successful,
+     but then it will fail on the next MGM call.
+  */
+  printf("Waiting 6 seconds for mgm client certificate to expire.\n");
+  sleep(6);
+  CHECK(client.start_tls(tlsKeyManager.ctx()) == 0);  // returns 0 on success
+  CHECK(ndb_mgm_check_connection(client.handle()) == -1);
+
+  /* Get stats */
+  ndb_mgm_get_tls_stats(mgmd.handle(), &stats[1]);
+  print_stats(stats[1]);
+  CHECK(stats[1].accepted > stats[0].accepted);
+  CHECK(stats[1].upgraded == stats[0].upgraded);
+  CHECK(stats[1].tls == stats[0].tls);
+  CHECK(stats[1].current == stats[0].current);
+
+  return NDBT_OK;
+}
+
 int runTestRequireTls(NDBT_Context *ctx, NDBT_Step *step) {
   /* Create a configuration file in the working directory */
   NDBT_Workingdir wd("test_tls");
@@ -2124,6 +2269,14 @@ TESTCASE("StartTls", "Test START TLS in MGM protocol") {
 
 TESTCASE("RequireTls", "Test MGM server that requires TLS") {
   INITIALIZER(runTestRequireTls);
+}
+
+TESTCASE("TlsStats1", "Test TLS INFO statistics after server cert expires") {
+  INITIALIZER(runTestTlsStats1);
+}
+
+TESTCASE("TlsStats2", "Test TLS INFO statistics after client cert expires") {
+  INITIALIZER(runTestTlsStats2);
 }
 
 TESTCASE("KeySigningTool", "Test key signing using a co-process tool") {

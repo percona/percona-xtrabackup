@@ -1,4 +1,4 @@
-/*  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,8 @@
 
 #include "my_config.h"
 
-#include <assert.h>
-#include <stddef.h>
+#include <cassert>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -147,7 +147,7 @@ Pattern::Load_status Pattern::load(MYSQL_THD thd,
     - extract the position of the parameters in the query string
     - copy the replacement in the rewrite rule
 */
-bool Replacement::load(MYSQL_THD thd, const string replacement) {
+bool Replacement::load(MYSQL_THD thd, const string &replacement) {
   Parse_error_recorder recorder;
   if (services::parse(thd, replacement, true, &recorder)) {
     m_parse_error_message = recorder.first_parse_error_message();
@@ -179,6 +179,6 @@ Rewrite_result Rule::create_new_query(MYSQL_THD thd) {
 }
 
 bool Rule::matches(MYSQL_THD thd) const {
-  string normalized_query = services::get_current_query_normalized(thd);
-  return normalized_query.compare(m_pattern.normalized_pattern) == 0;
+  string const normalized_query = services::get_current_query_normalized(thd);
+  return normalized_query == m_pattern.normalized_pattern;
 }

@@ -16,10 +16,7 @@
 
 # the test is binlog-format agnostic
 --source include/have_binlog_format_row.inc
---source include/have_replica_parallel_workers.inc
 --source include/rpl/init_source_replica.inc
-
---let $is_mts= 1
 
 --source common/rpl/check_ps_applier_status_by_worker_replica_skip_counter.inc
 

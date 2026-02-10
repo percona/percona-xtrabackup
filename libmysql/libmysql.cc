@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,9 +29,9 @@
 #include "my_config.h"
 
 #include <fcntl.h>
-#include <limits.h>
-#include <math.h>
 #include <sys/types.h>
+#include <climits>
+#include <cmath>
 
 #include "dig_vec.h"
 #include "my_alloc.h"
@@ -42,11 +42,11 @@
 #ifndef _WIN32
 #include <netdb.h>
 #endif
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/stat.h>
-#include <time.h>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
 
 #include <algorithm>
 #include <vector>
@@ -97,6 +97,7 @@
 #endif
 
 #include <memory>
+#include <set>
 
 #include "../sql-common/client_extensions_macros.h"
 #include "client_settings.h"
@@ -121,7 +122,11 @@ struct MYSQL_STMT_EXT {
      **/
     uint n_params;
     char **names;
-  } bind_names_info;
+    MEM_ROOT mem_root; /* for bind params and names only */
+#ifndef NDEBUG
+    std::set<void *> *allocations;
+#endif
+  } bind_data;
 };
 
 /*
@@ -585,7 +590,7 @@ static int default_local_infile_init(void **ptr, const char *filename,
 
 static int default_local_infile_read(void *ptr, char *buf, uint buf_len) {
   int count;
-  default_local_infile_data *data = (default_local_infile_data *)ptr;
+  auto *data = (default_local_infile_data *)ptr;
 
   if ((count = (int)my_read(data->fd, (uchar *)buf, buf_len, MYF(0))) < 0) {
     char errbuf[MYSYS_STRERROR_SIZE];
@@ -609,7 +614,7 @@ static int default_local_infile_read(void *ptr, char *buf, uint buf_len) {
 */
 
 static void default_local_infile_end(void *ptr) {
-  default_local_infile_data *data = (default_local_infile_data *)ptr;
+  auto *data = (default_local_infile_data *)ptr;
   if (data) /* If not error on open */
   {
     if (data->fd >= 0) my_close(data->fd, MYF(MY_WME));
@@ -633,7 +638,7 @@ static void default_local_infile_end(void *ptr) {
 
 static int default_local_infile_error(void *ptr, char *error_msg,
                                       uint error_msg_len) {
-  default_local_infile_data *data = (default_local_infile_data *)ptr;
+  auto *data = (default_local_infile_data *)ptr;
   if (data) /* If not error on open */
   {
     strmake(error_msg, data->error_msg, error_msg_len);
@@ -766,9 +771,9 @@ int STDCALL mysql_kill(MYSQL *mysql, ulong pid) {
     There is an analog of this failsafe in the server as we might see old
     libmysql connection to a new server as well as the other way around.
   */
-  if (pid & (~0xfffffffful)) return CR_INVALID_CONN_HANDLE;
+  if (pid & (~0xffffffffUL)) return CR_INVALID_CONN_HANDLE;
   int4store(buff, pid);
-  std::string kill_stmt = "KILL " + std::to_string(pid);
+  std::string const kill_stmt = "KILL " + std::to_string(pid);
   return mysql_real_query(mysql, kill_stmt.c_str(), kill_stmt.length());
 }
 
@@ -814,9 +819,9 @@ int STDCALL mysql_refresh(MYSQL *mysql, uint options) {
   int error = 0;
   std::vector<std::string> commands;
 
-  if (options & REFRESH_GRANT) commands.push_back("PRIVILEGES");
-  if (options & REFRESH_LOG) commands.push_back("LOGS");
-  if (options & REFRESH_STATUS) commands.push_back("STATUS");
+  if (options & REFRESH_GRANT) commands.emplace_back("PRIVILEGES");
+  if (options & REFRESH_LOG) commands.emplace_back("LOGS");
+  if (options & REFRESH_STATUS) commands.emplace_back("STATUS");
 
   if (!commands.empty()) {
     std::string flush_command = "FLUSH ";
@@ -1395,12 +1400,28 @@ bool cli_read_prepare_result(MYSQL *mysql, MYSQL_STMT *stmt) {
 
 void mysql_stmt_extension_bind_free(MYSQL_STMT_EXT *ext) {
   DBUG_TRACE;
-  if (ext->bind_names_info.n_params) {
-    for (uint idx = 0; idx < ext->bind_names_info.n_params; idx++) {
-      my_free(ext->bind_names_info.names[idx]);
+  ext->bind_data.n_params = 0;
+  ext->bind_data.names = nullptr;
+  ext->bind_data.mem_root.Clear();
+
+  DBUG_EXECUTE_IF("test_stmt_ext_allocations", {
+    for (auto alloc : *(ext->bind_data.allocations)) {
+      my_free(alloc);
     }
+    ext->bind_data.allocations->clear();
+  });
+}
+
+static void *stmt_ext_allocate(MYSQL_STMT_EXT *ext, size_t bytes) {
+  void *result = nullptr;
+  DBUG_EXECUTE_IF("test_stmt_ext_allocations", {
+    result = my_malloc(key_memory_MYSQL, bytes, MYF(0));
+    ext->bind_data.allocations->insert(result);
+  });
+  if (result == nullptr) {
+    result = ext->bind_data.mem_root.Alloc(bytes);
   }
-  memset(&ext->bind_names_info, 0, sizeof(ext->bind_names_info));
+  return result;
 }
 
 /*
@@ -1467,6 +1488,11 @@ MYSQL_STMT *STDCALL mysql_stmt_init(MYSQL *mysql) {
 
   ::new ((void *)&stmt->extension->fields_mem_root)
       MEM_ROOT(PSI_NOT_INSTRUMENTED, 2048);
+  ::new ((void *)&stmt->extension->bind_data.mem_root)
+      MEM_ROOT(PSI_NOT_INSTRUMENTED, 2048);
+#ifndef NDEBUG
+  stmt->extension->bind_data.allocations = new std::set<void *>();
+#endif
 
   return stmt;
 }
@@ -1815,7 +1841,7 @@ static bool execute(MYSQL_STMT *stmt, char *packet, ulong length,
   DBUG_DUMP("packet", (uchar *)packet, length);
 
   int4store(buff, stmt->stmt_id); /* Send stmt id to server */
-  uchar flags = (uchar)stmt->flags;
+  auto flags = (uchar)stmt->flags;
 
   /*
     If the server supports query attributes raise the flag that we
@@ -1904,7 +1930,8 @@ static bool execute(MYSQL_STMT *stmt, char *packet, ulong length,
     */
     if (stmt->mysql) set_stmt_errmsg(stmt, net);
     return true;
-  } else if (mysql->status == MYSQL_STATUS_GET_RESULT)
+  }
+  if (mysql->status == MYSQL_STATUS_GET_RESULT)
     stmt->mysql->status = MYSQL_STATUS_STATEMENT_GET_RESULT;
   return false;
 }
@@ -1914,7 +1941,7 @@ int cli_stmt_execute(MYSQL_STMT *stmt) {
   MYSQL *mysql = stmt->mysql;
   const bool send_named_params =
       (mysql->server_capabilities & CLIENT_QUERY_ATTRIBUTES) != 0;
-  bool can_deal_with_flags =
+  bool const can_deal_with_flags =
       mysql->server_version && mysql_get_server_version(mysql) >= 80026;
   /*
     When the server can deal with flags properly we should send the 0 param
@@ -1948,8 +1975,8 @@ int cli_stmt_execute(MYSQL_STMT *stmt) {
     MYSQL_STMT_EXT *ext = stmt->extension;
 
     result = mysql_int_serialize_param_data(
-        &mysql->net, ext->bind_names_info.n_params, stmt->params,
-        const_cast<const char **>(ext->bind_names_info.names), 1, &param_data,
+        &mysql->net, ext->bind_data.n_params, stmt->params,
+        const_cast<const char **>(ext->bind_data.names), 1, &param_data,
         &param_length, 1, send_named_params, false, can_deal_with_flags);
     if (result != 0) {
       set_stmt_errmsg(stmt, &mysql->net);
@@ -2643,6 +2670,7 @@ bool STDCALL mysql_stmt_bind_named_param(MYSQL_STMT *stmt, MYSQL_BIND *binds,
   MYSQL_STMT_EXT *ext = stmt->extension;
 
   mysql_stmt_extension_bind_free(ext);
+  stmt->params = nullptr;
 
   if (!stmt->param_count) {
     if ((int)stmt->state < (int)MYSQL_STMT_PREPARE_DONE) {
@@ -2654,41 +2682,41 @@ bool STDCALL mysql_stmt_bind_named_param(MYSQL_STMT *stmt, MYSQL_BIND *binds,
   /* if any of the below is empty our work here is done */
   if (!n_params || !binds) return false;
 
-  /*
-    alloc_root will return valid address even in case when param_count
-    and field_count are zero. Thus we should never rely on stmt->bind
-    or stmt->params when checking for existence of placeholders or
-    result set.
-  */
-  int n_items = n_params;
-  // bind result parameters may have already been allocated separately
-  if (stmt->bind == nullptr) n_items += stmt->field_count;
-
-  if (!(stmt->params = (MYSQL_BIND *)stmt->mem_root->Alloc(sizeof(MYSQL_BIND) *
-                                                           n_items))) {
+  if (!(stmt->params = (MYSQL_BIND *)stmt_ext_allocate(
+            ext, sizeof(MYSQL_BIND) * n_params))) {
     set_stmt_error(stmt, CR_OUT_OF_MEMORY, unknown_sqlstate);
     return true;
   }
-  if (stmt->bind == nullptr) stmt->bind = stmt->params + n_params;
+
+  // bind result parameters may have already been allocated separately
+  if (stmt->bind == nullptr) {
+    if (!(stmt->bind = (MYSQL_BIND *)ext->fields_mem_root.Alloc(
+              sizeof(MYSQL_BIND) * stmt->field_count))) {
+      set_stmt_error(stmt, CR_OUT_OF_MEMORY, unknown_sqlstate);
+      return true;
+    }
+  }
 
   // copy binds array
   memcpy((char *)stmt->params, (char *)binds, sizeof(MYSQL_BIND) * n_params);
 
   // copy names array
-  ext->bind_names_info.n_params = n_params;
-  ext->bind_names_info.names =
-      (char **)stmt->mem_root->Alloc(sizeof(char *) * n_params);
+  ext->bind_data.n_params = n_params;
+  ext->bind_data.names =
+      (char **)stmt_ext_allocate(ext, sizeof(char *) * n_params);
 
   MYSQL_BIND *param = stmt->params;
   for (uint idx = 0; idx < n_params; idx++, param++) {
-    ext->bind_names_info.names[idx] =
-        (names && names[idx]) ? my_strdup(key_memory_MYSQL, names[idx], MYF(0))
-                              : nullptr;
+    if (names && names[idx]) {
+      const size_t len = strlen(names[idx]) + 1;
+      ext->bind_data.names[idx] = (char *)stmt_ext_allocate(ext, len);
+      memcpy(ext->bind_data.names[idx], names[idx], len);
+    } else {
+      ext->bind_data.names[idx] = nullptr;
+    }
     if (fix_param_bind(param, idx)) {
       set_stmt_error(stmt, CR_UNSUPPORTED_PARAM_TYPE, unknown_sqlstate);
-      for (uint idx2 = 0; idx2 <= idx; idx2++)
-        my_free(ext->bind_names_info.names[idx2]);
-      memset(&ext->bind_names_info, 0, sizeof(ext->bind_names_info));
+      mysql_stmt_extension_bind_free(ext);
       return true;
     }
   }
@@ -2902,7 +2930,7 @@ static void read_binary_date(MYSQL_TIME *tm, uchar **pos) {
 
 static void fetch_string_with_conversion(MYSQL_BIND *param, char *value,
                                          size_t length) {
-  uchar *buffer = pointer_cast<uchar *>(param->buffer);
+  auto *buffer = pointer_cast<uchar *>(param->buffer);
   const char *endptr = value + length;
 
   /*
@@ -2951,7 +2979,7 @@ static void fetch_string_with_conversion(MYSQL_BIND *param, char *value,
       int err;
       const double data =
           my_strntod(&my_charset_latin1, value, length, &endptr, &err);
-      const float fdata = (float)data;
+      const auto fdata = (float)data;
       *param->error = (fdata != data) | (err != 0);
       floatstore(buffer, fdata);
       break;
@@ -2966,7 +2994,7 @@ static void fetch_string_with_conversion(MYSQL_BIND *param, char *value,
     }
     case MYSQL_TYPE_TIME: {
       MYSQL_TIME_STATUS status;
-      MYSQL_TIME *tm = (MYSQL_TIME *)buffer;
+      auto *tm = (MYSQL_TIME *)buffer;
       str_to_time(value, length, tm, &status);
       *param->error = (status.warnings != 0);
       break;
@@ -2975,7 +3003,7 @@ static void fetch_string_with_conversion(MYSQL_BIND *param, char *value,
     case MYSQL_TYPE_DATETIME:
     case MYSQL_TYPE_TIMESTAMP: {
       MYSQL_TIME_STATUS status;
-      MYSQL_TIME *tm = (MYSQL_TIME *)buffer;
+      auto *tm = (MYSQL_TIME *)buffer;
       (void)str_to_datetime(value, length, tm, TIME_FUZZY_DATE, &status);
       *param->error =
           (status.warnings != 0) && (param->buffer_type == MYSQL_TYPE_DATE &&
@@ -3028,7 +3056,7 @@ static inline Float convert_with_inexact_check(Int i, bool *is_inexact) {
     workaround Intel FPU executive precision feature.
     (See http://gcc.gnu.org/bugzilla/show_bug.cgi?id=323 for details)
    */
-  volatile Float f = static_cast<Float>(i);
+  volatile auto f = static_cast<Float>(i);
 
   // If i is positive, it is possible for it to have been rounded outside
   // Int's range. If so, converting back to check is undefined behavior,
@@ -3064,7 +3092,7 @@ static inline Float convert_with_inexact_check(Int i, bool *is_inexact) {
 
 static void fetch_long_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
                                        longlong value, bool is_unsigned) {
-  uchar *buffer = pointer_cast<uchar *>(param->buffer);
+  auto *buffer = pointer_cast<uchar *>(param->buffer);
 
   switch (param->buffer_type) {
     case MYSQL_TYPE_NULL: /* do nothing */
@@ -3123,8 +3151,8 @@ static void fetch_long_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
     }
     default: {
       uchar buff[22]; /* Enough for longlong */
-      uchar *end = (uchar *)longlong10_to_str(value, (char *)buff,
-                                              is_unsigned ? 10 : -10);
+      auto *end = (uchar *)longlong10_to_str(value, (char *)buff,
+                                             is_unsigned ? 10 : -10);
       /* Resort to string conversion which supports all typecodes */
       uint length = (uint)(end - buff);
 
@@ -3155,7 +3183,7 @@ static void fetch_long_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
 
 static void fetch_float_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
                                         double value, my_gcvt_arg_type type) {
-  uchar *buffer = pointer_cast<uchar *>(param->buffer);
+  auto *buffer = pointer_cast<uchar *>(param->buffer);
   const double val64 = (value < 0 ? -floor(-value) : floor(value));
 
   switch (param->buffer_type) {
@@ -3186,10 +3214,10 @@ static void fetch_float_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
           *param->error = true;
           break;
         }
-        const ushort data = (ushort)value;
+        const auto data = (ushort)value;
         shortstore(buffer, data);
       } else {
-        const short data = (short)value;
+        const auto data = (short)value;
         shortstore(buffer, data);
       }
       *param->error =
@@ -3202,10 +3230,10 @@ static void fetch_float_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
           *param->error = true;
           break;
         }
-        const uint32 data = (uint32)value;
+        const auto data = (uint32)value;
         longstore(buffer, data);
       } else {
-        const int32 data = (int32)value;
+        const auto data = (int32)value;
         longstore(buffer, data);
       }
       *param->error =
@@ -3218,10 +3246,10 @@ static void fetch_float_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
           *param->error = true;
           break;
         }
-        const ulonglong data = (ulonglong)value;
+        const auto data = (ulonglong)value;
         longlongstore(buffer, data);
       } else {
-        const longlong data = (longlong)value;
+        const auto data = (longlong)value;
         longlongstore(buffer, data);
       }
       *param->error =
@@ -3229,7 +3257,7 @@ static void fetch_float_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
                                        : (double)(*(longlong *)buffer));
       break;
     case MYSQL_TYPE_FLOAT: {
-      const float data = (float)value;
+      const auto data = (float)value;
       floatstore(buffer, data);
       *param->error = (*(float *)buffer) != value;
       break;
@@ -3310,7 +3338,7 @@ static void fetch_datetime_with_conversion(MYSQL_BIND *param,
     case MYSQL_TYPE_INT24:
     case MYSQL_TYPE_LONG:
     case MYSQL_TYPE_LONGLONG: {
-      const longlong value = (longlong)TIME_to_ulonglong(*my_time);
+      const auto value = (longlong)TIME_to_ulonglong(*my_time);
       fetch_long_with_conversion(param, field, value, true);
       break;
     }
@@ -3379,7 +3407,7 @@ static void fetch_result_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
       break;
     }
     case MYSQL_TYPE_LONGLONG: {
-      const longlong value = (longlong)sint8korr(*row);
+      const auto value = (longlong)sint8korr(*row);
       fetch_long_with_conversion(param, field, value,
                                  field->flags & UNSIGNED_FLAG);
       *row += 8;
@@ -3459,7 +3487,7 @@ static void fetch_result_tinyint(MYSQL_BIND *param, MYSQL_FIELD *field,
 static void fetch_result_short(MYSQL_BIND *param, MYSQL_FIELD *field,
                                uchar **row) {
   const bool field_is_unsigned = (field->flags & UNSIGNED_FLAG);
-  ushort data = (ushort)sint2korr(*row);
+  auto data = (ushort)sint2korr(*row);
   shortstore(pointer_cast<uchar *>(param->buffer), data);
   *param->error = param->is_unsigned != field_is_unsigned && data > INT_MAX16;
   *row += 2;
@@ -3469,7 +3497,7 @@ static void fetch_result_int32(MYSQL_BIND *param,
                                MYSQL_FIELD *field [[maybe_unused]],
                                uchar **row) {
   const bool field_is_unsigned = (field->flags & UNSIGNED_FLAG);
-  uint32 data = (uint32)sint4korr(*row);
+  auto data = (uint32)sint4korr(*row);
   longstore(pointer_cast<uchar *>(param->buffer), data);
   *param->error = param->is_unsigned != field_is_unsigned && data > INT_MAX32;
   *row += 4;
@@ -3479,7 +3507,7 @@ static void fetch_result_int64(MYSQL_BIND *param,
                                MYSQL_FIELD *field [[maybe_unused]],
                                uchar **row) {
   const bool field_is_unsigned = (field->flags & UNSIGNED_FLAG);
-  ulonglong data = (ulonglong)sint8korr(*row);
+  auto data = (ulonglong)sint8korr(*row);
   *param->error = param->is_unsigned != field_is_unsigned && data > LLONG_MAX;
   longlongstore(pointer_cast<uchar *>(param->buffer), data);
   *row += 8;
@@ -3488,7 +3516,7 @@ static void fetch_result_int64(MYSQL_BIND *param,
 static void fetch_result_float(MYSQL_BIND *param,
                                MYSQL_FIELD *field [[maybe_unused]],
                                uchar **row) {
-  float value = float4get(*row);
+  float const value = float4get(*row);
   floatstore(pointer_cast<uchar *>(param->buffer), value);
   *row += 4;
 }
@@ -3496,7 +3524,7 @@ static void fetch_result_float(MYSQL_BIND *param,
 static void fetch_result_double(MYSQL_BIND *param,
                                 MYSQL_FIELD *field [[maybe_unused]],
                                 uchar **row) {
-  double value = float8get(*row);
+  double const value = float8get(*row);
   doublestore(pointer_cast<uchar *>(param->buffer), value);
   *row += 8;
 }
@@ -3504,28 +3532,28 @@ static void fetch_result_double(MYSQL_BIND *param,
 static void fetch_result_time(MYSQL_BIND *param,
                               MYSQL_FIELD *field [[maybe_unused]],
                               uchar **row) {
-  MYSQL_TIME *tm = (MYSQL_TIME *)param->buffer;
+  auto *tm = (MYSQL_TIME *)param->buffer;
   read_binary_time(tm, row);
 }
 
 static void fetch_result_date(MYSQL_BIND *param,
                               MYSQL_FIELD *field [[maybe_unused]],
                               uchar **row) {
-  MYSQL_TIME *tm = (MYSQL_TIME *)param->buffer;
+  auto *tm = (MYSQL_TIME *)param->buffer;
   read_binary_date(tm, row);
 }
 
 static void fetch_result_datetime(MYSQL_BIND *param,
                                   MYSQL_FIELD *field [[maybe_unused]],
                                   uchar **row) {
-  MYSQL_TIME *tm = (MYSQL_TIME *)param->buffer;
+  auto *tm = (MYSQL_TIME *)param->buffer;
   read_binary_datetime(tm, row);
 }
 
 static void fetch_result_bin(MYSQL_BIND *param,
                              MYSQL_FIELD *field [[maybe_unused]], uchar **row) {
   const ulong length = net_field_length(row);
-  ulong copy_length = std::min(length, param->buffer_length);
+  ulong const copy_length = std::min(length, param->buffer_length);
   memcpy(param->buffer, (char *)*row, copy_length);
   *param->length = length;
   *param->error = copy_length < length;
@@ -3535,7 +3563,7 @@ static void fetch_result_bin(MYSQL_BIND *param,
 static void fetch_result_str(MYSQL_BIND *param,
                              MYSQL_FIELD *field [[maybe_unused]], uchar **row) {
   const ulong length = net_field_length(row);
-  ulong copy_length = std::min(length, param->buffer_length);
+  ulong const copy_length = std::min(length, param->buffer_length);
   memcpy(param->buffer, (char *)*row, copy_length);
   /* Add an end null if there is room in the buffer */
   if (copy_length != param->buffer_length)
@@ -4126,7 +4154,7 @@ static void stmt_update_metadata(MYSQL_STMT *stmt, MYSQL_ROWS *data) {
   MYSQL_BIND *my_bind, *end;
   MYSQL_FIELD *field;
   uchar *null_ptr, bit;
-  uchar *row = (uchar *)data->data;
+  auto *row = (uchar *)data->data;
 #ifndef NDEBUG
   uchar *row_end = row + data->length;
 #endif
@@ -4443,6 +4471,10 @@ bool STDCALL mysql_stmt_close(MYSQL_STMT *stmt) {
     }
   }
 
+#ifndef NDEBUG
+  delete stmt->extension->bind_data.allocations;
+#endif
+
   my_free(stmt->result.alloc);
   my_free(stmt->mem_root);
   my_free(stmt->extension);
@@ -4522,9 +4554,8 @@ net_async_status STDCALL mysql_next_result_nonblocking(MYSQL *mysql) {
   if (mysql->server_status & SERVER_MORE_RESULTS_EXISTS) {
     status = (*mysql->methods->next_result_nonblocking)(mysql);
     return status;
-  } else {
-    MYSQL_TRACE_STAGE(mysql, READY_FOR_COMMAND);
   }
+  MYSQL_TRACE_STAGE(mysql, READY_FOR_COMMAND);
 
   return NET_ASYNC_COMPLETE_NO_MORE_RESULTS; /* No more results */
 }

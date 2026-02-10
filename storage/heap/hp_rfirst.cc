@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,15 +60,14 @@ int heap_rfirst(HP_INFO *info, uchar *record, int inx) {
       return my_errno();
     }
     return 0;
-  } else {
-    if (!(info->s->records)) {
-      set_my_errno(HA_ERR_END_OF_FILE);
-      return my_errno();
-    }
-    assert(0); /* TODO fix it */
-    info->current_record = 0;
-    info->current_hash_ptr = nullptr;
-    info->update = HA_STATE_PREV_FOUND;
-    return heap_rnext(info, record);
   }
+  if (!(info->s->records)) {
+    set_my_errno(HA_ERR_END_OF_FILE);
+    return my_errno();
+  }
+  assert(0); /* TODO fix it */
+  info->current_record = 0;
+  info->current_hash_ptr = nullptr;
+  info->update = HA_STATE_PREV_FOUND;
+  return heap_rnext(info, record);
 }

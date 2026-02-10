@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -22,13 +22,11 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
-#include <stdio.h>
+#include <cstdio>
 
 #include "plugin/x/client/mysqlxclient/xdatetime.h"
 
-namespace xpl {
-
-namespace test {
+namespace xpl::test {
 
 TEST(xdatetime, date) {
   EXPECT_TRUE(xcl::DateTime(2015, 12, 5));
@@ -87,6 +85,4 @@ TEST(xdatetime, useconds_representation) {
             xcl::DateTime(0000, 00, 00, 00, 00, 00, 999999).time().to_string());
 }
 
-}  // namespace test
-
-}  // namespace xpl
+}  // namespace xpl::test

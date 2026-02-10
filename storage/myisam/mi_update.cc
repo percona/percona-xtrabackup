@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,9 @@
 
 /* Update an old row in a MyISAM table */
 
-#include <errno.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <cerrno>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -107,11 +107,11 @@ int mi_update(MI_INFO *info, const uchar *oldrec, uchar *newrec) {
           if (_mi_ft_update(info, i, old_key, oldrec, newrec, pos)) goto err;
         }
       } else {
-        uint new_length = _mi_make_key(info, i, new_key, newrec, pos);
-        uint old_length = _mi_make_key(info, i, old_key, oldrec, pos);
+        uint const new_length = _mi_make_key(info, i, new_key, newrec, pos);
+        uint const old_length = _mi_make_key(info, i, old_key, oldrec, pos);
 
         if (new_length != old_length ||
-            memcmp((uchar *)old_key, (uchar *)new_key, new_length)) {
+            memcmp((uchar *)old_key, (uchar *)new_key, new_length) != 0) {
           if ((int)i == info->lastinx)
             key_changed |= HA_STATE_WRITTEN; /* Mark that keyfile changed */
           changed |= ((ulonglong)1 << i);
@@ -150,7 +150,7 @@ int mi_update(MI_INFO *info, const uchar *oldrec, uchar *newrec) {
     org_delete_link = share->state.dellink;
     if ((*share->update_record)(info, pos, newrec)) goto err;
     if (!key_changed &&
-        (memcmp((char *)&state, (char *)info->state, sizeof(state)) ||
+        (memcmp((char *)&state, (char *)info->state, sizeof(state)) != 0 ||
          org_split != share->state.split ||
          org_delete_link != share->state.dellink))
       key_changed |= HA_STATE_CHANGED; /* Must update index file */
@@ -193,8 +193,8 @@ err:
               _mi_ft_add(info, i, old_key, oldrec, pos))
             break;
         } else {
-          uint new_length = _mi_make_key(info, i, new_key, newrec, pos);
-          uint old_length = _mi_make_key(info, i, old_key, oldrec, pos);
+          uint const new_length = _mi_make_key(info, i, new_key, newrec, pos);
+          uint const old_length = _mi_make_key(info, i, old_key, oldrec, pos);
           if ((flag++ &&
                share->keyinfo[i].ck_delete(info, i, new_key, new_length)) ||
               share->keyinfo[i].ck_insert(info, i, old_key, old_length))

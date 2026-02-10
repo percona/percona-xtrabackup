@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,10 +28,10 @@
 #include <mysql/components/services/udf_metadata.h>
 #include <mysql/components/services/udf_registration.h>
 
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
 #include <algorithm>
+#include <cassert>
+#include <cstdio>
+#include <cstring>
 #include <thread>
 
 REQUIRES_SERVICE_PLACEHOLDER_AS(mysql_current_thread_reader, current_thd_srv);
@@ -197,7 +197,7 @@ const char *common_fetch_order(char *out, int order_num) {
   };
 
   static const char *pk_order_name = "PRIMARY";
-  static size_t pk_order_name_length = 7;
+  static size_t const pk_order_name_length = 7;
   static const TA_index_field_def pk_order_cols[] = {{"ORDER_ID", 8, false}};
   static const size_t pk_order_numcol = 1;
 
@@ -214,7 +214,7 @@ const char *common_fetch_order(char *out, int order_num) {
       {ORDER_LINE_QTY, "QTY", 3, TA_TYPE_INTEGER, false, 0}};
 
   static const char *pk_order_line_name = "PRIMARY";
-  static size_t pk_order_line_name_length = 7;
+  static size_t const pk_order_line_name_length = 7;
   static const TA_index_field_def pk_order_line_cols[] = {
       {"ORDER_ID", 8, false},
       {"LINE_NUM", 8, false},
@@ -414,7 +414,7 @@ const char *common_index(char *out, bool scan, int min_capacity,
   static const size_t num_columns_warehouse = 5;
 
   static const char *key_shelves_name = "SHELVES";
-  static size_t key_shelves_name_length = 7;
+  static size_t const key_shelves_name_length = 7;
   static const TA_index_field_def key_shelves_cols[] = {
       {"BUILDING_ID", 11, true},
       {"FLOOR_NUMBER", 12, true},
@@ -782,11 +782,7 @@ static bool udf_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
   const char *attr_name = "charset";
   const char *attr_value = "utf8mb4";
   char *attr_value_2 = const_cast<char *>(attr_value);
-  if (udf_metadata_srv->result_set(initid, attr_name, attr_value_2)) {
-    return true;
-  }
-
-  return false;
+  return udf_metadata_srv->result_set(initid, attr_name, attr_value_2) != 0;
 }
 
 static void udf_deinit(UDF_INIT *) {}
@@ -796,7 +792,7 @@ static char *test_table_access_driver(UDF_INIT *, UDF_ARGS *args, char *result,
                                       unsigned char *is_null,
                                       unsigned char *error) {
   const char *p1 = args->args[0];
-  size_t len_p1 = args->lengths[0];
+  size_t const len_p1 = args->lengths[0];
 
   test_driver_t *entry;
   char output_message[255];

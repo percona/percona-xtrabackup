@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -42,6 +42,15 @@ constexpr auto MYSQL_SUCCESS = 0;
 constexpr auto MYSQL_FAILURE = 1;
 
 /**
+  Helper function to get the count of the imported libraries.
+*/
+[[nodiscard]] auto get_libraries_count(
+    const mem_root_deque<sp_name_with_alias> *libraries) -> uint32_t {
+  if (!libraries || libraries->empty()) return 0;  // No libraries imported.
+  return libraries->size();
+}
+
+/**
   Implementation of the mysql_stored_program services
 */
 /**
@@ -56,6 +65,7 @@ constexpr auto MYSQL_FAILURE = 1;
   "sp_body"        -> mysql_cstring_with_length *
   "sp_type"        -> uint16_t
   "argument_count" -> uint32_t
+  "import_count"   -> uint32_t
   @note Have the key at least 7 characters long, with unique first 8 characters.
 
   @param [in]  sp_handle Handle to stored procedure structure
@@ -97,6 +107,9 @@ DEFINE_BOOL_METHOD(mysql_stored_program_metadata_query_imp::get,
   else if (strcmp("argument_count", key) == 0)
     *reinterpret_cast<uint32_t *>(value) =
         sp->get_root_parsing_context()->context_var_count();
+  else if (strcmp("import_count", key) == 0)
+    *reinterpret_cast<uint32_t *>(value) =
+        get_libraries_count(sp->m_chistics->get_imported_libraries());
   else
     return MYSQL_FAILURE;
   return MYSQL_SUCCESS;
@@ -428,13 +441,13 @@ DEFINE_BOOL_METHOD(mysql_stored_program_runtime_argument_time_imp::get,
   if (item == nullptr) return MYSQL_FAILURE;
   *is_null = item->is_null();
   if (*is_null) return MYSQL_SUCCESS;
-  auto date = MYSQL_TIME{};
-  item->get_time(&date);
-  *hour = date.hour;
-  *minute = date.minute;
-  *second = date.second;
-  *micro = date.second_part;
-  *negative = date.neg;
+  auto time = Time_val{};
+  item->val_time(&time);
+  *hour = time.hour();
+  *minute = time.minute();
+  *second = time.second();
+  *micro = time.microsecond();
+  *negative = time.is_negative();
   return MYSQL_SUCCESS;
 }
 
@@ -469,20 +482,20 @@ static int runtime_argument_datetime_get(
     int32_t *time_zone_offset, bool *is_null) {
   auto item = get_item(sp_runtime_context, index);
   if (item == nullptr) return MYSQL_FAILURE;
+  auto dt = Datetime_val{};
+  item->val_datetime(&dt, TIME_FUZZY_DATE);
   *is_null = item->is_null();
   if (*is_null) return MYSQL_SUCCESS;
-  auto date = MYSQL_TIME{};
-  item->get_time(&date);
-  *year = date.year;
-  *month = date.month;
-  *day = date.day;
-  *hour = date.hour;
-  *minute = date.minute;
-  *second = date.second;
-  *micro = date.second_part;
-  *negative = date.neg;
-  *time_zone_offset = date.time_zone_displacement;
-  assert(date.time_type == enum_mysql_timestamp_type::MYSQL_TIMESTAMP_DATETIME);
+  *year = dt.year;
+  *month = dt.month;
+  *day = dt.day;
+  *hour = dt.hour;
+  *minute = dt.minute;
+  *second = dt.second;
+  *micro = dt.second_part;
+  *negative = dt.neg;
+  *time_zone_offset = dt.time_zone_displacement;
+  assert(dt.time_type == enum_mysql_timestamp_type::MYSQL_TIMESTAMP_DATETIME);
   return MYSQL_SUCCESS;
 }
 
@@ -591,18 +604,13 @@ DEFINE_BOOL_METHOD(mysql_stored_program_runtime_argument_time_imp::set,
                     uint16_t index, uint32_t hour, uint32_t minute,
                     uint32_t second, uint64_t micro, bool negative,
                     uint8_t decimals)) {
-  auto time = MYSQL_TIME{static_cast<unsigned int>(0),
-                         static_cast<unsigned int>(0),
-                         static_cast<unsigned int>(0),
-                         static_cast<unsigned int>(hour),
-                         static_cast<unsigned int>(minute),
-                         static_cast<unsigned int>(second),
-                         static_cast<unsigned long>(micro),
-                         negative,
-                         MYSQL_TIMESTAMP_TIME,
-                         {}};
-  if (check_datetime_range(time)) return MYSQL_FAILURE;
+  Time_val time;
+  if (Time_val::make_time(negative, hour, minute, second,
+                          static_cast<uint32_t>(micro), &time)) {
+    return MYSQL_FAILURE;
+  }
   auto item = new Item_time_literal(&time, decimals);
+  if (item == nullptr) return MYSQL_FAILURE;
   return set_variable(sp_runtime_context, item, index);
 }
 
@@ -629,8 +637,8 @@ DEFINE_BOOL_METHOD(mysql_stored_program_runtime_argument_date_imp::get,
   if (item == nullptr) return MYSQL_FAILURE;
   *is_null = item->is_null();
   if (*is_null) return MYSQL_SUCCESS;
-  auto date = MYSQL_TIME{};
-  item->get_date(&date, TIME_FUZZY_DATE);
+  auto date = Date_val{};
+  item->val_date(&date, TIME_FUZZY_DATE);
   *year = date.year;
   *month = date.month;
   *day = date.day;
@@ -709,8 +717,10 @@ static int runtime_argument_datetime_set(
                          ts_type,
                          static_cast<int>(time_zone_offset)};
   if (check_datetime_range(time)) return MYSQL_FAILURE;
+  Datetime_val dt;
+  *implicit_cast<MYSQL_TIME *>(&dt) = time;
   auto item =
-      new Item_datetime_literal(&time, decimals, current_thd->time_zone());
+      new Item_datetime_literal(&dt, decimals, current_thd->time_zone());
   return set_variable(sp_runtime_context, item, index);
 }
 
@@ -1052,18 +1062,10 @@ DEFINE_BOOL_METHOD(mysql_stored_program_return_value_time_imp::set,
                    (stored_program_runtime_context sp_runtime_context,
                     uint32_t hour, uint32_t minute, uint32_t second,
                     uint64_t micro, bool negative, uint8_t decimals)) {
-  auto time = MYSQL_TIME{static_cast<unsigned int>(0),
-                         static_cast<unsigned int>(0),
-                         static_cast<unsigned int>(0),
-                         static_cast<unsigned int>(hour),
-                         static_cast<unsigned int>(minute),
-                         static_cast<unsigned int>(second),
-                         static_cast<unsigned long>(micro),
-                         negative,
-                         MYSQL_TIMESTAMP_TIME,
-                         {}};
-  if (check_datetime_range(time)) return MYSQL_FAILURE;
+  auto time =
+      Time_val(negative, hour, minute, second, static_cast<uint32_t>(micro));
   auto item = new Item_time_literal(&time, decimals);
+  if (item == nullptr) return MYSQL_FAILURE;
   return set_return_value(sp_runtime_context, item);
 }
 
@@ -1136,8 +1138,10 @@ static int return_value_datetime_set(
                          ts_type,
                          time_zone_offset};
   if (check_datetime_range(time)) return MYSQL_FAILURE;
+  Datetime_val dt;
+  *implicit_cast<MYSQL_TIME *>(&dt) = time;
   auto *item =
-      new Item_datetime_literal(&time, decimals, current_thd->time_zone());
+      new Item_datetime_literal(&dt, decimals, current_thd->time_zone());
   return set_return_value(sp_runtime_context, item);
 }
 
@@ -1350,4 +1354,42 @@ DEFINE_BOOL_METHOD(mysql_stored_program_external_program_handle_imp::set,
   auto sp = reinterpret_cast<sp_head *>(sp_handle);
   if (!is_sp_in_current_thd(sp)) return MYSQL_FAILURE;
   return sp->set_external_program_handle(value);
+}
+
+DEFINE_BOOL_METHOD(mysql_stored_program_import_metadata_query_imp::get,
+                   (stored_program_handle sp_handle, uint32_t index,
+                    mysql_cstring_with_length *schema_name,
+                    mysql_cstring_with_length *library_name,
+                    mysql_cstring_with_length *version,
+                    mysql_cstring_with_length *alias,
+                    [[maybe_unused]] void *extension)) {
+  auto sp = reinterpret_cast<sp_head *>(sp_handle);
+
+  if (!sp_handle || !schema_name || !library_name || !version || !alias)
+    return MYSQL_FAILURE;
+
+  try {
+    auto imported_libraries = sp->m_chistics->get_imported_libraries();
+    if (!imported_libraries) return MYSQL_FAILURE;
+
+    if (index >= imported_libraries->size()) return MYSQL_FAILURE;
+    auto &library = (*imported_libraries)[index];
+
+    if (library.m_db.str) {
+      schema_name->str = library.m_db.str;
+      schema_name->length = library.m_db.length;
+    } else {
+      // Use the routine's schema name as the library's schema.
+      schema_name->str = sp->m_db.str;
+      schema_name->length = sp->m_db.length;
+    }
+    library_name->str = library.m_name.str;
+    library_name->length = library.m_name.length;
+    alias->str = library.m_alias.str;
+    alias->length = library.m_alias.length;
+  } catch (...) {
+    return MYSQL_FAILURE;
+  }
+
+  return MYSQL_SUCCESS;
 }

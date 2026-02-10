@@ -34,6 +34,14 @@
 #  Clean all configuration changes after running the test.
 --source include/force_restart.inc
 
+--source include/rpl/connection_replica.inc
+--source include/rpl/stop_replica.inc
+# Allow commits out of order on the replica with respect to the order
+# observed on the source to reproduce the test scenario.
+--let $save_replica_preserve_commit_order=`SELECT @@global.replica_preserve_commit_order`
+SET GLOBAL replica_preserve_commit_order = FALSE;
+--source include/rpl/start_replica.inc
+--source include/rpl/connection_source.inc
 
 --echo ########################################################################
 --echo #                               SET UP
@@ -171,9 +179,15 @@ let $MYSQLD_DATADIR= `SELECT @@datadir`;
 # zeroing.
 # TODO: run the combination described on Bug#15858271 after it's fixed.
 
---let $saved_workers= 0
 --let $commands= clean
 --source common/rpl/mta_crash_safe.inc
+
+--source include/rpl/connection_replica.inc
+--source include/rpl/stop_replica.inc
+--replace_result $save_replica_preserve_commit_order SAVE_REPLICA_PRESERVE_COMMIT_ORDER
+--eval SET GLOBAL replica_preserve_commit_order = $save_replica_preserve_commit_order
+--source include/rpl/start_replica.inc
+--source include/rpl/connection_source.inc
 
 --connection master
 --source include/rpl/deinit.inc

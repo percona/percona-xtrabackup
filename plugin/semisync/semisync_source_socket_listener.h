@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,33 +44,33 @@ class Poll_socket_listener {
     m_fds[index].events = 0;
   }
 
-  bool init_replica_sockets(Slave_vector &slaves) {
-    m_slaves.clear();
+  bool init_replica_sockets(Replica_vector &replicas) {
+    m_replicas.clear();
     m_fds.clear();
-    for (uint i = 0; i < slaves.size(); i++) {
+    for (uint i = 0; i < replicas.size(); i++) {
       /*
-        Do not consider the slave's socket
-        if the slave is in the process of leaving.
+        Do not consider the replica's socket
+        if the replica is in the process of leaving.
       */
-      if (slaves[i].m_status != Slave::EnumStatus::up) {
-        slaves[i].m_status = Slave::EnumStatus::down;
+      if (replicas[i].m_status != Replica::EnumStatus::up) {
+        replicas[i].m_status = Replica::EnumStatus::down;
         continue;
       }
       pollfd poll_fd;
-      poll_fd.fd = slaves[i].sock_fd();
+      poll_fd.fd = replicas[i].sock_fd();
       poll_fd.events = POLLIN;
       poll_fd.revents = 0;
       m_fds.push_back(poll_fd);
-      m_slaves.push_back(slaves[i]);
+      m_replicas.push_back(replicas[i]);
     }
     return true;
   }
-  uint number_of_slave_sockets() { return m_slaves.size(); }
+  uint number_of_replica_sockets() { return m_replicas.size(); }
 
-  Slave get_slave_obj(int index) { return m_slaves[index]; }
+  Replica get_replica_obj(int index) { return m_replicas[index]; }
 
  private:
-  Slave_vector m_slaves;
+  Replica_vector m_replicas;
   std::vector<pollfd> m_fds;
 };
 
@@ -91,26 +91,26 @@ class Select_socket_listener {
   }
 
   bool is_socket_active(int index) {
-    return FD_ISSET(m_slaves[index].sock_fd(), &m_fds);
+    return FD_ISSET(m_replicas[index].sock_fd(), &m_fds);
   }
 
   void clear_socket_info(int index) {
-    FD_CLR(m_slaves[index].sock_fd(), &m_init_fds);
+    FD_CLR(m_replicas[index].sock_fd(), &m_init_fds);
   }
 
-  bool init_replica_sockets(Slave_vector &slaves) {
-    m_slaves.clear();
+  bool init_replica_sockets(Replica_vector &replicas) {
+    m_replicas.clear();
     FD_ZERO(&m_init_fds);
-    for (uint i = 0; i < slaves.size(); i++) {
+    for (uint i = 0; i < replicas.size(); i++) {
       /*
-        Do not consider the slave's socket
-        if the slave is in the process of leaving.
+        Do not consider the replica's socket
+        if the replica is in the process of leaving.
       */
-      if (slaves[i].m_status != Slave::EnumStatus::up) {
-        slaves[i].m_status = Slave::EnumStatus::down;
+      if (replicas[i].m_status != Replica::EnumStatus::up) {
+        replicas[i].m_status = Replica::EnumStatus::down;
         continue;
       }
-      my_socket socket_id = slaves[i].sock_fd();
+      my_socket socket_id = replicas[i].sock_fd();
       m_max_fd = (socket_id > m_max_fd ? socket_id : m_max_fd);
 #ifndef _WIN32
       if (socket_id > FD_SETSIZE) {
@@ -120,16 +120,16 @@ class Select_socket_listener {
       }
 #endif  // _WIN32
       FD_SET(socket_id, &m_init_fds);
-      m_slaves.push_back(slaves[i]);
+      m_replicas.push_back(replicas[i]);
     }
     return true;
   }
-  uint number_of_slave_sockets() { return m_slaves.size(); }
+  uint number_of_replica_sockets() { return m_replicas.size(); }
 
-  Slave get_slave_obj(int index) { return m_slaves[index]; }
+  Replica get_replica_obj(int index) { return m_replicas[index]; }
 
  private:
-  Slave_vector m_slaves;
+  Replica_vector m_replicas;
   my_socket m_max_fd;
   fd_set m_init_fds;
   fd_set m_fds;

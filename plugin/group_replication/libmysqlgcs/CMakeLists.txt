@@ -1,4 +1,4 @@
-# Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -138,7 +138,6 @@ SET(GCS_SOURCES
   src/bindings/xcom/gcs_xcom_statistics_interface.cc
   src/bindings/xcom/gcs_xcom_proxy.cc
   src/bindings/xcom/gcs_xcom_communication_protocol_changer.cc
-  ${BUNDLED_LZ4_PATH}/xxhash.c # required by gcs_message_stage_split
   src/bindings/xcom/gcs_message_stage_split.cc
   src/bindings/xcom/gcs_xcom_synode.cc
   src/bindings/xcom/gcs_xcom_expels_in_progress.cc
@@ -218,11 +217,6 @@ MY_ADD_COMPILE_DEFINITIONS(
   ${GCS_SOURCES}
   COMPILE_DEFINITIONS MYSQL_DYNAMIC_PLUGIN)
 
-INCLUDE_DIRECTORIES(${BUNDLED_LZ4_PATH})
-
-MY_ADD_COMPILE_DEFINITIONS(${BUNDLED_LZ4_PATH}/xxhash.c
-  COMPILE_DEFINITIONS "XXH_NAMESPACE=GCS_")
-
 # Warn about variable shadowing
 IF(MYSQL_MAINTAINER_MODE)
   IF(MY_COMPILER_IS_CLANG)
@@ -233,9 +227,20 @@ IF(MYSQL_MAINTAINER_MODE)
 ENDIF()
 
 ADD_LIBRARY(mysqlgcs STATIC ${XCOM_SOURCES} ${GCS_SOURCES})
+TARGET_LINK_LIBRARIES(mysqlgcs PRIVATE ext::xxhash ext::lz4)
 # Dependency on mysys from gcs_logging_system.cc
 # but pick up symbols from the server:
 # TARGET_LINK_LIBRARIES(mysqlgcs mysys)
+
+# Lots of C-style casting in the interface to XDR functions.
+#   xcom_xdr_free((xdrproc_t)proc ...)
+#   xdr_free((xdrproc_t)xdr_app_data_ptr
+# Add -Wno-cast-function-type-mismatch as a PUBLIC property,
+# since we have header files calling xdr_free().
+MY_CHECK_CXX_COMPILER_WARNING("-Wcast-function-type-mismatch" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  TARGET_COMPILE_OPTIONS(mysqlgcs PUBLIC ${HAS_WARN_FLAG})
+ENDIF()
 
 IF(CMAKE_VERSION VERSION_GREATER "3.19" AND NOT APPLE_XCODE)
   # New in version 3.19:
@@ -258,7 +263,7 @@ IF(TARGET ext::rpc)
 ENDIF()
 
 IF(MSVC)
-  TARGET_LINK_LIBRARIES(mysqlgcs iphlpapi)
+  TARGET_LINK_LIBRARIES(mysqlgcs PRIVATE iphlpapi)
 ENDIF()
 
 # convenience target

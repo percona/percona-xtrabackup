@@ -1,0 +1,65 @@
+CREATE TABLE `t` (
+`id` INT UNSIGNED NOT NULL PRIMARY KEY,
+`filler` VARCHAR(3000) CHARACTER SET ascii,
+`lob` BLOB
+) ENGINE= InnoDB;
+CREATE PROCEDURE `populate`()
+BEGIN
+DECLARE `i` INT DEFAULT 1;
+WHILE `i` <= 10 DO
+INSERT INTO `t` (`id`, `filler`) VALUES (`i`, REPEAT('a', 3000));
+SET `i` = `i` + 1;
+END WHILE;
+END$$
+CALL populate();
+BEGIN;
+SELECT id FROM `t` FOR SHARE;
+id
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT
+SUBSTRING_INDEX(SUBSTRING_INDEX(ENGINE_LOCK_ID, ':', 4), ':', -1) as page_no,
+MAX(LOCK_DATA) as max_id FROM performance_schema.data_locks
+WHERE LOCK_TYPE='RECORD'
+  AND OBJECT_NAME='t'
+  AND LOCK_DATA <> 'supremum pseudo-record'
+  GROUP BY page_no ORDER BY page_no
+LIMIT 1
+INTO @_, @id_str;
+ROLLBACK;
+SET @my_id = CAST(@id_str AS UNSIGNED INTEGER);
+CREATE TABLE `op_id` (
+`id` INT UNSIGNED NOT NULL PRIMARY KEY
+);
+INSERT INTO `op_id` VALUES (@my_id);
+SET GLOBAL innodb_purge_stop_now = ON;
+SET GLOBAL innodb_purge_run_now = ON;
+DELETE FROM `t` WHERE `id` = @my_id;
+SET DEBUG_SYNC="after_mvcc_assign_read_view SIGNAL have_read_view WAIT_FOR continue_select";
+SELECT `id`, length(`lob`) FROM `t` FORCE INDEX(primary) WHERE `id` <=10 and `id` >=1;
+SELECT `id` FROM `op_id` INTO @my_id;
+SET DEBUG_SYNC="now WAIT_FOR have_read_view";
+SET DEBUG_SYNC="blob_write_middle SIGNAL continue_select WAIT_FOR resume_blob";
+INSERT INTO `t` (`id`, `lob`) VALUES (@my_id, REPEAT('x', 17000));
+id	length(`lob`)
+1	NULL
+3	NULL
+4	NULL
+5	NULL
+6	NULL
+7	NULL
+8	NULL
+9	NULL
+10	NULL
+SET DEBUG_SYNC="now SIGNAL resume_blob";
+DROP PROCEDURE `populate`;
+DROP TABLE `t`;
+DROP TABLE `op_id`;

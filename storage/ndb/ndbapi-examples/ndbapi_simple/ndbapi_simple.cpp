@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,10 +44,10 @@
 
 #include <mysql.h>
 #include <mysqld_error.h>
-#include <stdlib.h>
 #include <NdbApi.hpp>
+#include <cstdlib>
 // Used for cout
-#include <stdio.h>
+#include <cstdio>
 #include <iostream>
 
 static void run_application(MYSQL &, Ndb_cluster_connection &);
@@ -172,21 +172,21 @@ static void do_insert(Ndb &myNdb) {
   const NdbDictionary::Dictionary *myDict = myNdb.getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_simple");
 
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   for (int i = 0; i < 5; i++) {
     NdbTransaction *myTransaction = myNdb.startTransaction();
-    if (myTransaction == NULL) APIERROR(myNdb.getNdbError());
+    if (myTransaction == nullptr) APIERROR(myNdb.getNdbError());
 
     NdbOperation *myOperation = myTransaction->getNdbOperation(myTable);
-    if (myOperation == NULL) APIERROR(myTransaction->getNdbError());
+    if (myOperation == nullptr) APIERROR(myTransaction->getNdbError());
 
     myOperation->insertTuple();
     myOperation->equal("ATTR1", i);
     myOperation->setValue("ATTR2", i);
 
     myOperation = myTransaction->getNdbOperation(myTable);
-    if (myOperation == NULL) APIERROR(myTransaction->getNdbError());
+    if (myOperation == nullptr) APIERROR(myTransaction->getNdbError());
 
     myOperation->insertTuple();
     myOperation->equal("ATTR1", i + 5);
@@ -206,14 +206,14 @@ static void do_update(Ndb &myNdb) {
   const NdbDictionary::Dictionary *myDict = myNdb.getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_simple");
 
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   for (int i = 0; i < 10; i += 2) {
     NdbTransaction *myTransaction = myNdb.startTransaction();
-    if (myTransaction == NULL) APIERROR(myNdb.getNdbError());
+    if (myTransaction == nullptr) APIERROR(myNdb.getNdbError());
 
     NdbOperation *myOperation = myTransaction->getNdbOperation(myTable);
-    if (myOperation == NULL) APIERROR(myTransaction->getNdbError());
+    if (myOperation == nullptr) APIERROR(myTransaction->getNdbError());
 
     myOperation->updateTuple();
     myOperation->equal("ATTR1", i);
@@ -233,13 +233,13 @@ static void do_delete(Ndb &myNdb) {
   const NdbDictionary::Dictionary *myDict = myNdb.getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_simple");
 
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   NdbTransaction *myTransaction = myNdb.startTransaction();
-  if (myTransaction == NULL) APIERROR(myNdb.getNdbError());
+  if (myTransaction == nullptr) APIERROR(myNdb.getNdbError());
 
   NdbOperation *myOperation = myTransaction->getNdbOperation(myTable);
-  if (myOperation == NULL) APIERROR(myTransaction->getNdbError());
+  if (myOperation == nullptr) APIERROR(myTransaction->getNdbError());
 
   myOperation->deleteTuple();
   myOperation->equal("ATTR1", 3);
@@ -257,22 +257,22 @@ static void do_read(Ndb &myNdb) {
   const NdbDictionary::Dictionary *myDict = myNdb.getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_simple");
 
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   std::cout << "ATTR1 ATTR2" << std::endl;
 
   for (int i = 0; i < 10; i++) {
     NdbTransaction *myTransaction = myNdb.startTransaction();
-    if (myTransaction == NULL) APIERROR(myNdb.getNdbError());
+    if (myTransaction == nullptr) APIERROR(myNdb.getNdbError());
 
     NdbOperation *myOperation = myTransaction->getNdbOperation(myTable);
-    if (myOperation == NULL) APIERROR(myTransaction->getNdbError());
+    if (myOperation == nullptr) APIERROR(myTransaction->getNdbError());
 
     myOperation->readTuple(NdbOperation::LM_Read);
     myOperation->equal("ATTR1", i);
 
-    NdbRecAttr *myRecAttr = myOperation->getValue("ATTR2", NULL);
-    if (myRecAttr == NULL) APIERROR(myTransaction->getNdbError());
+    NdbRecAttr *myRecAttr = myOperation->getValue("ATTR2", nullptr);
+    if (myRecAttr == nullptr) APIERROR(myTransaction->getNdbError());
 
     if (myTransaction->execute(NdbTransaction::Commit) == -1)
       APIERROR(myTransaction->getNdbError());

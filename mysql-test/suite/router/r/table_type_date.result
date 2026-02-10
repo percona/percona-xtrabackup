@@ -1,0 +1,317 @@
+RESET BINARY LOGS AND GTIDS;
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+CREATE TABLE `test`.`date_values` (
+`id` int NOT NULL AUTO_INCREMENT, `dt` date DEFAULT NULL, PRIMARY KEY (`id`));
+INSERT INTO `test`.`date_values` (id, dt) VALUES 
+(1, '2024-10-01'),
+(2, '2025-10-01'),
+(3, NULL),
+(4, '2026-10-01'),
+(5, '1908-10-01');
+
+
+## I. Verify JSON encoding of DATE type, returned in FEED response
+#
+# 1. Verify JSON response containing DATE values encoded as string generated from column of type DATE
+#    returning single object.
+# 2. Verify JSON response containing DATE values encoded as string generated from column of type DATE
+#    returning multiple objects.
+# 3. Verify that object can be updated with different datimetime-values encoded as string and response
+#    contains same data.
+# 4. Verify error message, in case of invalid DATE value.
+#
+## II. Verify JSON encoding of DATE in filter object with eq operator.
+# 1. Verify that objects can be filtered using DATE column using date-value encoded as string.
+# 2. Verify that objects can be filtered with null value.
+#
+## III. Verify JSON encoding of DATE in filter object with gt operator.
+# 1. Verify that objects can be filtered using DATE column using date-value encoded as string
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/test
+# Registred DB_OBJECT at path: /svc/test/date
+
+#
+# I.1
+GET /svc/test/date/2
+{
+    "dt": "2025-10-01"
+}
+OK
+
+#
+# I.2
+GET /svc/test/date
+{
+    "items": [
+        {
+            "dt": "2024-10-01"
+        },
+        {
+            "dt": "2025-10-01"
+        },
+        {
+            "dt": null
+        },
+        {
+            "dt": "2026-10-01"
+        },
+        {
+            "dt": "1908-10-01"
+        }
+    ]
+}
+OK
+
+#
+# I.3
+PUT /svc/test/date/2 (payload-size:26)
+{
+    "dt": "2002-02-02",
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/date/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "8808F1BBF24BEA14EF3B51C6E2AA28DA46A1C224B431473AF6976DB3DC66A83E",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/test/date/2 (payload-size:26)
+{
+    "dt": "2000-01-01",
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/date/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "845FE796F38D88503FDFADB5432177CEB2EE9DEBE0AD8D70056CDBDF925EE66B",
+        "gtid": "GTID"
+    }
+}
+OK
+
+#
+# I.4
+GET /svc/test/date/?q=%7B%22dt%22:%7B%22%24date%22:%2214:34:00.1000%22%7D%7D
+{
+    "message": "Incorrect DATE value: '14:34:00.1000'",
+    "status": 400
+}
+OK
+GET /svc/test/date/?q=%7B%22dt%22:%7B%22%24date%22:%22TEST%20STRING%22%7D%7D
+{
+    "message": "Incorrect DATE value: 'TEST STRING'",
+    "status": 400
+}
+OK
+GET /svc/test/date/?q=%7B%22dt%22:%7B%22%24date%22:20%7D%7D
+{
+    "message": "Invalid `FilterObject`",
+    "status": 400
+}
+OK
+GET /svc/test/date/?q=%7B%22dt%22:%7B%22%24date%22:false%7D%7D
+{
+    "message": "Invalid `FilterObject`",
+    "status": 400
+}
+OK
+
+#
+# II.1
+GET /svc/test/date/?q=%7B%22dt%22:%7B%22%24date%22:%222024-10-01%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/date/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "A120429FDA2B51C4373EC3D69467D3FCB189CC7FD73EDBC9FAEB633884C9CDA6"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/date/"
+        }
+    ]
+}
+OK
+GET /svc/test/date/?q=%7B%22dt%22:%7B%22%24date%22:%222024-10-01%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/date/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "A120429FDA2B51C4373EC3D69467D3FCB189CC7FD73EDBC9FAEB633884C9CDA6"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/date/"
+        }
+    ]
+}
+OK
+GET /svc/test/date/?q=%7B%22dt%22:%7B%22%24date%22:%222000-01-01%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2000-01-01",
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/date/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "845FE796F38D88503FDFADB5432177CEB2EE9DEBE0AD8D70056CDBDF925EE66B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/date/"
+        }
+    ]
+}
+OK
+GET /svc/test/date/?q=%7B%22dt%22:%7B%22%24eq%22:%7B%22%24date%22:%222024-10-01%22%7D%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/date/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "A120429FDA2B51C4373EC3D69467D3FCB189CC7FD73EDBC9FAEB633884C9CDA6"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/date/"
+        }
+    ]
+}
+OK
+
+#
+# II.2
+GET /svc/test/date/?q=%7B%22dt%22:%7B%22%24null%22:null%7D%7D
+{
+    "items": [
+        {
+            "dt": null,
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/date/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "EA211F9FD737B25F6E3FCE756A311309F8C0234A8E6C758555078E902ACEAD25"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/date/"
+        }
+    ]
+}
+OK
+
+#
+# III.1
+GET /svc/test/date/?q=%7B%22dt%22:%7B%22%24gt%22:%7B%22%24date%22:%222024-10-01%22%7D%7D%7D
+{
+    "items": [
+        {
+            "dt": "2026-10-01",
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/date/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "E9369C4B3DE63FF0F2CBC445D44F19A7F5A5F6710E5A47F188529CB3F53E485D"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/date/"
+        }
+    ]
+}
+OK
+DROP TABLE `test`.`date_values`;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

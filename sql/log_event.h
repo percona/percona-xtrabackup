@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1072,11 +1072,6 @@ class Log_event {
 
     return arg->num = mts_number_dbs();
   }
-
-  /**
-     @return true  if events carries partitioning data (database names).
-  */
-  bool contains_partition_info(bool);
 
   /*
     @return  the number of updated by the event databases.
@@ -3882,18 +3877,6 @@ class Transaction_payload_log_event
  public:
 #ifdef MYSQL_SERVER
 
-  class Applier_context {
-   private:
-    // context for the applier (to remove if we remove the DATABASE scheduler)
-    Mts_db_names m_mts_db_names;
-
-   public:
-    Applier_context() = default;
-    virtual ~Applier_context() { reset(); }
-    void reset() { m_mts_db_names.reset_and_dispose(); }
-    Mts_db_names &get_mts_db_names() { return m_mts_db_names; }
-  };
-
   Transaction_payload_log_event(THD *thd_arg, const char *payload,
                                 uint64_t payload_size,
                                 uint16_t compression_type,
@@ -3930,8 +3913,6 @@ class Transaction_payload_log_event
   size_t get_data_size() override;
 
 #if defined(MYSQL_SERVER)
- private:
-  Applier_context m_applier_ctx;
 
  public:
   int do_apply_event(Relay_log_info const *rli) override;
@@ -3940,9 +3921,6 @@ class Transaction_payload_log_event
   int pack_info(Protocol *protocol) override;
   bool ends_group() const override;
   bool write(Basic_ostream *ostream) override;
-  uint8 get_mts_dbs(Mts_db_names *arg, Rpl_filter *rpl_filter) override;
-  void set_mts_dbs(Mts_db_names &arg);
-  uint8 mts_number_dbs() override;
 #endif
 };
 
@@ -4111,6 +4089,7 @@ class Gtid_log_event : public mysql::binlog::event::Gtid_event,
     Log_event so it should not be modified.
   */
   const Tsid &get_tsid() const { return tsid; }
+#ifdef MYSQL_SERVER
   /**
     Return the SIDNO relative to the global tsid_map for this GTID.
 
@@ -4127,7 +4106,7 @@ class Gtid_log_event : public mysql::binlog::event::Gtid_event,
     @retval negative if adding TSID to global_tsid_map causes an error.
   */
   rpl_sidno get_sidno(bool need_lock);
-
+#endif
   /**
     Return the SIDNO relative to the given Tsid_map for this GTID.
 
@@ -4427,6 +4406,7 @@ class Transaction_context_log_event
    */
   std::list<const char *> *get_read_set() { return &read_set; }
 
+#ifdef MYSQL_SERVER
   /**
     Read snapshot version from encoded buffers.
     Cannot be executed during data read from file (event constructor),
@@ -4434,6 +4414,7 @@ class Transaction_context_log_event
     initialization procedure.
    */
   bool read_snapshot_version();
+#endif
 
   /**
     Return the transaction snapshot timestamp.

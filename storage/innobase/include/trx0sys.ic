@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -45,7 +45,7 @@ typedef byte trx_sysf_rseg_t;
 /* Rollback segment specification slot offsets */
 /*-------------------------------------------------------------*/
 /** space where the segment header is placed; starting with MySQL/InnoDB 5.1.7,
- this is UNIV_UNDEFINED if the slot is unused */
+ this is FIL_NULL if the slot is unused */
 constexpr uint32_t TRX_SYS_RSEG_SPACE = 0;
 /** page number where the segment header is placed; this is FIL_NULL if the slot
  is unused */
@@ -65,50 +65,21 @@ static inline bool trx_sys_hdr_page(const page_id_t &page_id) {
           page_id.page_no() == TRX_SYS_PAGE_NO);
 }
 
-/** Gets a pointer to the transaction system header and x-latches its page.
- @return pointer to system header, page x-latched. */
-static inline trx_sysf_t *trx_sysf_get(mtr_t *mtr) /*!< in: mtr */
-{
-  buf_block_t *block;
-  trx_sysf_t *header;
-
+static inline trx_sysf_t *trx_sysf_get(mtr_t *mtr) {
   ut_ad(mtr);
 
-  block = buf_page_get(page_id_t(TRX_SYS_SPACE, TRX_SYS_PAGE_NO),
-                       univ_page_size, RW_X_LATCH, UT_LOCATION_HERE, mtr);
+  buf_block_t *block =
+      buf_page_get(page_id_t(TRX_SYS_SPACE, TRX_SYS_PAGE_NO), univ_page_size,
+                   RW_X_LATCH, UT_LOCATION_HERE, mtr);
   buf_block_dbg_add_level(block, SYNC_TRX_SYS_HEADER);
 
-  header = TRX_SYS + buf_block_get_frame(block);
-
-  return (header);
+  return TRX_SYS + buf_block_get_frame(block);
 }
 
-/** Gets the space of the nth rollback segment slot in the trx system
- file copy.
- @return space id */
-static inline space_id_t trx_sysf_rseg_get_space(
-    trx_sysf_t *sys_header, /*!< in: trx sys header */
-    ulint slot,             /*!< in: slot index == rseg id */
-    mtr_t *mtr)             /*!< in: mtr */
-{
+static inline page_no_t trx_sysf_rseg_get_page_no(trx_sysf_t *sys_header,
+                                                  ulint slot, mtr_t *mtr) {
   ut_ad(sys_header);
-  ut_ad(slot < TRX_SYS_N_RSEGS);
-
-  return (mtr_read_ulint(sys_header + TRX_SYS_RSEGS +
-                             slot * TRX_SYS_RSEG_SLOT_SIZE + TRX_SYS_RSEG_SPACE,
-                         MLOG_4BYTES, mtr));
-}
-
-/** Gets the page number of the nth rollback segment slot in the trx system
- header.
- @return page number, FIL_NULL if slot unused */
-static inline page_no_t trx_sysf_rseg_get_page_no(
-    trx_sysf_t *sys_header, /*!< in: trx system header */
-    ulint slot,             /*!< in: slot index == rseg id */
-    mtr_t *mtr)             /*!< in: mtr */
-{
-  ut_ad(sys_header);
-  ut_ad(slot < TRX_SYS_N_RSEGS);
+  ut_ad(slot < FSP_MAX_ROLLBACK_SEGMENTS);
 
   return (mtr_read_ulint(sys_header + TRX_SYS_RSEGS +
                              slot * TRX_SYS_RSEG_SLOT_SIZE +
@@ -116,33 +87,30 @@ static inline page_no_t trx_sysf_rseg_get_page_no(
                          MLOG_4BYTES, mtr));
 }
 
-/** Sets the space id of the nth rollback segment slot in the trx system
- file copy. */
-static inline void trx_sysf_rseg_set_space(
-    trx_sysf_t *sys_header, /*!< in: trx sys file copy */
-    ulint slot,             /*!< in: slot index == rseg id */
-    space_id_t space,       /*!< in: space id */
-    mtr_t *mtr)             /*!< in: mtr */
-{
+static inline void trx_sysf_rseg_set_space(trx_sysf_t *sys_header, ulint slot,
+                                           space_id_t space, mtr_t *mtr) {
   ut_ad(sys_header);
-  ut_ad(slot < TRX_SYS_N_RSEGS);
+  ut_ad(slot < FSP_MAX_ROLLBACK_SEGMENTS);
+
+  /* This function is being used to initialize rollback segment in system
+  tablespcae for legeacy reason. We should never come here for any other undo
+  space. */
+  ut_a_eq(slot, 0);
 
   mlog_write_ulint(sys_header + TRX_SYS_RSEGS + slot * TRX_SYS_RSEG_SLOT_SIZE +
                        TRX_SYS_RSEG_SPACE,
                    space, MLOG_4BYTES, mtr);
 }
 
-/** Sets the page number of the nth rollback segment slot in the trx system
- header. */
-static inline void trx_sysf_rseg_set_page_no(
-    trx_sysf_t *sys_header, /*!< in: trx sys header */
-    ulint slot,             /*!< in: slot index == rseg id */
-    page_no_t page_no,      /*!< in: page number, FIL_NULL if the
-                            slot is reset to unused */
-    mtr_t *mtr)             /*!< in: mtr */
-{
+static inline void trx_sysf_rseg_set_page_no(trx_sysf_t *sys_header, ulint slot,
+                                             page_no_t page_no, mtr_t *mtr) {
   ut_ad(sys_header);
-  ut_ad(slot < TRX_SYS_N_RSEGS);
+  ut_ad(slot < FSP_MAX_ROLLBACK_SEGMENTS);
+
+  /* This function is being used to initialize rollback segment in system
+  tablespcae for legeacy reason. We should never come here for any other undo
+  space. */
+  ut_a_eq(slot, 0);
 
   mlog_write_ulint(sys_header + TRX_SYS_RSEGS + slot * TRX_SYS_RSEG_SLOT_SIZE +
                        TRX_SYS_RSEG_PAGE_NO,

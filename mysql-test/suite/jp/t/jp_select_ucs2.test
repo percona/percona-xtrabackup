@@ -110,16 +110,25 @@ INSERT INTO `£Ô£¹` VALUES
 ,('íÈíÉíÊíËíÌíÍíÎíÏíĞíÑíÒíÓíÔíÕíÖí×íØíÙíÚíÛ');
 
 #InnoDB
+--sorted_result
 SELECT * FROM `£Ô£±`;
+--sorted_result
 SELECT * FROM `£Ô£²`;
+--sorted_result
 SELECT * FROM `£Ô£³`;
 #MyISAM
+--sorted_result
 SELECT * FROM `£Ô£´`;
+--sorted_result
 SELECT * FROM `£Ô£µ`;
+--sorted_result
 SELECT * FROM `£Ô£¶`;
 #Heap
+--sorted_result
 SELECT * FROM `£Ô£·`;
+--sorted_result
 SELECT * FROM `£Ô£¸`;
+--sorted_result
 SELECT * FROM `£Ô£¹`;
 
 drop table `£Ô£±`;

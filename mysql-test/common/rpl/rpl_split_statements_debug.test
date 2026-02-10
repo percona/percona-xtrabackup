@@ -574,3 +574,4 @@ DROP DATABASE IF EXISTS db12;
 --source include/rpl/sync.inc
 
 --source include/rpl/deinit.inc
+

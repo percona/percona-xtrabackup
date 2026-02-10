@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,7 +50,7 @@ TEST_P(RecordBufferTestP, BasicTest) {
   const auto param = GetParam();
   const auto bufsize =
       Record_buffer::buffer_size(param.m_records, param.m_record_size);
-  std::unique_ptr<uchar[]> ptr(new uchar[bufsize]);
+  std::unique_ptr<uchar[]> const ptr(new uchar[bufsize]);
 
   Record_buffer buf(param.m_records, param.m_record_size, ptr.get());
   EXPECT_EQ(param.m_records, buf.max_records());
@@ -63,7 +63,7 @@ TEST_P(RecordBufferTestP, BasicTest) {
       Add a record and verify that the number of records has grown,
       whereas the maximum size and the record size stay the same.
     */
-    const auto rec = buf.add_record();
+    auto *const rec = buf.add_record();
     EXPECT_EQ(i + 1, buf.records());
     EXPECT_NE(nullptr, rec);
     EXPECT_EQ(rec, buf.record(i));

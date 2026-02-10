@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,6 @@
 #include <cstdint>
 
 #include "m_string.h"
-#include "my_compiler.h"
 #include "mysql/strings/m_ctype.h"
 #include "strings/m_ctype_internals.h"
 
@@ -606,7 +605,7 @@ static void my_hash_sort_latin1_de(const CHARSET_INFO *cs [[maybe_unused]],
   uint64_t tmp2 = *nr2;
 
   for (; key < end; key++) {
-    unsigned X = (unsigned)combo1map[(unsigned)*key];
+    auto X = (unsigned)combo1map[(unsigned)*key];
     tmp1 ^= (uint64_t)((((unsigned)tmp1 & 63) + tmp2) * X) + (tmp1 << 8);
     tmp2 += 3;
     if ((X = combo2map[*key])) {

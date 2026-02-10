@@ -629,6 +629,7 @@ CREATE TABLE S.c (
 INSERT INTO S.c VALUES (1), (2);
 ALTER SCHEMA S READ ONLY=1;
 
+#FK error uses qualified table name because REFERENCES clause is qualified
 --error ER_ROW_IS_REFERENCED_2
 DELETE FROM test.p WHERE id=1;
 DELETE FROM test.p WHERE id=4;

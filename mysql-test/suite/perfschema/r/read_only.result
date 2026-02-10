@@ -4,6 +4,8 @@ set @start_super_read_only= @@global.super_read_only;
 create user pfsuser@localhost;
 grant SELECT, UPDATE on performance_schema.* to pfsuser@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 connect  con1, localhost, pfsuser, , test;
 connection default;
 set global read_only=0;
@@ -37,6 +39,8 @@ grant super on *.* to pfsuser@localhost;
 Warnings:
 Warning	1287	The SUPER privilege identifier is deprecated
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 disconnect con1;
 connect  con1, localhost, pfsuser, , test;
 select @@global.read_only;
@@ -141,3 +145,5 @@ set global read_only= @start_read_only;
 set global super_read_only= @start_super_read_only;
 drop user pfsuser@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

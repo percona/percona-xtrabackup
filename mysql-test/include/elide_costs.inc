@@ -52,7 +52,8 @@ let $elide_metrics = / *[(]cost=.*//;
 # allows only a *single* variable substitution
 # (cf. do_get_replace_regex in mysqltest.cc), so build the
 # entire expression incrementally.
-let $elide_trace_costs_and_rows=/cost\": [0-9.]+/cost\": "elided"/;
+let $elide_trace_costs_and_rows=/cost=[0-9.e+-]+/cost=X/ /rows=[0-9.e+-]+/rows=X/;
+let $elide_trace_costs_and_rows=$elide_trace_costs_and_rows /cost\": [0-9.]+/cost\": "elided"/;
 let $elide_trace_costs_and_rows=$elide_trace_costs_and_rows /cost_for_plan\": [0-9.]+/cost_for_plan\": "elided"/;
 let $elide_trace_costs_and_rows=$elide_trace_costs_and_rows /rows\": [0-9.]+/rows\": "elided"/;
 let $elide_trace_costs_and_rows=$elide_trace_costs_and_rows /rows_for_plan\": [0-9.]+/rows_for_plan\": "elided"/;
@@ -65,11 +66,11 @@ let $elide_trace_costs_and_rows=$elide_trace_costs_and_rows /num_rows_estimate\"
 #  "actual_last_row_ms": 0.328761 -> "actual_last_row_ms": "elided"
 let $elide_json_time=/row_ms": [0-9.]*/row_ms": "elided"/;
 
-# Usage: --replace-regex $elide_json_costs
+# Usage: --replace_regex $elide_json_costs
 # This removes costs from EXPLAIN FORMAT=JSON for both optimizers.
 # Original optimizer: "read_cost": "0.25"  -> read_cost: "elided"
 # Hypergraph optimizer: "estimated_total_cost": 0.25  -> estimated_total_cost: "elided"
 let $elide_json_costs=/cost": "?[0-9.]*"?/cost": "elided"/;
 
-# Usage: --replace-regex $elide_json_costs_and_time
+# Usage: --replace_regex $elide_json_costs_and_time
 let $elide_json_costs_and_time=/cost": "?[0-9.]*"?/cost": "elided"/ /row_ms": [0-9.]*/row_ms": "elided"/;

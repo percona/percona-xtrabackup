@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1157,6 +1157,7 @@ int runMultiCrashTest(NDBT_Context *ctx, NDBT_Step *step) {
     }
     NdbSleep_SecSleep(2);
   }
+
   if (restarter.startNodes(dead_nodes, num_dead_nodes) != 0) return NDBT_FAILED;
   if (restarter.waitClusterStarted()) return NDBT_FAILED;
 
@@ -1164,8 +1165,19 @@ int runMultiCrashTest(NDBT_Context *ctx, NDBT_Step *step) {
 
   ndbout_c("Crash two nodes per node group");
   if (num_replicas == 3) {
+    // Inject error 644 in all nodes. It will eventually hit in one node
+    // in Qmgr::stateArbitCrash.
     prepare_all_nodes_for_death(restarter);
+    int val[] = {DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1};
+    if (restarter.dumpStateAllNodes(val, 2)) {
+      return NDBT_FAILED;
+    }
   }
+  /*
+   * Restart 2 nodes in nostart mode via error insert 1006, in a 3 replica
+   * configuration 3rd node will eventually crash as well. In a 4 replica
+   * configuration remaining nodes will survive.
+   */
   crash_x_nodes_per_node_group(restarter, dead_nodes, num_dead_nodes, 2);
   if (num_replicas == 3) {
     set_all_dead(restarter, dead_nodes, num_dead_nodes);
@@ -1173,16 +1185,44 @@ int runMultiCrashTest(NDBT_Context *ctx, NDBT_Step *step) {
   if (!restarter.checkClusterState(dead_nodes, num_dead_nodes)) {
     return NDBT_FAILED;
   }
-  NdbSleep_SecSleep(3);
+
+  if (num_replicas == 3) {
+    /*
+     * In 3 replica setup all 3 nodes are restarted, 2 via EI 1006 1 via EI 644.
+     * Wait until al nodes enter the NOSTART state, then we can start all nodes
+     * again.
+     */
+    if (restarter.waitClusterNoStart()) {
+      return NDBT_FAILED;
+    }
+  }
   if (restarter.startNodes(dead_nodes, num_dead_nodes) != 0) return NDBT_FAILED;
   if (restarter.waitClusterStarted()) return NDBT_FAILED;
 
   if (num_replicas == 4) {
     ndbout_c("Crash three nodes per node group");
+
+    int val[] = {DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1};
+    if (restarter.dumpStateAllNodes(val, 2)) {
+      return NDBT_FAILED;
+    }
     prepare_all_nodes_for_death(restarter);
+
+    /*
+     * Restart 3 nodes in nostart mode via error insert 1006, the remaining node
+     * will eventually crash as well.
+     */
     crash_x_nodes_per_node_group(restarter, dead_nodes, num_dead_nodes, 3);
     set_all_dead(restarter, dead_nodes, num_dead_nodes);
     if (!restarter.checkClusterState(dead_nodes, num_dead_nodes)) {
+      return NDBT_FAILED;
+    }
+
+    /*
+     * All 4 nodes are restarted, 3 via EI 1006 1 via EI 644. Wait until all
+     * nodes enter the NOSTART state, then we can start all nodes again.
+     */
+    if (restarter.waitClusterNoStart()) {
       return NDBT_FAILED;
     }
     if (restarter.startNodes(dead_nodes, num_dead_nodes) != 0)
@@ -1352,8 +1392,7 @@ int runBug16772(NDBT_Context *ctx, NDBT_Step *step) {
                                  /** initial       */ false,
                                  /** nostart       */ true,
                                  /** abort         */ true,
-                                 /** force         */ false,
-                                 /** capture error */ true) == 0) {
+                                 /** force         */ false) == 0) {
     g_err << "Restart of node " << deadNodeId << " succeeded when it should "
           << "have failed";
     return NDBT_FAILED;
@@ -5934,7 +5973,7 @@ int runChangeNumLogPartsINR(NDBT_Context *ctx, NDBT_Step *step) {
 }
 
 static int get_num_exec_threads(Ndb_cluster_connection *connection,
-                                Uint32 nodeId) {
+                                Uint32 nodeId, bool *is_ndbmtd = nullptr) {
   NdbInfo ndbinfo(connection, "ndbinfo/");
   if (!ndbinfo.init()) {
     g_err << "ndbinfo.init failed" << endl;
@@ -5963,6 +6002,7 @@ static int get_num_exec_threads(Ndb_cluster_connection *connection,
 
   const NdbInfoRecAttr *node_id_col = scanOp->getValue("node_id");
   const NdbInfoRecAttr *thr_no_col = scanOp->getValue("thr_no");
+  const NdbInfoRecAttr *thr_name_col = scanOp->getValue("thread_name");
 
   if (scanOp->execute() != 0) {
     g_err << "scanOp->execute failed" << endl;
@@ -5981,15 +6021,20 @@ static int get_num_exec_threads(Ndb_cluster_connection *connection,
       ndbinfo.releaseScanOperation(scanOp);
       ndbinfo.closeTable(table);
       return -1;
-    } else if (scan_next_result == 0) {
+    }
+    if (scan_next_result == 0) {
       // All ndbinfo records processed
       ndbinfo.releaseScanOperation(scanOp);
       ndbinfo.closeTable(table);
       if (!found_node_id) return 0;
-      if (thread_no == 0)
-        g_err << "Single threaded data node" << endl;
-      else
-        g_err << "Multi threaded data node" << endl;
+      if (thread_no == 0 && is_ndbmtd != nullptr) {
+        /*
+         * Only one thread, thread name is:
+         * ndbd: 'main'
+         * ndbmtd: 'main_rep_recv'
+         */
+        *is_ndbmtd = !strcmp(thr_name_col->c_str(), "main_rep_recv");
+      }
       return thread_no + 1;
 
     } else {
@@ -6016,16 +6061,21 @@ int runChangeNumLDMsNR(NDBT_Context *ctx, NDBT_Step *step) {
     return NDBT_FAILED;
   }
 
+  bool is_ndbmtd1 = false;
+  bool is_ndbmtd2 = false;
   int node1_no_threads =
-      get_num_exec_threads(&ctx->m_cluster_connection, node_1);
-  int node2_no_threads =
-      get_num_exec_threads(&ctx->m_cluster_connection, node_2);
-  g_err << node_1 << " " << node1_no_threads << endl;
-  g_err << node_2 << " " << node2_no_threads << endl;
+      get_num_exec_threads(&ctx->m_cluster_connection, node_1, &is_ndbmtd1);
 
-  if (node1_no_threads < 2 || node2_no_threads < 2) {
+  int node2_no_threads =
+      get_num_exec_threads(&ctx->m_cluster_connection, node_2, &is_ndbmtd2);
+  g_err << "Node: " << node_1 << ", num exec threads: " << node1_no_threads
+        << ", is ndbmtd: " << is_ndbmtd1 << endl;
+  g_err << "Node: " << node_2 << ", num exec threads: " << node2_no_threads
+        << ", is ndbmtd: " << is_ndbmtd2 << endl;
+
+  if (!(is_ndbmtd1 && is_ndbmtd2)) {
     g_err << "[SKIPPED] Test is useful only for clusters running multi threaded"
-             "data node (ndbmtd)"
+             " data node (ndbmtd)"
           << endl;
     ctx->stopTest();
     return NDBT_SKIPPED;
@@ -7624,8 +7674,7 @@ int runArbitrationWithApiNodeFailure(NDBT_Context *ctx, NDBT_Step *step) {
    * 3. kill master
    */
   if (restarter.restartOneDbNode2(
-          master, NdbRestarter::NRRF_NOSTART | NdbRestarter::NRRF_ABORT,
-          true) == 0) {
+          master, NdbRestarter::NRRF_NOSTART | NdbRestarter::NRRF_ABORT) == 0) {
     g_err << "ERROR: Old master " << master << " reached not started state "
           << "before arbitration win" << endl;
     return NDBT_FAILED;
@@ -7821,7 +7870,7 @@ int runTestStartNode(NDBT_Context *ctx, NDBT_Step *step) {
 
   ndbout << "Trigger restart of node " << nodeId << " which should fail"
          << endl;
-  if (restarter.restartOneDbNode(nodeId, false, true, true, false, true) == 0) {
+  if (restarter.restartOneDbNode(nodeId, false, true, true, false) == 0) {
     g_err << "ERROR: Restart of node " << nodeId
           << " succeeded instead of failing" << endl;
     return NDBT_FAILED;
@@ -7851,7 +7900,7 @@ int runTestStartNode(NDBT_Context *ctx, NDBT_Step *step) {
   }
   ndbout << "Trigger restart of node " << nodeId << " which should fail"
          << endl;
-  if (restarter.restartOneDbNode(nodeId, false, true, true, false, true) == 0) {
+  if (restarter.restartOneDbNode(nodeId, false, true, true, false) == 0) {
     g_err << "ERROR: Restart of node " << nodeId
           << " succeeded instead of failing" << endl;
     return NDBT_FAILED;
@@ -9015,56 +9064,64 @@ int runWatchdogSlowShutdown(NDBT_Context *ctx, NDBT_Step *step) {
    * 3 Trigger shutdown
    *
    * Expectation
-   * - Shutdown triggered, but slow
+   * - Shutdown triggered, but very slow
    * - Watchdog detects and also attempts shutdown
    * - No crash results, shutdown completes eventually
    */
 
   NdbRestarter restarter;
 
-  /* 1 Set low watchdog threshold */
-  {
-    const int dumpVals[] = {DumpStateOrd::CmvmiSetWatchdogInterval, 2000};
-    CHECK((restarter.dumpStateAllNodes(dumpVals, 2) == NDBT_OK),
-          "Failed to set watchdog thresh");
-  }
-
-  /* 2 Use error insert to get error reporter to be slow
-   *   during shutdown
+  /* Scenarios
+   *  1 : Stall during error reporting after releasing lock
+   *  2 : Stall during error reporting before releasing lock
    */
-  {
-    const int dumpVals[] = {DumpStateOrd::CmvmiSetErrorHandlingError, 1};
-    CHECK((restarter.dumpStateAllNodes(dumpVals, 2) == NDBT_OK),
-          "Failed to set error handling mode");
+  for (int scenario = 1; scenario < 3; scenario++) {
+    g_err << "Scenario " << scenario << endl;
+    /* 1 Set low watchdog threshold */
+    {
+      const int dumpVals[] = {DumpStateOrd::CmvmiSetWatchdogInterval, 2000};
+      CHECK((restarter.dumpStateAllNodes(dumpVals, 2) == NDBT_OK),
+            "Failed to set watchdog thresh");
+    }
+
+    /* 2 Use error insert to get error reporter to be slow
+     *   during shutdown
+     */
+    {
+      int dumpVals[] = {DumpStateOrd::CmvmiSetErrorHandlingError, 0};
+      dumpVals[1] = scenario;
+      CHECK((restarter.dumpStateAllNodes(dumpVals, 2) == NDBT_OK),
+            "Failed to set error handling mode");
+    }
+
+    /* 3 Trigger shutdown */
+    const int nodeId = restarter.getNode(NdbRestarter::NS_RANDOM);
+    g_err << "Injecting crash in node " << nodeId << endl;
+    /* First request a 'NOSTART' restart on error insert */
+    {
+      const int dumpVals[] = {DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1};
+      CHECK((restarter.dumpStateOneNode(nodeId, dumpVals, 2) == NDBT_OK),
+            "Failed to request error insert restart");
+    }
+
+    /* Next cause an error insert failure */
+    CHECK((restarter.insertErrorInNode(nodeId, 9999) == NDBT_OK),
+          "Failed to request node crash");
+
+    /* Expect shutdown to be stalled, and shortly after, watchdog
+     * to detect this and act
+     */
+    g_err << "Waiting for node " << nodeId << " to stop." << endl;
+    CHECK((restarter.waitNodesNoStart(&nodeId, 1) == NDBT_OK),
+          "Timeout waiting for node to stop");
+
+    g_err << "Waiting for node " << nodeId << " to start." << endl;
+    CHECK((restarter.startNodes(&nodeId, 1) == NDBT_OK),
+          "Timeout waiting for node to start");
+
+    CHECK((restarter.waitClusterStarted() == NDBT_OK),
+          "Timeout waiting for cluster to start");
   }
-
-  /* 3 Trigger shutdown */
-  const int nodeId = restarter.getNode(NdbRestarter::NS_RANDOM);
-  g_err << "Injecting crash in node " << nodeId << endl;
-  /* First request a 'NOSTART' restart on error insert */
-  {
-    const int dumpVals[] = {DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1};
-    CHECK((restarter.dumpStateOneNode(nodeId, dumpVals, 2) == NDBT_OK),
-          "Failed to request error insert restart");
-  }
-
-  /* Next cause an error insert failure */
-  CHECK((restarter.insertErrorInNode(nodeId, 9999) == NDBT_OK),
-        "Failed to request node crash");
-
-  /* Expect shutdown to be stalled, and shortly after, watchdog
-   * to detect this and act
-   */
-  g_err << "Waiting for node " << nodeId << " to stop." << endl;
-  CHECK((restarter.waitNodesNoStart(&nodeId, 1) == NDBT_OK),
-        "Timeout waiting for node to stop");
-
-  g_err << "Waiting for node " << nodeId << " to start." << endl;
-  CHECK((restarter.startNodes(&nodeId, 1) == NDBT_OK),
-        "Timeout waiting for node to start");
-
-  CHECK((restarter.waitClusterStarted() == NDBT_OK),
-        "Timeout waiting for cluster to start");
 
   g_err << "Success" << endl;
   return NDBT_OK;
@@ -9416,7 +9473,8 @@ int runTestStallTimeout(NDBT_Context *ctx, NDBT_Step *step) {
 
       /* Prepare an update on the same rows from a different transaction */
       CHECK(hugoOps2.startTransaction(pNdb) == 0, "Start transaction failed");
-      CHECK(hugoOps2.pkUpdateRecord(pNdb, 1, 10) == 0, "Define updates failed");
+      CHECK(hugoOps2.pkUpdateRecord(pNdb, 1, numUpdates) == 0,
+            "Define updates failed");
 
       NdbTransaction *trans2 = hugoOps2.getTransaction();
       CallbackData cbd2;
@@ -9738,6 +9796,334 @@ int runRestartsWithSlowCommitComplete(NDBT_Context *ctx, NDBT_Step *step) {
   ctx->stopTest();
 
   return result;
+}
+
+static constexpr Uint32 MAX_EXTRA_CONNECTIONS = MAX_NODES;
+static Uint32 g_numExtraConnections = 0;
+static Ndb_cluster_connection *g_extraConnections[MAX_EXTRA_CONNECTIONS];
+
+int runSetupExtraConnections(NDBT_Context *ctx, NDBT_Step *step) {
+  const Uint32 extraConnections =
+      ctx->getProperty("ExtraConnections", Uint32(0));
+  assert(g_numExtraConnections == 0);
+  if (extraConnections > MAX_EXTRA_CONNECTIONS) {
+    g_err << "Too many extra connections requested " << extraConnections
+          << endl;
+    return NDBT_FAILED;
+  }
+
+  g_err << "Setting up " << extraConnections << " extra connections." << endl;
+
+  for (Uint32 c = 0; c < extraConnections; c++) {
+    Ndb_cluster_connection *ncc = new Ndb_cluster_connection();
+    ncc->configure_tls(opt_tls_search_path, opt_mgm_tls);
+    if (ncc->connect() != 0) {
+      g_err << "ERROR : connect failure." << endl;
+      return NDBT_FAILED;
+    }
+    g_err << "Connection " << c << " node id " << ncc->node_id() << endl;
+
+    g_extraConnections[c] = ncc;
+    g_numExtraConnections++;
+  }
+
+  return NDBT_OK;
+}
+
+int applyDumpCodes(const char *codeGroupsString) {
+  NdbRestarter restarter;
+
+  /* Format is Code 1 [Code 2]*[, Code 1 [Code 2]*]* */
+
+  g_err << "Applying dump codes " << codeGroupsString << endl;
+  Vector<BaseString> codeGroups;
+  {
+    BaseString list(codeGroupsString);
+    list.split(codeGroups, ",");
+  }
+
+  for (Uint32 g = 0; g < codeGroups.size(); g++) {
+    Vector<BaseString> codes;
+    codeGroups[g].split(codes, " ");
+    constexpr int maxCodes = 25;
+    int codeNums[maxCodes];
+    const int numCodes = codes.size();
+
+    if (numCodes > maxCodes) {
+      g_err << "Too many codes " << numCodes << endl;
+      return NDBT_FAILED;
+    }
+
+    for (int c = 0; c < numCodes; c++) {
+      codeNums[c] = atoi(codes[c].c_str());
+    }
+
+    g_err << "  Injecting code group " << codeGroups[g].c_str()
+          << " in all nodes " << endl;
+
+    if (restarter.dumpStateAllNodes(codeNums, numCodes) != NDBT_OK) {
+      g_err << "Failed to dump codeGroup " << codeGroups[g].c_str() << endl;
+      return NDBT_FAILED;
+    }
+  }
+
+  return NDBT_OK;
+}
+
+int runClearExtraConnections(NDBT_Context *ctx, NDBT_Step *step) {
+  g_err << "Clearing away " << g_numExtraConnections << " extra connections"
+        << endl;
+  for (Uint32 c = 0; c < g_numExtraConnections; c++) {
+    Ndb_cluster_connection *ncc = g_extraConnections[c];
+    delete ncc;
+
+    g_extraConnections[c] = nullptr;
+  }
+
+  g_numExtraConnections = 0;
+  return NDBT_OK;
+}
+
+int runDumpSetup(NDBT_Context *ctx, NDBT_Step *step) {
+  const char *dumpSetupList = ctx->getProperty("DumpSetup", "");
+  if (strcmp(dumpSetupList, "") == 0) {
+    return NDBT_OK;
+  }
+
+  return applyDumpCodes(dumpSetupList);
+}
+
+int runDumpClear(NDBT_Context *ctx, NDBT_Step *step) {
+  const char *dumpClearList = ctx->getProperty("DumpClear", "");
+  if (strcmp(dumpClearList, "") == 0) {
+    return NDBT_OK;
+  }
+
+  return applyDumpCodes(dumpClearList);
+}
+
+int runSetupErrorInjections(NDBT_Context *ctx, NDBT_Step *step) {
+  const char *errorList = ctx->getProperty("ErrorInjections", "");
+  if (strcmp(errorList, "") == 0) {
+    return NDBT_OK;
+  }
+  NdbRestarter restarter;
+
+  Uint32 errorInjectionNode = ctx->getProperty("ErrorInjectionNode", Uint32(0));
+  g_err << "Error list : " << errorList << endl;
+  if (errorInjectionNode) {
+    /* 0 == ALL
+     * 1..n == specific node
+     * ~Uint32(0) == choose one
+     */
+    if (errorInjectionNode == ~Uint32(0)) {
+      errorInjectionNode = restarter.getNode(NdbRestarter::NS_RANDOM);
+    }
+    g_err << "Error node : " << errorInjectionNode << endl;
+  }
+
+  Vector<BaseString> codes;
+  {
+    BaseString list(errorList);
+    list.split(codes, ",");
+  }
+
+  for (Uint32 i = 0; i < codes.size(); i++) {
+    const int code = atoi(codes[i].c_str());
+    if (errorInjectionNode) {
+      g_err << "  Injecting code " << code << " in node " << errorInjectionNode
+            << endl;
+      if (restarter.insertErrorInNode(errorInjectionNode, code) != NDBT_OK) {
+        g_err << "Failed to inject error " << code << " in node "
+              << errorInjectionNode << endl;
+        return NDBT_FAILED;
+      }
+    } else {
+      g_err << "  Injecting code " << code << " in all nodes" << endl;
+      if (restarter.insertErrorInAllNodes(code) != NDBT_OK) {
+        g_err << "Failed to inject error " << code << endl;
+        return NDBT_FAILED;
+      }
+    }
+  }
+
+  return NDBT_OK;
+}
+
+int runClearErrorInjections(NDBT_Context *ctx, NDBT_Step *step) {
+  NdbRestarter restarter;
+
+  restarter.insertErrorInAllNodes(0);
+  return NDBT_OK;
+}
+
+int runFailExtraConnections(NDBT_Context *ctx, NDBT_Step *step) {
+  const Uint32 connectFailIterations =
+      ctx->getProperty("ConnectionFailIterations", Uint32(10));
+  const Uint32 connectFailDelaySecs =
+      ctx->getProperty("ConnectionFailDelaySecs", Uint32(10));
+  const bool connectFailWaitReconnect =
+      (ctx->getProperty("ConnectionFailWaitReconnect", Uint32(0)) != 0);
+
+  g_err << "runFailExtraConnections : Extra connections "
+        << g_numExtraConnections << " iterations " << connectFailIterations
+        << " delay secs " << connectFailDelaySecs << " wait reconnect "
+        << connectFailWaitReconnect << endl;
+
+  if (g_numExtraConnections == 0) {
+    g_err << "No extra connections - nothing to do" << endl;
+    ctx->stopTest();
+    return NDBT_OK;
+  }
+
+  NdbRestarter restarter;
+
+  /* Get list of data nodes */
+  const int numDataNodes = restarter.getNumDbNodes();
+  int dataNodes[MAX_NDB_NODES];
+  for (int i = 0; i < numDataNodes; i++) {
+    dataNodes[i] = restarter.getDbNodeId(i);
+  }
+
+  Ndb_cluster_connection *failSet[MAX_EXTRA_CONNECTIONS];
+  for (Uint32 c = 0; c < g_numExtraConnections; c++) {
+    failSet[c] = g_extraConnections[c];
+  }
+
+  int dumpCodes[] = {900, 0};
+
+  NdbSleep_SecSleep(connectFailDelaySecs);
+
+  for (Uint32 i = 0; i < connectFailIterations; i++) {
+    if (ctx->isTestStopped()) {
+      g_err << "Test stopped by another step" << endl;
+      break;
+    }
+
+    /* Rotate set of apis left */
+    Ndb_cluster_connection *prev = failSet[0];
+    for (Uint32 c = g_numExtraConnections; c > 0; c--) {
+      Ndb_cluster_connection *curr = failSet[c - 1];
+      failSet[c - 1] = prev;
+      prev = curr;
+    }
+
+    const Uint32 concurrentFailures = 1 + (i % g_numExtraConnections);
+
+    for (Uint32 f = 0; f < concurrentFailures; f++) {
+      const int nodeId = failSet[f]->node_id();
+      g_err << "Failing node " << f + 1 << "/" << concurrentFailures
+            << " nodeid : " << nodeId << endl;
+      dumpCodes[1] = nodeId;
+      /* Todo : Consider dumping in just one data node, allowing to propagate */
+      restarter.dumpStateAllNodes(dumpCodes, 2);
+    }
+
+    NdbSleep_SecSleep(connectFailDelaySecs);
+
+    if (connectFailWaitReconnect) {
+      for (Uint32 f = 0; f < concurrentFailures; f++) {
+        const int nodeId = failSet[f]->node_id();
+
+        g_err << "Waiting for Api node id " << nodeId
+              << " to report connected to " << numDataNodes << " data nodes."
+              << endl;
+        if (failSet[f]->wait_until_ready(dataNodes, numDataNodes, 120) !=
+            numDataNodes) {
+          g_err << "Timed out waiting for api node " << nodeId << " to connect."
+                << endl;
+          ctx->stopTest();
+          return NDBT_FAILED;
+        }
+        g_err << "  Api node id " << nodeId << " now connected to "
+              << numDataNodes << " data nodes" << endl;
+      }
+    }
+  }
+
+  g_err << "All Api failures generated, stopping test" << endl;
+  ctx->stopTest();
+
+  return NDBT_OK;
+}
+
+int runMixedLoadExtra(NDBT_Context *ctx, NDBT_Step *step) {
+  /* One thread running transactions towards a cluster
+   * across the main and extra cluster connections.
+   * Cluster connections may fail and recover during
+   * execution
+   */
+  const Uint32 totalSteps = step->getStepTypeCount();
+  const Uint32 stepNo = step->getStepTypeNo();
+
+  int api_node_id = 0;
+  Ndb_cluster_connection *ncc = nullptr;
+  {
+    Ndb *pMainNdb = GETNDB(step);
+    Uint32 connectionNo = stepNo % (1 + g_numExtraConnections);
+
+    if (connectionNo == 0) {
+      ncc = &pMainNdb->get_ndb_cluster_connection();
+    } else {
+      ncc = g_extraConnections[connectionNo - 1];
+    }
+
+    api_node_id = ncc->node_id();
+
+    g_err << "runMixedLoadExtra step " << stepNo << "/" << totalSteps
+          << " using connection " << connectionNo << " (api id " << api_node_id
+          << ")" << endl;
+  }
+
+  /* Setup an Ndb object using the connection */
+  Ndb *pNdb = new Ndb(ncc, "TEST_DB");
+  if (pNdb->init() != 0) {
+    g_err << "Error initialising Ndb connection : " << pNdb->getNdbError()
+          << endl;
+    delete pNdb;
+    return NDBT_FAILED;
+  }
+
+  if (pNdb->waitUntilReady(30) != 0) {
+    g_err << "Error waiting until ready in step " << stepNo << endl;
+    delete pNdb;
+    return NDBT_FAILED;
+  }
+
+  HugoTransactions hugoTrans(
+      *ctx->getTab()); /* Cheat using main connection dict */
+  /* Have hugoTrans instances across step threads avoid each other */
+  hugoTrans.setThrInfo(totalSteps, stepNo);
+  int records = ctx->getNumRecords();
+  int batch = 10;
+
+  Uint32 loopCount = 0;
+  while (!ctx->isTestStopped()) {
+    int ret = hugoTrans.pkUpdateRecords(pNdb, records, batch);
+    if (ret != 0) {
+      g_err << "Step " << stepNo << " running updates as api node "
+            << api_node_id << " got hugoTrans error " << hugoTrans.getNdbError()
+            << endl;
+      g_err << "Ignoring." << endl;
+    }
+
+    ret = hugoTrans.scanReadRecords(pNdb, records, 10, /* abortPct */
+                                    0, NdbOperation::LM_CommittedRead);
+    if (ret != 0) {
+      g_err << "Step " << stepNo << " running scan as api node " << api_node_id
+            << " got hugoTrans error " << hugoTrans.getNdbError() << endl;
+      g_err << "Ignoring." << endl;
+    }
+
+    if ((++loopCount % 10) == 0) {
+      g_err << "Step " << stepNo << " on api node " << api_node_id
+            << " completed " << loopCount << " iterations." << endl;
+    }
+  }
+
+  delete pNdb;
+
+  return NDBT_OK;
 }
 
 NDBT_TESTSUITE(testNodeRestart);
@@ -10517,6 +10903,51 @@ TESTCASE("TransientStatesNF",
   INITIALIZER(runLoadTable);
   STEPS(runLargeLockingReads, 5);
   STEP(runRestartsWithSlowCommitComplete);
+  FINALIZER(runClearTable);
+}
+TESTCASE("multi_apifail", "Multiple concurrent api failures") {
+  /* Multiple extra API connections
+   * Multiple threads using main connection + extra connections
+   * (Sub)sets of extra Api connections disconnected
+   * Gives coverage of API failure + reconnect handling
+   */
+  INITIALIZER(runLoadTable);
+  TC_PROPERTY("ExtraConnections", 3);
+  TC_PROPERTY("ConnectionFailIterations", 10);
+  TC_PROPERTY("ConnectionFailDelaySecs", 10);
+  INITIALIZER(runSetupExtraConnections);
+  STEPS(runMixedLoadExtra, 10);
+  STEP(runFailExtraConnections);
+  FINALIZER(runClearExtraConnections);
+  FINALIZER(runClearTable);
+}
+TESTCASE("timeout_apifail", "Timeout handling api failure") {
+  /* Single extra API connection
+   * Multiple threads using main connection + extra connection
+   * Reduced QMGR API failure handling timeout to reduce test runtime
+   * TC failure handling stalled
+   * API is disconnected, TC API failure handling stalls
+   * Gives coverage of API failure handling timeout escalation
+   */
+  INITIALIZER(runLoadTable);
+  TC_PROPERTY("ExtraConnections", 1);
+  TC_PROPERTY("ConnectionFailIterations", 1);
+  TC_PROPERTY("ConnectionFailDelaySecs", 10);
+  TC_PROPERTY("ConnectionFailWaitReconnect",
+              1);                       // Wait for connection to fully recover
+  TC_PROPERTY("DumpSetup", "909 20");   // Reduce Api Failure timeout
+  TC_PROPERTY("DumpClear", "909 600");  // Restore to default
+  TC_PROPERTY("ErrorInjections",
+              "961, 8125");  // Stall failure handling, soft crash
+  TC_PROPERTY("ErrorInjectionNode", ~Uint32(0));  // Choose one
+  INITIALIZER(runSetupExtraConnections);
+  INITIALIZER(runDumpSetup);
+  INITIALIZER(runSetupErrorInjections);
+  STEPS(runMixedLoadExtra, 10);
+  STEP(runFailExtraConnections);
+  FINALIZER(runDumpClear);
+  FINALIZER(runClearErrorInjections);
+  FINALIZER(runClearExtraConnections);
   FINALIZER(runClearTable);
 }
 NDBT_TESTSUITE_END(testNodeRestart)

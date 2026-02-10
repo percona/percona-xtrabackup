@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,9 +28,9 @@
   isamdatabase.
 */
 
-#include <errno.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <cerrno>
 
 #include "my_byteorder.h"
 #include "my_dbug.h"
@@ -260,7 +260,7 @@ int mi_lock_database(MI_INFO *info, int lock_type) {
 */
 
 void mi_get_status(void *param, int concurrent_insert) {
-  MI_INFO *info = (MI_INFO *)param;
+  auto *info = (MI_INFO *)param;
   DBUG_TRACE;
   DBUG_PRINT("info",
              ("key_file: %ld  data_file: %ld  concurrent_insert: %d",
@@ -280,7 +280,7 @@ void mi_get_status(void *param, int concurrent_insert) {
 }
 
 void mi_update_status(void *param) {
-  MI_INFO *info = (MI_INFO *)param;
+  auto *info = (MI_INFO *)param;
   /*
     Because someone may have closed the table we point at, we only
     update the state if its our own state.  This isn't a problem as
@@ -317,7 +317,7 @@ void mi_update_status(void *param) {
 }
 
 void mi_restore_status(void *param) {
-  MI_INFO *info = (MI_INFO *)param;
+  auto *info = (MI_INFO *)param;
   info->state = &info->s->state.state;
   info->append_insert_at_end = false;
 }
@@ -348,7 +348,7 @@ void mi_copy_status(void *to, void *from) {
 */
 
 bool mi_check_status(void *param) {
-  MI_INFO *info = (MI_INFO *)param;
+  auto *info = (MI_INFO *)param;
   /*
     The test for w_locks == 1 is here because this thread has already done an
     external lock (in other words: w_locks == 1 means no other threads has
@@ -357,9 +357,9 @@ bool mi_check_status(void *param) {
   DBUG_PRINT("info", ("dellink: %ld  r_locks: %u  w_locks: %u",
                       (long)info->s->state.dellink, (uint)info->s->r_locks,
                       (uint)info->s->w_locks));
-  return (bool)!(info->s->state.dellink == HA_OFFSET_ERROR ||
-                 (myisam_concurrent_insert == 2 && info->s->r_locks &&
-                  info->s->w_locks == 1));
+  return (info->s->state.dellink != HA_OFFSET_ERROR) &&
+         (myisam_concurrent_insert != 2 || !info->s->r_locks ||
+          info->s->w_locks != 1);
 }
 
 /****************************************************************************
@@ -375,7 +375,7 @@ int _mi_readinfo(MI_INFO *info, int lock_type, int check_keybuffer) {
       if (my_lock(share->kfile, lock_type, info->lock_wait | MY_SEEK_NOT_DONE))
         return 1;
       if (mi_state_info_read_dsk(share->kfile, &share->state, true)) {
-        int error = my_errno() ? my_errno() : -1;
+        int const error = my_errno() ? my_errno() : -1;
         (void)my_lock(share->kfile, F_UNLCK, MYF(MY_SEEK_NOT_DONE));
         set_my_errno(error);
         return 1;
@@ -503,7 +503,7 @@ int _mi_decrement_open_count(MI_INFO *info) {
   MYISAM_SHARE *share = info->s;
   int lock_error = 0, write_error = 0;
   if (share->global_changed) {
-    uint old_lock = info->lock_type;
+    uint const old_lock = info->lock_type;
     share->global_changed = false;
     lock_error = mi_lock_database(info, F_WRLCK);
     /* Its not fatal even if we couldn't get the lock ! */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,8 @@
 
 #ifndef COMPONENTS_SERVICES_BITS_SYSTEM_VARIABLES_BITS_H
 #define COMPONENTS_SERVICES_BITS_SYSTEM_VARIABLES_BITS_H
+
+#include "mysql/components/services/bits/thd.h"
 
 /**
   @addtogroup group_components_services_sys_var_service_types Variable types
@@ -97,6 +99,59 @@ struct st_mysql_value {
   int (*val_real)(struct st_mysql_value *, double *realbuf);
   int (*val_int)(struct st_mysql_value *, long long *intbuf);
   int (*is_unsigned)(struct st_mysql_value *);
+};
+
+struct SYS_VAR;
+
+/*
+  SYNOPSIS
+    (*mysql_var_check_func)()
+      thd               thread handle
+      var               dynamic variable being altered
+      save              pointer to temporary storage
+      value             user provided value
+  RETURN
+    0   user provided value is OK and the update func may be called.
+    any other value indicates error.
+
+  This function should parse the user provided value and store in the
+  provided temporary storage any data as required by the update func.
+  There is sufficient space in the temporary storage to store a double.
+  Note that the update func may not be called if any other error occurs
+  so any memory allocated should be thread-local so that it may be freed
+  automatically at the end of the statement.
+*/
+
+typedef int (*mysql_var_check_func)(MYSQL_THD thd, SYS_VAR *var, void *save,
+                                    struct st_mysql_value *value);
+
+/*
+  SYNOPSIS
+    (*mysql_var_update_func)()
+      thd               thread handle
+      var               dynamic variable being altered
+      var_ptr           pointer to dynamic variable
+      save              pointer to temporary storage
+   RETURN
+     NONE
+
+   This function should use the validated value stored in the temporary store
+   and persist it in the provided pointer to the dynamic variable.
+   For example, strings may require memory to be allocated.
+*/
+typedef void (*mysql_var_update_func)(MYSQL_THD thd, SYS_VAR *var,
+                                      void *var_ptr, const void *save);
+
+#define MYSQL_PLUGIN_VAR_HEADER \
+  int flags;                    \
+  const char *name;             \
+  const char *comment;          \
+  mysql_var_check_func check;   \
+  mysql_var_update_func update
+
+// Definition of system vars structure for access their information
+struct SYS_VAR {
+  MYSQL_PLUGIN_VAR_HEADER;
 };
 
 #endif /* COMPONENTS_SERVICES_BITS_SYSTEM_VARIABLES_BITS_H */

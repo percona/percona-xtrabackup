@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #
 # Bug#30248138 - adding a function once mysql.func is converted to myisam
 #                leads to crash
@@ -570,3 +571,4 @@ SET GLOBAL default_password_lifetime = DEFAULT;
 DROP TABLE t1;
 DROP FUNCTION f1;
 DROP USER 'user1'@'%';
+include/rpl/set_gtid_mode_on.inc

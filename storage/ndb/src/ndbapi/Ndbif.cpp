@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -199,15 +199,9 @@ error_handler:
 
 void Ndb::releaseTransactionArrays() {
   DBUG_ENTER("Ndb::releaseTransactionArrays");
-  if (thePreparedTransactionsArray != nullptr) {
-    delete[] thePreparedTransactionsArray;
-  }  // if
-  if (theSentTransactionsArray != nullptr) {
-    delete[] theSentTransactionsArray;
-  }  // if
-  if (theCompletedTransactionsArray != nullptr) {
-    delete[] theCompletedTransactionsArray;
-  }  // if
+  delete[] thePreparedTransactionsArray;
+  delete[] theSentTransactionsArray;
+  delete[] theCompletedTransactionsArray;
   DBUG_VOID_RETURN;
 }  // Ndb::releaseTransactionArrays()
 
@@ -250,7 +244,6 @@ void Ndb::report_node_failure(Uint32 node_id) {
     theImpl->the_release_ind[0] = 1;
     theImpl->theWaiter.nodeFail(node_id);
   }
-  return;
 }  // Ndb::report_node_failure()
 
 void Ndb::report_node_failure_completed(Uint32 node_id) {
@@ -311,7 +304,6 @@ void Ndb::abortTransactionsAfterNodeFailure(Uint16 aNodeId) {
       completedTransaction(localCon);
     }
   }  // for
-  return;
 }  // Ndb::abortTransactionsAfterNodeFailure()
 
 NdbTransaction *NdbImpl::lookupTransactionFromOperation(const TcKeyConf *conf) {
@@ -333,7 +325,7 @@ void NdbImpl::drop_batched_fragments(
   batched_fragments->extract_signal_only(&signal);
 
   require(signal.readSignalNumber() == GSN_SUB_TABLE_DATA);
-  const SubTableData *sdata = CAST_CONSTPTR(SubTableData, signal.getDataPtr());
+  const auto *sdata = CAST_CONSTPTR(SubTableData, signal.getDataPtr());
   const Uint64 gci = (Uint64(sdata->gci_hi) << 32) | sdata->gci_lo;
   m_ndb.theEventBuffer->create_empty_exceptional_epoch(
       gci, NdbDictionary::Event::_TE_INCONSISTENT);
@@ -368,8 +360,7 @@ Int32 NdbImpl::assemble_data_event_signal(
   }
 
   if (result == AssembleBatchedFragments::NEED_SETUP) {
-    const SubTableData *sdata =
-        CAST_CONSTPTR(SubTableData, signal->getDataPtr());
+    const auto *sdata = CAST_CONSTPTR(SubTableData, signal->getDataPtr());
 
     const bool setup_ok = batched_fragments->setup(sdata->totalLen);
     if (unlikely(!setup_ok)) {
@@ -450,7 +441,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
   switch (tSignalNumber) {
     case GSN_TCKEYCONF:
     case GSN_TCINDXCONF: {
-      const TcKeyConf *const keyConf = (const TcKeyConf *)tDataPtr;
+      const auto *const keyConf = (const TcKeyConf *)tDataPtr;
       if (tFirstData != RNIL) {
         tCon = void2con(tFirstDataPtr);
       } else {
@@ -531,8 +522,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
           Uint32 com;
           if (num_sections > 0) {
             if (type == NdbReceiver::NDB_QUERY_OPERATION) {
-              NdbQueryOperationImpl *impl_owner =
-                  (NdbQueryOperationImpl *)owner;
+              auto *impl_owner = (NdbQueryOperationImpl *)owner;
               com = impl_owner->execTRANSID_AI(ptr[0].p, ptr[0].sz);
             } else {
               com = tRec->execTRANSID_AI(ptr[0].p, ptr[0].sz);
@@ -555,8 +545,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
              * QUERY-receiver support short (and 'packed') TRANSID_AI.
              */
             if (type == NdbReceiver::NDB_QUERY_OPERATION) {
-              NdbQueryOperationImpl *impl_owner =
-                  (NdbQueryOperationImpl *)owner;
+              auto *impl_owner = (NdbQueryOperationImpl *)owner;
               com =
                   impl_owner->execTRANSID_AI(tDataPtr + TransIdAI::HeaderLength,
                                              tLen - TransIdAI::HeaderLength);
@@ -595,36 +584,32 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
             }
             case NdbReceiver::NDB_QUERY_OPERATION: {
               // Handled differently whether it is a scan or lookup
-              NdbQueryOperationImpl *impl_owner =
-                  (NdbQueryOperationImpl *)owner;
+              auto *impl_owner = (NdbQueryOperationImpl *)owner;
               if (impl_owner->getQueryDef().isScanQuery()) {
                 tNewState =
                     (((WaitSignalType)tWaitState) == WAIT_SCAN ? (Uint32)NO_WAIT
                                                                : tWaitState);
                 break;
-              } else {
-                if (tCon->OpCompleteSuccess() !=
-                    -1) {  // More completions pending?
-                  myNdb->completedTransaction(tCon);
-                }
-                return;
               }
+              if (tCon->OpCompleteSuccess() !=
+                  -1) {  // More completions pending?
+                myNdb->completedTransaction(tCon);
+              }
+              return;
             }
             default: {
               goto InvalidSignal;
             }
           }
           break;
-        } else {
-          /**
-           * This is ok as transaction can have been aborted before TRANSID_AI
-           * arrives (if TUP on  other node than TC)
-           */
-          return;
         }
-      } else {
+        /**
+         * This is ok as transaction can have been aborted before TRANSID_AI
+         * arrives (if TUP on  other node than TC)
+         */
         return;
       }
+      return;
     }
     case GSN_SCAN_TABCONF: {
       tCon = void2con(tFirstDataPtr);
@@ -653,7 +638,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
       break;
     }
     case GSN_TC_COMMITCONF: {
-      const TcCommitConf *const commitConf = (const TcCommitConf *)tDataPtr;
+      const auto *const commitConf = (const TcCommitConf *)tDataPtr;
       const BlockReference aTCRef = aSignal->theSendersBlockRef;
 
       if (tFirstDataPtr == nullptr) {
@@ -737,13 +722,12 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
             goto InvalidSignal;
         }
         break;
-      } else {
-        /**
-         * This is ok as transaction can have been aborted before KEYINFO20
-         * arrives (if TUP on  other node than TC)
-         */
-        return;
       }
+      /**
+       * This is ok as transaction can have been aborted before KEYINFO20
+       * arrives (if TUP on  other node than TC)
+       */
+      return;
     }
     case GSN_TCKEYREF: {
       if (tFirstDataPtr == nullptr) {
@@ -757,8 +741,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
       if (tCon != nullptr) {
         if (tCon->theSendStatus == NdbTransaction::sendTC_OP) {
           if (receiver->getType() == NdbReceiver::NDB_QUERY_OPERATION) {
-            NdbQueryOperationImpl *tmp =
-                (NdbQueryOperationImpl *)(receiver->m_owner);
+            auto *tmp = (NdbQueryOperationImpl *)(receiver->m_owner);
             if (tmp->execTCKEYREF(aSignal) && tCon->OpCompleteFailure() != -1) {
               myNdb->completedTransaction(tCon);
               return;
@@ -932,7 +915,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
       break;
     }
     case GSN_TCKEY_FAILCONF: {
-      const TcKeyFailConf *failConf = (const TcKeyFailConf *)tDataPtr;
+      const auto *failConf = (const TcKeyFailConf *)tDataPtr;
       const BlockReference aTCRef = aSignal->theSendersBlockRef;
       if (tFirstDataPtr != nullptr) {
         const NdbReceiver *const receiver = void2rec(tFirstDataPtr);
@@ -1073,7 +1056,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
       }
 
       const Uint64 latestGCI = myNdb->getLatestGCI();
-      const SubGcpCompleteRep *const rep =
+      const auto *const rep =
           CAST_CONSTPTR(SubGcpCompleteRep, aSignal->getDataPtr());
       myNdb->theEventBuffer->execSUB_GCP_COMPLETE_REP(rep, tLen);
       if (tWaitState == WAIT_EVENT && myNdb->getLatestGCI() != latestGCI) {
@@ -1094,11 +1077,10 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
         copy_ptr[i].sz = 0;
       }
 
-      const SubTableData *sdata =
-          CAST_CONSTPTR(SubTableData, aSignal->getDataPtr());
+      const auto *sdata = CAST_CONSTPTR(SubTableData, aSignal->getDataPtr());
 
       const Uint32 oid = sdata->senderData;
-      NdbEventOperationImpl *op = (NdbEventOperationImpl *)int2void(oid);
+      auto *op = (NdbEventOperationImpl *)int2void(oid);
       if (unlikely(op == nullptr ||
                    op->m_magic_number != NDB_EVENT_OP_MAGIC_NUMBER)) {
         g_eventLogger->error(
@@ -1169,8 +1151,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
       return;  // Ignore
     }
     case GSN_NODE_FAILREP: {
-      const NodeFailRep *rep =
-          CAST_CONSTPTR(NodeFailRep, aSignal->getDataPtr());
+      const auto *rep = CAST_CONSTPTR(NodeFailRep, aSignal->getDataPtr());
       Uint32 len = NodeFailRep::getNodeMaskLength(aSignal->getLength());
       const Uint32 *nbm;
       if (aSignal->m_noOfSections >= 1) {
@@ -1195,8 +1176,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
       break;
     }
     case GSN_NF_COMPLETEREP: {
-      const NFCompleteRep *rep =
-          CAST_CONSTPTR(NFCompleteRep, aSignal->getDataPtr());
+      const auto *rep = CAST_CONSTPTR(NFCompleteRep, aSignal->getDataPtr());
       myNdb->report_node_failure_completed(rep->failedNodeId);
       break;
     }
@@ -1205,8 +1185,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
       break;
     }
     case GSN_ALLOC_NODEID_CONF: {
-      const AllocNodeIdConf *rep =
-          CAST_CONSTPTR(AllocNodeIdConf, aSignal->getDataPtr());
+      const auto *rep = CAST_CONSTPTR(AllocNodeIdConf, aSignal->getDataPtr());
       Uint32 nodeId = rep->nodeId;
       myNdb->connected(numberToRef(myNdb->theNdbBlockNumber, nodeId));
       break;
@@ -1357,8 +1336,7 @@ Uint32 Ndb::pollCompleted(NdbTransaction **aCopyArray) {
 }  // Ndb::pollCompleted()
 
 void Ndb::check_send_timeout() {
-  const Uint32 timeout =
-      theImpl->get_ndbapi_config_parameters().m_waitfor_timeout;
+  const Uint32 timeout = theImpl->get_waitfor_timeout();
   const Uint64 current_time = NdbTick_CurrentMillisecond();
   assert(current_time >= the_last_check_time);
 #ifndef NDEBUG
@@ -1389,7 +1367,7 @@ void Ndb::check_send_timeout() {
                             t2);
         // abort();
 #endif
-        a_con->theReleaseOnClose = true;
+        a_con->theForceReleaseOnClose = true;
         a_con->theError.code = 4012;
         a_con->setOperationErrorCodeAbort(4012);
         a_con->theCommitStatus = NdbTransaction::NeedAbort;
@@ -1478,15 +1456,14 @@ void Ndb::sendPrepTrans(int forceSend) {
           const Uint64 current_time = NdbTick_CurrentMillisecond();
           a_con->theStartTransTime = current_time;
           continue;
-        } else {
-          /*
-          Although all precautions we did not manage to send the operations
-          Must have been a dropped connection on the transporter side.
-          We don't expect to be able to continue using this connection so
-          we will treat it as a node failure.
-          */
-          TRACE_DEBUG("Send problem even after checking node status");
-        }  // if
+        }
+        /*
+        Although all precautions we did not manage to send the operations
+        Must have been a dropped connection on the transporter side.
+        We don't expect to be able to continue using this connection so
+        we will treat it as a node failure.
+        */
+        TRACE_DEBUG("Send problem even after checking node status");
       } else {
         /*
         The send buffer is currently full or at least close to. We will
@@ -1533,7 +1510,6 @@ void Ndb::sendPrepTrans(int forceSend) {
     theImpl->incClientStat(
         did_send ? Ndb::UnforcedSendsCount : Ndb::DeferredSendsCount, 1);
   }
-  return;
 }  // Ndb::sendPrepTrans()
 
 /*****************************************************************************
@@ -1597,7 +1573,6 @@ void Ndb::sendPreparedTransactions(int forceSend) {
   theImpl->lock();
   sendPrepTrans(forceSend);
   theImpl->unlock();
-  return;
 }  // Ndb::sendPreparedTransactions()
 
 /*****************************************************************************
@@ -1701,9 +1676,9 @@ int Ndb::sendRecSignal(Uint16 node_id, Uint32 aWaitState, NdbApiSignal *aSignal,
       if (return_code != -1) {
         return poll_guard.wait_n_unlock(WAITFOR_RESPONSE_TIMEOUT, node_id,
                                         aWaitState, false);
-      } else {
-        return_code = -3;
       }
+      return_code = -3;
+
     } else {
       return_code = -4;
     }  // if

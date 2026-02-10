@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -125,8 +125,9 @@ void Log_files_dict::add(Log_file_id file_id, os_offset_t size_in_bytes,
   }
   ut_a(end_lsn % OS_FILE_LOG_BLOCK_SIZE == 0);
 
-  Log_file meta_info{m_files_ctx,   file_id,   consumed, full,
-                     size_in_bytes, start_lsn, end_lsn,  encryption_metadata};
+  Log_file const meta_info{
+      m_files_ctx,   file_id,   consumed, full,
+      size_in_bytes, start_lsn, end_lsn,  encryption_metadata};
 
   m_files_by_id.emplace(file_id, meta_info);
 }

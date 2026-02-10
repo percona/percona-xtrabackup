@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,6 +44,9 @@
 #include <sys/types.h>
 #include <atomic>
 #include <bitset>
+#include <concepts>    // invocable
+#include <functional>  // function
+#include <list>        // list
 #include <memory>
 #include <new>
 #include <stack>
@@ -85,6 +88,7 @@
 #include "mysqld_error.h"
 #include "pfs_thread_provider.h"
 #include "prealloced_array.h"
+#include "scope_guard.h"                // Scope_guard
 #include "sql/auth/sql_security_ctx.h"  // Security_context
 #include "sql/current_thd.h"
 #include "sql/dd/string_type.h"      // dd::string_type
@@ -739,6 +743,7 @@ enum class Secondary_engine_optimization {
 
 #define SUB_STMT_TRIGGER 1
 #define SUB_STMT_FUNCTION 2
+#define SUB_STMT_DUALITY_VIEW 3
 
 class Sub_statement_state {
  public:
@@ -1070,7 +1075,21 @@ class THD : public MDL_context_owner,
   std::unique_ptr<Secondary_engine_statement_context>
       m_secondary_engine_statement_context;
 
+  /* eligible secondary engine handlerton for this query */
+  handlerton *m_eligible_secondary_engine_handlerton;
+
  public:
+  /* Store a thread safe copy of protocol properties. */
+  enum class cached_properties : int {
+    NONE = 0,         // No properties
+    IS_ALIVE = 1,     // protocol->is_connection_alive()
+    RW_STATUS = 2,    // protocol->get_rw_status()
+    LAST = 4,         // Next unused power of 2.
+    ALL = (LAST - 1)  // Mask selecting all properties.
+  };
+  void store_cached_properties(
+      cached_properties prop_mask = cached_properties::ALL);
+
   /* Used to execute base64 coded binlog events in MySQL server */
   Relay_log_info *rli_fake;
   /* Slave applier execution context */
@@ -1105,6 +1124,12 @@ class THD : public MDL_context_owner,
 
   Secondary_engine_statement_context *secondary_engine_statement_context() {
     return m_secondary_engine_statement_context.get();
+  }
+
+  void set_eligible_secondary_engine_handlerton(handlerton *hton);
+
+  handlerton *eligible_secondary_engine_handlerton() const {
+    return m_eligible_secondary_engine_handlerton;
   }
 
   /**
@@ -1290,12 +1315,13 @@ class THD : public MDL_context_owner,
   mysql_mutex_t LOCK_query_plan;
 
   /**
-    Keep a cached value saying whether the connection is alive. Update when
+    Keep cached values of "connection alive" and "rw status". Update when
     pushing, popping or getting the protocol. Used by
     information_schema.processlist to avoid locking mutexes that might
     affect performance.
   */
   std::atomic<bool> m_cached_is_connection_alive;
+  std::atomic<uint> m_cached_rw_status;
 
  public:
   /// Locks the query plan of this THD
@@ -2556,6 +2582,7 @@ class THD : public MDL_context_owner,
   */
   void set_new_thread_id();
   my_thread_id thread_id() const { return m_thread_id; }
+
   uint tmp_table;
   uint server_status, open_options;
   enum enum_thread_type system_thread;
@@ -2822,6 +2849,8 @@ class THD : public MDL_context_owner,
   bool derived_tables_processing;
   // Set while parsing INFORMATION_SCHEMA system views.
   bool parsing_system_view;
+  // Set while parsing JSON duality view.
+  bool parsing_json_duality_view{false};
 
   /** Current SP-runtime context. */
   sp_rcontext *sp_runtime_ctx;
@@ -2987,6 +3016,17 @@ class THD : public MDL_context_owner,
   */
   void init_query_mem_roots();
   void cleanup_connection(void);
+  /**
+    Sets the THD::variables values that depend on the protocol
+
+    Some THD::variable values take different default based on properties of the
+    protocol, e.g. capabilities etc. This function sets these values.
+
+    Called when:
+       1. A new connection is established
+       2. A reset connection or change_user is done
+   */
+  void set_protocol_dependent_variables(Protocol *proto);
   void cleanup_after_query();
   void store_globals();
   void restore_globals();
@@ -3171,6 +3211,10 @@ class THD : public MDL_context_owner,
     return (variables.sql_mode & MODE_TIME_TRUNCATE_FRACTIONAL);
   }
 
+  bool interpret_utf8_as_utf8mb4() const {
+    return (variables.sql_mode & MODE_INTERPRET_UTF8_AS_UTF8MB4);
+  }
+
   /**
    Evaluate the current time, and if it exceeds the long-query-time
    setting, mark the query as slow.
@@ -3281,6 +3325,9 @@ class THD : public MDL_context_owner,
 
   /** Return false if connection to client is broken. */
   bool is_connected(bool use_cached_connection_alive = false) final;
+
+  /** Return the cached protocol rw status. */
+  uint get_protocol_rw_status();
 
   /**
     Mark the current error as fatal. Warning: this does not
@@ -3940,6 +3987,32 @@ class THD : public MDL_context_owner,
     server). When this flag is set, a call to gtid_rollback() will do nothing.
   */
   bool skip_gtid_rollback;
+
+ private:
+  /// Callback functions that determine if GTID rollback shall be skipped.
+  std::list<std::function<bool(const THD &)>> m_skip_gtid_rollback_checkers;
+
+ public:
+  /// Invoke the callback functions that determine if GTID rollback shall be
+  /// skipped, and return true as soon as one of them returns true; otherwise
+  /// return false.
+  bool shall_skip_gtid_rollback() const {
+    for (const auto &func : m_skip_gtid_rollback_checkers)
+      if (func(*this)) return true;
+    return false;
+  }
+
+  /// Register a callback function that will determine if a subsequent GTID
+  /// rollback shall be skipped. Returns a (moveable, but not copyable) object
+  /// whose destructor will will unregister the callback.
+  [[nodiscard]] auto register_skip_gtid_rollback_checker(
+      const std::invocable<const THD &> auto &shall_skip) {
+    m_skip_gtid_rollback_checkers.emplace_back(shall_skip);
+    auto it = std::prev(m_skip_gtid_rollback_checkers.end());
+    return Scope_guard{
+        [this, it] { this->m_skip_gtid_rollback_checkers.erase(it); }};
+  }
+
   /*
     There are some statements (like DROP DATABASE that fails on rmdir
     and gets rewritten to multiple DROP TABLE statements) that may
@@ -4684,6 +4757,8 @@ class THD : public MDL_context_owner,
   void set_secondary_engine_optimization(Secondary_engine_optimization state) {
     m_secondary_engine_optimization = state;
   }
+  /// cleanup all secondary engine relevant members after statement execution.
+  void cleanup_after_statement_execution();
 
   /**
     Can secondary storage engines be used for query execution in
@@ -4846,6 +4921,38 @@ class THD : public MDL_context_owner,
 
   /// Count of Regular Statement Handles in use.
   unsigned short m_regular_statement_handle_count{0};
+
+  /// Increment the owned temptable counter. This is used to find leaked
+  /// temptable handles during close_connection calls
+  void increment_temptable_count() { ++m_opened_temptable_count; }
+  /// Decrement the owned temptable counter.
+  void decrement_temptable_count() { --m_opened_temptable_count; }
+  /// Return currently owned temptable count.
+  size_t get_temptable_count() const { return m_opened_temptable_count; }
+
+ private:
+  /** Each THD can open multiple temptables, we create these temptable objects
+    in the temptable engine. These objects have their lifetime controlled with
+    create and delete_table calls in the temptable handler. The sql layer is
+    responsible for calling the create and delete_table functions. We increment
+    this counter in create, and decrement it in delete_table. This allows us to
+    detect any situation where we call close_connection which releases the
+    underlying memory in the temptable engine, before all temptable objects
+    have been deleted. This way we can react and clean up any temptable objects
+    before we free the underlying memory. So we can think of the THD as owning
+    multiple temptable objects in the temptable engine, and we tie the lifetime
+    of these objects to the lifetime of the THD. In normal operation they
+    should be deleted before the close_connection call but this enforces
+    defined behaviour when they aren't.
+  */
+  size_t m_opened_temptable_count{};
+
+ private:
+  bool m_sql_foreign_keys{1};
+
+ public:
+  bool get_sql_foreign_keys() const;
+  void set_sql_foreign_keys(bool flag) { m_sql_foreign_keys = flag; }
 };
 
 /**
@@ -4941,4 +5048,29 @@ inline bool is_rpl_source_older(const THD *thd, uint version) {
           thd->variables.original_server_version < version);
 }
 
+/**
+ * @brief Check if foreign handling at SQL is enabled.
+ *
+ * @param thd        Thread Handle.
+ *
+ * @return true      If enabled.
+ * @return false     Otherwise.
+ */
+inline bool is_sql_fk_checks_enabled(THD *thd) {
+  DBUG_EXECUTE_IF("force_innodb_fk", return false;);
+  DBUG_EXECUTE_IF("force_sql_fk", return true;);
+  assert(thd != nullptr);
+  return thd->variables.option_bits & OPTION_USE_SQL_FOREIGN_KEY_HANDLING;
+}
+
+/**
+ * @brief Check if SQL foreign key handling can be used for a table.
+ *
+ * @param thd              Thread Handle.
+ * @param table            TABLE instance of a table.
+ *
+ * @return true            if SQL FK checks supported for SE.
+ * @return false           Otherwise.
+ */
+bool use_sql_fk_checks_for_table(THD *thd, TABLE *table);
 #endif /* SQL_CLASS_INCLUDED */

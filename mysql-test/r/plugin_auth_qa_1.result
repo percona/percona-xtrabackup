@@ -49,6 +49,8 @@ plug_dest	caching_sha2_password
 disconnect plug_user;
 UPDATE mysql.user SET user='plug_user' WHERE user='new_user';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT user,plugin FROM mysql.user WHERE user NOT IN ('root', 'mysql.sys', 'mysql.session', 'mysql.infoschema');
 user	plugin
 plug_dest	caching_sha2_password
@@ -71,18 +73,24 @@ plug_dest	caching_sha2_password
 plug_user	test_plugin_server
 UPDATE mysql.user SET user='new_user' WHERE user='plug_user';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT user,plugin FROM mysql.user WHERE user NOT IN ('root', 'mysql.sys', 'mysql.session', 'mysql.infoschema');
 user	plugin
 new_user	test_plugin_server
 plug_dest	caching_sha2_password
 UPDATE mysql.user SET authentication_string='new_dest' WHERE user='new_user';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT user,plugin FROM mysql.user WHERE user NOT IN ('root', 'mysql.sys', 'mysql.session', 'mysql.infoschema');
 user	plugin
 new_user	test_plugin_server
 plug_dest	caching_sha2_password
 UPDATE mysql.user SET plugin='new_plugin_server' WHERE user='new_user';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT user,plugin FROM mysql.user WHERE user NOT IN ('root', 'mysql.sys', 'mysql.session', 'mysql.infoschema');
 user	plugin
 new_user	new_plugin_server
@@ -92,6 +100,8 @@ ERROR HY000: Plugin 'new_plugin_server' is not loaded
 UPDATE mysql.user SET plugin='test_plugin_server' WHERE user='new_user';
 UPDATE mysql.user SET USER='new_dest' WHERE user='plug_dest';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 GRANT PROXY ON new_dest TO new_user;
 SELECT user,plugin FROM mysql.user WHERE user NOT IN ('root', 'mysql.sys', 'mysql.session', 'mysql.infoschema');
 user	plugin
@@ -105,6 +115,8 @@ connection default;
 disconnect plug_user;
 UPDATE mysql.user SET USER='plug_dest' WHERE user='new_dest';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE USER new_dest IDENTIFIED BY 'new_dest_passwd';
 SELECT user,plugin FROM mysql.user WHERE user NOT IN ('root', 'mysql.sys', 'mysql.session', 'mysql.infoschema');
 user	plugin

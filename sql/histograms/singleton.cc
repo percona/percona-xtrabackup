@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -64,7 +64,7 @@ Singleton<T> *Singleton<T>::create(MEM_ROOT *mem_root,
                                    const std::string &col_name,
                                    Value_map_type data_type) {
   bool error = false;
-  Singleton<T> *singleton = new (mem_root)
+  auto *singleton = new (mem_root)
       Singleton<T>(mem_root, db_name, tbl_name, col_name, data_type, &error);
   if (error) return nullptr;
   return singleton;
@@ -79,8 +79,9 @@ Singleton<T>::Singleton(MEM_ROOT *mem_root, const Singleton<T> &other,
     return;  // OOM
   }
   for (const SingletonBucket<T> &other_bucket : other.m_buckets) {
-    SingletonBucket<T> bucket(DeepCopy(other_bucket.value, mem_root, error),
-                              other_bucket.cumulative_frequency);
+    SingletonBucket<T> const bucket(
+        DeepCopy(other_bucket.value, mem_root, error),
+        other_bucket.cumulative_frequency);
     if (*error) return;
     m_buckets.push_back(bucket);
   }
@@ -131,7 +132,7 @@ bool Singleton<T>::build_histogram(const Value_map<T> &value_map,
     const double cumulative_frequency =
         cumulative_sum / static_cast<double>(total_count);
     bool value_copy_error = false;
-    SingletonBucket<T> bucket(
+    SingletonBucket<T> const bucket(
         DeepCopy(node.first, get_mem_root(), &value_copy_error),
         cumulative_frequency);
     if (value_copy_error) return true;
@@ -221,8 +222,17 @@ bool Singleton<longlong>::add_value_json_bucket(const longlong &value,
 }
 
 template <>
-bool Singleton<MYSQL_TIME>::add_value_json_bucket(const MYSQL_TIME &value,
-                                                  Json_array *json_bucket) {
+bool Singleton<Time_val>::add_value_json_bucket(const Time_val &value,
+                                                Json_array *json_bucket) {
+  const Json_time json_value(value);
+  if (json_bucket->append_clone(&json_value))
+    return true; /* purecov: inspected */
+  return false;
+}
+
+template <>
+bool Singleton<Datetime_val>::add_value_json_bucket(const Datetime_val &value,
+                                                    Json_array *json_bucket) {
   enum_field_types field_type;
   switch (value.time_type) {
     case MYSQL_TIMESTAMP_DATE:
@@ -230,9 +240,6 @@ bool Singleton<MYSQL_TIME>::add_value_json_bucket(const MYSQL_TIME &value,
       break;
     case MYSQL_TIMESTAMP_DATETIME:
       field_type = MYSQL_TYPE_DATETIME;
-      break;
-    case MYSQL_TIMESTAMP_TIME:
-      field_type = MYSQL_TYPE_TIME;
       break;
     default:
       /* purecov: begin deadcode */
@@ -276,7 +283,7 @@ bool Singleton<T>::json_to_histogram(const Json_object &json_object,
     return true;
   }
 
-  const Json_array *buckets = down_cast<const Json_array *>(buckets_dom);
+  const auto *buckets = down_cast<const Json_array *>(buckets_dom);
   if (m_buckets.reserve(buckets->size())) return true;  // OOM
 
   for (size_t i = 0; i < buckets->size(); ++i) {
@@ -289,7 +296,7 @@ bool Singleton<T>::json_to_histogram(const Json_object &json_object,
       context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
       return true;
     }
-    const Json_array *bucket = down_cast<const Json_array *>(bucket_dom);
+    const auto *bucket = down_cast<const Json_array *>(bucket_dom);
     if (bucket->size() != 2) {
       context->report_node(bucket_dom, Message::JSON_WRONG_BUCKET_TYPE_2);
       return true;
@@ -303,7 +310,7 @@ bool Singleton<T>::json_to_histogram(const Json_object &json_object,
       return true;
     }
 
-    const Json_double *cumulative_frequency =
+    const auto *cumulative_frequency =
         down_cast<const Json_double *>(cumulative_frequency_dom);
 
     const Json_dom *value_dom = (*bucket)[0];
@@ -342,9 +349,9 @@ bool Singleton<T>::json_to_histogram(const Json_object &json_object,
     m_buckets.push_back(
         SingletonBucket<T>(value, cumulative_frequency->value()));
   }
-  bool histogram_buckets_sorted = std::is_sorted(
+  bool const histogram_buckets_sorted = std::is_sorted(
       m_buckets.begin(), m_buckets.end(), Histogram_comparator());
-  bool already_validated [[maybe_unused]] = context->binary();
+  bool const already_validated [[maybe_unused]] = context->binary();
   assert(!already_validated || histogram_buckets_sorted);
   if (!histogram_buckets_sorted) {
     context->report_node(buckets_dom, Message::JSON_VALUE_NOT_ASCENDING_1);
@@ -365,7 +372,7 @@ bool Singleton<T>::json_to_histogram(const Json_object &json_object,
       }
     } else {
       SingletonBucket<T> *last_bucket = &m_buckets[m_buckets.size() - 1];
-      float sum =
+      float const sum =
           last_bucket->cumulative_frequency + get_null_values_fraction();
       if (std::abs(sum - 1.0) > 0) {
         context->report_global(Message::JSON_INVALID_TOTAL_FREQUENCY);
@@ -397,12 +404,9 @@ double Singleton<T>::get_equal_to_selectivity(const T &value) const {
   if (found == m_buckets.end()) return 0.0;
 
   if (Histogram_comparator()(value, found->value) == 0) {
-    if (found == m_buckets.begin())
-      return found->cumulative_frequency;
-    else {
-      const auto previous = std::prev(found, 1);
-      return found->cumulative_frequency - previous->cumulative_frequency;
-    }
+    if (found == m_buckets.begin()) return found->cumulative_frequency;
+    const auto previous = std::prev(found, 1);
+    return found->cumulative_frequency - previous->cumulative_frequency;
   }
 
   return 0.0;
@@ -416,12 +420,9 @@ double Singleton<T>::get_less_than_selectivity(const T &value) const {
   */
   const auto found = std::lower_bound(m_buckets.begin(), m_buckets.end(), value,
                                       Histogram_comparator());
-  if (found == m_buckets.begin())
-    return 0.0;
-  else {
-    const auto previous = std::prev(found, 1);
-    return previous->cumulative_frequency;
-  }
+  if (found == m_buckets.begin()) return 0.0;
+  const auto previous = std::prev(found, 1);
+  return previous->cumulative_frequency;
 }
 
 template <class T>
@@ -433,12 +434,9 @@ double Singleton<T>::get_greater_than_selectivity(const T &value) const {
   const auto found = std::upper_bound(m_buckets.begin(), m_buckets.end(), value,
                                       Histogram_comparator());
 
-  if (found == m_buckets.begin())
-    return get_non_null_values_fraction();
-  else {
-    const auto previous = std::prev(found, 1);
-    return get_non_null_values_fraction() - previous->cumulative_frequency;
-  }
+  if (found == m_buckets.begin()) return get_non_null_values_fraction();
+  const auto previous = std::prev(found, 1);
+  return get_non_null_values_fraction() - previous->cumulative_frequency;
 }
 
 // Explicit template instantiations.
@@ -446,7 +444,8 @@ template class Singleton<double>;
 template class Singleton<String>;
 template class Singleton<ulonglong>;
 template class Singleton<longlong>;
-template class Singleton<MYSQL_TIME>;
+template class Singleton<Time_val>;
+template class Singleton<Datetime_val>;
 template class Singleton<my_decimal>;
 
 }  // namespace histograms

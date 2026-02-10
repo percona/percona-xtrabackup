@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
 
    This program is free software; you can redistribute it and/or modify
@@ -54,7 +54,7 @@ class NdbProcess {
 #endif
 
   class Pipes {
-    std::array<pipe_handle_t, 4> fd;
+    pipe_handle_t fd[4];
     bool is_setup{false};
 
    public:
@@ -98,14 +98,14 @@ class NdbProcess {
      */
     void add(const Args &args);
 
-    const Vector<BaseString> &args(void) const { return m_args; }
+    const Vector<BaseString> &args() const { return m_args; }
     void clear() { m_args.clear(); }
   };
 
   ~NdbProcess() { assert(!running()); }
   void closeHandles();
   static void printerror();
-  bool stop(void);
+  bool stop();
   bool wait(int &ret, int timeout_msec = 0);
   bool running() const;
 
@@ -142,7 +142,7 @@ class NdbProcess {
 
   static std::unique_ptr<NdbProcess> create_via_ssh(
       const BaseString &name, const BaseString &host, const BaseString &path,
-      const BaseString &cwd, const Args &args, Pipes *const fds = nullptr);
+      const BaseString &cwd, const Args &args, Pipes *fds = nullptr);
 
  private:
 #ifdef _WIN32
@@ -153,7 +153,7 @@ class NdbProcess {
   BaseString m_name;
   Pipes *m_pipes;
 
-  NdbProcess(BaseString name, Pipes *fds) : m_name(name), m_pipes(fds) {}
+  NdbProcess(const BaseString &name, Pipes *fds) : m_name(name), m_pipes(fds) {}
 
   /*
    * Quoting function to be used for passing program name and arguments to a
@@ -299,7 +299,7 @@ std::unique_ptr<NdbProcess> NdbProcess::create_via_ssh(
   }
   ssh_args.add(qpath.value().c_str());
   for (size_t i = 0; i < args.args().size(); i++) {
-    auto &arg = args.args()[i];
+    const auto &arg = args.args()[i];
     auto qarg = quote_func(arg.c_str());
     if (!qarg) {
       fprintf(stderr, "Function failed, could not quote command argument: %s\n",
@@ -703,7 +703,7 @@ inline bool NdbProcess::start_process(process_handle_t &pid, const char *path,
     }
   }
 
-  auto &args_vec = args.args();
+  const auto &args_vec = args.args();
   size_t arg_cnt = args_vec.size();
   char **argv = new char *[1 + arg_cnt + 1];
   argv[0] = const_cast<char *>(path);

@@ -3,6 +3,9 @@
 --echo #               ROWS, EVEN READ-COMMITTED
 --echo #
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 --disable_query_log
 SET @saved_binlog_format= @@GLOBAL.binlog_format;
 CREATE TABLE cases (
@@ -76,3 +79,5 @@ while ($binlog_formats)
 DROP TABLE cases;
 SET GLOBAL BINLOG_FORMAT=@saved_binlog_format;
 --enable_query_log
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

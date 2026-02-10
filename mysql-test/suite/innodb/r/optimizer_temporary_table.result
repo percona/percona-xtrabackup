@@ -1,3 +1,5 @@
+SET explain_json_format_version = 1;
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
 drop table if exists t1, t2;
 Warnings:
 Note	1051	Unknown table 'test.t1'
@@ -355,6 +357,7 @@ test.t12	analyze	status	OK
 test.t13	analyze	status	OK
 test.t14	analyze	status	OK
 # restart: --big-tables=1
+SET explain_json_format_version = 1;
 SET @optimizer_switch_saved= @@optimizer_switch;
 SET @@optimizer_switch="derived_merge=off";
 explain format = json select sql_buffer_result * from t1;
@@ -2267,6 +2270,7 @@ x
 SET @@optimizer_switch=@optimizer_switch_saved;
 SET GLOBAL innodb_fast_shutdown = 0;
 # restart: --innodb-read-only --big-tables=1
+SET explain_json_format_version = 1;
 SET @optimizer_switch_saved= @@optimizer_switch;
 SET @@optimizer_switch="derived_merge=off";
 explain format = json select sql_buffer_result * from t1;

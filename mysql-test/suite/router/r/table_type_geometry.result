@@ -1,0 +1,598 @@
+RESET BINARY LOGS AND GTIDS;
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+CREATE TABLE test.geo0(
+id INTEGER AUTO_INCREMENT PRIMARY KEY,
+g GEOMETRY SRID 0);
+CREATE TABLE test.geo4326(
+id INTEGER AUTO_INCREMENT PRIMARY KEY,
+g GEOMETRY SRID 4326);
+INSERT INTO test.geo0(g)
+VALUES(ST_GeomFromText('POINT(0 0)')),
+(ST_GeomFromText('LINESTRING(110 100, 20 30)')),
+(ST_GeomFromText('POLYGON((-110 100, 0 0, 0 100, -110 100))')),
+(NULL);
+INSERT INTO test.geo4326(g)
+VALUES(ST_GeomFromText('POINT(0 0)',4326)),
+(ST_GeomFromText('POINT(90 89)',4326)),
+(ST_GeomFromText('POINT(80 0)',4326)),
+(ST_GeomFromText('POINT(-90 89)',4326)),
+(NULL);
+
+
+## I. Verify JSON encoding of GEOMETRY type with SRID 0, returned in FEED response
+#
+# 1. Verify JSON response containing GeoJson fields generated from type GEOMETRY 
+#    returning single object.
+# 2. Verify JSON response containing GeoJson fields generated from types GEOMETRY
+#    returning multiple objects.
+# 3. Verify that object can be updated with different GeoJson and response
+#    contains same data.
+# 4. Verify that objects can be filtered using GEOMETRY column using WKT-format data.
+# 5. Verify that objects can be filtered using GEOMETRY column using GeoJson data.
+#
+## II. Verify JSON encoding of GEOMETRY types with SRID 4326, returned in FEED response
+#
+# 1. Verify JSON response containing GeoJson fields generated from type GEOMETRY
+#    returning single object.
+# 2. Verify JSON response containing GeoJson fields generated from type GEOMETRY,
+#    returning multiple objects.
+# 3. Verify that object can be updated with different GeoJson and response
+#    contains same data.
+# 4. Verify that objects can be filtered using GEOMETRY column using WKT-format data.
+# 5. Verify that objects can be filtered using GEOMETRY column using GeoJson data.
+#
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/test
+# Registred DB_OBJECT at path: /svc/test/geo0
+# Registred DB_OBJECT at path: /svc/test/geo4326
+
+#
+# I.1
+GET /svc/test/geo0/2
+{
+    "g": {
+        "type": "LineString",
+        "coordinates": [
+            [
+                110.0,
+                100.0
+            ],
+            [
+                20.0,
+                30.0
+            ]
+        ]
+    }
+}
+OK
+
+#
+# I.2
+GET /svc/test/geo0
+{
+    "items": [
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    0.0
+                ]
+            }
+        },
+        {
+            "g": {
+                "type": "LineString",
+                "coordinates": [
+                    [
+                        110.0,
+                        100.0
+                    ],
+                    [
+                        20.0,
+                        30.0
+                    ]
+                ]
+            }
+        },
+        {
+            "g": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            -110.0,
+                            100.0
+                        ],
+                        [
+                            0.0,
+                            0.0
+                        ],
+                        [
+                            0.0,
+                            100.0
+                        ],
+                        [
+                            -110.0,
+                            100.0
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "g": null
+        }
+    ]
+}
+OK
+
+#
+# I.3
+PUT /svc/test/geo0/2 (payload-size:64)
+{
+    "g": {
+        "type": "LineString",
+        "coordinates": [
+            [
+                100.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0
+            ]
+        ]
+    },
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo0/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "B626F8C5CBB9AB350279476B117713BF72A14A2317DCA8464DF5124DF7A2A4C8",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/test/geo0/2 (payload-size:52)
+{
+    "g": {
+        "type": "Point",
+        "coordinates": [
+            100.0,
+            0.0
+        ]
+    },
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo0/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "4AF52208C224CE7E8C328D079F6EADF83781797BD300CB289B08EF0CBFD14AF0",
+        "gtid": "GTID"
+    }
+}
+OK
+
+#
+# I.4
+GET /svc/test/geo0/?q=%7B%22g%22:%22POINT%28100%200%29%22%7D
+{
+    "items": [
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    100.0,
+                    0.0
+                ]
+            },
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/geo0/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "4AF52208C224CE7E8C328D079F6EADF83781797BD300CB289B08EF0CBFD14AF0"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo0/"
+        }
+    ]
+}
+OK
+GET /svc/test/geo0/?q=%7B%22g%22:%22POINT%280%200%29%22%7D
+{
+    "items": [
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    0.0
+                ]
+            },
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/geo0/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "0E64B4DEF43324EE1D4A9C2CDCF3A2367F0CE0F2D525031F8FA078C6C14A50F0"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo0/"
+        }
+    ]
+}
+OK
+
+#
+# I.5
+GET /svc/test/geo0/?q=%7B%22g%22:%7B%22type%22:%22Point%22,%22coordinates%22:%5B0,0%5D%7D%7D
+{
+    "items": [
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    0.0
+                ]
+            },
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/geo0/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "0E64B4DEF43324EE1D4A9C2CDCF3A2367F0CE0F2D525031F8FA078C6C14A50F0"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo0/"
+        }
+    ]
+}
+OK
+GET /svc/test/geo0/?q=%7B%22g%22:%7B%22type%22:%22Point%22,%22coordinates%22:%5B100,0%5D%7D%7D
+{
+    "items": [
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    100.0,
+                    0.0
+                ]
+            },
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/geo0/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "4AF52208C224CE7E8C328D079F6EADF83781797BD300CB289B08EF0CBFD14AF0"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo0/"
+        }
+    ]
+}
+OK
+
+#
+# II.1
+GET /svc/test/geo4326/2
+{
+    "g": {
+        "type": "Point",
+        "coordinates": [
+            89.0,
+            90.0
+        ]
+    }
+}
+OK
+
+#
+# II.2
+GET /svc/test/geo4326
+{
+    "items": [
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    0.0
+                ]
+            }
+        },
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    89.0,
+                    90.0
+                ]
+            }
+        },
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    80.0
+                ]
+            }
+        },
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    89.0,
+                    -90.0
+                ]
+            }
+        },
+        {
+            "g": null
+        }
+    ]
+}
+OK
+
+#
+# II.3
+PUT /svc/test/geo4326/2 (payload-size:63)
+{
+    "g": {
+        "type": "LineString",
+        "coordinates": [
+            [
+                80.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0
+            ]
+        ]
+    },
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo4326/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "BEB4B6B9F7A5BD7FEBACF892236A10C63F7FDA826F9500EC704C1823C3550D9B",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/test/geo4326/2 (payload-size:51)
+{
+    "g": {
+        "type": "Point",
+        "coordinates": [
+            80.0,
+            0.0
+        ]
+    },
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo4326/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "E8802D17B3FA6FA57240D0B76F7586D24E041D9999AA4C48061EA9A0F05854AC",
+        "gtid": "GTID"
+    }
+}
+OK
+
+#
+# II.4
+GET /svc/test/geo4326/?q=%7B%22g%22:%22POINT%2880%200%29%22%7D
+{
+    "items": [
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    80.0
+                ]
+            },
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/geo4326/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "48179B27B0FBF6AFFBE327848EC9146B402B6EABAEB2FCD28130907653419E48"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo4326/"
+        }
+    ]
+}
+OK
+GET /svc/test/geo4326/?q=%7B%22g%22:%22POINT%280%200%29%22%7D
+{
+    "items": [
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    0.0
+                ]
+            },
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/geo4326/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "0E64B4DEF43324EE1D4A9C2CDCF3A2367F0CE0F2D525031F8FA078C6C14A50F0"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo4326/"
+        }
+    ]
+}
+OK
+
+#
+# II.5
+GET /svc/test/geo4326/?q=%7B%22g%22:%7B%22type%22:%22Point%22,%22coordinates%22:%5B0,0%5D%7D%7D
+{
+    "items": [
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    0.0
+                ]
+            },
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/geo4326/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "0E64B4DEF43324EE1D4A9C2CDCF3A2367F0CE0F2D525031F8FA078C6C14A50F0"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo4326/"
+        }
+    ]
+}
+OK
+GET /svc/test/geo4326/?q=%7B%22g%22:%7B%22type%22:%22Point%22,%22coordinates%22:%5B0,80%5D%7D%7D
+{
+    "items": [
+        {
+            "g": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    80.0
+                ]
+            },
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/geo4326/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "48179B27B0FBF6AFFBE327848EC9146B402B6EABAEB2FCD28130907653419E48"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/geo4326/"
+        }
+    ]
+}
+OK
+DROP TABLE test.geo0;
+DROP TABLE test.geo4326;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

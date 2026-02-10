@@ -1,4 +1,4 @@
-// Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -66,12 +66,11 @@ void Log_sanitizer::process_query_event(Query_log_event const &ev) {
   std::string query{ev.query};
 
   if (!m_validation_started) {
-    if (is_atomic_ddl_event(&ev)) {
+    if (is_atomic_ddl_event(&ev) || query == "COMMIT" || query == "ROLLBACK" ||
+        query.find("XA COMMIT") == 0 || query.find("XA ROLLBACK") == 0) {
       m_validation_started = true;
-    } else if (query != "BEGIN" && query.find("XA START") != 0) {
-      m_validation_started = true;
-      return;
     }
+    return;
   }
 
   if (query == "BEGIN" || query.find("XA START") == 0)
@@ -94,7 +93,10 @@ void Log_sanitizer::process_query_event(Query_log_event const &ev) {
 }
 
 void Log_sanitizer::process_xid_event(Xid_log_event const &ev) {
-  if (!m_validation_started) m_validation_started = true;
+  if (!m_validation_started) {
+    m_validation_started = true;
+    m_in_transaction = true;
+  }
   this->m_is_malformed = !this->m_in_transaction;
   if (this->m_is_malformed) {
     this->m_failure_message.assign(
@@ -120,6 +122,8 @@ void Log_sanitizer::process_xa_prepare_event(XA_prepare_log_event const &ev) {
   }
 
   this->m_in_transaction = false;
+
+  if (m_skip_prepared_xids) return;
 
   XID xid;
   xid = ev.get_xid();

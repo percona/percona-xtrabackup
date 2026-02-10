@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@
 #ifndef CPCD_HPP
 #define CPCD_HPP
 
-#include <time.h>
+#include <ctime>
 
 #include <NdbCondition.h>
 #include <NdbThread.h>
@@ -403,7 +403,7 @@ class CPCD {
    *          - The RequestStatus will be filled in with a suitable error
    *            if an error occurred.
    */
-  bool undefineProcess(const int id, uintptr_t sessionid, RequestStatus *rs);
+  bool undefineProcess(int id, uintptr_t sessionid, RequestStatus *rs);
 
   /** Marks a Process for starting.
    *
@@ -417,7 +417,7 @@ class CPCD {
    *          - RequestStatus will be filled in with a suitable error
    *            if an error occurred.
    */
-  bool startProcess(const int id, uintptr_t sessionid, RequestStatus *rs);
+  bool startProcess(int id, uintptr_t sessionid, RequestStatus *rs);
 
   /** Marks a Process for stopping.
    *
@@ -427,7 +427,7 @@ class CPCD {
    *          - The RequestStatus will be filled in with a suitable error
    *            if an error occurred.
    */
-  bool stopProcess(const int id, uintptr_t sessionid, RequestStatus *rs);
+  bool stopProcess(int id, uintptr_t sessionid, RequestStatus *rs);
 
   /** Generates a list of processes, and sends them to the CPCD client */
   bool listProcesses(RequestStatus *rs, MutexVector<const char *> &);

@@ -100,13 +100,15 @@ if ($host_new != $host_old)
 
 --echo
 --echo ### Compare the processlist  Host column between Performance Schema and the Information Schema
+--echo     The expectation is that the row count in P_S.processlist is >= I_S.processlist.
 --echo
 --echo # Connection con_user0
 --connection con_user0
 let $count_new = `select count(*) from performance_schema.processlist`;
 let $count_old = `select count(*) from information_schema.processlist`;
 let $count_join = `select count(*) from performance_schema.processlist pspl
-                     left join information_schema.processlist ispl on pspl.host = ispl.host and pspl.id = ispl.id`;
+                     left join information_schema.processlist ispl on pspl.host = ispl.host and pspl.id = ispl.id
+                     where pspl.host <> ""`;
 
 --echo
 

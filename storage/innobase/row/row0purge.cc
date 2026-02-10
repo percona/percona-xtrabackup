@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2024, Oracle and/or its affiliates.
+Copyright (c) 1997, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -755,7 +755,7 @@ skip_secondaries:
       byte *data_field;
       dict_index_t *index;
       bool is_insert;
-      ulint rseg_id;
+      ulint undo_num;
       page_no_t page_no;
       space_id_t undo_space_id;
       ulint offset;
@@ -772,14 +772,14 @@ skip_secondaries:
 
       ut_a(internal_offset < UNIV_PAGE_SIZE);
 
-      trx_undo_decode_roll_ptr(node->roll_ptr, &is_insert, &rseg_id, &page_no,
+      trx_undo_decode_roll_ptr(node->roll_ptr, &is_insert, &undo_num, &page_no,
                                &offset);
 
       /* If table is temp then it can't have its undo log
       residing in rollback segment with REDO log enabled. */
       bool is_temp = node->table->is_temporary();
 
-      undo_space_id = trx_rseg_id_to_space_id(rseg_id, is_temp);
+      undo_space_id = trx_undo_num_to_space_id(undo_num, is_temp);
 
       mtr_start(&mtr);
 
@@ -877,22 +877,19 @@ try_again:
 #endif /* INNODB_DD_VC_SUPPORT */
 
   /* Cannot call dd_table_open_on_id() before server is fully up */
-  if (!srv_upgrade_old_undo_found && !dict_table_is_system(table_id)) {
-    while (!mysqld_server_started) {
-      if (srv_shutdown_state.load() >= SRV_SHUTDOWN_PURGE) {
-        return (false);
-      }
-      std::this_thread::sleep_for(std::chrono::seconds(1));
+  while (!mysqld_server_started) {
+    if (srv_shutdown_state.load() >= SRV_SHUTDOWN_PURGE) {
+      return (false);
     }
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
   /* SDI tables are hidden tables and are not registered with global
   dictionary. Open the table internally. Also acquire shared MDL
   of SDI tables. Concurrent DROP TABLE/TABLESPACE would acquire
   exclusive MDL on SDI tables */
-  ut_ad(!dict_table_is_system(table_id));
 
-  if (dict_table_is_sdi(table_id) || srv_upgrade_old_undo_found) {
+  if (dict_table_is_sdi(table_id)) {
     if (dict_table_is_sdi(table_id)) {
       space_id_t space_id = dict_sdi_get_space_id(table_id);
 
@@ -1027,7 +1024,7 @@ try_again:
     we do not have an index to call it with. */
   close_exit:
     /* Purge requires no changes to indexes: we may return */
-    if (dict_table_is_sdi(node->table->id) || srv_upgrade_old_undo_found) {
+    if (dict_table_is_sdi(node->table->id)) {
       if (dict_table_is_sdi(node->table->id)) {
         dd_table_close(node->table, thd, &node->mdl, false);
       } else {

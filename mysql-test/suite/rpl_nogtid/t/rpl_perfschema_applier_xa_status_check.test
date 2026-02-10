@@ -1,17 +1,17 @@
 # ==== Purpose ====
 #
-# Verify that on slave server, appropriate XA_STATE is reported in Performance
+# Verify that on replica server, appropriate XA_STATE is reported in Performance
 # Schema tables for XA transactions.
 #
 # ==== Implementation ====
 #
 # 1) On Master start one XA transaction named 'xatest' and set the state to
 # 'PREPARED'.
-# 2) On slave wait till the applier thread applies the 'XA PREPARE' statement.
+# 2) On replica wait till the applier thread applies the 'XA PREPARE' statement.
 # 3) Verify that the XA_STATE is reported as 'PREPARED' in performance schema
 # table.
 # 4) On Master COMMIT the XA transaction.
-# 5) On slave verify that the XA_STATE is reported as 'COMMITTED'
+# 5) On replica verify that the XA_STATE is reported as 'COMMITTED'
 #
 # ==== References ====
 #
@@ -26,47 +26,24 @@
 
 --echo ####################################################################
 --echo # Test Case 1: Simple SOURCE-REPLICA setup.
---echo # Verify that slave displays appropriate XA_STATE in performance
+--echo # Verify that replica displays appropriate XA_STATE in performance
 --echo # schema table, post XA PREPARE AND XA COMMIT command execution.
 --echo ####################################################################
 --source common/rpl/rpl_perfschema_applier_xa_status.test
 --source include/rpl/reset.inc
 
 --echo ####################################################################
---echo # Test Case 2: Enable Multithreaded Slave with replica_parallel_type as
---echo # DATABASE. Verify that slave displays appropriate XA_STATE in
+--echo # Test Case 2: Enable Multithreaded Slave.
+--echo # Verify that replica displays appropriate XA_STATE in
 --echo # performance schema table, post XA PREPARE AND XA COMMIT command
 --echo # execution.
 --echo ####################################################################
 --source include/rpl/connection_replica.inc
 
-# Save existing settings.
+# Enable MTS
+--source include/rpl/stop_replica.inc
 SET @save_replica_parallel_workers=@@global.replica_parallel_workers;
-SET @replica_parallel_type=@@global.replica_parallel_type;
-
-# Enable MTS
---source include/rpl/stop_replica.inc
 SET GLOBAL replica_parallel_workers=4;
-SET GLOBAL replica_parallel_type='DATABASE';
---source include/rpl/start_replica.inc
-
-# Verify
---source common/rpl/rpl_perfschema_applier_xa_status.test
-
-# Cleanup
---source include/rpl/reset.inc
-
---echo ####################################################################
---echo # Test Case 3: Enable Multithreaded Slave with replica_parallel_type as
---echo # LOGICAL_CLOCK. Verify that slave displays appropriate XA_STATE in
---echo # performance schema table, post XA PREPARE AND XA COMMIT command
---echo # execution.
---echo ####################################################################
-
-# Enable MTS
---source include/rpl/stop_replica.inc
-SET GLOBAL replica_parallel_workers=4;
-SET GLOBAL replica_parallel_type='LOGICAL_CLOCK';
 --source include/rpl/start_replica.inc
 
 # Verify
@@ -77,7 +54,6 @@ SET GLOBAL replica_parallel_type='LOGICAL_CLOCK';
 # Cleanup
 --source include/rpl/stop_replica.inc
 set @@global.replica_parallel_workers= @save_replica_parallel_workers;
-set @@global.replica_parallel_type= @replica_parallel_type;
 --source include/rpl/start_replica.inc
 
 --source include/rpl/deinit.inc

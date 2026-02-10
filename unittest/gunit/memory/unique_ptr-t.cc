@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,14 +27,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-namespace memory {
-namespace unittests {
+namespace memory::unittests {
 
 class Unique_ptr_test : public ::testing::Test {
  protected:
   Unique_ptr_test() = default;
-  virtual void SetUp() {}
-  virtual void TearDown() {}
+  void SetUp() override {}
+  void TearDown() override {}
 };
 
 TEST_F(Unique_ptr_test, Array_template_test) {
@@ -81,7 +80,7 @@ TEST_F(Unique_ptr_test, Array_template_test) {
   delete[] underlying;
 
   auto ptr2 = memory::make_unique<char[]>(10);
-  bool equal = (ptr == ptr2);
+  bool const equal = (ptr == ptr2);
   EXPECT_EQ(equal, false);
 }
 
@@ -100,9 +99,8 @@ TEST_F(Unique_ptr_test, Class_template_test) {
   delete underlying;
 
   auto ptr2 = memory::make_unique<std::string>("012345678");
-  bool equal = (ptr == ptr2);
+  bool const equal = (ptr == ptr2);
   EXPECT_EQ(equal, false);
 }
 
-}  // namespace unittests
-}  // namespace memory
+}  // namespace memory::unittests

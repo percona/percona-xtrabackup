@@ -98,3 +98,39 @@ drop table test.t3;
 --disable_query_log
 set ndb_autoincrement_prefetch_sz = @old_ndb_autoincrement_prefetch_sz;
 --enable_query_log
+
+--echo Show embedded-metadata behaviour
+
+--echo sys/def/SYSTAB_0 has no embedded metadata
+--let $ndb_desc_opts= --embedded-metadata -dsys SYSTAB_0
+--source suite/ndb/include/ndb_desc_print.inc
+
+
+--let $OUTPUT_FILE = $MYSQLTEST_VARDIR/tmp/ndb_desc_extra.txt
+
+--echo mysql/def/ndb_apply_status has embedded frm
+--exec $NDB_DESC -m -dmysql ndb_apply_status > $OUTPUT_FILE
+
+--let $assert_text= Version 1 embedded metadata (frm)
+--let $assert_file= $OUTPUT_FILE
+--let $assert_select= Metadata version : 1
+--let $assert_count= 1
+
+--source include/assert_grep.inc
+
+--remove_file $OUTPUT_FILE
+
+--echo User table has SDI with creating mysqld version
+create table test.user_tab(a int primary key, b varchar(50) default 'Hello', c blob, d json) engine=ndb;
+
+--exec $NDB_DESC -m -dtest user_tab > $OUTPUT_FILE
+--let $assert_text= SDI contains MySQL Server version
+--let $assert_file= $OUTPUT_FILE
+--let $assert_select= mysqld_version_id
+--let $assert_count= 1
+
+--source include/assert_grep.inc
+
+--remove_file $OUTPUT_FILE
+
+drop table test.user_tab;

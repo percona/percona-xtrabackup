@@ -2945,36 +2945,6 @@ a	b
 127.0.0.1	127.0.0.1
 drop table t1;
 set sql_warnings = 0;
-# SHA1()
-set sql_warnings = 1;
-create table t1 (a varchar(1024), b varchar(1024) generated always as (sha1(a)) virtual) charset latin1;
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `a` varchar(1024) DEFAULT NULL,
-  `b` varchar(1024) GENERATED ALWAYS AS (sha(`a`)) VIRTUAL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-insert into t1 values ('abc',default);
-select * from t1;
-a	b
-abc	a9993e364706816aba3e25717850c26c9cd0d89d
-drop table t1;
-set sql_warnings = 0;
-# SHA()
-set sql_warnings = 1;
-create table t1 (a varchar(1024), b varchar(1024) generated always as (sha(a)) virtual) charset latin1;
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `a` varchar(1024) DEFAULT NULL,
-  `b` varchar(1024) GENERATED ALWAYS AS (sha(`a`)) VIRTUAL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-insert into t1 values ('abc',default);
-select * from t1;
-a	b
-abc	a9993e364706816aba3e25717850c26c9cd0d89d
-drop table t1;
-set sql_warnings = 0;
 # SHA2()
 set sql_warnings = 1;
 create table t1 (a varchar(1024), b varchar(1024) generated always as (sha2(a,224)) virtual) charset latin1;

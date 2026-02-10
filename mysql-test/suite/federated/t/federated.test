@@ -1977,7 +1977,8 @@ connection master;
 eval CREATE TABLE t1(id VARCHAR(20) NOT NULL, PRIMARY KEY(id)) ENGINE=FEDERATED 
   CONNECTION='mysql://root@127.0.0.1:$SLAVE_MYPORT/test/t1';
 --echo # Dump table t1 using mysqldump tool
---replace_result $SLAVE_MYPORT SLAVE_PORT
+--let $executed_gtid_set = `SELECT @@GLOBAL.GTID_EXECUTED`
+--replace_result $SLAVE_MYPORT SLAVE_PORT $executed_gtid_set GTID_SET
 --exec $MYSQL_DUMP --compact test t1
 DROP TABLE t1;
 
@@ -2168,3 +2169,4 @@ SET @@GLOBAL.CONCURRENT_INSERT= @OLD_SLAVE_CONCURRENT_INSERT;
 
 connection default;
 source suite/federated/include/federated_cleanup.inc;
+

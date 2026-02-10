@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -48,38 +48,38 @@ TEST_F(KeyringCommonJsonFileOperations_test, JsonFileTests) {
   Json_writer json_writer;
   Json_data_extension json_data_extension;
   {
-    Metadata metadata("key1", "foo@bar");
-    Data data("abcdefghijklmnop", "AES");
+    Metadata const metadata("key1", "foo@bar");
+    Data const data("abcdefghijklmnop", "AES");
     ASSERT_FALSE(json_writer.add_element(metadata, data, json_data_extension));
   }
   {
-    Metadata metadata("key1", "bar@foo");
-    Data data("qrstuvwx", "RSA");
+    Metadata const metadata("key1", "bar@foo");
+    Data const data("qrstuvwx", "RSA");
     ASSERT_FALSE(json_writer.add_element(metadata, data, json_data_extension));
   }
   {
-    Metadata metadata("master_key", "");
-    Data data("yzabcdefghijklmn", "AES");
+    Metadata const metadata("master_key", "");
+    Data const data("yzabcdefghijklmn", "AES");
     ASSERT_FALSE(json_writer.add_element(metadata, data, json_data_extension));
   }
 
   /* Write JSON data to file */
-  std::string file_name("json_file_operations_test");
-  std::string json_data = json_writer.to_string();
+  std::string const file_name("json_file_operations_test");
+  std::string const json_data = json_writer.to_string();
   ASSERT_TRUE(json_data.length() > 0);
 
-  File_writer file_writer(file_name, json_data);
+  File_writer const file_writer(file_name, json_data);
   ASSERT_TRUE(file_writer.valid());
 
   /* Read JSON data from file */
   std::string read_data;
-  File_reader file_reader(file_name, true, read_data);
+  File_reader const file_reader(file_name, true, read_data);
   ASSERT_TRUE(file_reader.valid());
 
   ASSERT_TRUE(read_data == json_data);
 
   /* Move data to JSON document */
-  Json_reader json_reader(read_data);
+  Json_reader const json_reader(read_data);
   ASSERT_TRUE(json_reader.valid());
 
   ASSERT_TRUE(json_reader.num_elements() == 3);
@@ -96,7 +96,7 @@ TEST_F(KeyringCommonJsonFileOperations_test, JsonFileTests) {
   ASSERT_TRUE(element.second.data() == "abcdefghijklmnop");
   ASSERT_TRUE(element.second.type() == "AES");
 
-  auto ext = output[0].second.get();
+  auto *ext = output[0].second.get();
   ASSERT_TRUE(ext->version() == "1.0");
 
   element = output[1].first;
@@ -109,7 +109,7 @@ TEST_F(KeyringCommonJsonFileOperations_test, JsonFileTests) {
   ASSERT_TRUE(ext->version() == "1.0");
 
   element = output[2].first;
-  ASSERT_TRUE(element.first.owner_id() == "");
+  ASSERT_TRUE(element.first.owner_id().empty());
   ASSERT_TRUE(element.first.key_id() == "master_key");
   ASSERT_TRUE(element.second.data() == "yzabcdefghijklmn");
   ASSERT_TRUE(element.second.type() == "AES");

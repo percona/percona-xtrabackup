@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,52 +35,36 @@
 /***************************************************************************
  * int  receiveSCAN_TABREF(NdbApiSignal* aSignal)
  *
- *  This means the scan could not be started, set status(s) to indicate
- *  the failure. Note that scan requests are asynchronous, i.e. we do not
- *  wait for the CONF or REF to be returned. Which also imples that a REF-error
- *  could be received into a scan operation while the client is in the midts
- *  of doing other work, e.g. handling results from other operations in the
- *  same transaction.
+ *  TC indicates that the scan overall will fail.
+ *  TC also indicates via closeNeeded whether :
+ *    0 : It has already cleaned up the kernel-side scan state
+ *    1 : It requires the API to send a SCAN_NEXTREQ(close) to clean up
+ *        the kernel side state.
  *
- *  To avoid transaction errors appearing 'out of the blue', such asynch
- *  errors are set only on the operation when they are received. Only when
- *  processing the scan results with ::nextResult(), operational errors are
- *  propogated to the transaction level.
+ *  SCAN_TABREF and SCAN_TABCONF can arrive at any time, and can arrive
+ *  while the referenced NdbScanOperation object is being operated upon
+ *  by user code.
+ *
+ *  Some care is therefore needed to avoid races between setting and
+ *  reading of common variables between signal reception code and user
+ *  API side execution.
  *
  ****************************************************************************/
 int NdbTransaction::receiveSCAN_TABREF(const NdbApiSignal *aSignal) {
-  const ScanTabRef *ref = CAST_CONSTPTR(ScanTabRef, aSignal->getDataPtr());
+  const auto *ref = CAST_CONSTPTR(ScanTabRef, aSignal->getDataPtr());
 
   if (checkState_TransId(&ref->transId1)) {
     if (theScanningOp) {
-      theScanningOp->execCLOSE_SCAN_REP();
-      // Do not ::setErrorCode() yet! - See comment in header
-      theScanningOp->theError.code = ref->errorCode;
-      if (!ref->closeNeeded) {
-        return 0;
-      }
-
-      /**
-       * Setup so that close_impl will actually perform a close
-       *   and not "close scan"-optimze it away
-       */
-      theScanningOp->m_conf_receivers_count++;
-      theScanningOp->m_conf_receivers[0] = theScanningOp->m_receivers[0];
-      theScanningOp->m_conf_receivers[0]->m_tcPtrI = ~0;
-
+      theScanningOp->execCLOSE_SCAN_REP(ref->errorCode, ref->closeNeeded);
     } else {
       assert(m_scanningQuery);
       m_scanningQuery->execCLOSE_SCAN_REP(ref->errorCode, ref->closeNeeded);
-      if (!ref->closeNeeded) {
-        return 0;
-      }
     }
     return 0;
-  } else {
-#ifdef NDB_NO_DROPPED_SIGNAL
-    abort();
-#endif
   }
+#ifdef NDB_NO_DROPPED_SIGNAL
+  abort();
+#endif
 
   return -1;
 }
@@ -100,7 +84,7 @@ int NdbTransaction::receiveSCAN_TABREF(const NdbApiSignal *aSignal) {
  *****************************************************************************/
 int NdbTransaction::receiveSCAN_TABCONF(const NdbApiSignal *aSignal,
                                         const Uint32 *ops, Uint32 len) {
-  const ScanTabConf *conf = CAST_CONSTPTR(ScanTabConf, aSignal->getDataPtr());
+  const auto *conf = CAST_CONSTPTR(ScanTabConf, aSignal->getDataPtr());
 
   if (checkState_TransId(&conf->transId1)) {
     /**
@@ -108,7 +92,7 @@ int NdbTransaction::receiveSCAN_TABCONF(const NdbApiSignal *aSignal,
      */
     if (conf->requestInfo == ScanTabConf::EndOfData) {
       if (theScanningOp) {
-        theScanningOp->execCLOSE_SCAN_REP();
+        theScanningOp->execCLOSE_SCAN_REP(0, false);
       } else {
         assert(m_scanningQuery);
         m_scanningQuery->execCLOSE_SCAN_REP(0, false);
@@ -141,8 +125,7 @@ int NdbTransaction::receiveSCAN_TABCONF(const NdbApiSignal *aSignal,
           const Uint32 activeMask =
               ndbd_send_active_bitmask(nodeVersion) ? *ops++ : 0;
 
-          NdbQueryOperationImpl *queryOp =
-              (NdbQueryOperationImpl *)tOp->m_owner;
+          auto *queryOp = (NdbQueryOperationImpl *)tOp->m_owner;
           assert(&queryOp->getQuery() == m_scanningQuery);
           if (queryOp->execSCAN_TABCONF(tcPtrI, rowCount, moreMask, activeMask,
                                         tOp))
@@ -162,11 +145,10 @@ int NdbTransaction::receiveSCAN_TABCONF(const NdbApiSignal *aSignal,
       }
     }  // while
     return retVal;
-  } else {
-#ifdef NDB_NO_DROPPED_SIGNAL
-    abort();
-#endif
   }
+#ifdef NDB_NO_DROPPED_SIGNAL
+  abort();
+#endif
 
   return -1;
 }

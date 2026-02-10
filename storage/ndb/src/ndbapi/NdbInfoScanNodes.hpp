@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -58,7 +58,7 @@ class NdbInfoScanNodes : public NdbInfoScanOperation {
   bool execDBINFO_SCANREF(const struct SimpleSignal *signal, int &error_code);
   int sendDBINFO_SCANREQ();
 
-  int receive(void);
+  int receive();
   bool find_next_node();
 
   enum State { Undefined, Initial, Prepared, MoreData, End, Error } m_state;

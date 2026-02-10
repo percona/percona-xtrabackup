@@ -1,4 +1,5 @@
 # Tests for PERFORMANCE_SCHEMA
+--source include/have_server_telemetry_metrics.inc
 
 --source ../include/start_server_common.inc
 

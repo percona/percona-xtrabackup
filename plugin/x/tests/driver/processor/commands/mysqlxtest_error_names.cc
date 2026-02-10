@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@
 
 #include "plugin/x/tests/driver/processor/commands/mysqlxtest_error_names.h"
 
-#include <stdlib.h>
+#include <cstdlib>
 #include <sstream>
 #include <stdexcept>
 
@@ -67,7 +67,7 @@ int try_to_interpret_text_as_error_code(
     }
   }
 
-  const int error_code = std::stoi(error_code_in_text_format.c_str());
+  const int error_code = std::stoi(error_code_in_text_format);
 
   if (0 == error_code && 1 == error_code_in_text_format.length()) return 0;
 

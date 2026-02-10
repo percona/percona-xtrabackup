@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,10 @@
 */
 
 #include "md5_hash.hpp"
-#include "my_config.h"
 
-#include <my_compiler.h>  // likely
-#include <my_config.h>    // big/little endian
-#include <string.h>       // memcpy()
+#include <cstring>        // memcpy()
+#include "my_compiler.h"  // likely
+#include "my_config.h"    // big/little endian
 
 /*
  * This code implements the MD5 message-digest algorithm.

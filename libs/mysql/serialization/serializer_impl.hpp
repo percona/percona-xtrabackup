@@ -1,4 +1,4 @@
-// Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -51,8 +51,8 @@ std::size_t
 Serializer<Serializer_derived_type, Archive_type>::get_size_field_def(
     Field_id_type field_id,
     const Field_definition<Field_type, field_size_defined> &field_definition) {
-  return Serializer_derived_type::template get_size_field_def(field_id,
-                                                              field_definition);
+  return Serializer_derived_type::get_size_field_def(field_id,
+                                                     field_definition);
 }
 
 template <class Serializer_derived_type, class Archive_type>
@@ -61,8 +61,8 @@ std::size_t
 Serializer<Serializer_derived_type, Archive_type>::get_size_serializable(
     Field_id_type field_id, const Serializable_concrete_type &serializable,
     bool skip_id) {
-  return Serializer_derived_type::template get_size_serializable(
-      field_id, serializable, skip_id);
+  return Serializer_derived_type::get_size_serializable(field_id, serializable,
+                                                        skip_id);
 }
 
 template <class Serializer_derived_type, class Archive_type>

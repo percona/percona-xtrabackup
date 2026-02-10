@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -69,7 +69,7 @@ class NDBT_Thread {
 
   // if part of a set
   inline NDBT_ThreadSet &get_thread_set() const {
-    require(m_thread_set != 0);
+    require(m_thread_set != nullptr);
     return *m_thread_set;
   }
   inline int get_thread_no() const { return m_thread_no; }
@@ -168,7 +168,7 @@ class NDBT_ThreadSet {
 
   inline int get_count() const { return m_count; }
   inline NDBT_Thread &get_thread(int n) {
-    require(n < m_count && m_thread[n] != 0);
+    require(n < m_count && m_thread[n] != nullptr);
     return *m_thread[n];
   }
 

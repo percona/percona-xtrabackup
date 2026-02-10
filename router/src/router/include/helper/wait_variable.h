@@ -1,4 +1,4 @@
-/*  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -113,8 +113,8 @@ class WaitableVariable {
           const Callback &after_is_callback = Callback()) {
     bool result{false};
     monitor_with_value_.serialize_with_cv(
-        [this, &result, &expected_values, &after_is_callback](
-            auto &current_value, auto &) {
+        [&result, &expected_values, &after_is_callback](auto &current_value,
+                                                        auto &) {
           result = helper::container::has(expected_values, current_value);
           if (result) after_is_callback();
         });
@@ -185,8 +185,8 @@ class WaitableVariable {
       const Callback &callback = Callback()) {
     ValueType result;
     if (monitor_with_value_.wait_for(
-            rel_time, [this, &expected_values, &result,
-                       &callback](const auto &current_value) {
+            rel_time,
+            [&expected_values, &result, &callback](const auto &current_value) {
               if (helper::container::has(expected_values, current_value)) {
                 result = current_value;
                 callback();
@@ -197,7 +197,7 @@ class WaitableVariable {
       return {result};
     }
 
-    return {stdx::unexpect, true};
+    return stdx::unexpected(true);
   }
 
  private:

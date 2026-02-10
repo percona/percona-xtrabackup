@@ -47,7 +47,7 @@ write_file $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 query_attributes a b;
 SELECT mysql_query_attribute_string('a');
 EOF
-exec $MYSQL < $MYSQLTEST_VARDIR/tmp/wl12542.sql;
+exec $MYSQL --commands < $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 remove_file $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 
 --echo # Should return c
@@ -56,7 +56,7 @@ query_attributes a b;
 query_attributes a c;
 SELECT mysql_query_attribute_string('a');
 EOF
-exec $MYSQL < $MYSQLTEST_VARDIR/tmp/wl12542.sql;
+exec $MYSQL --commands < $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 remove_file $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 
 --echo # Should return error
@@ -65,7 +65,7 @@ query_attributes a;
 SELECT mysql_query_attribute_string('a');
 EOF
 --error 1
-exec $MYSQL < $MYSQLTEST_VARDIR/tmp/wl12542.sql;
+exec $MYSQL --commands < $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 remove_file $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 
 --echo # Should return b d
@@ -73,7 +73,7 @@ write_file $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 query_attributes a b c d;
 SELECT mysql_query_attribute_string('a'), mysql_query_attribute_string('c');
 EOF
-exec $MYSQL < $MYSQLTEST_VARDIR/tmp/wl12542.sql;
+exec $MYSQL --commands < $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 remove_file $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 
 --echo # Should return b c
@@ -81,7 +81,7 @@ write_file $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 query_attributes 'a' 'b c';
 SELECT mysql_query_attribute_string('a');
 EOF
-exec $MYSQL < $MYSQLTEST_VARDIR/tmp/wl12542.sql;
+exec $MYSQL --commands < $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 remove_file $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 
 --echo # Should return null
@@ -90,7 +90,7 @@ query_attributes 'a' 'b c';
 resetconnection;
 SELECT mysql_query_attribute_string('a');
 EOF
-exec $MYSQL < $MYSQLTEST_VARDIR/tmp/wl12542.sql 2>&1;
+exec $MYSQL --commands < $MYSQLTEST_VARDIR/tmp/wl12542.sql 2>&1;
 remove_file $MYSQLTEST_VARDIR/tmp/wl12542.sql;
 
 --echo # Should return null

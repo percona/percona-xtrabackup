@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 #ifndef MYSQLD_MOCK_STATEMENT_READER_INCLUDED
 #define MYSQLD_MOCK_STATEMENT_READER_INCLUDED
 
+#include <cassert>
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -36,20 +37,18 @@
 
 #include <openssl/bio.h>
 
+#include "mysql/harness/destination_endpoint.h"
+#include "mysql/harness/destination_socket.h"
 #include "mysql/harness/net_ts/buffer.h"
 #include "mysql/harness/net_ts/executor.h"
-#include "mysql/harness/net_ts/io_context.h"
-#include "mysql/harness/net_ts/timer.h"
-#include "mysql/harness/tls_error.h"
-#include "mysql/harness/tls_server_context.h"
-#include "mysql_protocol_common.h"
-#include "mysqlrouter/classic_protocol_constants.h"
-
-#include "authentication.h"
 #include "mysql/harness/net_ts/internet.h"
+#include "mysql/harness/net_ts/io_context.h"
 #include "mysql/harness/net_ts/socket.h"
+#include "mysql/harness/net_ts/timer.h"
 #include "mysql/harness/stdx/expected.h"
 #include "mysql/harness/stdx/monitor.h"
+#include "mysql/harness/tls_error.h"
+#include "mysql/harness/tls_server_context.h"
 #include "mysqlrouter/classic_protocol_message.h"
 #include "mysqlrouter/classic_protocol_session_track.h"
 
@@ -93,39 +92,33 @@ struct AsyncNotice {
   std::string payload;
 };
 
-class ProtocolBase {
+class Connection {
  public:
-  using protocol_type = net::ip::tcp;
-  using socket_type = typename protocol_type::socket;
-  using endpoint_type = typename protocol_type::endpoint;
+  explicit Connection(mysql_harness::DestinationSocket sock,
+                      mysql_harness::DestinationEndpoint ep,
+                      TlsServerContext &tls_ctx)
+      : sock_(std::move(sock)), ep_(std::move(ep)), tls_ctx_(tls_ctx) {
+    // if it doesn't work, no problem.
 
-  ProtocolBase(socket_type client_sock, endpoint_type client_ep,
-               TlsServerContext &tls_ctx);
+    assert(sock_.is_tcp() == ep.is_tcp());
 
-  ProtocolBase(const ProtocolBase &) = delete;
-  ProtocolBase(ProtocolBase &&) = delete;
-
-  ProtocolBase &operator=(const ProtocolBase &) = delete;
-  ProtocolBase &operator=(ProtocolBase &&rhs) = delete;
-
-  virtual ~ProtocolBase() = default;
-
-  // throws std::system_error
-  virtual void encode_error(const ErrorResponse &resp) = 0;
-
-  // throws std::system_error
-  virtual void encode_ok(const OkResponse &resp) = 0;
-
-  // throws std::system_error
-  virtual void encode_resultset(const ResultsetResponse &response) = 0;
-
-  stdx::expected<size_t, std::error_code> read_ssl(
-      const net::mutable_buffer &buf);
+    if (sock_.is_tcp()) {
+      sock_.set_option(net::ip::tcp::no_delay{true});
+    }
+    sock_.native_non_blocking(true);
+  }
 
   stdx::expected<size_t, std::error_code> write_ssl(
       const net::const_buffer &buf);
 
+  stdx::expected<size_t, std::error_code> read_ssl(
+      const net::mutable_buffer &buf);
+
   stdx::expected<size_t, std::error_code> avail_ssl();
+
+  net::io_context::executor_type get_executor() { return sock_.get_executor(); }
+
+  net::io_context &io_context() { return get_executor().context(); }
 
   template <class CompletionToken>
   void async_send_tls(CompletionToken &&token) {
@@ -137,7 +130,7 @@ class ProtocolBase {
       auto write_ec = write_res.error();
 
       if (write_ec == TlsErrc::kWantRead || write_ec == TlsErrc::kWantWrite) {
-        client_socket_.async_wait(
+        sock_.async_wait(
             write_ec == TlsErrc::kWantRead ? net::socket_base::wait_read
                                            : net::socket_base::wait_write,
             [this, compl_handler = std::move(init.completion_handler)](
@@ -150,14 +143,14 @@ class ProtocolBase {
               async_send(std::move(compl_handler));
             });
       } else {
-        net::defer(client_socket_.get_executor(),
+        net::defer(get_executor(),
                    [compl_handler = std::move(init.completion_handler),
                     ec = write_res.error()]() { compl_handler(ec, {}); });
       }
     } else {
       net::dynamic_buffer(send_buffer_).consume(write_res.value());
 
-      net::defer(client_socket_.get_executor(),
+      net::defer(get_executor(),
                  [compl_handler = std::move(init.completion_handler),
                   transferred = write_res.value()]() {
                    compl_handler({}, transferred);
@@ -172,14 +165,9 @@ class ProtocolBase {
     if (is_tls()) {
       async_send_tls(std::forward<CompletionToken>(token));
     } else {
-      net::async_write(client_socket_, net::dynamic_buffer(send_buffer_),
+      sock_.async_send(net::dynamic_buffer(send_buffer_),
                        std::forward<CompletionToken>(token));
     }
-  }
-
-  // TlsErrc to net::stream_errc if needed.
-  static std::error_code map_tls_error_code(std::error_code ec) {
-    return (ec == TlsErrc::kZeroReturn) ? net::stream_errc::eof : ec;
   }
 
   template <class CompletionToken>
@@ -204,7 +192,7 @@ class ProtocolBase {
     if (!read_res) {
       const auto read_ec = read_res.error();
       if (read_ec == TlsErrc::kWantRead || read_ec == TlsErrc::kWantWrite) {
-        client_socket_.async_wait(
+        sock_.async_wait(
             read_ec == TlsErrc::kWantRead ? net::socket_base::wait_read
                                           : net::socket_base::wait_write,
             [this, compl_handler = std::move(init.completion_handler)](
@@ -221,13 +209,13 @@ class ProtocolBase {
         // completion handler
 
         net::defer(
-            client_socket_.get_executor(),
+            get_executor(),
             [compl_handler = std::move(init.completion_handler),
              ec = map_tls_error_code(read_ec)]() { compl_handler(ec, {}); });
       }
     } else {
       // success, forward it to the completion handler
-      net::defer(client_socket_.get_executor(),
+      net::defer(get_executor(),
                  [compl_handler = std::move(init.completion_handler),
                   transferred]() { compl_handler({}, transferred); });
     }
@@ -242,17 +230,15 @@ class ProtocolBase {
         net::async_completion<CompletionToken, void(std::error_code, size_t)>
             init{token};
 
-        net::defer(client_socket_.get_executor(),
-                   [compl_handler = std::move(init.completion_handler)]() {
-                     compl_handler(
-                         make_error_code(std::errc::operation_canceled), 0);
-                   });
+        net::defer(get_executor(), [compl_handler =
+                                        std::move(init.completion_handler)]() {
+          compl_handler(make_error_code(std::errc::operation_canceled), 0);
+        });
       } else if (is_tls()) {
         return async_receive_tls(std::forward<CompletionToken>(token));
       } else {
-        return net::async_read(client_socket_,
-                               net::dynamic_buffer(recv_buffer_),
-                               std::forward<CompletionToken>(token));
+        return sock_.async_recv(net::dynamic_buffer(recv_buffer_),
+                                std::forward<CompletionToken>(token));
       }
     });
   }
@@ -269,7 +255,7 @@ class ProtocolBase {
         auto wt = ec == TlsErrc::kWantRead ? net::socket_base::wait_read
                                            : net::socket_base::wait_write;
 
-        client_socket_.async_wait(
+        sock_.async_wait(
             wt, [&, compl_handler = std::move(init.completion_handler)](
                     std::error_code ec) mutable {
               if (ec) {
@@ -281,13 +267,13 @@ class ProtocolBase {
               async_tls_accept(std::move(compl_handler));
             });
       } else {
-        net::defer(client_socket_.get_executor().context(),
+        net::defer(get_executor(),
                    [ec, compl_handler = std::move(init.completion_handler)]() {
                      compl_handler(ec);
                    });
       }
     } else {
-      net::defer(client_socket_.get_executor().context(),
+      net::defer(get_executor(),
                  [compl_handler = std::move(init.completion_handler)]() {
                    compl_handler({});
                  });
@@ -296,9 +282,102 @@ class ProtocolBase {
     return init.result.get();
   }
 
-  const std::vector<uint8_t> &send_buffer() const { return send_buffer_; }
+  bool is_tls() { return static_cast<bool>(ssl_); }
 
-  const net::ip::tcp::socket &client_socket() const { return client_socket_; }
+  const SSL *ssl() const { return ssl_.get(); }
+
+  const std::vector<uint8_t> &send_buffer() const { return send_buffer_; }
+  std::vector<uint8_t> &send_buffer() { return send_buffer_; }
+
+  const std::vector<uint8_t> &recv_buffer() const { return recv_buffer_; }
+  std::vector<uint8_t> &recv_buffer() { return recv_buffer_; }
+
+  stdx::expected<void, std::error_code> cancel() { return sock_.cancel(); }
+
+  net::impl::socket::native_handle_type native_handle() const {
+    return sock_.native_handle();
+  }
+
+  void init_tls();
+
+  stdx::expected<void, std::error_code> tls_accept();
+
+  void terminate();
+
+ private:
+  // TlsErrc to net::stream_errc if needed.
+  static std::error_code map_tls_error_code(std::error_code ec) {
+    return (ec == TlsErrc::kZeroReturn) ? net::stream_errc::eof : ec;
+  }
+
+  Monitor<bool> is_terminated_{false};
+
+  mysql_harness::DestinationSocket sock_;
+  mysql_harness::DestinationEndpoint ep_;
+
+  std::vector<uint8_t> send_buffer_;
+  std::vector<uint8_t> recv_buffer_;
+
+  class SSL_Deleter {
+   public:
+    void operator()(SSL *ssl) { SSL_free(ssl); }
+  };
+
+  std::unique_ptr<SSL, SSL_Deleter> ssl_;
+
+  TlsServerContext &tls_ctx_;
+};
+
+class ProtocolBase {
+ public:
+  explicit ProtocolBase(mysql_harness::DestinationSocket sock,
+                        mysql_harness::DestinationEndpoint ep,
+                        TlsServerContext &tls_ctx)
+      : conn_(std::move(sock), std::move(ep), tls_ctx) {}
+
+  ProtocolBase(const ProtocolBase &) = delete;
+  ProtocolBase(ProtocolBase &&) = delete;
+
+  ProtocolBase &operator=(const ProtocolBase &) = delete;
+  ProtocolBase &operator=(ProtocolBase &&rhs) = delete;
+
+  virtual ~ProtocolBase() = default;
+
+  // throws std::system_error
+  virtual void encode_error(const ErrorResponse &resp) = 0;
+
+  // throws std::system_error
+  virtual void encode_ok(const OkResponse &resp) = 0;
+
+  // throws std::system_error
+  virtual void encode_resultset(const ResultsetResponse &response) = 0;
+
+  template <class CompletionToken>
+  void async_send_tls(CompletionToken &&token) {
+    return conn_.async_send_tls(std::forward<CompletionToken>(token));
+  }
+
+  template <class CompletionToken>
+  void async_send(CompletionToken &&token) {
+    return conn_.async_send(std::forward<CompletionToken>(token));
+  }
+
+  template <class CompletionToken>
+  void async_receive(CompletionToken &&token) {
+    return conn_.async_receive(std::forward<CompletionToken>(token));
+  }
+
+  const std::vector<uint8_t> &send_buffer() const {
+    return conn_.send_buffer();
+  }
+
+  std::vector<uint8_t> &send_buffer() { return conn_.send_buffer(); }
+
+  const std::vector<uint8_t> &recv_buffer() const {
+    return conn_.recv_buffer();
+  }
+
+  std::vector<uint8_t> &recv_buffer() { return conn_.recv_buffer(); }
 
   void username(const std::string &username) { username_ = username; }
 
@@ -337,14 +416,6 @@ class ProtocolBase {
                            const std::string &password,
                            const std::vector<uint8_t> &auth_response);
 
-  void init_tls();
-
-  bool is_tls() { return bool(ssl_); }
-
-  const SSL *ssl() const { return ssl_.get(); }
-
-  stdx::expected<void, std::error_code> tls_accept();
-
   net::steady_timer &exec_timer() { return exec_timer_; }
 
   void cancel();
@@ -356,18 +427,14 @@ class ProtocolBase {
    *
    * may be called from another thread.
    */
-  void terminate();
+  void terminate() { conn_.terminate(); }
 
-  net::io_context &io_context() {
-    return client_socket_.get_executor().context();
-  }
+  net::io_context &io_context() { return conn_.io_context(); }
 
- private:
-  Monitor<bool> is_terminated_{false};
+  Connection &connection() { return conn_; }
 
  protected:
-  socket_type client_socket_;
-  endpoint_type client_ep_;
+  Connection conn_;
   net::steady_timer exec_timer_{io_context()};
 
   std::string username_{};
@@ -377,18 +444,6 @@ class ProtocolBase {
 
   std::string auth_method_name_{};
   std::string auth_method_data_{};
-
-  TlsServerContext &tls_ctx_;
-
-  class SSL_Deleter {
-   public:
-    void operator()(SSL *v) { SSL_free(v); }
-  };
-
-  std::unique_ptr<SSL, SSL_Deleter> ssl_;
-
-  std::vector<uint8_t> recv_buffer_;
-  std::vector<uint8_t> send_buffer_;
 };
 
 class StatementReaderBase {

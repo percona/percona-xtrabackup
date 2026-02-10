@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -34,10 +34,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 using registry_type_t = SERVICE_TYPE_NO_CONST(registry);
 using loader_type_t = SERVICE_TYPE_NO_CONST(dynamic_loader);
+using ref_cache_init_type_t =
+    SERVICE_TYPE_NO_CONST(test_ref_cache_post_load_init);
 using ref_cache_producer_type_t =
     SERVICE_TYPE_NO_CONST(test_ref_cache_producer);
 using ref_cache_consumer_type_t =
     SERVICE_TYPE_NO_CONST(test_ref_cache_consumer);
+
+SERVICE_TYPE(test_ref_cache_post_load_init) * ref_cache_init;
 SERVICE_TYPE(test_ref_cache_producer) * ref_cache_producer;
 SERVICE_TYPE(test_ref_cache_consumer) * ref_cache_consumer;
 
@@ -47,6 +51,7 @@ class reference_cache : public ::testing::Test {
   void SetUp() override {
     reg = nullptr;
     loader = nullptr;
+    ref_cache_init = nullptr;
     ref_cache_producer = nullptr;
     ref_cache_consumer = nullptr;
     ASSERT_FALSE(minimal_chassis_init((&reg), &COMPONENT_REF(mysql_server)));
@@ -82,14 +87,20 @@ TEST_F(reference_cache, ref_cache_components_load_unload) {
 
   std::string path;
   const char *absolute_urns[2];
-  for (int i = 0; i < 2; i++)
-    absolute_urns[i] = (char *)malloc(2046 * sizeof(char));
+  for (auto &absolute_urn : absolute_urns)
+    absolute_urn = (char *)malloc(2046 * sizeof(char));
   make_absolute_urn(urns[0], &path);
   strcpy(const_cast<char *>(absolute_urns[0]), path.c_str());
   make_absolute_urn(urns[1], &path);
   strcpy(const_cast<char *>(absolute_urns[1]), path.c_str());
 
   ASSERT_FALSE(loader->load(absolute_urns, 2));
+
+  ASSERT_FALSE(
+      reg->acquire("test_ref_cache_post_load_init",
+                   reinterpret_cast<my_h_service *>(
+                       const_cast<ref_cache_init_type_t **>(&ref_cache_init))));
+
   ASSERT_FALSE(reg->acquire(
       "test_ref_cache_producer",
       reinterpret_cast<my_h_service *>(
@@ -100,6 +111,7 @@ TEST_F(reference_cache, ref_cache_components_load_unload) {
       reinterpret_cast<my_h_service *>(
           const_cast<ref_cache_consumer_type_t **>(&ref_cache_consumer))));
 
+  ASSERT_FALSE(ref_cache_init->mysql_test_ref_cache_init());
   ASSERT_FALSE(
       ref_cache_consumer->mysql_test_ref_cache_consumer_counter_reset());
   ASSERT_FALSE(ref_cache_consumer->mysql_test_ref_cache_consumer_counter_get());
@@ -112,6 +124,11 @@ TEST_F(reference_cache, ref_cache_components_load_unload) {
   ASSERT_FALSE(
       ref_cache_producer->mysql_test_ref_cache_benchmark_run(0, 0, 0, 0));
 
+  if (ref_cache_init) {
+    ASSERT_FALSE(reg->release(reinterpret_cast<my_h_service>(
+        const_cast<ref_cache_init_type_t *>(ref_cache_init))));
+  }
+
   if (ref_cache_producer) {
     ASSERT_FALSE(reg->release(reinterpret_cast<my_h_service>(
         const_cast<ref_cache_producer_type_t *>(ref_cache_producer))));
@@ -122,7 +139,8 @@ TEST_F(reference_cache, ref_cache_components_load_unload) {
         const_cast<ref_cache_consumer_type_t *>(ref_cache_consumer))));
   }
   ASSERT_FALSE(loader->unload(absolute_urns, 2));
-  for (int i = 0; i < 2; i++) free(const_cast<char *>(absolute_urns[i]));
+  for (auto &absolute_urn : absolute_urns)
+    free(const_cast<char *>(absolute_urn));
 }
 
 /* mandatory main function */
@@ -139,6 +157,6 @@ int main(int argc, char **argv) {
   if (res_length > 0) basedir_buf[res_length - 1] = '\0';
   my_setwd(basedir_buf, 0);
 
-  int retval = RUN_ALL_TESTS();
+  int const retval = RUN_ALL_TESTS();
   return retval;
 }

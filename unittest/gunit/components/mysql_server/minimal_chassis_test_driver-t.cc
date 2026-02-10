@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <mysql/components/minimal_chassis.h>
 #include <mysql/components/my_service.h>
 #include <mysql/components/services/mysql_server_runnable_service.h>
-#include <stdlib.h>
+#include <cstdlib>
 #include <string>
 #include "my_io.h"
 #include "my_sys.h"
@@ -58,7 +58,7 @@ extern mysql_component_t mysql_component_mysql_server;
 
 SERVICE_TYPE(mysql_server_runnable) * runnable;
 
-static void atexit_main(void) {
+static void atexit_main() {
   /* set back the dynamic_loader_scheme_file service to minimal_chassis
      service */
   registrator->set_default("dynamic_loader_scheme_file.mysql_minimal_chassis");

@@ -1,4 +1,4 @@
-# Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -44,6 +44,9 @@ ROUTER_ADD_SHARED_LIBRARY(http_common
   http/base/http_time.cc
 
   OUTPUT_NAME "mysqlrouter_http"
+
+  COMPILE_DEFINITIONS
+  MYSQL_ROUTER_LOG_DOMAIN="http_common"
 
   LINK_LIBRARIES
   PUBLIC
@@ -137,6 +140,9 @@ ROUTER_ADD_SHARED_LIBRARY(http_server_lib
 
   OUTPUT_NAME "mysqlrouter_http_server"
 
+  COMPILE_DEFINITIONS
+  MYSQL_ROUTER_LOG_DOMAIN="http_server"
+
   LINK_LIBRARIES
   PUBLIC
   io_component
@@ -179,9 +185,7 @@ ROUTER_ADD_SHARED_LIBRARY(http_client
   http/client/error_code.cc
   http/client/request.cc
 
-  OUTPUT_NAME "http_client"
-
-  SKIP_INSTALL
+  OUTPUT_NAME "mysqlrouter_http_client"
 
   LINK_LIBRARIES
   ${LIBRT}
@@ -205,7 +209,6 @@ MYSQL_ADD_EXECUTABLE(mysqlrouter_passwd
   router_utils
   http_auth_backend_lib
   )
-ADD_INSTALL_RPATH(mysqlrouter_passwd "${ROUTER_INSTALL_RPATH}")
 
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src/harness/include/)
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src/router/include/)

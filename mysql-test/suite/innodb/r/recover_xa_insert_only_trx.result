@@ -1,0 +1,132 @@
+CALL mtr.add_suppression("Found 1 prepared XA transactions");
+CALL mtr.add_suppression("Error persisting GTIDs to table");
+CALL mtr.add_suppression("innodb_force_recovery is on");
+CALL mtr.add_suppression("Failed to compress the gtid_executed table");
+CREATE TABLE t1 (id INT PRIMARY KEY);
+INSERT INTO t1 VALUES (1);
+XA BEGIN 'trx1';
+INSERT INTO t1 VALUES (2);
+XA END 'trx1';
+XA PREPARE 'trx1';
+# restart: --innodb-force-recovery=0
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+SELECT @@innodb_force_recovery;
+@@innodb_force_recovery
+0
+SELECT * FROM t1 ORDER BY id;
+id
+1
+# restart
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+SELECT @@innodb_force_recovery;
+@@innodb_force_recovery
+0
+SELECT * FROM t1 ORDER BY id;
+id
+1
+XA COMMIT 'trx1';
+SELECT * FROM t1 ORDER BY id;
+id
+1
+2
+DROP TABLE t1;
+CREATE TABLE t1 (id INT PRIMARY KEY);
+INSERT INTO t1 VALUES (1);
+XA BEGIN 'trx1';
+INSERT INTO t1 VALUES (2);
+XA END 'trx1';
+XA PREPARE 'trx1';
+# restart: --innodb-force-recovery=1
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+SELECT @@innodb_force_recovery;
+@@innodb_force_recovery
+1
+SELECT * FROM t1 ORDER BY id;
+id
+1
+# restart
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+SELECT @@innodb_force_recovery;
+@@innodb_force_recovery
+0
+SELECT * FROM t1 ORDER BY id;
+id
+1
+XA COMMIT 'trx1';
+SELECT * FROM t1 ORDER BY id;
+id
+1
+2
+DROP TABLE t1;
+CREATE TABLE t1 (id INT PRIMARY KEY);
+INSERT INTO t1 VALUES (1);
+XA BEGIN 'trx1';
+INSERT INTO t1 VALUES (2);
+XA END 'trx1';
+XA PREPARE 'trx1';
+# restart: --innodb-force-recovery=2
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+SELECT @@innodb_force_recovery;
+@@innodb_force_recovery
+2
+SELECT * FROM t1 ORDER BY id;
+id
+1
+# restart
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+SELECT @@innodb_force_recovery;
+@@innodb_force_recovery
+0
+SELECT * FROM t1 ORDER BY id;
+id
+1
+XA COMMIT 'trx1';
+SELECT * FROM t1 ORDER BY id;
+id
+1
+2
+DROP TABLE t1;
+CREATE TABLE t1 (id INT PRIMARY KEY);
+INSERT INTO t1 VALUES (1);
+XA BEGIN 'trx1';
+INSERT INTO t1 VALUES (2);
+XA END 'trx1';
+XA PREPARE 'trx1';
+# restart: --innodb-force-recovery=3
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+SELECT @@innodb_force_recovery;
+@@innodb_force_recovery
+3
+SELECT * FROM t1 ORDER BY id;
+id
+1
+# restart
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+SELECT @@innodb_force_recovery;
+@@innodb_force_recovery
+0
+SELECT * FROM t1 ORDER BY id;
+id
+1
+XA COMMIT 'trx1';
+SELECT * FROM t1 ORDER BY id;
+id
+1
+2
+DROP TABLE t1;

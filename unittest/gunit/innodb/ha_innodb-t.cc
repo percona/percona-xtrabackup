@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -78,20 +78,19 @@ TEST(hainnodb, innobaseconvertname) {
       {"ab/cd", 5, 0, ""},
   };
 
-  for (ulint i = 0; i < UT_ARR_SIZE(test_data); i++) {
+  for (auto &i : test_data) {
     char *end;
     size_t res_len;
 
     memset(buf, 0, sizeof(buf));
 
-    end = innobase_convert_name(buf, test_data[i].buf_size, test_data[i].in,
-                                test_data[i].in_len, nullptr);
+    end = innobase_convert_name(buf, i.buf_size, i.in, i.in_len, nullptr);
 
     res_len = (size_t)(end - buf);
 
     /* notice that buf is not '\0'-terminated */
-    EXPECT_EQ(strlen(test_data[i].buf_expected), res_len);
-    EXPECT_STREQ(test_data[i].buf_expected, buf);
+    EXPECT_EQ(strlen(i.buf_expected), res_len);
+    EXPECT_STREQ(i.buf_expected, buf);
   }
 }
 

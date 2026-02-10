@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -59,7 +59,7 @@ static inline int can_retry(int err) {
   int retval = from_errno(err) == SOCK_EAGAIN ||
                from_errno(err) == SOCK_EINTR ||
                from_errno(err) == SOCK_EWOULDBLOCK;
-  if (!retval) IFDBG(D_NONE, FN; STRLIT("cannot retry "); NDBG(err, d));
+  if (!retval) XCOM_IFDBG(D_NONE, FN; STRLIT("cannot retry "); NDBG(err, d));
   return retval;
 }
 
@@ -67,7 +67,7 @@ static inline int can_retry_read(int err) {
   int retval = from_errno(err) == SOCK_EAGAIN ||
                from_errno(err) == SOCK_EINTR ||
                from_errno(err) == SOCK_EWOULDBLOCK;
-  if (!retval) IFDBG(D_NONE, FN; STRLIT("cannot retry "); NDBG(err, d));
+  if (!retval) XCOM_IFDBG(D_NONE, FN; STRLIT("cannot retry "); NDBG(err, d));
   return retval;
 }
 
@@ -75,7 +75,7 @@ static inline int can_retry_write(int err) {
   int retval = from_errno(err) == SOCK_EAGAIN ||
                from_errno(err) == SOCK_EINTR ||
                from_errno(err) == SOCK_EWOULDBLOCK;
-  if (!retval) IFDBG(D_NONE, FN; STRLIT("cannot retry "); NDBG(err, d));
+  if (!retval) XCOM_IFDBG(D_NONE, FN; STRLIT("cannot retry "); NDBG(err, d));
   return retval;
 }
 #endif

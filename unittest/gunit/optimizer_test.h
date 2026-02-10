@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -152,11 +152,6 @@ class HypergraphOptimizerTestBase : public OptimizerTestBase {
     m_thd->variables.optimizer_switch |= OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER;
   }
 };
-
-// Template for parameterized optimizer tests.
-template <class T>
-class OptimizerTestWithParam : public OptimizerTestBase,
-                               public ::testing::WithParamInterface<T> {};
 
 inline Query_block *ParseAndResolve(
     const char *query, bool nullable, const Server_initializer &initializer,
@@ -376,8 +371,15 @@ inline handlerton *OptimizerTestBase::EnableSecondaryEngine(
     hton->secondary_engine_flags =
         MakeSecondaryEngineFlags(SecondaryEngineFlag::SUPPORTS_HASH_JOIN);
   }
-  hton->secondary_engine_modify_access_path_cost = nullptr;
-  hton->secondary_engine_check_optimizer_request = nullptr;
+  hton->secondary_engine_modify_view_ap_cost = nullptr;
+  hton->secondary_engine_nrows = nullptr;
+  hton->secondary_engine_check_optimizer_request =
+      [](THD *, const JoinHypergraph &, const AccessPath *, int, int, bool,
+         std::string *) {
+        SecondaryEngineGraphSimplificationRequestParameters output = {
+            SecondaryEngineGraphSimplificationRequest::kContinue, 100, true};
+        return output;
+      };
   for (const auto &[name, table] : m_fake_tables) {
     table->file->ht = hton;
     static_cast<Fake_TABLE_SHARE *>(table->s)->set_secondary_engine(true);
@@ -386,7 +388,8 @@ inline handlerton *OptimizerTestBase::EnableSecondaryEngine(
   }
 
   m_thd->lex->m_sql_cmd->use_secondary_storage_engine(hton);
-
+  m_thd->set_secondary_engine_optimization(
+      Secondary_engine_optimization::SECONDARY);
   return hton;
 }
 

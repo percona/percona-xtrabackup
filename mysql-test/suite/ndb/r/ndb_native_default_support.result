@@ -1494,6 +1494,7 @@ t1	CREATE TABLE `t1` (
 insert into t1(fid) value(100);
 Warnings:
 Warning	1364	Field 'f01' doesn't have a default value
+Warning	1364	Field 'f03' doesn't have a default value
 select fid, isnull(f01), isnull(f02), isnull(f03) from t1;
 fid	isnull(f01)	isnull(f02)	isnull(f03)
 100	0	0	0

@@ -1,4 +1,4 @@
-// Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -206,6 +206,13 @@ class Log_sanitizer {
   Xid_commit_list m_internal_xids;
   ///  List of XA transactions and states that appear in the binary log
   Xa_state_list::list m_external_xids;
+
+  /// During binary log recovery, we check XIDs, however, during relay log
+  /// sanitization we need to skip adding of external XIDs. Relay log recovery
+  /// iterates over relay log backwards, therefore, when XA transaction
+  /// spans over separate relay log files, we may firstly encounter "XA COMMIT"
+  /// and later on "XA PREPARE".
+  bool m_skip_prepared_xids{false};
 
   /// Information on whether log needs to be truncated, i.e.
   /// log is not ending at transaction boundary or we cannot read it till the

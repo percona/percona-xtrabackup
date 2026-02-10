@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -534,6 +534,10 @@ static bool open_views_and_update_metadata(
       }
       continue;
     }
+    // Content tree will not be needed here, so we can destroy it right away.
+    if (view->is_json_duality_view() && view->jdv_content_tree != nullptr)
+      jdv::destroy_content_tree(view->jdv_content_tree);
+
     thd->stmt_arena->mem_root = saved_arena_mem_root;
     if (view->is_view() == false) {
       // In between listing views and locking(opening), if view is dropped and

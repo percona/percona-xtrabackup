@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +24,8 @@
 #include "sql/parse_file.h"
 
 #include <fcntl.h>
-#include <limits.h>
-#include <string.h>
+#include <climits>
+#include <cstring>
 
 #include "my_alloc.h"
 #include "my_compiler.h"
@@ -289,7 +289,7 @@ static const char *parse_quoted_escaped_string(const char *ptr, const char *end,
 bool get_file_options_ulllist(const char *&ptr, const char *end,
                               const char *line, uchar *base,
                               File_option *parameter, MEM_ROOT *mem_root) {
-  List<ulonglong> *nlist = (List<ulonglong> *)(base + parameter->offset);
+  auto *nlist = (List<ulonglong> *)(base + parameter->offset);
   ulonglong *num;
   nlist->clear();
   // list parsing
@@ -421,7 +421,7 @@ bool File_parser::parse(uchar *base, MEM_ROOT *mem_root,
             break;
           case FILE_OPTIONS_TIMESTAMP: {
             /* string have to be allocated already */
-            LEX_STRING *val = (LEX_STRING *)(base + parameter->offset);
+            auto *val = (LEX_STRING *)(base + parameter->offset);
             /* yyyy-mm-dd HH:MM:SS = 19(PARSE_FILE_TIMESTAMPLENGTH) characters
              */
             if (ptr[PARSE_FILE_TIMESTAMPLENGTH] != '\n') {

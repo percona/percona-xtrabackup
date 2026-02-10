@@ -2182,9 +2182,11 @@ ERROR 42000: Table 't1' from one of the SELECTs cannot be used in global ORDER c
 SELECT (SELECT 1 AS foo
 UNION
 SELECT 2
-ORDER BY COUNT(a)) AS x
+ORDER BY COUNT(a)
+LIMIT 1) AS x
 FROM t1;
-ERROR HY000: Expression #1 of ORDER BY contains aggregate function and applies to a UNION, EXCEPT or INTERSECT
+x
+1
 # Subquery, ORDER BY contains set function with outer reference
 SELECT (SELECT 1 AS foo
 UNION

@@ -7,10 +7,14 @@ Note	####	Storing MySQL user name or password information in the connection meta
 [on slave]
 [connection slave]
 SET @old_binlog_format= @@global.binlog_format;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 INSTALL PLUGIN example SONAME 'ha_example.so';
 [on master]
 [connection master]
 SET @old_binlog_format= @@global.binlog_format;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 INSTALL PLUGIN example SONAME 'ha_example.so';
 CREATE TABLE t (a VARCHAR(100)) ENGINE = MYISAM;
 CREATE TABLE t_row (a VARCHAR(100)) ENGINE = INNODB;
@@ -50,10 +54,12 @@ SELECT * FROM t_stmt /* should be empty */;
 a
 * TC3: Row injection and stmt-only table: in slave sql thread
 INSERT INTO t_slave_stmt VALUES (1);
+Warnings:
+Warning	6414	Combining the storage engines MyISAM and EXAMPLE is deprecated, but the statement or transaction updates both the MyISAM table test.t_slave_stmt and the EXAMPLE table test.t_stmt.
 [on slave]
 [connection slave]
 include/rpl/wait_for_applier_error_and_skip.inc [errno=1664]
-Last_SQL_Error = 'Error executing row event: 'Cannot execute statement: impossible to write to binary log since statement is in row format and at least one table uses a storage engine limited to statement-based logging.''
+Last_SQL_Error = 'Coordinator stopped because there were error(s) in the worker(s). The most recent failure being: Worker 1 failed executing transaction 'ANONYMOUS' at source log master-bin.000001, end_log_pos 4030. See error log and/or performance_schema.replication_applier_status_by_worker table for more details about this failure or others, if any.'
 [connection slave]
 SELECT * FROM t_slave_stmt /* should be empty */;
 a
@@ -64,7 +70,7 @@ BINLOG '
 1gRVShMBAAAALwAAAEABAAAAABcAAAAAAAAABHRlc3QABnRfc3RtdAABDwJkAAE=
 1gRVShcBAAAAIAAAAGABAAAQABcAAAAAAAEAAf/+ATE=
 ';
-ERROR HY000: Cannot execute statement: impossible to write to binary log since statement is in row format and at least one table uses a storage engine limited to statement-based logging.
+ERROR HY000: Only Format_description_log_event and row events are allowed in BINLOG statements (but Write_rows_v1 was provided)
 SELECT * FROM t_stmt /* should be empty */;
 a
 ---- binlog_format=mixed ----
@@ -72,11 +78,17 @@ a
 include/rpl/sync_to_replica.inc
 include/rpl/stop_replica.inc
 SET @@global.binlog_format = MIXED;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 include/rpl/start_replica.inc
 [on master]
 [connection master]
 SET @@global.binlog_format = MIXED;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 SET @@session.binlog_format = MIXED;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 * TC5: Unsafe statement and stmt-only engine
 INSERT INTO t_stmt VALUES (UUID());
 ERROR HY000: Cannot execute statement: impossible to write to binary log since statement is unsafe, storage engine is limited to statement-based logging, and BINLOG_FORMAT = MIXED. Statement is unsafe because it uses a system function that may return a different value on the replica.
@@ -94,11 +106,17 @@ a
 include/rpl/sync_to_replica.inc
 include/rpl/stop_replica.inc
 SET @@global.binlog_format = STATEMENT;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 include/rpl/start_replica.inc
 [on master]
 [connection master]
 SET @@global.binlog_format = STATEMENT;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 SET @@session.binlog_format = STATEMENT;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 * TC7: Row-only engine and binlog_format=statement: innodb-specific message
 INSERT INTO t_row VALUES (1);
 ERROR HY000: Cannot execute statement: impossible to write to binary log since BINLOG_FORMAT = STATEMENT and at least one table uses a storage engine limited to row-based logging. InnoDB is limited to row-logging when transaction isolation level is READ COMMITTED or READ UNCOMMITTED.
@@ -133,9 +151,21 @@ BINLOG '
 cNpVShMBAAAAKgAAADYBAAAAABcAAAAAAAAABHRlc3QAAXQAAQ8CZAAB
 cNpVShcBAAAAIAAAAFYBAAAQABcAAAAAAAEAAf/+ATE=
 ';
-ERROR HY000: Cannot execute statement: impossible to write to binary log since statement is in row format and BINLOG_FORMAT = STATEMENT.
+ERROR HY000: Only Format_description_log_event and row events are allowed in BINLOG statements (but Write_rows_v1 was provided)
 SELECT * FROM t /* should be empty */;
 a
+* TC12: Same statement, but db filtered out, still errors
+since the error is before read the event content.
+USE other;
+BINLOG '
+cNpVShMBAAAAKgAAADYBAAAAABcAAAAAAAAABHRlc3QAAXQAAQ8CZAAB
+cNpVShcBAAAAIAAAAFYBAAAQABcAAAAAAAEAAf/+ATE=
+';
+ERROR HY000: Only Format_description_log_event and row events are allowed in BINLOG statements (but Write_rows_v1 was provided)
+USE test;
+SELECT * FROM t /* should contain the value 1 */;
+a
+DELETE FROM t;
 * TC13: Unsafe statement and binlog_format=statement
 INSERT INTO t VALUES (COALESCE(1, UUID()));
 Warnings:
@@ -154,13 +184,17 @@ a
 DELETE FROM t;
 ---- master: binlog_format=mixed, slave: binlog_format=statement ----
 SET @@global.binlog_format = MIXED;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 SET @@session.binlog_format = MIXED;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 * TC15: Row injection and binlog_format=statement: in slave sql thread
 INSERT INTO t VALUES (COALESCE(1, UUID()));
 [on slave]
 [connection slave]
 include/rpl/wait_for_applier_error_and_skip.inc [errno=1666]
-Last_SQL_Error = 'Error executing row event: 'Cannot execute statement: impossible to write to binary log since statement is in row format and BINLOG_FORMAT = STATEMENT.''
+Last_SQL_Error = 'Coordinator stopped because there were error(s) in the worker(s). The most recent failure being: Worker 1 failed executing transaction 'ANONYMOUS' at source log master-bin.000001, end_log_pos 5715. See error log and/or performance_schema.replication_applier_status_by_worker table for more details about this failure or others, if any.'
 [connection slave]
 SELECT * FROM t /* should be empty */;
 a
@@ -172,13 +206,21 @@ DROP TRIGGER trig_double_autoinc;
 DROP TABLE t, t_row, t_stmt, t_slave_stmt, t_autoinc, t_double_autoinc;
 DROP DATABASE other;
 SET @@global.binlog_format = @old_binlog_format;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 SET @@session.binlog_format = @old_binlog_format;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 UNINSTALL PLUGIN example;
 [on slave]
 include/rpl/sync_to_replica.inc
 include/rpl/stop_replica.inc
 SET @@global.binlog_format = @old_binlog_format;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 SET @@session.binlog_format = @old_binlog_format;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 include/rpl/start_replica.inc
 UNINSTALL PLUGIN example;
 include/rpl/deinit.inc

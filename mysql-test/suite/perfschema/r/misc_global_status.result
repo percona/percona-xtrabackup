@@ -6,6 +6,8 @@ grant ALL on *.* to user2@localhost;
 grant ALL on *.* to user3@localhost;
 TRUNCATE TABLE performance_schema.accounts;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE TABLE test.t_range(a int, b int, PRIMARY KEY(a));
 INSERT INTO test.t_range values (1, 1), (2,2), (3, 3), (4, 4), (5, 5);
 INSERT INTO test.t_range values (6, 6), (7,7), (8, 8), (9, 9), (10, 10);
@@ -97,3 +99,5 @@ DROP USER user1@localhost;
 DROP USER user2@localhost;
 DROP USER user3@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

@@ -1,5 +1,5 @@
 #!/usr/bin/python3.11
-# Copyright (c) 2024, Oracle and/or its affiliates.
+# Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +35,7 @@ import os
 import glob
 import copy
 import tempfile
+import file_name
 from typing import Callable, List, Tuple, Set, Dict, Iterator, TypeVar
 
 '''
@@ -377,7 +378,7 @@ class FileGraph:
     ) -> List[str]:
         '''Return the abspaths where relinc is found, if included from dirname.
 
-        So if dirnae contains an include directive #include "{relinc}", this
+        So if dirname contains an include directive #include "{relinc}", this
         returns the paths where it is found.
 
         If none found, returns a list containing relinc with a '!' character
@@ -539,22 +540,27 @@ class FileGraph:
         }
 
     @functools.cached_property
-    def file_absinc(self) -> Dict[str, Set[str]]:
-        '''Return a dict from files to sets of absincs of included headers.
+    def file_absinc(self) -> Dict[str, List[str]]:
+        '''Return a dict from files to lists of absincs of included headers.
 
-        So the keys are filenames and the values are sets, where each element is
-        a path to a header included by that file. The path is relative to the
-        root.
+        So the keys are filenames and the values are lists, where each element
+        is a path to a header included by that file. The lists are in the order
+        the files appear in the source code, with duplicate elements removed
+        (keeping only the first instance). The path is relative to the root.
         '''
 
-        ret = {file: set() for file in self.cppfiles}
+        ret = {file: [] for file in self.cppfiles}
         for file in self.cppfiles:
+            d = dict()
             for relinc in self.file_relinc[file]:
-                ret[file].update(self.file_relinc_absinc[file][relinc])
+                for absinc in self.file_relinc_absinc[file][relinc]:
+                    d[absinc] = None
+            ret[file] = list(d.keys())
+
         return ret
 
     @functools.cached_property
-    def lib_absinc(self) -> Dict[str, List[str]]:
+    def lib_absinc(self) -> Dict[str, Set[str]]:
         '''Return a dict from libraries to sets of absincs of included headers.
 
         So the keys are library names, and the values are sets. Each element in
@@ -1019,6 +1025,36 @@ def check_header_guards(
                 )
 
 Node = TypeVar('Node')
+
+def get_graph(
+        *,
+        nodes: List[Node] | None=None,
+        edges: Callable[[Node], Iterator[Node]] | Dict[Node, Iterator[Node]]
+):
+    '''Returns a unified representation of an explicit or implicit graph.
+
+    :param edges: Either a dict, mapping nodes to collections of successors, or
+    a function taking a node as argument and returning a collection of
+    successors.
+    :param nodes: Collection of nodes. If *edges* is a dict, this may be
+    omitted, in which cases the key set is used instead.
+    :raises TypeError: if *edges* is None
+    :raises TypeError: if *nodes* is None and *edges* is not a dict.
+    :return: a pair where the first element is the collection of nodes, and the
+    second element is a function that takes a node as argument and returns a
+    collection of successors.
+    '''
+    if edges is None:
+        raise TypeError(f'edges must not be None')
+    if isinstance(edges, dict):
+        if nodes is None:
+            nodes = edges.keys()
+        return nodes, lambda node: edges.get(node, [])
+    else:
+        if nodes is None:
+            raise TypeError(f'nodes can only be None if edges is a dict')
+        return nodes, edges
+
 def topological_sort(
         *,
         nodes: List[Node] | None=None,
@@ -1044,16 +1080,8 @@ def topological_sort(
     of each cycle.
     '''
 
-    if edges is None:
-        raise TypeError(f'edges must not be None')
-    if isinstance(edges, dict):
-        if nodes is None:
-            nodes = edges.keys()
-        edge_func = lambda node: edges.get(node, [])
-    else:
-        if nodes is None:
-            raise TypeError(f'nodes can only be None if edges is a dict')
-        edge_func = edges
+    nodes, edge_func = get_graph(nodes=nodes, edges=edges)
+
     # Algorithm: perform a depth first traversal.
 
     # When the traversal leaves a node after processing it, we know that all its
@@ -1153,6 +1181,61 @@ print(topological_sort(None,dict(
     a='b', b='c', c='da', d='a'
 )))
 '''
+
+def reachable(
+        *,
+        nodes: List[Node] | None=None,
+        edges: Callable[[Node], Iterator[Node]] | Dict[Node, Iterator[Node]],
+        initial_node: Node
+) -> List[Tuple[int, bool, Node]]:
+    '''Return information about a post-order traversal of a graph.
+
+    The purpose is to "explain" which headers are (recursively) included, and in
+    which order, from a given C++ file. It assumes that:
+    - Nodes are files and an edge from n1 to n2 represents that n1 includes n2.
+    - All included files have header guards, so a header that is included twice
+      will be pasted into the compilation unit, but the contents will be
+      ifdef'ed out so that no other files are included from the header.
+
+    Therefore, the graph is traversed using depth-first search, emitting nodes
+    in post-order, while tracking the set of nodes that have been visited. Every
+    visited node is emitted to the output, even if it has been emitted
+    previously. However, each outgoing edge is traversed only the first time the
+    node is visited.
+
+    Parameters
+    ==========
+    :param nodes: A set of nodes.
+    :param edges: One of the following:
+    - A function that, given a node, returns an iterable over its successors.
+    - A dict where keys are nodes and values are iterables over edges.
+    :param initial_node: The node from which the traversal shall start.
+
+    If *edges* is a dict, then *nodes* may be omitted and is then taken as the
+    key set of the dict.
+
+    :return: A list of triples. The third element of each triple is a node. The
+    second element is a bool which is True if this is the first occurrence of
+    the node in the output. The first element is the depth at which this node is
+    visited. The order of elements in the list is according to the depth-first
+    post-order traversal algorithm described above.
+    '''
+
+    nodes, edge_func = get_graph(nodes=nodes, edges=edges)
+    done = set()
+    ret = []
+    print(edge_func(initial_node))
+    def traverse(node: Node, depth: int):
+        nonlocal done
+        nonlocal ret
+        first_time = node not in done
+        done.add(node)
+        if first_time:
+            for successor in edge_func(node):
+                traverse(successor, depth + 1)
+        ret.append((depth, first_time, node))
+    traverse(initial_node, 0)
+    return ret
 
 def check_lib_inc_cycles(
         *,
@@ -1377,6 +1460,23 @@ def list_file_inc(
         )
     ))
 
+def list_file_inc_recursive(
+        *,
+        file_graph: FileGraph,
+        file: str
+):
+    '''Print the headers include from file.
+
+    Files are indented to the depth they are included. If a file is included
+    multiple times, all but the first are commented using a '#' prefix.'''
+
+    for depth, first_time, filename in reachable(
+        nodes=None,
+        edges=file_graph.file_absinc,
+        initial_node=file,
+    ):
+        print('  ' * depth + ('' if first_time else '# ') + filename)
+
 def list_lib_inc(
         *,
         file_graph: FileGraph,
@@ -1478,6 +1578,13 @@ def setup_argument_parser(
         help='''For each library, list the libraries containg its includes. A
         "?" indicates tha the library includes something that is neither a
         standard library header nor in another library.''')
+    arg('--list-file-inc-recursive', action='store', metavar='FILE',
+        help='List headers included from FILE, recursively. This performs a '
+        'post-order depth-first traversal, and thus shows the order that '
+        'the file contents appear in the compilation unit, assuming all '
+        'include directives appear first in each file. Files that were '
+        'included earlier in the list have a # prefix. Files that are included '
+        'using angle brackets have a ! prefix.')
     arg('--run', action='store', nargs='*',
         metavar='NAME',
         help='''Check libraries. Without argument, performs all checks;
@@ -1551,11 +1658,12 @@ def fix_arguments(
         and not opt.list_file_inc
         and not opt.list_lib_inc
         and not opt.list_lib_inc_dep
+        and not opt.list_file_inc_recursive
     ):
         arg_parser.error(
             'One of the following arguments is required: '
-            '--list-lib --list-file-inc --list-lib-inc --list-lib-lib --run '
-            '--no-run'
+            '--list-lib --list-file-inc --list-lib-inc --list-lib-inc-dep '
+            '--list-file-inc-recursive --run --no-run'
         )
 
     # run == None means that we don't run at all.
@@ -1684,6 +1792,11 @@ def main() -> None:
         list_lib_inc_dep(
             file_graph=file_graph,
             key_filter=lib_filter
+        )
+    elif opt.list_file_inc_recursive:
+        list_file_inc_recursive(
+            file_graph=file_graph,
+            file=file_name.normalize_path(opt.list_file_inc_recursive)
         )
     elif opt.run is not None:
         check(

@@ -90,6 +90,20 @@ SELECT * FROM t4;
 SHOW CREATE TABLE t5;
 SELECT * FROM t5;
 
+# Demonstration of extracting information about NDB table extra metadata.
+# For SDI extract some version information.
+# To get stable result tables restored from the saved backup are used.
+--replace_regex /BLOB_[0-9]+_[0-9]+/BLOB_#_#/
+SELECT
+  RPAD(CONCAT(database_name, '.', table_name),30,' ') 'table',
+  extra_metadata_version,
+  LENGTH(extra_metadata) len,
+  IF(extra_metadata_version = 'SDI', JSON_EXTRACT(CONVERT(extra_metadata USING utf8mb4), '$.mysqld_version_id'), NULL) mysqld_version_id,
+  IF(extra_metadata_version = 'SDI', JSON_EXTRACT(CONVERT(extra_metadata USING utf8mb4), '$.dd_version'), NULL) dd_version,
+  IF(extra_metadata_version = 'SDI', JSON_EXTRACT(CONVERT(extra_metadata USING utf8mb4), '$.sdi_version'), NULL) sdi_version
+  FROM ndbinfo.dictionary_tables
+  ORDER BY 1,2;
+
 # Clean-up
 DROP TABLE t1, t2, t3, t4, t5;
 ALTER TABLESPACE ts1

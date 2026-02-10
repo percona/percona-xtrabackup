@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,8 +22,8 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
-#include <stddef.h>
 #include <sys/types.h>
+#include <cstddef>
 #include <utility>
 
 #include "my_inttypes.h"
@@ -48,7 +48,7 @@ TEST_F(FileSortBufferTest, Basic) {
 
   fs_info.set_max_size(32768, 10);
   for (uint ix = 0; ix < 10; ++ix) {
-    Bounds_checked_array<uchar> buf = fs_info.get_next_record_pointer(10);
+    Bounds_checked_array<uchar> const buf = fs_info.get_next_record_pointer(10);
     ASSERT_GE(buf.size(), 10);
     memcpy(buf.array(), letters, 10);
     fs_info.commit_used_memory(10);
@@ -105,7 +105,7 @@ TEST_F(FileSortBufferTest, OneBigRecordFits) {
     implementation detail; if the record pointer allocation gets
     smarter in the future, the test will have to be adjusted.
   */
-  fs_info.set_max_size(10485760, 0xFFFFFFFFu);
+  fs_info.set_max_size(10485760, 0xFFFFFFFFU);
   Bounds_checked_array<uchar> buf;
   size_t min_size = 1;
   for (;;)  // Termination condition within loop.

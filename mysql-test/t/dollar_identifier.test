@@ -95,7 +95,7 @@ SELECT JSON_EXTRACT('{"id": "3", "$name": "Barney"}', "$.id");
 SELECT JSON_EXTRACT('{"id": "3", "$name": "$Barney"}', "$.$name");
 
 # Should not conflict with client-side commands ('\' escape char is for the shell).
---exec $MYSQL test -e "prompt \$aa"
---exec $MYSQL test -e "prompt \$aa\$"
+--exec $MYSQL --commands test -e "prompt \$aa"
+--exec $MYSQL --commands test -e "prompt \$aa\$"
 
 drop table t;

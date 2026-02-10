@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -57,10 +57,14 @@ using mysql_harness::logging::LogTimestampPrecision;
 IMPORT_LOG_FUNCTIONS()
 
 using HandlerPtr = std::shared_ptr<mysql_harness::logging::Handler>;
+using ExternalHandlerPtr =
+    std::shared_ptr<mysql_harness::logging::ExternalHandler>;
 using LoggerHandlersList = std::vector<std::pair<std::string, HandlerPtr>>;
 
 std::vector<on_switch_to_configured_loggers>
     g_on_switch_to_configured_loggers_clbs;
+
+std::set<std::string> g_supported_external_logging_handler_names;
 
 #ifdef _WIN32
 #define NULL_DEVICE_NAME "NUL"
@@ -226,8 +230,10 @@ class LoggingPluginConfig : public mysql_harness::BasePluginConfig {
       mysql_harness::logging::options::kDestination;
 };
 
-HandlerPtr create_logging_sink(const LoggingPluginConfig &config) {
+HandlerPtr create_logging_sink(const mysql_harness::Config &full_conf,
+                               const LoggingPluginConfig &config) {
   using mysql_harness::Path;
+  using mysql_harness::logging::ExternalHandlerProxy;
   using mysql_harness::logging::FileHandler;
   using mysql_harness::logging::get_default_logger_stream;
   using mysql_harness::logging::NullHandler;
@@ -268,6 +274,17 @@ HandlerPtr create_logging_sink(const LoggingPluginConfig &config) {
 #else
     result = std::make_unique<SyslogHandler>(true, config.level);
 #endif
+  } else if (g_supported_external_logging_handler_names.count(config.name) >
+             0) {
+    if (!full_conf.has_any(config.name)) {
+      throw std::runtime_error("External logging sink '" + config.name +
+                               "' configured, but section with that name "
+                               "missing in the config file.");
+    }
+    // Allow sink name that was registered as external one. It will be created
+    // externally and attached using register_external_logging_handler.
+    result = std::make_unique<ExternalHandlerProxy>(true, config.level,
+                                                    config.timestamp_precision);
   } else {
     throw std::runtime_error("Unsupported logger sink type: '" + config.name +
                              "'");
@@ -306,6 +323,35 @@ void create_plugin_loggers(const mysql_harness::LoaderConfig &config,
 void register_on_switch_to_configured_loggers_callback(
     on_switch_to_configured_loggers callback) {
   g_on_switch_to_configured_loggers_clbs.push_back(callback);
+}
+
+void register_supported_external_logging_handler_names(
+    const std::set<std::string> &names) {
+  g_supported_external_logging_handler_names = names;
+}
+
+void register_external_logging_handler(const std::string &name,
+                                       ExternalHandlerPtr handler) {
+  auto &registry = DIM::instance().get_LoggingRegistry();
+
+  if (!g_supported_external_logging_handler_names.count(name))
+    throw std::logic_error("Handler with name '" + name +
+                           "' isn't an external logger.");
+  auto handler_wrapper = registry.get_handler(name);
+  auto external_handler =
+      std::dynamic_pointer_cast<mysql_harness::logging::ExternalHandlerProxy>(
+          handler_wrapper);
+  if (!external_handler) {
+    assert(false && "Shoulnd't happen.");
+    throw std::logic_error("External handler '" + name + "' has wrong type.");
+  }
+  external_handler->attach_handler(handler);
+}
+
+void unregister_external_logging_handler(const std::string &name) {
+  auto &registry = DIM::instance().get_LoggingRegistry();
+
+  registry.remove_handler(name);
 }
 
 static bool get_sinks_from_config(
@@ -387,8 +433,10 @@ static bool init_handlers(mysql_harness::PluginFuncEnv *env,
       const LoggingPluginConfig plugin_conf(sink, config, default_log_filename,
                                             default_log_level,
                                             default_log_timestamp_precision);
-      logger_handlers.push_back(
-          std::make_pair(sink, create_logging_sink(plugin_conf)));
+      auto sink_ptr = create_logging_sink(config, plugin_conf);
+      if (sink_ptr) {
+        logger_handlers.push_back(std::make_pair(sink, sink_ptr));
+      }
     } catch (const std::exception &exc) {
       log_error("%s", exc.what());
       set_error(env, mysql_harness::kConfigInvalidArgument, "%s", exc.what());

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,7 +36,7 @@
 
 bool mi_check_unique(MI_INFO *info, MI_UNIQUEDEF *def, uchar *record,
                      ha_checksum unique_hash, my_off_t disk_pos) {
-  my_off_t lastpos = info->lastpos;
+  my_off_t const lastpos = info->lastpos;
   MI_KEYDEF *key = &info->s->keyinfo[def->key];
   uchar *key_buff = info->lastkey2;
   DBUG_TRACE;
@@ -66,7 +66,7 @@ bool mi_check_unique(MI_INFO *info, MI_UNIQUEDEF *def, uchar *record,
     if (_mi_search_next(info, info->s->keyinfo + def->key, info->lastkey,
                         MI_UNIQUE_HASH_LENGTH, SEARCH_BIGGER,
                         info->s->state.key_root[def->key]) ||
-        memcmp(info->lastkey, key_buff, MI_UNIQUE_HASH_LENGTH)) {
+        memcmp(info->lastkey, key_buff, MI_UNIQUE_HASH_LENGTH) != 0) {
       info->page_changed = true; /* Can't optimize read next */
       info->lastpos = lastpos;
       return false; /* end of tree */
@@ -88,7 +88,7 @@ ha_checksum mi_unique_hash(MI_UNIQUEDEF *def, const uchar *record) {
   HA_KEYSEG *keyseg;
 
   for (keyseg = def->seg; keyseg < def->end; keyseg++) {
-    enum ha_base_keytype type = (enum ha_base_keytype)keyseg->type;
+    auto type = (enum ha_base_keytype)keyseg->type;
     uint length = keyseg->length;
 
     if (keyseg->null_bit) {
@@ -104,12 +104,12 @@ ha_checksum mi_unique_hash(MI_UNIQUEDEF *def, const uchar *record) {
     }
     pos = record + keyseg->start;
     if (keyseg->flag & HA_VAR_LENGTH_PART) {
-      uint pack_length = keyseg->bit_start;
-      uint tmp_length = (pack_length == 1 ? (uint)*pos : uint2korr(pos));
+      uint const pack_length = keyseg->bit_start;
+      uint const tmp_length = (pack_length == 1 ? (uint)*pos : uint2korr(pos));
       pos += pack_length; /* Skip VARCHAR length */
       length = std::min(length, tmp_length);
     } else if (keyseg->flag & HA_BLOB_PART) {
-      uint tmp_length = _mi_calc_blob_length(keyseg->bit_start, pos);
+      uint const tmp_length = _mi_calc_blob_length(keyseg->bit_start, pos);
       memcpy(&pos, pos + keyseg->bit_start, sizeof(char *));
       if (!length || length > tmp_length)
         length = tmp_length; /* The whole blob */
@@ -147,7 +147,7 @@ int mi_unique_comp(MI_UNIQUEDEF *def, const uchar *a, const uchar *b,
   HA_KEYSEG *keyseg;
 
   for (keyseg = def->seg; keyseg < def->end; keyseg++) {
-    enum ha_base_keytype type = (enum ha_base_keytype)keyseg->type;
+    auto type = (enum ha_base_keytype)keyseg->type;
     uint a_length, b_length;
     a_length = b_length = keyseg->length;
 
@@ -165,7 +165,7 @@ int mi_unique_comp(MI_UNIQUEDEF *def, const uchar *a, const uchar *b,
     pos_a = a + keyseg->start;
     pos_b = b + keyseg->start;
     if (keyseg->flag & HA_VAR_LENGTH_PART) {
-      uint pack_length = keyseg->bit_start;
+      uint const pack_length = keyseg->bit_start;
       if (pack_length == 1) {
         a_length = (uint)*pos_a++;
         b_length = (uint)*pos_b++;

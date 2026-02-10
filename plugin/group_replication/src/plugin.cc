@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@
 #include <sstream>
 
 #include <mysql/components/services/log_builtins.h>
+#include <mysql/components/services/mysql_timestamp.h>
 #include <mysql/service_rpl_transaction_write_set.h>
 #include "mutex_lock.h"
 #include "my_dbug.h"
@@ -37,18 +38,21 @@
 #include "plugin/group_replication/include/observer_server_actions.h"
 #include "plugin/group_replication/include/observer_server_state.h"
 #include "plugin/group_replication/include/observer_trans.h"
+#include "plugin/group_replication/include/opt_tracker.h"
 #include "plugin/group_replication/include/perfschema/pfs.h"
 #include "plugin/group_replication/include/pipeline_stats.h"
 #include "plugin/group_replication/include/plugin.h"
 #include "plugin/group_replication/include/plugin_handlers/consensus_leaders_handler.h"
 #include "plugin/group_replication/include/plugin_handlers/member_actions_handler.h"
 #include "plugin/group_replication/include/plugin_handlers/metrics_handler.h"
+#include "plugin/group_replication/include/plugin_handlers/primary_election_most_uptodate.h"
 #include "plugin/group_replication/include/plugin_handlers/recovery_metadata.h"
 #include "plugin/group_replication/include/plugin_observers/recovery_metadata_observer.h"
 #include "plugin/group_replication/include/plugin_status_variables.h"
 #include "plugin/group_replication/include/plugin_variables.h"
 #include "plugin/group_replication/include/plugin_variables/recovery_endpoints.h"
 #include "plugin/group_replication/include/services/flow_control/get_metrics.h"
+#include "plugin/group_replication/include/services/management/management.h"
 #include "plugin/group_replication/include/services/message_service/message_service.h"
 #include "plugin/group_replication/include/services/status_service/status_service.h"
 #include "plugin/group_replication/include/sql_service/sql_service_interface.h"
@@ -159,6 +163,9 @@ Compatibility_module *compatibility_mgr = nullptr;
 SERVICE_TYPE_NO_CONST(mysql_runtime_error) *mysql_runtime_error_service =
     nullptr;
 
+/* Timestamp service */
+SERVICE_TYPE_NO_CONST(mysql_timestamp) *mysql_timestamp_service = nullptr;
+
 Consensus_leaders_handler *consensus_leaders_handler = nullptr;
 Recovery_metadata_observer *recovery_metadata_observer = nullptr;
 
@@ -223,10 +230,6 @@ static void check_deprecated_variables() {
       strcmp(ov.view_change_uuid_var, "AUTOMATIC")) {
     push_deprecated_warn_no_replacement(thd,
                                         "group_replication_view_change_uuid");
-  }
-  if (ov.allow_local_lower_version_join_var) {
-    push_deprecated_warn_no_replacement(
-        thd, "group_replication_allow_local_lower_version_join");
   }
 }
 
@@ -375,6 +378,10 @@ bool get_allow_single_leader() {
     return lv.allow_single_leader_latch.second;
   else
     return ov.allow_single_leader_var;
+}
+
+bool get_component_primary_election_enabled() {
+  return Primary_election_most_update::is_enabled();
 }
 
 /**
@@ -682,6 +689,17 @@ int plugin_group_replication_start(char **error_message) {
   // Reset the coordinator in case there was a previous stop.
   group_action_coordinator->reset_coordinator_process();
 
+  /*
+    Reset start time before join the group to avoid that the
+    eviction service sees a old start time.
+  */
+  GR_start_time_maintain::reset_start_time();
+
+  /*
+    Reset most uptodate component variables when member join group.
+   */
+  Primary_election_most_update::update_status(0, 0);
+
   // GR delayed initialization.
   if (!server_engine_initialized()) {
     lv.wait_on_engine_initialization = true;
@@ -873,7 +891,20 @@ int initialize_plugin_and_join(
   lv.group_replication_running = true;
   lv.plugin_is_stopping = false;
   log_primary_member_details();
+  track_group_replication_enabled(true);
 
+  // When member join with option ON and group have option OFF throw an warning
+  // to alert DBA possible mismatch on configuration
+  if (local_member_info != nullptr) {
+    bool group_enabled =
+        group_member_mgr
+            ->is_group_replication_elect_prefers_most_updated_enabled();
+    if (local_member_info->get_component_primary_election_enabled() &&
+        group_enabled == false) {
+      LogPluginErr(WARNING_LEVEL,
+                   ER_GRP_PREFER_MOST_UPDATED_CONFIG_DIFFER_ON_FAILOVER);
+    }
+  }
 err:
 
   if (error) {
@@ -1018,7 +1049,8 @@ int configure_group_member_manager() {
         ov.enforce_update_everywhere_checks_var, ov.member_weight_var,
         lv.gr_lower_case_table_names, lv.gr_default_table_encryption,
         ov.advertise_recovery_endpoints_var, ov.view_change_uuid_var,
-        get_allow_single_leader(), ov.preemptive_garbage_collection_var);
+        get_allow_single_leader(), ov.preemptive_garbage_collection_var,
+        get_component_primary_election_enabled());
   } else {
     local_member_info = new Group_member_info(
         hostname, port, uuid, write_set_extraction_algorithm,
@@ -1028,7 +1060,8 @@ int configure_group_member_manager() {
         ov.enforce_update_everywhere_checks_var, ov.member_weight_var,
         lv.gr_lower_case_table_names, lv.gr_default_table_encryption,
         ov.advertise_recovery_endpoints_var, ov.view_change_uuid_var,
-        get_allow_single_leader(), ov.preemptive_garbage_collection_var);
+        get_allow_single_leader(), ov.preemptive_garbage_collection_var,
+        get_component_primary_election_enabled());
   }
 
 #ifndef NDEBUG
@@ -1369,6 +1402,7 @@ int plugin_group_replication_stop(char **error_message) {
   if (!error && lv.recovery_timeout_issue_on_stop)
     error = GROUP_REPLICATION_STOP_WITH_RECOVERY_TIMEOUT;
 
+  track_group_replication_enabled(false);
   LogPluginErr(SYSTEM_LEVEL, ER_GRP_RPL_IS_STOPPED);
   return error;
 }
@@ -1863,6 +1897,17 @@ bool attempt_rejoin() {
   if (initialize_plugin_modules(modules_mask)) goto end;
 
   /*
+    Reset start time before join the group to avoid that the
+    eviction service sees a old start time.
+  */
+  GR_start_time_maintain::reset_start_time();
+
+  /*
+    Reset most uptodate component variables when member join group.
+   */
+  Primary_election_most_update::update_status(0, 0);
+
+  /*
     Finally we attempt the join itself.
   */
   DBUG_EXECUTE_IF("group_replication_fail_rejoin", goto end;);
@@ -2036,6 +2081,14 @@ int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
       reinterpret_cast<SERVICE_TYPE_NO_CONST(mysql_runtime_error) *>(
           h_mysql_runtime_error_service);
 
+  // Initialize timestamp service.
+  my_h_service h_mysql_timestamp_service = nullptr;
+  if (lv.reg_srv->acquire("mysql_timestamp", &h_mysql_timestamp_service))
+    return 1; /* purecov: inspected */
+  mysql_timestamp_service =
+      reinterpret_cast<SERVICE_TYPE_NO_CONST(mysql_timestamp) *>(
+          h_mysql_timestamp_service);
+
   /*
     Acquire required server services once at plugin install.
   */
@@ -2156,6 +2209,11 @@ int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
                  "mode) service.");
     return 1;
   }
+  if (register_group_replication_management_services()) {
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_ERROR_MSG,
+                 "Failed to initialize Group Replication Management service");
+    return 1;
+  }
 
   if (gr::flow_control_metrics_service::
           register_gr_flow_control_metrics_service()) {
@@ -2200,6 +2258,8 @@ int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
   // Set the atomic var to the value of the base plugin variable
   ov.transaction_size_limit_var = ov.transaction_size_limit_base_var;
 
+  track_group_replication_available();
+
   if (ov.start_group_replication_at_boot_var &&
       plugin_group_replication_start()) {
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FAILED_TO_START_ON_BOOT);
@@ -2223,12 +2283,15 @@ int plugin_group_replication_deinit(void *p) {
   finalize_perfschema_module();
 
   gr::status_service::unregister_gr_status_service();
+  unregister_group_replication_management_services();
 
   gr::flow_control_metrics_service::
       unregister_gr_flow_control_metrics_service();
 
   if (plugin_group_replication_stop())
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FAILED_TO_STOP_ON_PLUGIN_UNINSTALL);
+
+  track_group_replication_unavailable();
 
   if (group_member_mgr != nullptr) {
     delete group_member_mgr;
@@ -2347,6 +2410,12 @@ int plugin_group_replication_deinit(void *p) {
   lv.plugin_info_ptr = nullptr;
 
   server_services_references_finalize();
+
+  // Deinitialize timestamp service.
+  my_h_service h_mysql_timestamp_service =
+      reinterpret_cast<my_h_service>(mysql_timestamp_service);
+  lv.reg_srv->release(h_mysql_timestamp_service);
+  mysql_timestamp_service = nullptr;
 
   // Deinitialize runtime error service.
   my_h_service h_mysql_runtime_error_service =
@@ -2860,11 +2929,6 @@ bool server_engine_initialized() {
 
 void register_server_reset_master() { lv.known_server_reset = true; }
 
-bool get_allow_local_lower_version_join() {
-  DBUG_TRACE;
-  return ov.allow_local_lower_version_join_var;
-}
-
 ulong get_transaction_size_limit() {
   DBUG_TRACE;
   return ov.transaction_size_limit_var;
@@ -2931,13 +2995,6 @@ static int check_if_server_properly_configured() {
   }
 
   if (startup_pre_reqs.parallel_applier_workers > 0) {
-    if (startup_pre_reqs.parallel_applier_type !=
-        CHANNEL_MTS_PARALLEL_TYPE_LOGICAL_CLOCK) {
-      LogPluginErr(ERROR_LEVEL,
-                   ER_GRP_RPL_INCORRECT_TYPE_SET_FOR_PARALLEL_APPLIER);
-      return 1;
-    }
-
     if (!startup_pre_reqs.parallel_applier_preserve_commit_order) {
       LogPluginErr(WARNING_LEVEL,
                    ER_GRP_RPL_REPLICA_PRESERVE_COMMIT_ORDER_NOT_SET);
@@ -3929,23 +3986,6 @@ static int check_enforce_update_everywhere_checks(
   return 0;
 }
 
-static int check_allow_local_lower_version_join(MYSQL_THD thd, SYS_VAR *,
-                                                void *save,
-                                                struct st_mysql_value *value) {
-  DBUG_TRACE;
-  bool allow_local_lower_version_join_val;
-
-  push_deprecated_warn_no_replacement(
-      thd, "group_replication_allow_local_lower_version_join");
-
-  if (!get_bool_value_using_type_lib(value, allow_local_lower_version_join_val))
-    return 1;
-
-  *(bool *)save = allow_local_lower_version_join_val;
-
-  return 0;
-}
-
 static int check_communication_debug_options(MYSQL_THD thd, SYS_VAR *,
                                              void *save,
                                              struct st_mysql_value *value) {
@@ -4520,7 +4560,7 @@ static MYSQL_SYSVAR_BOOL(recovery_use_ssl,        /* name */
                          "Replication recovery process.",
                          check_sysvar_bool, /* check func*/
                          update_ssl_use,    /* update func*/
-                         0);                /* default*/
+                         1);                /* default*/
 
 static MYSQL_SYSVAR_STR(
     recovery_ssl_ca,        /* name */
@@ -4693,19 +4733,6 @@ static MYSQL_SYSVAR_ULONG(
     0                           /* block */
 );
 
-// Allow member downgrade
-
-static MYSQL_SYSVAR_BOOL(allow_local_lower_version_join,        /* name */
-                         ov.allow_local_lower_version_join_var, /* var */
-                         PLUGIN_VAR_OPCMDARG |
-                             PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var */
-                         "Allow this server to join the group even if it has a "
-                         "lower plugin version than the group",
-                         check_allow_local_lower_version_join, /* check func. */
-                         nullptr,                              /* update func*/
-                         0                                     /* default */
-);
-
 static MYSQL_SYSVAR_ULONG(
     auto_increment_increment,        /* name */
     ov.auto_increment_increment_var, /* var */
@@ -4771,10 +4798,10 @@ static MYSQL_SYSVAR_ENUM(
     ov.ssl_mode_var,                                       /* var */
     PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var */
     "Specifies the security state of the connection between Group "
-    "Replication members. Default: DISABLED",
+    "Replication members. Default: REQUIRED",
     nullptr,                      /* check func. */
     nullptr,                      /* update func. */
-    0,                            /* default */
+    1,                            /* default */
     &ov.ssl_mode_values_typelib_t /* type lib */
 );
 
@@ -5360,7 +5387,6 @@ static SYS_VAR *group_replication_system_vars[] = {
     MYSQL_SYSVAR(recovery_compression_algorithms),
     MYSQL_SYSVAR(recovery_zstd_compression_level),
     MYSQL_SYSVAR(components_stop_timeout),
-    MYSQL_SYSVAR(allow_local_lower_version_join),
     MYSQL_SYSVAR(auto_increment_increment),
     MYSQL_SYSVAR(compression_threshold),
     MYSQL_SYSVAR(communication_max_message_size),
@@ -5477,6 +5503,10 @@ static SHOW_VAR group_replication_status_vars[] = {
     {"Gr_last_consensus_end_timestamp",
      (char *)&Plugin_status_variables::get_last_consensus_end_timestamp,
      SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"option_tracker_usage:Group Replication",
+     reinterpret_cast<char *>(
+         &opt_option_tracker_usage_group_replication_plugin),
+     SHOW_LONGLONG, SHOW_SCOPE_GLOBAL},
     {nullptr, nullptr, SHOW_LONG, SHOW_SCOPE_GLOBAL},
 };
 

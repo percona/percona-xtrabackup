@@ -1,0 +1,482 @@
+RESET BINARY LOGS AND GTIDS;
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v3_or_v4.inc
+
+# This test stores etags in the result file. The result etag is different on
+# Solaris so we disable it until this is further investigated.
+--source include/not_solaris.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/sakila-schema.sql
+--source ../include/schema/sakila-data.sql
+
+create table sakila.not_auto_inc (
+  id int primary key,
+  data text
+);
+
+create table sakila.compound (
+  id1 int,
+  id2 int,
+  data text,
+  primary key(id1, id2)
+);
+insert into sakila.compound values (1,1,'one'), (1,2,'two'), (3,1,'three');
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=sakila
+--let $mrs_add_schema_path=/sakila
+--source ../include/mrs/db_schema/add.inc
+
+# TODO(alfredo) - add.inc is not working for this
+--let $mrs_add_db_object=compoud
+--let $mrs_add_db_object_path=/compoud
+--let $mrs_add_db_object_auth=1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=city
+--let $mrs_add_db_object_path=/city
+--let $mrs_add_db_object_auth=1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_join_schema=sakila
+--let $mrs_add_db_object_join_table=country
+--let $mrs_add_db_object_join_subobj=country
+--let $mrs_add_db_object_join_on_base=country_id
+--let $mrs_add_db_object_join_on_other=country_id
+--let $mrs_add_db_object_join_columns=country
+--source ../include/mrs/db_object/add_join_subobj.inc
+
+--let $mrs_add_db_object=city
+--let $mrs_add_db_object_path=/citynocheck
+--let $mrs_add_db_object_with_flags=INSERT,UPDATE,DELETE,NOCHECK
+--let $mrs_add_db_object_auth=1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=country
+--let $mrs_add_db_object_path=/country
+--let $mrs_add_db_object_auth=1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_join_schema=sakila
+--let $mrs_add_db_object_join_table=city
+--let $mrs_add_db_object_join_subobj=city
+--let $mrs_add_db_object_join_on_base=country_id
+--let $mrs_add_db_object_join_on_other=country_id
+--let $mrs_add_db_object_join_columns=city
+--let $mrs_add_db_object_join_to_many=true
+--let $mrs_add_db_object_join_reference_options={"dataMappingViewDelete":true}
+--source ../include/mrs/db_object/add_join_subobj.inc
+
+--let $mrs_add_db_object=not_auto_inc
+--let $mrs_add_db_object_path=/notAutoInc
+--let $mrs_add_db_object_auth=1
+--source ../include/mrs/db_object/add.inc
+
+# create users
+--let $k_password_pwd='JEEkMDA1JGI2amJJam9BZmdNS1kwWlFJVUVRZmg1d2UxVT0kVHVkYUQvandPNHB4QSttSVZQT2Q2\nQTlna1g2OUEyMVVpWEl4ajdrcG1Taz0='
+
+--let $mrs_add_auth_app=mrsauth
+--let $mrs_add_auth_registered_users_only=1
+--let $mrs_add_auth_vendor=MRS
+--let $mrs_add_auth_services=('/svc')
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_user_ext_uid="admin"
+--let $mrs_add_user_name='admin'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--source ../include/mrs/user/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'mrsauth' --session-type jwt
+  --path /svc/authentication/login
+  -u admin
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--echo # input validation
+--let $mrs_client_arg_path='/svc/sakila/city?q=bla'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city?limit=bla'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city?offset=bla'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# not an error --let $mrs_client_arg_path='/svc/sakila/city?q='
+#--let $mrs_client_arg_expected_status=400
+#--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+#--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city?limit='
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city?offset='
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city?limit=-1'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city?offset=-1'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city?limit=999999999999999999999999999999999999'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city?offset=999999999999999999999999999999999999'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+
+--echo # RR1 - On a GET request of a resource path without an id, the defined view must be queried and a list of matching items returned.
+# RR1.1 - By default, 25 items must be returned, starting from offset 0 (as determined by the LIMIT clause of the SELECT statement)
+
+--replace_regex /"etag":.*/"etag":ETAG/  /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# RR1.2 - The number of items returned must be overridable through a `&limit=number` query parameter
+
+--replace_regex /"etag":.*/"etag":ETAG/
+--let $mrs_client_arg_path='/svc/sakila/city\?limit=2'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--replace_regex /"etag":.*/"etag":ETAG/
+--let $mrs_client_arg_path='/svc/sakila/city\?limit=0'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# RR1.3 - The first row to be returned must be overridable through a `&offset=number` query parameter
+
+--replace_regex /"etag":.*/"etag":ETAG/
+--replace_regex /"etag":.*/"etag":ETAG/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city\?limit=1\&offset=2'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--replace_regex /"etag":.*/"etag":ETAG/
+--replace_regex /"etag":.*/"etag":ETAG/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city\?offset=10'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--echo # RR2 - On a GET request of a resource path with an id, the defined view must be queried and returned for that id. If the id doesnt exist, a 404 must be returned.
+
+--replace_regex /"etag":.*/"etag":ETAG/
+--replace_regex /"etag":.*/"etag":ETAG/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city/45'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--replace_regex /"etag":.*/"etag":ETAG/
+--replace_regex /"etag":.*/"etag":ETAG/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city/4444444'
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_expected_status=404
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+#--replace_regex /"etag":.*/"etag":ETAG/
+#--let $mrs_client_arg_path='/svc/sakila/compound/1,2'
+#--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+#--source ../include/mrs/mrs_client.inc
+
+# RR3 - An etag must be computed for each matching returned item and embedded in the _metadata.etag field of these returned documents
+# (implicit above)
+
+--echo # RR4 - If a filterObject is given in case RR1, the list of items returned must be filtered with it
+--replace_regex /"etag":.*/"etag":ETAG/
+--let $mrs_client_arg_path='/svc/sakila/city?q={"city":{"\\\$like":"New%"}}'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--echo # RR5 - If a field filter is given, the fields in the output document must be filtered accordingly
+--replace_regex /"etag":.*/"etag":ETAG/
+--let $mrs_client_arg_path='/svc/sakila/city/1?f=city,last_updated'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city/1?f=!country_id,!last_updated'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city/1?f=city,!last_updated'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city/1?f='
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city/1?f=invalid'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## Insert
+--echo # IR1 - On a POST request of a resource path without an id, the input document given in the request must be inserted in the target table(s). On success, the response must include the inserted document.
+
+--let $payload='{"city": "New City 900","city_id": 900,"country": {"country": "Argentina","country_id": 6,"last_update": "2006-02-15 04:44:00.000000"},"country_id": 6,"last_update": "2006-02-15 04:45:25.000000"}'
+--replace_regex /"etag":.*/"etag":ETAG/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city'
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload=$payload
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city/901'
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload=$payload
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--echo # IR2 - Input documents that omit an id/primary key must be rejected with status 400
+
+--replace_regex /"etag":.*/"etag":ETAG/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/notAutoInc'
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"data": "New Row Data"}'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city'
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_expected_status=500
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--echo # IR2.1 - If the primary key of the table is AUTO_INCREMENT, the id must be generated by the database
+
+--replace_regex /"etag":.*/"etag":ETAG/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city'
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"city": "New City NoId","country": {"country": "Argentina","country_id": 6,"last_update": "2006-02-15 04:44:00.000000"},"country_id": 6,"last_update": "2006-02-15 04:45:25.000000"}'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# Input document validation - missing required field
+--let $mrs_client_arg_path='/svc/sakila/city'
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_expected_status=500
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/sakila/city'
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"city": "New City NoId", "unknown":1, "country": {"country": "Argentina","country_id": 6,"last_update": "2006-02-15 04:44:00.000000"},"country_id": 6,"last_update": "2006-02-15 04:45:25.000000"}'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--echo # IR3 - Any nested objects included in the input document must be inserted, updated and/or have their references updated in their respective tables as defined by the view
+# (implicit)
+
+--echo # IR4 - If the object endpoint is not marked to allow the CREATE operation, all POST requests to the endpoint must be rejected with status 403 Forbidden
+# (in json_view_access.test)
+
+## Update
+--echo # UR1 - On a PUT request of a resource path with an id, the input document given in the request must be compared with the current value of the matching rows with that id in the database and:
+  # UR1.1 - If the input document does not exist in the database, the view is defined to allow inserts, it must be inserted
+--replace_regex /"etag":.*/"etag":ETAG/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city/1000'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"city": "New City 1000","city_id": 1000,"country": {"country": "Argentina","country_id": 6,"last_update": "2006-02-15 04:44:00.000000"},"country_id": 6,"last_update": "2006-02-15 04:45:25.000000"}'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# update only, no id in url (not working - bug#117599)
+#--replace_regex /"etag":.*/"etag":ETAG/
+#--let $mrs_client_arg_path='/svc/sakila/city'
+#--let $mrs_client_arg_request_type=PUT
+#--let $mrs_client_arg_payload='{"city": "New City 1000","city_id": 1000,"country": {"country": "Argentina","country_id": 6,"last_update": "2006-02-15 04:44:00.000000"},"country_id": 6,"last_update": "2006-02-15 04:45:25.000000"}'
+#--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+#--source ../include/mrs/mrs_client.inc
+
+
+# Input document validation - missing required field
+--let $mrs_client_arg_path='/svc/sakila/citynocheck/1000'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# Input document validation - invalid field
+--let $mrs_client_arg_path='/svc/sakila/city/1000'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"city": "New City", "city_id":1000, "unknown":1, "country": {"country": "Argentina","country_id": 6,"last_update": "2006-02-15 04:44:00.000000"},"country_id": 6,"last_update": "2006-02-15 04:45:25.000000"}'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# UR1.2 - If the input document exists in the database, the view is defined to allow updates, it must be updated to match the input
+--replace_regex /"etag":.*/"etag":ETAG/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city/45'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"city": "Bahia Blanca", "city_id": 45, "country": {"country": "Argentina", "country_id": 6, "last_update": "2006-02-15 04:44:00.000000"}, "country_id": 6, "last_update": "2006-02-15 04:45:25.000000"}'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# Input document validation - missing required field
+--let $mrs_client_arg_path='/svc/sakila/citynocheck/45'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# Input document validation - invalid field
+--let $mrs_client_arg_path='/svc/sakila/city/45'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"city": "New City", "city_id":45, "unknown":1, "country": {"country": "Argentina","country_id": 6,"last_update": "2006-02-15 04:44:00.000000"},"country_id": 6,"last_update": "2006-02-15 04:45:25.000000"}'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# update with some optional fields missing
+--replace_regex /"etag":.*/"etag":ETAG/ /"last_update":.*/"last_update":TIMESTAMP/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/citynocheck/45'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"city_id":45, "city":"BAHIA Blanca", "country_id":6}'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+# UR1.3 - If the request succeeds, it must return the updated/inserted object
+# (implicit above)
+
+--echo # UR2 - On a PUT request of a resource path without an id, the id must be extracted from the input document
+--replace_regex /"etag":.*/"etag":ETAG/ /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"city": "New City 1001", "city_id": 1001, "country": {"country": "Argentina", "country_id": 6, "last_update": "2025-02-15 04:44:00.000000"}, "country_id": 6, "last_update": "2006-02-15 04:45:25.000000"}'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--echo # UR3 - Any nested objects included in the input document must be inserted, updated, deleted and/or have their references updated in their respective tables as defined by the view
+# (implicit above)
+
+--echo # UR4 - If an etag is given with the input, a fresh etag must be computed for the corresponding DB object and compared. If they do not match, a 412 Precondition Failed status must be returned and no changes made to the database.
+--let $mrs_client_arg_path='/svc/sakila/city/45'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"city": "Bahia Blanca", "city_id": 45, "country": {"country": "Argentina", "country_id": 6, "last_update": "2006-02-15 04:44:00.000000"}, "country_id": 6, "last_update": "2006-02-15 04:45:25.000000", "_metadata": {"etag": "CD6F179CF6284340928FD4C2A133A621B680425D4CE7D47B2927F1390EC0FFEE"}}'
+--let $mrs_client_arg_expected_status=412
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# UR5 - If the object endpoint is not marked to allow the UPDATE operation, PUT requests on the object must be rejected with status 403 Forbidden
+# (in json_view_access.test)
+
+--echo # UR7 - If the input document contains an '_id' field conflicting with the one given in the request, the request MUST fail with status code 400
+--let $mrs_client_arg_path='/svc/sakila/city/43'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload='{"city": "Bahia Blanca", "city_id": 45, "country": {"country": "Argentina", "country_id": 6, "last_update": "2006-02-15 04:44:00.000000"}, "country_id": 6, "last_update": "2006-02-15 04:45:25.000000"}'
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## Delete
+# add some rows that can be deleted without FK constraint errors
+insert into sakila.country (country_id, country) values (2222, 'New Country');
+insert into sakila.city (city_id, city, country_id) values (3000, 'Capital City', 2222), (3001, 'Just a City', 2222), (3002, 'Another City', 2222), (3003, 'Deleted City', 2222);
+
+--echo # DR1 - On a DELETE request with a filterObject, rows corresponding to matching items must be deleted from the target table. The response must be a JSON object and include the number of items deleted and gtid, if appropriate.
+
+# match one row
+--replace_regex /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city?q={"city":{"\\\$eq":"Deleted City"}}'
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# invalid filter
+--replace_regex /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city?q={"city":{"=":"Deleted City"}}'
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_expected_status=400
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--echo # DR2 - Any nested objects in items being deleted must be deleted and/or have their references updated in their respective tables as defined by the view
+
+# NOTE: this doesnt work because of a server Bug#37643150	Multi-table DELETE errors out with No database selected despite no unqualified tables
+#--let $mrs_client_arg_path='/svc/sakila/country?q={"country":{"\\\$eq":"New Country"}}'
+#--let $mrs_client_arg_request_type=DELETE
+#--let $mrs_client_arg_expected_status=200
+#--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+#--source ../include/mrs/mrs_client.inc
+
+
+# DR3 - If the object endpoint is not marked to allow the DELETE operation, all DELETE requests to the endpoint must be rejected with status 403 Forbidden
+# (in json_view_access.test)
+
+--echo # R2 - Requests that fail because of a database error (e.g. foreign key constraint errors) must return status 500
+
+--let $mrs_client_arg_path='/svc/sakila/city?q={"city_id":{"\\\$eq":1}}'
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_expected_status=500
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+###
+insert into sakila.not_auto_inc values (10, ''), (11, ''), (12, ''), (13, ''), (14, ''), (15, '');
+--let $num_rows=`select count(*) from sakila.not_auto_inc`
+# nothing deleted
+--let $mrs_client_arg_path='/svc/sakila/notAutoInc?q={"id":{"\\\$eq":9999999}}'
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+--assert(`select count(*)=$num_rows from sakila.not_auto_inc`)
+
+# delete all rows
+--replace_regex /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/notAutoInc?q={"id":{"\\\$ne":9999999}}'
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+--source ../include/mrs/mrs_client.inc
+--assert(`select count(*)=0 from sakila.not_auto_inc`)
+
+# Cleanup
+--remove_file $MYSQL_TMP_DIR/user_session.dat
+DROP SCHEMA sakila;
+--source ../include/mrs/cleanup.inc

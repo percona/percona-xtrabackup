@@ -623,10 +623,6 @@ mysql-test/include/not_binlog_format_statement.inc
  => mysql-test/include/rpl/deprecated/not_binlog_format_statement.inc
 mysql-test/include/not_mts_replica_parallel_workers.inc
  => mysql-test/include/not_replica_parallel_workers.inc
-mysql-test/include/only_mts_replica_parallel_type_database.inc
- => mysql-test/include/have_replica_parallel_type_database.inc
-mysql-test/include/only_mts_replica_parallel_type_logical_clock.inc
- => mysql-test/include/have_replica_parallel_type_logical_clock.inc
 mysql-test/include/only_mts_replica_parallel_workers.inc
  => mysql-test/include/have_replica_parallel_workers.inc
 mysql-test/include/only_replica_preserve_commit_order.inc

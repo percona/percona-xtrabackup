@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1535,10 +1535,12 @@ struct alignas(NDB_CL) thr_data {
   Uint32 m_global_variables_ptr_instances;
   Uint32 m_global_variables_uint32_ptr_instances;
   Uint32 m_global_variables_uint32_instances;
+  Uint32 m_global_variables_block_instances;
   bool m_global_variables_enabled;
   void *m_global_variables_ptrs[1024];
   void *m_global_variables_uint32_ptrs[1024];
   void *m_global_variables_uint32[1024];
+  SimulatedBlock *m_global_variables_block[MAX_INSTANCES_PER_THREAD];
 #endif
 };
 
@@ -9262,6 +9264,13 @@ static bool crash_started = false;
 
 void ErrorReporter::prepare_to_crash(bool first_phase,
                                      bool error_insert_crash) {
+  {
+    thr_data *selfptr = NDB_THREAD_TLS_THREAD;
+    if (selfptr != NULL) {
+      selfptr->m_watchdog_counter = 22;
+    }
+  }
+
   if (first_phase) {
     NdbMutex_Lock(&g_thr_repository->stop_for_crash_mutex);
     if (crash_started && error_insert_crash) {
@@ -9491,9 +9500,25 @@ void FastScheduler::dumpSignalMemory(Uint32 thr_no, FILE *out) {
       signal.header.theReceiversBlockNumber &= NDBMT_BLOCK_MASK;
 
     const Uint32 *posptr = reinterpret_cast<const Uint32 *>(s);
-    signal.m_sectionPtrI[0] = posptr[siglen + 0];
-    signal.m_sectionPtrI[1] = posptr[siglen + 1];
-    signal.m_sectionPtrI[2] = posptr[siglen + 2];
+    signal.m_sectionPtrI[0] = RNIL;
+    signal.m_sectionPtrI[1] = RNIL;
+    signal.m_sectionPtrI[2] = RNIL;
+    switch (s->m_noOfSections) {
+      case 3:
+        signal.m_sectionPtrI[2] = posptr[siglen + 2];
+        [[fallthrough]];
+      case 2:
+        signal.m_sectionPtrI[1] = posptr[siglen + 1];
+        [[fallthrough]];
+      case 1:
+        signal.m_sectionPtrI[0] = posptr[siglen + 0];
+        [[fallthrough]];
+      case 0:
+        break;
+      default:
+        /* Out of range - ignore */
+        break;
+    };
     bool prioa = signalSequence[seq_end].prioa;
 
     /* Make sure to display clearly when there is a gap in the dump. */
@@ -9744,6 +9769,8 @@ void mt_clear_global_variables(thr_data *selfptr) {
       Uint32 *tmp = (Uint32 *)selfptr->m_global_variables_uint32[i];
       (*tmp) = Uint32(~0);
     }
+    for (Uint32 i = 0; i < selfptr->m_global_variables_block_instances; i++)
+      selfptr->m_global_variables_block[i]->checkInitGlobalVariables();
   }
 }
 
@@ -9791,6 +9818,15 @@ void mt_init_global_variables_uint32_instances(Uint32 self, void **tmp,
     selfptr->m_global_variables_uint32_instances = inx + 1;
   }
 }
+
+void mt_init_global_variables_block(Uint32 self, SimulatedBlock *block) {
+  struct thr_repository *rep = g_thr_repository;
+  struct thr_data *selfptr = &rep->m_thread[self];
+  const Uint32 inx = selfptr->m_global_variables_block_instances;
+  selfptr->m_global_variables_block[inx] = block;
+  selfptr->m_global_variables_block_instances = inx + 1;
+}
+
 #endif
 
 /**

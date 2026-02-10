@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@ std::vector<Machine_Record> machine_records_vector;
  * in performance schema is opened.
  */
 PSI_table_handle *machine_open_table(PSI_pos **pos) {
-  Machine_Table_Handle *temp = new Machine_Table_Handle();
+  auto *temp = new Machine_Table_Handle();
   temp->current_row.machine_number.is_null = true;
   temp->current_row.machine_type.is_null = true;
   temp->current_row.employee_number.is_null = true;
@@ -53,7 +53,7 @@ PSI_table_handle *machine_open_table(PSI_pos **pos) {
  * in performance schema is closed.
  */
 void machine_close_table(PSI_table_handle *handle) {
-  Machine_Table_Handle *temp = (Machine_Table_Handle *)handle;
+  auto *temp = (Machine_Table_Handle *)handle;
   delete temp;
 }
 
@@ -69,7 +69,7 @@ static void copy_record(Machine_Record *dest, Machine_Record *source) {
 
 /* Define implementation of PFS_engine_table_proxy. */
 int machine_rnd_next(PSI_table_handle *handle) {
-  Machine_Table_Handle *h = (Machine_Table_Handle *)handle;
+  auto *h = (Machine_Table_Handle *)handle;
 
   for (h->m_pos.set_at(&h->m_next_pos); h->m_pos.has_more(); h->m_pos.next()) {
     Machine_Record *record = &machine_records_vector.at(h->m_pos.get_index());
@@ -90,7 +90,7 @@ int machine_rnd_init(PSI_table_handle *h [[maybe_unused]],
 }
 
 int machine_rnd_pos(PSI_table_handle *handle) {
-  Machine_Table_Handle *h = (Machine_Table_Handle *)handle;
+  auto *h = (Machine_Table_Handle *)handle;
   Machine_Record *record = &machine_records_vector[h->m_pos.get_index()];
 
   if (record->m_exist) {
@@ -126,16 +126,15 @@ int machine_index_next(PSI_table_handle *handle [[maybe_unused]]) {
 
 /* Reset cursor position */
 void machine_reset_position(PSI_table_handle *handle) {
-  Machine_Table_Handle *h = (Machine_Table_Handle *)handle;
+  auto *h = (Machine_Table_Handle *)handle;
   h->m_pos.reset();
   h->m_next_pos.reset();
-  return;
 }
 
 /* Read current row from the current_row and display them in the table */
 int machine_read_column_value(PSI_table_handle *handle, PSI_field *field,
                               uint index) {
-  Machine_Table_Handle *h = (Machine_Table_Handle *)handle;
+  auto *h = (Machine_Table_Handle *)handle;
 
   switch (index) {
     case 0: /* MACHINE_SL_NUMBER */
@@ -161,16 +160,16 @@ int machine_read_column_value(PSI_table_handle *handle, PSI_field *field,
 
 /* Store row data into records array */
 int machine_write_row_values(PSI_table_handle *handle) {
-  Machine_Table_Handle *h = (Machine_Table_Handle *)handle;
+  auto *h = (Machine_Table_Handle *)handle;
   bool found = false;
 
   mysql_mutex_lock(&LOCK_machine_records_array);
 
   h->current_row.m_exist = true;
-  int size = machine_records_vector.size();
+  int const size = machine_records_vector.size();
   for (int i = 0; i < size; i++) {
     Machine_Record *record = &machine_records_vector.at(i);
-    if (record->m_exist == false) {
+    if (!record->m_exist) {
       copy_record(record, &h->current_row);
       found = true;
       break;
@@ -189,7 +188,7 @@ int machine_write_row_values(PSI_table_handle *handle) {
 /* Read field data from Field and store that into buffer */
 int machine_write_column_value(PSI_table_handle *handle, PSI_field *field,
                                unsigned int index) {
-  Machine_Table_Handle *h = (Machine_Table_Handle *)handle;
+  auto *h = (Machine_Table_Handle *)handle;
 
   char *machine_made = (char *)h->current_row.machine_made;
   unsigned int *machine_made_length = &h->current_row.machine_made_length;
@@ -218,7 +217,7 @@ int machine_write_column_value(PSI_table_handle *handle, PSI_field *field,
 
 /* Update row data in records array */
 int machine_update_row_values(PSI_table_handle *handle) {
-  Machine_Table_Handle *h = (Machine_Table_Handle *)handle;
+  auto *h = (Machine_Table_Handle *)handle;
 
   Machine_Record *cur = &machine_records_vector[h->m_pos.get_index()];
 
@@ -233,7 +232,7 @@ int machine_update_row_values(PSI_table_handle *handle) {
 
 int machine_update_column_value(PSI_table_handle *handle, PSI_field *field,
                                 unsigned int index) {
-  Machine_Table_Handle *h = (Machine_Table_Handle *)handle;
+  auto *h = (Machine_Table_Handle *)handle;
 
   char *machine_made = (char *)h->current_row.machine_made;
   unsigned int *machine_made_length = &h->current_row.machine_made_length;
@@ -262,7 +261,7 @@ int machine_update_column_value(PSI_table_handle *handle, PSI_field *field,
 
 /* Delete row data from records array */
 int machine_delete_row_values(PSI_table_handle *handle) {
-  Machine_Table_Handle *h = (Machine_Table_Handle *)handle;
+  auto *h = (Machine_Table_Handle *)handle;
 
   Machine_Record *cur = &machine_records_vector.at(h->m_pos.get_index());
 
@@ -276,7 +275,7 @@ int machine_delete_row_values(PSI_table_handle *handle) {
   return 0;
 }
 
-int machine_delete_all_rows(void) {
+int machine_delete_all_rows() {
   mysql_mutex_lock(&LOCK_machine_records_array);
   machine_records_vector.clear();
   machine_rows_in_table = 0;
@@ -284,7 +283,7 @@ int machine_delete_all_rows(void) {
   return 0;
 }
 
-unsigned long long machine_get_row_count(void) { return machine_rows_in_table; }
+unsigned long long machine_get_row_count() { return machine_rows_in_table; }
 
 void init_machine_share(PFS_engine_table_share_proxy *share) {
   share->m_table_name = "pfs_example_machine";

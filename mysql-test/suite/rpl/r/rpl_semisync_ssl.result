@@ -1,0 +1,41 @@
+include/rpl/init_source_replica.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection master]
+include/rpl/install_semisync.inc
+
+############################################################
+# 1. Validate that SSL is enabled on the replica.
+[connection slave]
+include/assert.inc [Source_SSL_Allowed must be YES by default]
+
+############################################################
+# 2. Create a table on the source and validate that it is
+#    replicated.
+[connection master]
+CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY);
+
+############################################################
+# 3. Insert rows on the source and validate that they are
+#    replicated.
+[connection master]
+INSERT INTO t1 VALUES(1);
+INSERT INTO t1 VALUES(2);
+include/rpl/sync_to_replica.inc
+include/assert.inc [Replica must have 2 rows]
+
+############################################################
+# 4. Validate semi sync plugin status on both servers.
+[connection master]
+include/assert.inc [semi-sync is running on the source]
+[connection slave]
+include/assert.inc [semi-sync is running on the replica]
+
+############################################################
+# 5. Clean up.
+[connection master]
+DROP TABLE t1;
+include/rpl/sync_to_replica.inc
+include/rpl/uninstall_semisync.inc
+include/rpl/deinit.inc

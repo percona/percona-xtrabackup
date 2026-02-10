@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -28,9 +28,7 @@
 #include "plugin/x/tests/driver/common/utils_string_parsing.h"
 #include "template_utils.h"
 
-namespace shcore {
-namespace mysql {
-namespace splitter {
+namespace shcore::mysql::splitter {
 //--------------------------------------------------------------------------------------------------
 
 const unsigned char *skip_leading_whitespace(const unsigned char *head,
@@ -69,15 +67,15 @@ size_t determineStatementRanges(const char *sql, size_t length,
                                 const std::string &line_break,
                                 std::stack<std::string> &input_context_stack) {
   int full_statement_count = 0;
-  const unsigned char *delimiter_head =
+  const auto *delimiter_head =
       pointer_cast<const unsigned char *>(delimiter.c_str());
 
   const unsigned char keyword[] = "delimiter";
 
-  const unsigned char *head = pointer_cast<const unsigned char *>(sql);
+  const auto *head = pointer_cast<const unsigned char *>(sql);
   const unsigned char *tail = head;
   const unsigned char *end = head + length;
-  const unsigned char *new_line =
+  const auto *new_line =
       pointer_cast<const unsigned char *>(line_break.c_str());
   bool have_content = false;  // Set when anything else but comments were found
                               // for the current statement.
@@ -98,18 +96,17 @@ size_t determineStatementRanges(const char *sql, size_t length,
       case '/':  // Possible multi line comment or hidden (conditional) command.
         if (*(tail + 1) == '*') {
           tail += 2;
-          bool is_hidden_command = (*tail == '!');
+          bool const is_hidden_command = (*tail == '!');
           while (true) {
             while (tail < end && *tail != '*') tail++;
             if (tail == end)  // Unfinished comment.
             {
               input_context_stack.push("/*");
               break;
-            } else {
-              if (*++tail == '/') {
-                tail++;  // Skip the slash too.
-                break;
-              }
+            }
+            if (*++tail == '/') {
+              tail++;  // Skip the slash too.
+              break;
             }
           }
 
@@ -141,7 +138,7 @@ size_t determineStatementRanges(const char *sql, size_t length,
       case '\'':
       case '`': {
         have_content = true;
-        char quote = *tail++;
+        char const quote = *tail++;
 
         if (input_context_stack.empty() || input_context_stack.top() == "-") {
           // Quoted string/id. Skip this in a local loop if is opening quote.
@@ -172,9 +169,9 @@ size_t determineStatementRanges(const char *sql, size_t length,
         // text or a character,
         // which is not part of a regular MySQL identifier (0-9, A-Z, a-z, _, $,
         // \u0080-\uffff).
-        unsigned char previous =
+        unsigned char const previous =
             tail > pointer_cast<const unsigned char *>(sql) ? *(tail - 1) : 0;
-        bool is_identifier_char =
+        bool const is_identifier_char =
             previous >= 0x80 || (previous >= '0' && previous <= '9') ||
             ((previous | 0x20) >= 'a' && (previous | 0x20) <= 'z') ||
             previous == '$' || previous == '_';
@@ -279,6 +276,4 @@ size_t determineStatementRanges(const char *sql, size_t length,
 
   return full_statement_count;
 }
-}  // namespace splitter
-}  // namespace mysql
-}  // namespace shcore
+}  // namespace shcore::mysql::splitter

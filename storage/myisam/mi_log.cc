@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -76,7 +76,7 @@ void _myisam_log(enum myisam_log_commands command, MI_INFO *info,
                  const uchar *buffert, uint length) {
   uchar buff[11];
   int error, old_errno;
-  ulong pid = (ulong)GETPID();
+  auto pid = (ulong)GETPID();
   old_errno = my_errno();
   memset(buff, 0, sizeof(buff));
   buff[0] = (char)command;
@@ -97,7 +97,7 @@ void _myisam_log_command(enum myisam_log_commands command, MI_INFO *info,
                          const uchar *buffert, uint length, int result) {
   uchar buff[9];
   int error, old_errno;
-  ulong pid = (ulong)GETPID();
+  auto pid = (ulong)GETPID();
 
   old_errno = my_errno();
   buff[0] = (char)command;
@@ -118,7 +118,7 @@ void _myisam_log_record(enum myisam_log_commands command, MI_INFO *info,
   uchar buff[21], *pos;
   int error, old_errno;
   uint length;
-  ulong pid = (ulong)GETPID();
+  auto pid = (ulong)GETPID();
 
   old_errno = my_errno();
   if (!info->s->base.blobs)

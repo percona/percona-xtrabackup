@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -235,8 +235,13 @@ class mysql_dynamic_loader_imp {
       std::vector<const char *> &services_loaded);
 
   /**
-    Checks if all dependencies can be satisfied with existing or to be added
-    Services.
+    For all Services that are provided by specified Components
+    checks if the required Service is present in provided Services.
+    If so, no further action is taken for the Service.
+    If not, tries to acquire the Service.
+    This time acquire() can fail and we continue the load process,
+    because we hope the required Service might be possibly registered later by
+    some Component init().
 
     @param loaded_components List of Components to continue load of.
     @param services_provided List of Services that are being provided by
@@ -245,9 +250,22 @@ class mysql_dynamic_loader_imp {
     @retval false success
     @retval true failure
   */
-  static bool load_do_check_dependencies(
+  static bool load_do_check_acquire(
       std::vector<std::unique_ptr<mysql_component>> &loaded_components,
       const std::set<my_string> &services_provided);
+
+  /**
+    Calls Components initialization method to make Components ready to function.
+    In case of failure rollbacks all changes, i.e. calls deinitialization
+    methods on initialized Components.
+
+    @param loaded_components List of Components to continue load of.
+    @return Status of performed operation
+    @retval false success
+    @retval true failure
+  */
+  static bool load_do_initialize_components(
+      std::vector<std::unique_ptr<mysql_component>> &loaded_components);
 
   /**
     Registers all Services that are provided by specified Components.
@@ -263,7 +281,8 @@ class mysql_dynamic_loader_imp {
       std::vector<std::unique_ptr<mysql_component>> &loaded_components);
 
   /**
-    Acquires Service Implementations for all dependencies of Components.
+    Acquires Service Implementations for these dependencies of Components,
+    which are not acquired yet.
     In case of failure rollbacks all changes, i.e. release Services that were
     acquired.
 
@@ -272,20 +291,7 @@ class mysql_dynamic_loader_imp {
     @retval false success
     @retval true failure
   */
-  static bool load_do_resolve_dependencies(
-      std::vector<std::unique_ptr<mysql_component>> &loaded_components);
-
-  /**
-    Calls Components initialization method to make Components ready to function.
-    In case of failure rollbacks all changes, i.e. calls deinitialization
-    methods on initialized Components.
-
-    @param loaded_components List of Components to continue load of.
-    @return Status of performed operation
-    @retval false success
-    @retval true failure
-  */
-  static bool load_do_initialize_components(
+  static bool load_do_acquire(
       std::vector<std::unique_ptr<mysql_component>> &loaded_components);
 
   /**
@@ -329,29 +335,17 @@ class mysql_dynamic_loader_imp {
       const std::vector<mysql_component *> &components_to_unload);
 
   /**
-    Prefetch all scheme loading Services before we get a lock on a Registry.
+    Takes a lock on the registry, to prevent reference count from being changed
+    and then invokes:
+     - unload_do_check_provided_services_reference_count,
+     - unload_do_unload_dependencies,
+     - unload_do_unregister_services.
+    Lock is removed then and the unload_do_deinitialize_components is invoked.
+    Manages the rollback in case of deinit failure - with use of scope guard.
 
     @param components_to_unload List of Components to continue unload of.
     @param dependency_graph A graph of dependencies between the Components
       to be unloaded.
-    @return Status of performed operation
-    @retval false success
-    @retval true failure
-  */
-  static bool unload_do_get_scheme_services(
-      const std::vector<mysql_component *> &components_to_unload,
-      const std::map<const void *, std::vector<mysql_component *>>
-          &dependency_graph);
-
-  /**
-    Takes a lock on all services that are provided by the Components to be
-    unloaded, to prevent reference count from being changed.
-
-    @param components_to_unload List of Components to continue unload of.
-    @param dependency_graph A graph of dependencies between the Components
-      to be unloaded.
-    @param scheme_services Map of scheme loading Services prefetched with
-      Service Implementations required to unload all Components to unload.
     @return Status of performed operation
     @retval false success
     @retval true failure
@@ -359,8 +353,7 @@ class mysql_dynamic_loader_imp {
   static bool unload_do_lock_provided_services(
       const std::vector<mysql_component *> &components_to_unload,
       const std::map<const void *, std::vector<mysql_component *>>
-          &dependency_graph,
-      scheme_service_map &scheme_services);
+          &dependency_graph);
 
   /**
     Checks if all Service Implementations provided by the Components to be
@@ -372,8 +365,6 @@ class mysql_dynamic_loader_imp {
     @param components_to_unload List of Components to continue unload of.
     @param dependency_graph A graph of dependencies between the Components
       to be unloaded.
-    @param scheme_services Map of scheme loading Services prefetched with
-      Service Implementations required to unload all Components to unload.
     @return Status of performed operation
     @retval false success
     @retval true failure
@@ -381,75 +372,60 @@ class mysql_dynamic_loader_imp {
   static bool unload_do_check_provided_services_reference_count(
       const std::vector<mysql_component *> &components_to_unload,
       const std::map<const void *, std::vector<mysql_component *>>
-          &dependency_graph,
-      scheme_service_map &scheme_services);
-
-  /**
-    Deinitialize Components using their deinitialization method.
-    In case of failure rollbacks all changes, i.e. calls initialization
-    method again on deinitialized Components.
-
-    @param components_to_unload List of Components to continue unload of.
-    @param scheme_services Map of scheme loading Services prefetched with
-      Service Implementations required to unload all Components to unload.
-    @return Status of performed operation
-    @retval false success
-    @retval true failure
-  */
-  static bool unload_do_deinitialize_components(
-      const std::vector<mysql_component *> &components_to_unload,
-      scheme_service_map &scheme_services);
+          &dependency_graph);
 
   /**
     Releases Service Implementations acquired to satisfy dependencies.
-    In case of failure rollbacks all changes, i.e. acquires Services for
-    released dependencies again.
 
     @param components_to_unload List of Components to continue unload of.
-    @param scheme_services Map of scheme loading Services prefetched with
-      Service Implementations required to unload all Components to unload.
+    @param [out] released_services Vector of services actually released (for
+    rollback purposes)
     @return Status of performed operation
     @retval false success
     @retval true failure
   */
   static bool unload_do_unload_dependencies(
       const std::vector<mysql_component *> &components_to_unload,
-      scheme_service_map &scheme_services);
+      std::vector<mysql_service_placeholder_ref_t *> &released_services);
 
   /**
     Unregisters all Service Implementations of specified Components.
-    In case of failure rollbacks all changes, i.e. registers unregistered
-    Service Implementations again.
 
     @param components_to_unload List of Components to continue unload of.
-    @param scheme_services Map of scheme loading Services prefetched with
-      Service Implementations required to unload all Components to unload.
+    @param [out] unregistered_services Vactor of services actually unregistered
+    (for rollback purposes)
     @return Status of performed operation
     @retval false success
     @retval true failure
   */
   static bool unload_do_unregister_services(
       const std::vector<mysql_component *> &components_to_unload,
-      scheme_service_map &scheme_services);
+      std::vector<const mysql_service_ref_t *> &unregistered_services);
+
+  /**
+  Deinitialize Components using their deinitialization method.
+
+  @param components_to_unload List of Components to continue unload of.
+  @return Status of performed operation
+  @retval false success
+  @retval true failure
+*/
+  static bool unload_do_deinitialize_components(
+      const std::vector<mysql_component *> &components_to_unload);
 
   /**
     Uses Component URN to extract the scheme part of URN (part before "://") and
     use it to acquire Service Implementation of scheme Component loader Service
     for specified scheme, used then to unload specified Components. The unloaded
     Components are removed from the main list of all loaded Components.
-    In case of failure rollbacks all changes, i.e. loads unloaded Components
-    by their URN and add them to the main list of loaded Components again.
 
     @param components_to_unload List of Components to continue unload of.
-    @param scheme_services Map of scheme loading Services prefetched with
-      Service Implementations required to unload all Components to unload.
     @return Status of performed operation
     @retval false success
     @retval true failure
   */
   static bool unload_do_unload_components(
-      const std::vector<mysql_component *> &components_to_unload,
-      scheme_service_map &scheme_services);
+      const std::vector<mysql_component *> &components_to_unload);
 
   /**
     Finishes unloading process by marking changes to not be rolled back.

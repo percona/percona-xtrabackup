@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 create table t1 (a int) engine=myisam;
 create view v1 as select * from t1;
 test.t1                                            OK
@@ -327,7 +328,7 @@ DROP TABLE t1, t2, t3;
 #
 CREATE DATABASE `test-database`;
 USE `test-database`;
-CREATE TABLE `test` (`c1` VARCHAR(10)) ENGINE=MYISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_unicode_ci;
+CREATE TABLE `test` (`c1` VARCHAR(10)) ENGINE=MYISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 Warning	3778	'utf8mb3_unicode_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
@@ -779,3 +780,4 @@ DROP DATABASE BUG52792;
 SET NAMES default;
 USE test;
 SET GLOBAL EVENT_SCHEDULER = ON;
+include/rpl/set_gtid_mode_on.inc

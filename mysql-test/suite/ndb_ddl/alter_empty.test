@@ -1,0 +1,191 @@
+--source setup.inc
+
+--echo #
+--echo # Verify behavior of an "empty" ALTER on NDB tables:
+--echo #   - ALTER TABLE ... ENGINE=NDB when table already uses NDB
+--echo #   - ALTER TABLE ... FORCE
+--echo #   - ALGORITHM combinations: NONE, INPLACE, COPY, INSTANT
+--echo #
+--echo # Expected outcomes:
+--echo #   +-----------------------------------+--------+
+--echo #   | Combination                       | Result |
+--echo #   +-----------------------------------+--------+
+--echo #   | ALGORITHM=INPLACE, ENGINE         | ERROR  |
+--echo #   | ALGORITHM=COPY, ENGINE            | COPY   |
+--echo #   | ENGINE                            | COPY   |
+--echo #   | ALGORITHM=INPLACE, FORCE          | ERROR  |
+--echo #   | ALGORITHM=COPY, FORCE             | COPY   |
+--echo #   | FORCE                             | COPY   |
+--echo #   | ALGORITHM=INPLACE, ENGINE, FORCE  | ERROR  |
+--echo #   | COPY, ENGINE, FORCE               | COPY   |
+--echo #   | ENGINE, FORCE                     | COPY   |
+--echo #   | ALGORITHM=INSTANT, ENGINE         | ERROR  |
+--echo #   | ALGORITHM=INSTANT, FORCE          | ERROR  |
+--echo #   | ALGORITHM=INSTANT, ENGINE, FORCE  | ERROR  |
+--echo #   +-----------------------------------+--------+
+--echo # Assertions enforced:
+--echo #   - Row count unchanged
+--echo #   - No temporary tables created (performance_schema session counters unchanged)
+--echo #   - No temporary table artifacts in NDB (#sql%) remain
+--echo #   - INPLACE/INSTANT: expected ERROR; id and version unchanged
+--echo #   - Others (NONE/COPY): expected COPY; table id changes
+--echo #
+
+# Iterate through 12 valid combinations
+let $i=1;
+while ($i <= 12)
+{
+  let $expected_error=0;
+  # Set the full SQL fragment to append to ALTER TABLE, including separators.
+  # Also include an SQL comment for human-readable output.
+  if ($i == 1)
+  {
+    let $empty_sql=ALGORITHM=INPLACE, ENGINE=NDB /* inplace + engine */;
+    let $expected_error=1;
+  }
+  if ($i == 2)
+  {
+    let $empty_sql=ALGORITHM=COPY, ENGINE=NDB /* copy + engine */;
+  }
+  if ($i == 3)
+  {
+    let $empty_sql=ENGINE=NDB /* engine only */;
+  }
+  if ($i == 4)
+  {
+    let $empty_sql=ALGORITHM=INPLACE, FORCE /* inplace + force */;
+    let $expected_error=1;
+  }
+  if ($i == 5)
+  {
+    let $empty_sql=ALGORITHM=COPY, FORCE /* copy + force */;
+  }
+  if ($i == 6)
+  {
+    let $empty_sql=FORCE /* force only */;
+  }
+  if ($i == 7)
+  {
+    let $empty_sql=ALGORITHM=INPLACE, ENGINE=NDB, FORCE /* inplace + engine + force */;
+    let $expected_error=1;
+  }
+  if ($i == 8)
+  {
+    let $empty_sql=ALGORITHM=COPY, ENGINE=NDB, FORCE /* copy + engine + force */;
+  }
+  if ($i == 9)
+  {
+    let $empty_sql=ENGINE=NDB, FORCE /* engine + force */;
+  }
+  if ($i == 10)
+  {
+    let $empty_sql=ALGORITHM=INSTANT, ENGINE=NDB /* instant + engine */;
+    let $expected_error=1;
+  }
+  if ($i == 11)
+  {
+    let $empty_sql=ALGORITHM=INSTANT, FORCE /* instant + force */;
+    let $expected_error=1;
+  }
+  if ($i == 12)
+  {
+    let $empty_sql=ALGORITHM=INSTANT, ENGINE=NDB, FORCE /* instant + engine + force */;
+    let $expected_error=1;
+  }
+
+  # Expected outcome: error => no copy, else copy
+  let $expect_copy=1;
+  if ($expected_error)
+  {
+    let $expect_copy=0;
+  }
+
+  # Capture BEFORE metrics
+  let $table_id_before = `SELECT id FROM test.ndbinfo_dict_obj_info
+                           WHERE fq_name = 'ndb_ddl_test/def/t1'`;
+  let $version_before = `SELECT version FROM test.ndbinfo_dict_obj_info
+                           WHERE fq_name = 'ndb_ddl_test/def/t1'`;
+  let $rowcnt_before = `SELECT COUNT(*) FROM t1`;
+  let $tmp_before = `SELECT VARIABLE_VALUE FROM performance_schema.session_status
+                       WHERE VARIABLE_NAME = 'Created_tmp_tables'`;
+  let $tmp_disk_before = `SELECT VARIABLE_VALUE FROM performance_schema.session_status
+                       WHERE VARIABLE_NAME = 'Created_tmp_disk_tables'`;
+
+  # Execute empty ALTER with the preformatted clause(s)
+  # Allow success by default; when expected, accept server rejections.
+  if ($expected_error)
+  {
+    --error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+  }
+  eval ALTER TABLE t1 $empty_sql;
+
+  # Capture AFTER metrics
+  let $table_id_after = `SELECT id FROM test.ndbinfo_dict_obj_info
+                          WHERE fq_name = 'ndb_ddl_test/def/t1'`;
+  let $version_after = `SELECT version FROM test.ndbinfo_dict_obj_info
+                          WHERE fq_name = 'ndb_ddl_test/def/t1'`;
+  let $rowcnt_after = `SELECT COUNT(*) FROM t1`;
+  let $tmp_after = `SELECT VARIABLE_VALUE FROM performance_schema.session_status
+                       WHERE VARIABLE_NAME = 'Created_tmp_tables'`;
+  let $tmp_disk_after = `SELECT VARIABLE_VALUE FROM performance_schema.session_status
+                       WHERE VARIABLE_NAME = 'Created_tmp_disk_tables'`;
+
+  # Assert no temp tables created
+  if ($tmp_before != $tmp_after)
+  {
+    echo Created_tmp_tables before: $tmp_before;
+    echo Created_tmp_tables after:  $tmp_after;
+    die Unexpected temporary tables created;
+  }
+  if ($tmp_disk_before != $tmp_disk_after)
+  {
+    echo Created_tmp_disk_tables before: $tmp_disk_before;
+    echo Created_tmp_disk_tables after:  $tmp_disk_after;
+    die Unexpected disk temporary tables created;
+  }
+
+  # Assert NDB metadata: copy implies id change; error implies no change
+  if ($expect_copy)
+  {
+    if ($table_id_before == $table_id_after)
+    {
+      echo table_id_before: $table_id_before;
+      echo table_id_after:  $table_id_after;
+      die Expected NDB object id change not observed;
+    }
+  }
+  if (!$expect_copy)
+  {
+    if ($table_id_before != $table_id_after)
+    {
+      echo table_id_before: $table_id_before;
+      echo table_id_after:  $table_id_after;
+      die Unexpected NDB object id change;
+    }
+  }
+  # Version must be stable only for non-copy (error) cases
+  if (!$expect_copy)
+  {
+    if ($version_before != $version_after)
+    {
+      echo version_before: $version_before;
+      echo version_after:  $version_after;
+      die Unexpected NDB object version change;
+    }
+  }
+
+  # Assert data unchanged
+  if ($rowcnt_before != $rowcnt_after)
+  {
+    echo rowcnt_before: $rowcnt_before;
+    echo rowcnt_after:  $rowcnt_after;
+    die Unexpected table data change;
+  }
+
+  # Ensure no temporary table artifacts remain in NDB
+  --source count_temp_tables.inc
+
+  inc $i;
+} # while i
+
+--source cleanup.inc

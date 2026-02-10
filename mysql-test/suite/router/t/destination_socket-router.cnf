@@ -1,0 +1,25 @@
+[DEFAULT]
+
+[logger]
+level=DEBUG
+
+[routing:static]
+bind_address=0.0.0.0
+routing_strategy=round-robin
+protocol=classic
+client_ssl_mode=PREFERRED
+server_ssl_mode=PREFERRED
+server_ssl_verify=DISABLED
+
+# MTR template stuff
+use_socket_as_destination=1
+
+[http_server]
+
+[mysql_rest_service]
+mysql_read_write_route=static
+wait_for_metadata_schema_access=320
+
+# use account with auth-socket
+mysql_user=account_with_auth_socket
+mysql_user_data_access=account_with_auth_socket

@@ -1,0 +1,60 @@
+# Connection delay tests for unauthenticated connections
+# (with or without control exemption)
+
+# ----------------------------------------------------------------------
+
+# Setup
+# Install component_connection_control
+INSTALL COMPONENT 'file://component_connection_control';
+# Save original values of connection_control variables
+SET @saved_connections_threshold = @@global.component_connection_control.failed_connections_threshold;
+SET @saved_max_delay = @@global.component_connection_control.max_connection_delay;
+SET @saved_exempt= @@global.component_connection_control.exempt_unknown_users;
+# Set small values for connection_control variables
+SET @@global.component_connection_control.failed_connections_threshold = 2;
+SET @global.component_connection_control.max_connection_delay = 1000;
+# Check initial Component_connection_control_exempted_unknown_users - Should be 0
+SHOW STATUS LIKE 'Component_connection_control_exempted_unknown_users';
+Variable_name	Value
+Component_connection_control_exempted_unknown_users	0
+
+# ----------------------------------------------------------------------
+
+# Following attempt will not experience any delay in server response (exempt enabled)
+SET @@global.component_connection_control.exempt_unknown_users= 1;
+closing connection
+closing connection
+closing connection
+Connection_control_delay_generated should be 0
+SHOW STATUS LIKE 'Component_connection_control_delay_generated';
+Variable_name	Value
+Component_connection_control_delay_generated	0
+# Component_connection_control_exempted_unknown_users should be 3
+SHOW STATUS LIKE 'Component_connection_control_exempted_unknown_users';
+Variable_name	Value
+Component_connection_control_exempted_unknown_users	3
+# Following attempt will experience delay in server response (exempt disabled)
+SET @@global.component_connection_control.exempt_unknown_users= 0;
+closing connection
+closing connection
+closing connection
+Connection_control_delay_generated should be 1
+SHOW STATUS LIKE 'Component_connection_control_delay_generated';
+Variable_name	Value
+Component_connection_control_delay_generated	1
+# Component_connection_control_exempted_unknown_users should still be 3
+SHOW STATUS LIKE 'Component_connection_control_exempted_unknown_users';
+Variable_name	Value
+Component_connection_control_exempted_unknown_users	3
+
+# ----------------------------------------------------------------------
+
+# Cleanup
+# Restore original values of connection_control variables
+SET @@global.component_connection_control.failed_connections_threshold = @saved_connections_threshold;
+SET @@global.component_connection_control.max_connection_delay = @saved_max_delay;
+SET @@global.component_connection_control.exempt_unknown_users= @saved_exempt;
+# Uninstall component_connection_control
+UNINSTALL COMPONENT 'file://component_connection_control';
+
+# ----------------------------------------------------------------------

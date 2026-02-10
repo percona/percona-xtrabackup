@@ -1,0 +1,426 @@
+RESET BINARY LOGS AND GTIDS;
+
+--source include/have_router.inc
+
+--source ../include/mrs/is_mrs_schema_v3_or_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+create table basic_schema.counter(id int primary key auto_increment);
+
+delimiter $$;
+create procedure basic_schema.proc(out result text)
+begin
+    insert into basic_schema.counter values (default);
+    select count(*) into @res from basic_schema.counter;
+    set result=@res;
+end$$
+
+create function basic_schema.func() returns text
+begin
+    insert into basic_schema.counter values (default);
+    select count(*) into @res from basic_schema.counter;
+    return @res;
+end$$
+delimiter ;$$
+
+# Set cache size for files and data
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"responseCache":{"maxCacheSize":1000}, "fileCache":{"maxCacheSize":40}}');
+
+INSERT INTO `basic_schema`.`table4` (`id`, `first_name`, `last_name`)
+  VALUES(42, "Big row", repeat('X', 1000));
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t1
+--let $mrs_add_db_object_options='{"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}, "result":{"cacheTimeToLive":5}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t1lowttl
+--let $mrs_add_db_object_options='{"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}, "result":{"cacheTimeToLive":2}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t1auth
+--let $mrs_add_db_object_auth=1
+--let $mrs_add_db_object_options='{"result":{"cacheTimeToLive":30}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/t2auth
+--let $mrs_add_db_object_auth=1
+--let $mrs_add_db_object_options='{"result":{"cacheTimeToLive":5}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table4
+--let $mrs_add_db_object_path=/t4
+--let $mrs_add_db_object_options='{"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/t2
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=table4
+--let $mrs_add_db_object_path=/t4_cached
+--let $mrs_add_db_object_options='{"result":{"cacheTimeToLive":60}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc
+--let $mrs_add_db_object_path=/proc
+--let $mrs_add_db_object_options='{"result":{"cacheTimeToLive":5}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object=func
+--let $mrs_add_db_object_path=/func
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object_options='{"result":{"cacheTimeToLive":5}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc
+--let $mrs_add_db_object_path=/procauth
+--let $mrs_add_db_object_auth=1
+--let $mrs_add_db_object_options='{"result":{"cacheTimeToLive":5}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object=func
+--let $mrs_add_db_object_path=/funcauth
+--let $mrs_add_db_object_auth=1
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object_options='{"result":{"cacheTimeToLive":5}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_content_set_enabled=1
+--let $mrs_add_content_set_path=/static
+--source ../include/mrs/content_set/add.inc
+
+--let $mrs_add_content='TEST FILE CONTENT\nEND OF FILE\n'
+--let $mrs_add_content_file_path=/file1
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content='TEST FILE 2 CONTENT\nEND OF FILE 2\n'
+--let $mrs_add_content_file_path=/file2
+--source ../include/mrs/content_file/add.inc
+
+
+--let $mrs_add_role_caption=rolet1
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=/t1auth
+--let $mrs_grant_privilege_crud_operations=READ,DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=nopriv
+--source ../include/mrs/role/add.inc
+
+# create users
+--let $k_password_pwd='JEEkMDA1JGI2amJJam9BZmdNS1kwWlFJVUVRZmg1d2UxVT0kVHVkYUQvandPNHB4QSttSVZQT2Q2\nQTlna1g2OUEyMVVpWEl4ajdrcG1Taz0='
+
+--let $mrs_add_auth_app=MRS
+--let $mrs_add_auth_registered_users_only=1
+--let $mrs_add_auth_vendor=MRS
+--let $mrs_add_auth_services=('/svc')
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_user_ext_uid="rolet1"
+--let $mrs_add_user_name='rolet1'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=rolet1
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="rolet1b"
+--let $mrs_add_user_name='rolet1b'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=rolet1
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="nopriv"
+--let $mrs_add_user_name='nopriv'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=nopriv
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="admin"
+--let $mrs_add_user_name='admin'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=Full Access
+--source ../include/mrs/user/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+--let $last_id=`SELECT id FROM mysql_rest_service_metadata.router_status ORDER BY id DESC LIMIT 1`
+--let $old_event_enabled=`SELECT enabled FROM performance_schema.setup_consumers  where name='events_statements_history_long'`
+update performance_schema.setup_consumers set enabled=1 where name='events_statements_history_long';
+TRUNCATE TABLE performance_schema.events_statements_history_long;
+
+select http_requests_get, http_requests_post, http_requests_put, http_requests_delete, json_object('endpoints', (details->'$.restCachedEndpoints'), 'itemLoads', (details->'$.restCacheItemLoads'), 'itemEjects', (details->'$.restCacheItemEjects'), 'itemHits', (details->'$.restCacheItemHits'), 'itemMisses', (details->'$.restCacheItemMisses'), 'items', (details->'$.restCachedItems'), 'fileLoads', (details->'$.restCacheFileLoads'), 'fileEjects', (details->'$.restCacheFileEjects'), 'fileHits', (details->'$.restCacheFileHits'), 'fileMisses', (details->'$.restCacheFileMisses'), 'files', (details->'$.restCachedFiles')) as stats from mysql_rest_service_metadata.router_status order by id desc limit 1;
+
+# Login
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app MRS --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u rolet1
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/rolet1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app MRS --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u rolet1b
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/rolet1b_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app MRS --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u nopriv
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/nopriv_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app MRS --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u admin
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/admin_session.dat;
+
+#
+# test that uncacheable methods arent cached
+#
+--let $mrs_check_pattern='%/svc/basic/t1auth%'
+--let $mrs_check_cached=0
+--let $mrs_check_result=1
+--let $mrs_check_path='/svc/basic/t1auth/1'
+--let $mrs_check_request_type=PUT
+--let $mrs_check_payload='{"id":1}'
+--let $mrs_check_session_file=$MYSQL_TMP_DIR/admin_session.dat
+--source ../include/mrs/check_mrs_response_caching.inc
+
+--let $mrs_check_pattern='%/svc/basic/t1auth%'
+--let $mrs_check_cached=0
+--let $mrs_check_result=0
+--let $mrs_check_payload='{"id":11}'
+--let $mrs_check_path='/svc/basic/t1auth'
+--let $mrs_check_request_type=POST
+--let $mrs_check_session_file=$MYSQL_TMP_DIR/admin_session.dat
+--let $mrs_check_expected_status2=500
+
+--source ../include/mrs/check_mrs_response_caching.inc
+
+--let $mrs_check_pattern='%/svc/basic/t1auth%'
+--let $mrs_check_cached=0
+--let $mrs_check_result=0
+--let $mrs_check_path='/svc/basic/t1auth/11'
+--let $mrs_check_request_type=DELETE
+--let $mrs_check_session_file=$MYSQL_TMP_DIR/admin_session.dat
+
+--source ../include/mrs/check_mrs_response_caching.inc
+
+
+#
+# test that cached table is cached
+#
+--let $mrs_check_pattern='%/svc/basic/t1%'
+--let $mrs_check_cached=1
+--let $mrs_check_path='/svc/basic/t1/20'
+
+--source ../include/mrs/check_mrs_response_caching.inc
+
+#
+# test that uncached table is not cached
+#
+--let $mrs_check_pattern='%/svc/basic/t2%'
+--let $mrs_check_cached=0
+--let $mrs_check_path='/svc/basic/t2/1'
+
+--source ../include/mrs/check_mrs_response_caching.inc
+
+# test that too big response is not cached
+--let $mrs_check_pattern='%/svc/basic/t4_cached%'
+--let $mrs_check_cached=0
+--let $mrs_check_path='/svc/basic/t4_cached/42'
+
+--source ../include/mrs/check_mrs_response_caching.inc
+
+# GET with query params
+--let $mrs_check_pattern='%/svc/basic/t1%'
+--let $mrs_check_cached=1
+--let $mrs_check_path='/svc/basic/t1?limit=1'
+
+--source ../include/mrs/check_mrs_response_caching.inc
+
+## retry with diff params
+--let $mrs_client_arg_path='/svc/basic/t1?limit=2'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_check_statements_history_delta=2
+--source ../include/check_statements_history.inc
+
+
+# wait expunge after timeout
+--let $mrs_check_pattern='%/svc/basic/t1lowttl%'
+--let $mrs_check_cached=1
+--let $mrs_check_path='/svc/basic/t1lowttl/1'
+--source ../include/mrs/check_mrs_response_caching.inc
+do sleep(3);
+--let $mrs_client_arg_path='/svc/basic/t1lowttl/1'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_check_statements_history_delta=2
+--source ../include/check_statements_history.inc
+
+
+# GET from 2 different users
+--let $mrs_check_pattern='%/svc/basic/t1auth%'
+--let $mrs_check_cached=1
+--let $mrs_check_path='/svc/basic/t1auth/50'
+--let $mrs_check_session_file=$MYSQL_TMP_DIR/rolet1_session.dat
+--source ../include/mrs/check_mrs_response_caching.inc
+
+--let $mrs_client_arg_path='/svc/basic/t1auth/50'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/rolet1b_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_check_statements_history_delta=1
+--source ../include/check_statements_history.inc
+
+# make random changes to cached object, which is not expected to affect the cache (but if it refreshes, even better)
+# Masking off the gtid value
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_path='/svc/basic/t1auth/50'
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/rolet1_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# Masking off the gtid value
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_path='/svc/basic/t1auth/50'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/rolet1b_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_check_statements_history_delta=1
+--source ../include/check_statements_history.inc
+
+
+# GET with READ privs on table, then try again with a non-auth user or a diff user with no priv on the table
+--let $mrs_check_pattern='%/svc/basic/t1auth%'
+--let $mrs_check_cached=1
+--let $mrs_check_path='/svc/basic/t1auth/100'
+--let $mrs_check_session_file=$MYSQL_TMP_DIR/rolet1_session.dat
+--source ../include/mrs/check_mrs_response_caching.inc
+
+update mysql_rest_service_metadata.mrs_privilege set crud_operations='DELETE' where object_path='/t1auth';
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--let $mrs_client_arg_path='/svc/basic/t1auth/100'
+--let $mrs_client_arg_expected_status=401
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/basic/t1auth/100'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/nopriv_session.dat
+--source ../include/mrs/mrs_client.inc
+
+#
+# test that cached SP and function are cached
+#
+--let $mrs_check_pattern='%/svc/basic/proc%'
+--let $mrs_check_cached=1
+--let $mrs_check_path='/svc/basic/proc'
+
+--source ../include/mrs/check_mrs_response_caching.inc
+
+--let $mrs_check_pattern='%/svc/basic/proc%'
+--let $mrs_check_cached=0
+--let $mrs_check_result=0
+--let $mrs_check_path='/svc/basic/proc'
+--let $mrs_check_request_type=POST
+--let $mrs_check_payload='{}'
+--source ../include/mrs/check_mrs_response_caching.inc
+
+--let $mrs_check_pattern='%/svc/basic/func%'
+--let $mrs_check_cached=1
+--let $mrs_check_path='/svc/basic/func'
+--source ../include/mrs/check_mrs_response_caching.inc
+
+--let $mrs_check_pattern='%/svc/basic/func%'
+--let $mrs_check_cached=0
+--let $mrs_check_result=0
+--let $mrs_check_path='/svc/basic/func'
+--let $mrs_check_request_type=POST
+--let $mrs_check_payload='{}'
+--source ../include/mrs/check_mrs_response_caching.inc
+
+#
+# test that content_file is cached
+#
+
+--let $mrs_check_path='/svc/static/file1'
+--let $mrs_check_pattern='%content_file WHERE id=%'
+--let $mrs_check_cached=1
+--let $mrs_check_display=none
+--let $mrs_check_response_type=RAW
+--source ../include/mrs/check_mrs_response_caching.inc
+
+# this will eject file1
+--let $mrs_client_arg_path='/svc/static/file2'
+--let $mrs_client_arg_display=none
+--let $mrs_client_arg_response_type=RAW
+--source ../include/mrs/mrs_client.inc
+
+# Wait for the latest counter values.
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--disable_query_log
+
+# MAX is need for restCachedEndpoints, restCachedItems, restCachedFiles, those are not resetable counters.
+# for others SUM.
+eval select json_object(
+        'endpoints', MAX(details->'$.restCachedEndpoints'),
+        'items', MAX(details->'$.restCachedItems'),
+        'files', MAX(details->'$.restCachedFiles'),
+        'itemLoads', SUM(details->'$.restCacheItemLoads'),
+        'itemEjects', SUM(details->'$.restCacheItemEjects'),
+        'itemHits', SUM(details->'$.restCacheItemHits'),
+        'itemMisses', SUM(details->'$.restCacheItemMisses'),
+        'fileLoads', SUM(details->'$.restCacheFileLoads'),
+        'fileEjects', SUM(details->'$.restCacheFileEjects'),
+        'fileHits', SUM(details->'$.restCacheFileHits'),
+        'fileMisses', SUM(details->'$.restCacheFileMisses')
+        ) as stats from mysql_rest_service_metadata.router_status WHERE  id > $last_id;
+--enable_query_log
+
+eval update performance_schema.setup_consumers set enabled="$old_event_enabled" where name='events_statements_history_long';
+# Cleanup
+--remove_file $MYSQL_TMP_DIR/rolet1_session.dat
+--remove_file $MYSQL_TMP_DIR/rolet1b_session.dat
+--remove_file $MYSQL_TMP_DIR/nopriv_session.dat
+--remove_file $MYSQL_TMP_DIR/admin_session.dat
+--remove_file $MYSQL_TMP_DIR/result1.json
+--remove_file $MYSQL_TMP_DIR/result2.json
+--source ../include/mrs/cleanup.inc

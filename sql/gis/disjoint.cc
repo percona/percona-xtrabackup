@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -58,12 +58,12 @@ static bool geometry_collection_apply_disjoint(const Disjoint &f,
                                                const Geometry *g1,
                                                const Geometry *g2) {
   if (g1->type() == Geometry_type::kGeometrycollection) {
-    const auto gc1 = down_cast<const GC *>(g1);
+    const auto *const gc1 = down_cast<const GC *>(g1);
     for (const auto g1_i : *gc1) {
       if (!geometry_collection_apply_disjoint<GC>(f, g1_i, g2)) return false;
     }
   } else if (g2->type() == Geometry_type::kGeometrycollection) {
-    const auto gc2 = down_cast<const GC *>(g2);
+    const auto *const gc2 = down_cast<const GC *>(g2);
     for (const auto g2_j : *gc2) {
       if (!geometry_collection_apply_disjoint<GC>(f, g1, g2_j)) return false;
     }
@@ -252,7 +252,7 @@ bool Disjoint::eval(const Cartesian_multipoint *g1,
 bool Disjoint::eval(const Cartesian_multipoint *g1,
                     const Cartesian_polygon *g2) const {
   // All points in g1 must be disjoint from g2.
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!bg::disjoint(pt, *g2)) return false;
   }
   return true;
@@ -277,7 +277,7 @@ bool Disjoint::eval(const Cartesian_multipoint *g1,
 bool Disjoint::eval(const Cartesian_multipoint *g1,
                     const Cartesian_multipolygon *g2) const {
   // All points in g1 must be disjoint from g2.
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!bg::disjoint(pt, *g2)) return false;
   }
   return true;
@@ -516,7 +516,7 @@ bool Disjoint::eval(const Geographic_multipoint *g1,
 bool Disjoint::eval(const Geographic_multipoint *g1,
                     const Geographic_polygon *g2) const {
   // All points in g1 must be disjoint from g2.
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!bg::disjoint(pt, *g2, m_geographic_pl_pa_strategy)) return false;
   }
   return true;
@@ -543,7 +543,7 @@ bool Disjoint::eval(const Geographic_multipoint *g1,
 bool Disjoint::eval(const Geographic_multipoint *g1,
                     const Geographic_multipolygon *g2) const {
   // All points in g1 must be disjoint from g2.
-  for (auto &pt : *g1) {
+  for (const auto &pt : *g1) {
     if (!bg::disjoint(pt, *g2, m_geographic_pl_pa_strategy)) return false;
   }
   return true;
@@ -656,8 +656,8 @@ bool disjoint(const dd::Spatial_reference_system *srs, const Geometry *g1,
 
     if ((*null = (g1->is_empty() || g2->is_empty()))) return false;
 
-    Disjoint disjoint_func(srs ? srs->semi_major_axis() : 0.0,
-                           srs ? srs->semi_minor_axis() : 0.0);
+    Disjoint const disjoint_func(srs ? srs->semi_major_axis() : 0.0,
+                                 srs ? srs->semi_minor_axis() : 0.0);
     *disjoint = disjoint_func(g1, g2);
   } catch (...) {
     handle_gis_exception(func_name);
@@ -680,8 +680,8 @@ bool mbr_disjoint(const dd::Spatial_reference_system *srs, const Geometry *g1,
 
     if ((*null = (g1->is_empty() || g2->is_empty()))) return false;
 
-    Disjoint disjoint_func(srs ? srs->semi_major_axis() : 0.0,
-                           srs ? srs->semi_minor_axis() : 0.0);
+    Disjoint const disjoint_func(srs ? srs->semi_major_axis() : 0.0,
+                                 srs ? srs->semi_minor_axis() : 0.0);
 
     switch (g1->coordinate_system()) {
       case Coordinate_system::kCartesian: {

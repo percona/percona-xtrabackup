@@ -1,0 +1,17 @@
+#
+# init before register test
+#
+# install the component
+INSTALL COMPONENT "file://component_test_component_init_then_register";
+#
+# check the component is actually installed
+SELECT COUNT(component_urn) FROM mysql.component WHERE component_urn = 'file://component_test_component_init_then_register';
+COUNT(component_urn)
+1
+#
+# uninstall the component
+UNINSTALL COMPONENT "file://component_test_component_init_then_register";
+#
+# check the component is actually un-installed
+SELECT * from mysql.component;
+component_id	component_group_id	component_urn

@@ -16,6 +16,9 @@ SELECT digest_text, IF( @the_digest = digest, 'YES', 'NO' )
 AS digest_is_correct
 FROM performance_schema.events_statements_history
 WHERE sql_text = convert( "SELECT statement_digest( 'SELECT 1 FROM DUAL' ) IS NULL" USING utf8mb3 )
+AND NOT (digest_text LIKE "PREPARE %")
+AND NOT (digest_text LIKE "EXECUTE %")
+AND NOT (digest_text LIKE "DEALLOCATE %")
 UNION
 SELECT statement_digest_text( "SELECT statement_digest( 'SELECT 1 FROM DUAL' ) IS NULL" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
@@ -30,6 +33,9 @@ SELECT digest_text, IF( @the_digest = digest_text, 'YES', 'NO' )
 AS digest_is_correct
 FROM performance_schema.events_statements_history
 WHERE sql_text = convert( "SELECT statement_digest( 'SELECT 1 FROM DUAL' ) IS NULL" USING utf8mb3 )
+AND NOT (digest_text LIKE "PREPARE %")
+AND NOT (digest_text LIKE "EXECUTE %")
+AND NOT (digest_text LIKE "DEALLOCATE %")
 UNION
 SELECT statement_digest_text( "SELECT statement_digest( 'SELECT 1 FROM DUAL' ) IS NULL" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;

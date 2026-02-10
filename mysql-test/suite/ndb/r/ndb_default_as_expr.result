@@ -1,12 +1,43 @@
-DROP TABLE IF EXISTS t1;
-#
-# For now expressions are not allowed to be set as DEFAULT using NDB
-#
 CREATE TABLE t1 (i INT, j DOUBLE DEFAULT (i*i)) ENGINE = ndbcluster ;
-ERROR HY000: 'Specified storage engine' is not supported for default value expressions.
+DROP TABLE t1;
 CREATE TABLE t1 (i INT) ENGINE = ndbcluster ;
 ALTER TABLE t1 ALTER COLUMN i SET DEFAULT (i*i);
-ERROR HY000: 'Specified storage engine' is not supported for default value expressions.
+ERROR HY000: Default value expression of column 'i' cannot refer to a column defined after it if that column is a generated column or has an expression as default value.
 alter table t1 add column k double DEFAULT (SQRT(z));
-ERROR HY000: 'Specified storage engine' is not supported for default value expressions.
-DROP TABLE IF EXISTS t1;
+ERROR 42S22: Unknown column 'z' in 'default value expression'
+DROP TABLE t1;
+CREATE TABLE t1(
+pk INT PRIMARY KEY,
+lit INT DEFAULT 7,
+expr INT DEFAULT (pk),
+lit_expr INT DEFAULT (7)
+) ENGINE=ndbcluster;
+SELECT COLUMN_NAME, COLUMN_DEFAULT, DATA_TYPE, EXTRA, GENERATION_EXPRESSION
+FROM information_schema.COLUMNS WHERE TABLE_NAME= "t1"
+  ORDER BY ORDINAL_POSITION;
+COLUMN_NAME	COLUMN_DEFAULT	DATA_TYPE	EXTRA	GENERATION_EXPRESSION
+pk	NULL	int		
+lit	7	int		
+expr	`pk`	int	DEFAULT_GENERATED	
+lit_expr	7	int	DEFAULT_GENERATED	
+# Only literal default values will be part of NDB dictionary
+SELECT
+fq_name, column_id, name, column_type, default_value, nullable
+FROM ndbinfo.dictionary_columns dc
+JOIN ndbinfo.dict_obj_info doi
+ON dc.table_id = doi.id
+WHERE doi.fq_name = 'test/def/t1'
+  ORDER BY column_id;
+fq_name	column_id	name	column_type	default_value	nullable
+test/def/t1	0	pk	Int		NOT NULL
+test/def/t1	1	lit	Int	7	NULL
+test/def/t1	2	expr	Int		NULL
+test/def/t1	3	lit_expr	Int		NULL
+DROP TABLE t1;
+# Not possible to have both literal default and default expression
+CREATE TABLE t1(pk INT PRIMARY KEY, x INT DEFAULT 7 DEFAULT (pk))
+ENGINE=ndbcluster;
+ERROR 42000: Invalid default value for 'x'
+CREATE TABLE t1(pk INT PRIMARY KEY, x INT DEFAULT (pk) DEFAULT 7)
+ENGINE=ndbcluster;
+ERROR 42000: Invalid default value for 'x'

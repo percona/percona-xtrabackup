@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -31,6 +31,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
  Created 12/27/1996 Heikki Tuuri
  *******************************************************/
 
+#include <sql/sql_thd_internal_api.h>
 #include <sys/types.h>
 
 #include "dict0dict.h"
@@ -43,7 +44,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "row0upd.h"
 #include "trx0undo.h"
 #ifndef UNIV_HOTBACKUP
-#include <algorithm>
 
 #include <debug_sync.h>
 #include "btr0btr.h"
@@ -55,7 +55,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "eval0eval.h"
 #include "fts0fts.h"
 #include "fts0types.h"
-#include "lob0lob.h"
 #include "lock0lock.h"
 #include "log0chkp.h"
 #include "mach0data.h"
@@ -67,8 +66,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "row0ins.h"
 #include "row0log.h"
 #ifndef UNIV_HOTBACKUP
-#include "fts0fts.h"
-#include "fts0types.h"
 #include "row0row.h"
 #include "row0sel.h"
 #include "trx0rec.h"
@@ -76,7 +73,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <algorithm>
 #include "lob0lob.h"
 #ifndef UNIV_HOTBACKUP
-#include "current_thd.h"
 #include "dict0dd.h"
 #endif /* !UNIV_HOTBACKUP */
 
@@ -375,10 +371,9 @@ bool row_upd_changes_field_size_or_external(
   for (i = 0; i < n_fields; i++) {
     upd_field = upd_get_nth_field(update, i);
 
-    /* We should ignore virtual field if the index is not
-    a virtual index */
-    if (upd_fld_is_virtual_col(upd_field) &&
-        dict_index_has_virtual(index) != DICT_VIRTUAL) {
+    /* We should ignore virtual field updates (updates to materialized
+    virtual columns are not considered to be virtual field updates). */
+    if (upd_field->is_virtual()) {
       continue;
     }
 
@@ -486,6 +481,7 @@ void row_upd_rec_in_place(
 
   ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(!index->table->skip_alter_undo);
+  ut_d(update->validate_for_index(index));
 
   if (rec_offs_comp(offsets)) {
     /* Keep the INSTANT/VERSION bit of prepared physical record */
@@ -525,7 +521,7 @@ void row_upd_rec_in_place(
     upd_field = upd_get_nth_field(update, i);
 
     /* No need to update virtual columns for non-virtual index */
-    if (upd_fld_is_virtual_col(upd_field) && !dict_index_has_virtual(index)) {
+    if (upd_field->is_virtual()) {
       continue;
     }
 
@@ -612,9 +608,11 @@ void row_upd_index_write_log(dict_index_t *index, const upd_t *update,
   for (i = 0; i < n_fields; i++) {
     upd_field = upd_get_nth_field(update, i);
 
-    /* No need to log virtual columns for non-virtual index, since
-    in this case row_upd_rec_inplace() won't apply this kind of redo log. */
-    if (upd_fld_is_virtual_col(upd_field) && !dict_index_has_virtual(index)) {
+    /* No need to log virtual field updates (updates to virtual columns
+    which are not materialized in given index), since in this case
+    row_upd_rec_inplace() won't apply this kind of redo log. */
+    if (upd_field->is_virtual()) {
+      ut_ad(index->is_clustered());
       continue;
     }
 
@@ -636,7 +634,8 @@ void row_upd_index_write_log(dict_index_t *index, const upd_t *update,
 
     upd_field = upd_get_nth_field(update, i);
 
-    if (upd_fld_is_virtual_col(upd_field) && !dict_index_has_virtual(index)) {
+    if (upd_field->is_virtual()) {
+      ut_ad(index->is_clustered());
       continue;
     }
 
@@ -644,13 +643,7 @@ void row_upd_index_write_log(dict_index_t *index, const upd_t *update,
 
     len = dfield_get_len(new_val);
 
-    /* If this is a virtual column, mark it using special
-    field_no */
-    ulint field_no = upd_fld_is_virtual_col(upd_field)
-                         ? REC_MAX_N_FIELDS + upd_field->field_no
-                         : upd_field->field_no;
-
-    log_ptr += mach_write_compressed(log_ptr, field_no);
+    log_ptr += mach_write_compressed(log_ptr, upd_field->field_no);
     log_ptr += mach_write_compressed(log_ptr, len);
 
     if (len != UNIV_SQL_NULL) {
@@ -675,14 +668,9 @@ void row_upd_index_write_log(dict_index_t *index, const upd_t *update,
 }
 #endif /* !UNIV_HOTBACKUP */
 
-/** Parses the log data written by row_upd_index_write_log.
- @return log data end or NULL */
-byte *row_upd_index_parse(const byte *ptr,     /*!< in: buffer */
-                          const byte *end_ptr, /*!< in: buffer end */
-                          mem_heap_t *heap,    /*!< in: memory heap where update
-                                               vector is    built */
-                          upd_t **update_out)  /*!< out: update vector */
-{
+byte *row_upd_index_parse(const byte *ptr, const byte *end_ptr,
+                          mem_heap_t *heap, upd_t **update_out,
+                          dict_index_t *index) {
   upd_t *update;
   upd_field_t *upd_field;
   dfield_t *new_val;
@@ -717,11 +705,14 @@ byte *row_upd_index_parse(const byte *ptr,     /*!< in: buffer */
       return (nullptr);
     }
 
-    /* Check if this is a virtual column, mark the prtype
-    if that is the case */
+    /* In some previous versions for materialized virtual fields the
+    field_no contained a special value being the virtual column number +
+    REC_MAX_N_FIELDS instead of actual field position.
+    TODO: Remove in 10.x, as after 9.5.0, 8.4.7 we no longer produce
+    updates in this format. */
     if (field_no >= REC_MAX_N_FIELDS) {
-      new_val->type.prtype |= DATA_VIRTUAL;
-      field_no -= REC_MAX_N_FIELDS;
+      auto vcol_no = field_no - REC_MAX_N_FIELDS;
+      field_no = index->get_col_pos(vcol_no, true, true);
     }
 
     upd_field->field_no = field_no;
@@ -744,9 +735,10 @@ byte *row_upd_index_parse(const byte *ptr,     /*!< in: buffer */
     }
   }
 
+  ut_d(update->validate());
   *update_out = update;
 
-  return (const_cast<byte *>(ptr));
+  return const_cast<byte *>(ptr);
 }
 
 #ifndef UNIV_HOTBACKUP
@@ -761,7 +753,6 @@ upd_t *row_upd_build_sec_rec_difference_binary(
     const dtuple_t *entry, /*!< in: entry to insert */
     mem_heap_t *heap)      /*!< in: memory heap from which allocated */
 {
-  upd_field_t *upd_field;
   const dfield_t *dfield;
   const byte *data;
   ulint len;
@@ -797,7 +788,7 @@ upd_t *row_upd_build_sec_rec_difference_binary(
     (No collation) */
 
     if (!dfield_data_is_binary_equal(dfield, len, data)) {
-      upd_field = upd_get_nth_field(update, n_diff);
+      upd_field_t *const upd_field = upd_get_nth_field(update, n_diff);
 
       dfield_copy(&(upd_field->new_val), dfield);
 
@@ -808,6 +799,7 @@ upd_t *row_upd_build_sec_rec_difference_binary(
   }
 
   update->n_fields = n_diff;
+  ut_d(update->validate_for_index(index));
 
   return (update);
 }
@@ -834,6 +826,7 @@ upd_t *row_upd_build_difference_binary(dict_index_t *index,
                                        const ulint *offsets, bool no_sys,
                                        trx_t *trx, mem_heap_t *heap,
                                        TABLE *mysql_table, dberr_t *error) {
+  ut_d(entry->validate_for_index(index));
   upd_field_t *upd_field;
   dfield_t *dfield;
   const byte *data;
@@ -843,21 +836,22 @@ upd_t *row_upd_build_difference_binary(dict_index_t *index,
   ulint trx_id_pos;
   ulint i;
   ulint offsets_[REC_OFFS_NORMAL_SIZE];
-  ulint n_fld = dtuple_get_n_fields(entry);
-  ulint n_v_fld = dtuple_get_n_v_fields(entry);
+  const ulint n_fld = dtuple_get_n_fields(entry);
+  const ulint n_v_fld = dtuple_get_n_v_fields(entry);
   rec_offs_init(offsets_);
+  const dict_table_t *const table = index->table;
 
   /* This function is used only for a clustered index */
   ut_a(index->is_clustered());
-  ut_ad(!index->table->skip_alter_undo);
+  ut_ad(!table->skip_alter_undo);
 
   update = upd_create(n_fld + n_v_fld, heap);
-  update->table = index->table;
+  update->table = table;
 
   n_diff = 0;
 
   trx_id_pos = index->get_sys_col_pos(DATA_TRX_ID);
-  ut_ad(index->table->is_intrinsic() ||
+  ut_ad(table->is_intrinsic() ||
         (index->get_sys_col_pos(DATA_ROLL_PTR) == trx_id_pos + 1));
 
   if (!offsets) {
@@ -881,7 +875,7 @@ upd_t *row_upd_build_difference_binary(dict_index_t *index,
       }
 
       /* DB_ROLL_PTR */
-      if (i == trx_id_pos + 1 && !index->table->is_intrinsic()) {
+      if (i == trx_id_pos + 1 && !table->is_intrinsic()) {
         continue;
       }
     }
@@ -921,31 +915,29 @@ upd_t *row_upd_build_difference_binary(dict_index_t *index,
     ut_ad(!update->old_vrow);
 
     for (i = 0; i < n_v_fld; i++) {
-      const dict_v_col_t *col = dict_table_get_nth_v_col(index->table, i);
+      const dict_v_col_t *col = dict_table_get_nth_v_col(table, i);
 
       if (!col->m_col.ord_part) {
         continue;
       }
 
       if (update->old_vrow == nullptr) {
-        update->old_vrow =
-            row_build(ROW_COPY_POINTERS, index, rec, offsets, index->table,
-                      nullptr, nullptr, &ext, heap);
+        update->old_vrow = row_build(ROW_COPY_POINTERS, index, rec, offsets,
+                                     table, nullptr, nullptr, &ext, heap);
       }
 
       dfield = dtuple_get_nth_v_field(entry, i);
 
-      dfield_t *vfield = innobase_get_computed_value(
-          update->old_vrow, col, index, &v_heap, heap, nullptr, thd,
-          mysql_table, nullptr, nullptr, nullptr);
+      const dfield_t *const vfield = innobase_get_computed_value(
+          update->old_vrow, col, table, &v_heap, heap, thd, mysql_table);
 
       if (vfield == nullptr) {
         *error = DB_COMPUTE_VALUE_FAILED;
         return nullptr;
       }
 
-      if (!dfield_data_is_binary_equal(dfield, vfield->len,
-                                       static_cast<byte *>(vfield->data))) {
+      if (!dfield_data_is_binary_equal(
+              dfield, vfield->len, static_cast<const byte *>(vfield->data))) {
         upd_field = upd_get_nth_field(update, n_diff);
 
         upd_field->old_v_val = static_cast<dfield_t *>(
@@ -967,9 +959,9 @@ upd_t *row_upd_build_difference_binary(dict_index_t *index,
   }
 
   update->n_fields = n_diff;
-  ut_ad(update->validate());
+  ut_d(update->validate_for_index(index));
 
-  return (update);
+  return update;
 }
 /** Fetch a prefix of an externally stored column.
 This is similar to row_ext_lookup(), but the row_ext_t holds the old values
@@ -1119,48 +1111,37 @@ void row_upd_index_replace_new_col_vals_index_pos(dtuple_t *entry,
                                                   bool order_only,
                                                   mem_heap_t *heap) {
   DBUG_TRACE;
-
-  ulint i;
-  ulint n_fields;
-  const page_size_t &page_size = dict_table_page_size(index->table);
-
   ut_ad(index);
   ut_ad(!index->table->skip_alter_undo);
+  ut_d(update->validate_for_index(index));
 
   dtuple_set_info_bits(entry, update->info_bits);
 
-  if (order_only) {
-    n_fields = dict_index_get_n_unique(index);
-  } else {
-    n_fields = dict_index_get_n_fields(index);
-  }
+  const ulint n_fields = order_only ? dict_index_get_n_unique(index)
+                                    : dict_index_get_n_fields(index);
+  for (ulint field_index = 0; field_index < n_fields; field_index++) {
+    const dict_field_t *field = index->get_field(field_index);
+    const dict_col_t *col = field->col;
 
-  for (i = 0; i < n_fields; i++) {
-    const dict_field_t *field;
-    const dict_col_t *col;
-    const upd_field_t *uf;
-
-    field = index->get_field(i);
-    col = field->col;
-    if (col->is_virtual()) {
-      const dict_v_col_t *vcol = reinterpret_cast<const dict_v_col_t *>(col);
-
-      uf = upd_get_field_by_field_no(update, vcol->v_pos, true);
-    } else {
-      uf = upd_get_field_by_field_no(update, i, false);
+    if (col->is_instant_dropped()) {
+      dfield_t *field = dtuple_get_nth_field(entry, field_index);
+      field->reset();
+      continue;
     }
 
-    if (uf) {
+    if (auto uf = upd_get_field_by_field_no(update, field_index, false); uf) {
       upd_field_t *tmp = const_cast<upd_field_t *>(uf);
-      dfield_t *dfield = dtuple_get_nth_field(entry, i);
+      dfield_t *dfield = dtuple_get_nth_field(entry, field_index);
       tmp->ext_in_old = dfield_is_ext(dfield);
 
       dfield_copy(&tmp->old_val, dfield);
 
+      const auto &page_size = dict_table_page_size(index->table);
       row_upd_index_replace_new_col_val(index, dfield, field, col, uf, heap,
                                         dict_index_is_sdi(index), page_size);
     }
   }
+  ut_d(entry->validate_for_index(index));
 }
 
 /** Replaces the new column values stored in the update vector to the index
@@ -1233,14 +1214,10 @@ a update vector.
 void row_upd_replace_vcol(dtuple_t *row, const dict_table_t *table,
                           const upd_t *update, bool upd_new, dtuple_t *undo_row,
                           const byte *ptr) {
-  ulint col_no;
-  ulint i;
-  ulint n_cols;
-
   ut_ad(!table->skip_alter_undo);
 
-  n_cols = dtuple_get_n_v_fields(row);
-  for (col_no = 0; col_no < n_cols; col_no++) {
+  const auto n_cols = dtuple_get_n_v_fields(row);
+  for (ulint col_no = 0; col_no < n_cols; col_no++) {
     dfield_t *dfield;
 
     const dict_v_col_t *col = dict_table_get_nth_v_col(table, col_no);
@@ -1261,13 +1238,9 @@ void row_upd_replace_vcol(dtuple_t *row, const dict_table_t *table,
 
     dfield = dtuple_get_nth_v_field(row, col_no);
 
-    for (i = 0; i < upd_get_n_fields(update); i++) {
-      const upd_field_t *upd_field = upd_get_nth_field(update, i);
-      if (!upd_fld_is_virtual_col(upd_field) ||
-          upd_field->field_no != col->v_pos) {
-        continue;
-      }
-
+    const upd_field_t *const upd_field =
+        upd_get_field_by_field_no(update, col->v_pos, true);
+    if (upd_field) {
       if (upd_new) {
         dfield_copy_data(dfield, &upd_field->new_val);
       } else {
@@ -1278,7 +1251,6 @@ void row_upd_replace_vcol(dtuple_t *row, const dict_table_t *table,
       dfield_get_type(dfield)->prtype = upd_field->new_val.type.prtype;
       dfield_get_type(dfield)->mbminmaxlen =
           upd_field->new_val.type.mbminmaxlen;
-      break;
     }
   }
 
@@ -1312,7 +1284,6 @@ void row_upd_replace_vcol(dtuple_t *row, const dict_table_t *table,
         first_v_col = false;
         if (field_no != ULINT_UNDEFINED) {
           vcol = dict_table_get_nth_v_col(table, field_no);
-          col_no = dict_col_get_no(&vcol->m_col);
           dfield = dtuple_get_nth_v_field(row, vcol->v_pos);
         }
       }
@@ -1374,7 +1345,7 @@ void row_upd_replace(dtuple_t *row, row_ext_t **ext, const dict_index_t *index,
   ut_ad(index->is_clustered());
   ut_ad(update);
   ut_ad(heap);
-  ut_ad(update->validate());
+  ut_d(update->validate_for_index(index));
   ut_ad(!index->table->skip_alter_undo);
 
   n_cols = dtuple_get_n_fields(row);
@@ -1402,8 +1373,7 @@ void row_upd_replace(dtuple_t *row, row_ext_t **ext, const dict_index_t *index,
     for (i = 0; i < upd_get_n_fields(update); i++) {
       const upd_field_t *upd_field = upd_get_nth_field(update, i);
 
-      if (upd_field->field_no != clust_pos ||
-          upd_fld_is_virtual_col(upd_field)) {
+      if (upd_field->field_no != clust_pos || upd_field->is_virtual()) {
         continue;
       }
 
@@ -1424,6 +1394,7 @@ void row_upd_replace(dtuple_t *row, row_ext_t **ext, const dict_index_t *index,
   }
 
   row_upd_replace_vcol(row, table, update, true, nullptr, nullptr);
+  ut_d(row->validate_for_index(index));
 }
 
 bool row_upd_changes_ord_field_binary_func(dict_index_t *index,
@@ -1580,7 +1551,12 @@ bool row_upd_changes_ord_field_binary_func(dict_index_t *index,
         mem_heap_free(temp_heap);
       }
 
-      if (!mbr_equal_cmp(index->rtr_srs.get(), old_mbr, new_mbr)) {
+      /* We use mbr_equal_physically() because we would like to skip
+      Updation of Spatial Index only when the existing MBR in Spatial
+      Index matches physically to the MBR of the new geometry.
+      Else it might cause issues later during searching of record, because
+      cmp_geometry_field() does physical comparison.*/
+      if (!mbr_equal_physically(old_mbr, new_mbr)) {
         return (true);
       } else {
         continue;
@@ -1646,7 +1622,7 @@ bool row_upd_changes_ord_field_binary_func(dict_index_t *index,
     }
   }
 
-  return (changes);
+  return changes;
 }
 
 /** Checks if an update vector changes an ordering field of an index record.
@@ -1657,7 +1633,7 @@ bool row_upd_changes_some_index_ord_field_binary(
     const dict_table_t *table, /*!< in: table */
     const upd_t *update)       /*!< in: update vector for the row */
 {
-  upd_field_t *upd_field;
+  const upd_field_t *upd_field;
   const dict_index_t *index;
   ulint i;
 
@@ -1666,7 +1642,7 @@ bool row_upd_changes_some_index_ord_field_binary(
   for (i = 0; i < upd_get_n_fields(update); i++) {
     upd_field = upd_get_nth_field(update, i);
 
-    if (upd_fld_is_virtual_col(upd_field)) {
+    if (upd_field->is_virtual()) {
       if (dict_table_get_nth_v_col(index->table, upd_field->field_no)
               ->m_col.ord_part) {
         return true;
@@ -1700,20 +1676,15 @@ bool row_upd_changes_doc_id(dict_table_t *table,    /*!< in: table */
 
   return (col_no == fts->doc_col);
 }
-/** Checks if an FTS indexed column is affected by an UPDATE.
- @return offset within fts_t::indexes if FTS indexed column updated else
- ULINT_UNDEFINED */
-ulint row_upd_changes_fts_column(
-    dict_table_t *table,    /*!< in: table */
-    upd_field_t *upd_field) /*!< in: field to check */
-{
+
+ulint row_upd_changes_fts_column(dict_table_t *table, upd_field_t *upd_field) {
   ulint col_no;
   dict_index_t *clust_index;
   fts_t *fts = table->fts;
 
   ut_ad(!table->skip_alter_undo);
 
-  if (upd_fld_is_virtual_col(upd_field)) {
+  if (upd_field->is_virtual()) {
     col_no = upd_field->field_no;
     return (dict_table_is_fts_column(fts->indexes, col_no, true));
   } else {
@@ -1760,7 +1731,7 @@ static bool row_upd_changes_first_fields_binary(
     ut_ad(!col->is_multi_value());
 
     for (j = 0; j < n_upd_fields; j++) {
-      upd_field_t *upd_field = upd_get_nth_field(update, j);
+      const upd_field_t *upd_field = upd_get_nth_field(update, j);
 
       if (col_pos == upd_field->field_no &&
           !dfield_datas_are_binary_equal(dtuple_get_nth_field(entry, i),
@@ -1820,7 +1791,7 @@ static inline void row_upd_eval_new_vals(
 
 /** Copies the data pointed to by the new values for virtual fields to update
 @param[in,out]  update          an update vector */
-static void row_upd_dup_v_new_vals(const upd_t *update) {
+static void row_upd_dup_v_new_vals(upd_t *update) {
   ut_ad(update != nullptr);
 
   for (ulint j = 0; j < upd_get_n_fields(update); j++) {
@@ -1840,10 +1811,10 @@ static void row_upd_dup_v_new_vals(const upd_t *update) {
 @param[in,out]  update          an update vector if it is update
 @param[in]      thd             mysql thread handle
 @param[in,out]  mysql_table     mysql table object */
-static void row_upd_store_v_row(upd_node_t *node, const upd_t *update, THD *thd,
+static void row_upd_store_v_row(upd_node_t *node, upd_t *update, THD *thd,
                                 TABLE *mysql_table) {
   mem_heap_t *heap = nullptr;
-  dict_index_t *index = node->table->first_index();
+  const dict_table_t *const table = node->table;
   bool new_val_v_cols_dup = false;
   const ulint n_upd = update ? upd_get_n_fields(update) : 0;
 
@@ -1896,17 +1867,15 @@ static void row_upd_store_v_row(upd_node_t *node, const upd_t *update, THD *thd,
                 row_upd_dup_v_new_vals(update);
                 new_val_v_cols_dup = true;
               }
-              innobase_get_computed_value(node->row, col, index, &heap,
-                                          node->heap, nullptr, thd, mysql_table,
-                                          nullptr, nullptr, nullptr);
+              innobase_get_computed_value(node->row, col, table, &heap,
+                                          node->heap, thd, mysql_table);
             }
           }
         } else {
           /* Need to compute, this happens when
           deleting row */
-          innobase_get_computed_value(node->row, col, index, &heap, node->heap,
-                                      nullptr, thd, mysql_table, nullptr,
-                                      nullptr, nullptr);
+          innobase_get_computed_value(node->row, col, table, &heap, node->heap,
+                                      thd, mysql_table);
         }
       }
     }
@@ -2021,7 +1990,7 @@ static inline dberr_t row_upd_del_one_multi_sec_index_entry(dict_index_t *index,
     }
     if (count == 2) {
       count = 0;
-      return (DB_LOCK_WAIT);
+      return DB_LOCK_WAIT;
     }
   });
 
@@ -2084,7 +2053,7 @@ static inline dberr_t row_upd_del_one_multi_sec_index_entry(dict_index_t *index,
   pcur.close();
   mtr_commit(&mtr);
 
-  return (err);
+  return err;
 }
 
 /** Updates secondary index entries of a row, when the index is built on
@@ -2152,7 +2121,7 @@ code or DB_LOCK_WAIT */
 
 func_exit:
   mem_heap_free(heap);
-  return (err);
+  return err;
 }
 
 /** Updates a secondary index entry of a row.
@@ -2364,7 +2333,8 @@ code or DB_LOCK_WAIT */
 
       ut_ad(err == DB_SUCCESS);
 
-      if (referenced) {
+      if (!thd_is_sql_fk_checks_enabled() && referenced) {
+        DBUG_PRINT("fk", ("InnoDB FK on table %s", index->table->name.m_name));
         ulint *offsets;
 
         offsets = rec_get_offsets(rec, index, nullptr, ULINT_UNDEFINED,
@@ -2397,7 +2367,7 @@ code or DB_LOCK_WAIT */
 func_exit:
   mem_heap_free(heap);
 
-  return (err);
+  return err;
 }
 
 /** Updates a secondary index entry of a row.
@@ -2407,7 +2377,7 @@ func_exit:
 code or DB_LOCK_WAIT */
 [[nodiscard]] static inline dberr_t row_upd_sec_index_entry(upd_node_t *node,
                                                             que_thr_t *thr) {
-  return (row_upd_sec_index_entry_low(node, nullptr, thr));
+  return row_upd_sec_index_entry_low(node, nullptr, thr);
 }
 
 /** Delete secondary index entries of a row, when the index is built on
@@ -2451,7 +2421,7 @@ code or DB_LOCK_WAIT */
 func_exit:
   mem_heap_free(heap);
 
-  return (err);
+  return err;
 }
 
 /** Updates the secondary index record if it is changed in the row update or
@@ -2484,7 +2454,7 @@ func_exit:
     }
   }
 
-  return (DB_SUCCESS);
+  return DB_SUCCESS;
 }
 
 /** Mark non-updated off-page columns inherited when the primary key is
@@ -2556,7 +2526,7 @@ static bool row_upd_clust_rec_by_insert_inherit_func(
     inherit = true;
   }
 
-  return (inherit);
+  return inherit;
 }
 
 static inline bool row_upd_clust_rec_by_insert_inherit(
@@ -2667,7 +2637,8 @@ static inline bool row_upd_clust_rec_by_insert_inherit(
         }
       }
     check_fk:
-      if (referenced) {
+      if (!thd_is_sql_fk_checks_enabled() && referenced) {
+        DBUG_PRINT("fk", ("InnoDB FK on table %s", table->name.m_name));
         /* NOTE that the following call loses
         the position of pcur ! */
 
@@ -2700,13 +2671,12 @@ non-zero counters. */
 uint64_t row_upd_get_new_autoinc_counter(const upd_t *update,
                                          ulint autoinc_field_no) {
   ulint n_fields = update->n_fields;
-  dfield_t *field = nullptr;
+  const dfield_t *field = nullptr;
 
   for (ulint i = 0; i < n_fields; ++i) {
-    upd_field_t *upd_field = upd_get_nth_field(update, i);
+    const upd_field_t *upd_field = upd_get_nth_field(update, i);
 
-    if (upd_field->field_no == autoinc_field_no &&
-        !upd_fld_is_virtual_col(upd_field)) {
+    if (upd_field->field_no == autoinc_field_no && !upd_field->is_virtual()) {
       /* We should double check the field to see if this
       is a virtual column, which is on virtual index
       instead of clustered index */
@@ -2773,26 +2743,54 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
   return persist_autoinc;
 }
 
+void upd_t::append(const upd_field_t &field) {
+  if (static_cast<size_t>(n_fields) < n_capacity) {
+    fields[n_fields++] = field;
+    return;
+  }
+
+  /*
+    Extend the fields array to accommodate new field. Size is doubled due to the
+    following reasons::
+    1. We want to avoid frequent memory reallocations
+    2. We cannot allocate lot of space upfront as upd_create is called in
+    frequent code path, and append is called rarely
+  */
+  n_capacity = n_capacity * 2;
+  upd_field_t *temp_fields = static_cast<upd_field_t *>(
+      mem_heap_zalloc(heap, sizeof(upd_field_t) * n_capacity));
+  ut_ad(temp_fields);
+
+  memcpy(temp_fields, fields, sizeof(upd_field_t) * n_fields);
+  temp_fields[n_fields++] = field;
+
+  /* Fields array is allocated on heap and will be freed with the heap */
+  fields = temp_fields;
+}
+
 /** Updates a clustered index record of a row when the ordering fields do
  not change.
+ @param[in]      flags         undo logging and locking flags
+ @param[in]      node          row update node
+ @param[in]      index         clustered index
+ @param[in]      offsets       rec_get_offsets() on node->pcur
+ @param[in,out]  offsets_heap  memory heap, can be emptied
+ @param[in]      thr           query thread
+ @param[in]      mtr           mtr; gets committed here
  @return DB_SUCCESS if operation successfully completed, else error
  code or DB_LOCK_WAIT */
-[[nodiscard]] static dberr_t row_upd_clust_rec(
-    ulint flags,         /*!< in: undo logging and locking flags */
-    upd_node_t *node,    /*!< in: row update node */
-    dict_index_t *index, /*!< in: clustered index */
-    ulint *offsets,      /*!< in: rec_get_offsets() on node->pcur */
-    mem_heap_t **offsets_heap,
-    /*!< in/out: memory heap, can be emptied */
-    que_thr_t *thr, /*!< in: query thread */
-    mtr_t *mtr)     /*!< in: mtr; gets committed here */
-{
+[[nodiscard]] static dberr_t row_upd_clust_rec(ulint flags, upd_node_t *node,
+                                               dict_index_t *index,
+                                               ulint *offsets,
+                                               mem_heap_t **offsets_heap,
+                                               que_thr_t *thr, mtr_t *mtr) {
   mem_heap_t *heap = nullptr;
   big_rec_t *big_rec = nullptr;
   btr_pcur_t *pcur;
   btr_cur_t *btr_cur;
   dberr_t err = DB_SUCCESS;
   bool persist_autoinc = false;
+  bool is_old_or_new_rec_extern = false;
   const dtuple_t *rebuilt_old_pk = nullptr;
   trx_id_t trx_id = thr_get_trx(thr)->id;
   trx_t *trx = thr_get_trx(thr);
@@ -2810,6 +2808,7 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
   ut_ad(rec_offs_validate(btr_cur_get_rec(btr_cur), index, offsets));
 
   if (dict_index_is_online_ddl(index)) {
+    is_old_or_new_rec_extern = rec_offs_any_extern(offsets);
     rebuilt_old_pk = row_log_table_get_pk(btr_cur_get_rec(btr_cur), index,
                                           offsets, nullptr, &heap);
     if (row_log_table_get_error(index) == DB_INDEX_CORRUPT) {
@@ -2900,9 +2899,19 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
       dtuple_t *new_v_row = nullptr;
       dtuple_t *old_v_row = nullptr;
 
+      /* In case UPDATE modifies extern BLOB and makes it fit within record
+      after above update, we still need old virtual col */
+      is_old_or_new_rec_extern |= rec_offs_any_extern(offsets);
+
       if (!(node->cmpl_info & UPD_NODE_NO_ORD_CHANGE)) {
         new_v_row = node->upd_row;
         old_v_row = node->update->old_vrow;
+      } else if (is_old_or_new_rec_extern) {
+        /* Row log treats UPDATE on extern BLOB as DELETE + INSERT. This
+        requires virtual col info. Since no change in virtual col, new value is
+        same as old */
+        old_v_row = node->update->old_vrow;
+        new_v_row = old_v_row;
       }
 
       row_log_table_update(btr_cur_get_rec(btr_cur), index, offsets,
@@ -2967,7 +2976,8 @@ func_exit:
   err = btr_cur_del_mark_set_clust_rec(flags, btr_cur_get_block(btr_cur),
                                        btr_cur_get_rec(btr_cur), index, offsets,
                                        thr, node->row, mtr);
-  if (err == DB_SUCCESS && referenced) {
+  if (err == DB_SUCCESS && !thd_is_sql_fk_checks_enabled() && referenced) {
+    DBUG_PRINT("fk", ("InnoDB FK on table %s", index->table->name.m_name));
     /* NOTE that the following call loses the position of pcur ! */
 
     err = row_upd_check_references_constraints(node, pcur, index->table, index,
@@ -2999,8 +3009,6 @@ func_exit:
   rec_offs_init(offsets_);
 
   index = node->table->first_index();
-
-  auto referenced = row_upd_index_is_referenced(index);
 
   pcur = node->pcur;
 
@@ -3037,7 +3045,6 @@ func_exit:
   DEBUG_SYNC(trx->mysql_thd, "innodb_row_upd_clust_step_enter");
 
   if (dict_index_is_online_ddl(index)) {
-    ut_ad(node->table->id != DICT_INDEXES_ID);
     mode = BTR_MODIFY_LEAF | BTR_ALREADY_S_LATCHED;
     mtr_s_lock(dict_index_get_lock(index), &mtr, UT_LOCATION_HERE);
   } else {
@@ -3074,7 +3081,7 @@ func_exit:
 
   if (node->is_delete) {
     err = row_upd_del_mark_clust_rec(flags, node, index, offsets, thr,
-                                     referenced, &mtr);
+                                     row_upd_index_is_referenced(index), &mtr);
 
     if (err == DB_SUCCESS) {
       node->state = UPD_NODE_UPDATE_ALL_SEC;
@@ -3115,8 +3122,8 @@ func_exit:
     choosing records to update. MySQL solves now the problem
     externally! */
 
-    err =
-        row_upd_clust_rec_by_insert(flags, node, index, thr, referenced, &mtr);
+    err = row_upd_clust_rec_by_insert(flags, node, index, thr,
+                                      row_upd_index_is_referenced(index), &mtr);
 
     if (err != DB_SUCCESS) {
       goto exit_func;
@@ -3353,7 +3360,7 @@ std::ostream &upd_field_t::print(std::ostream &out) const {
 
   out << "]";
 
-  return (out);
+  return out;
 }
 
 std::ostream &upd_t::print(std::ostream &out) const {
@@ -3363,7 +3370,7 @@ std::ostream &upd_t::print(std::ostream &out) const {
     print_puvect(out, &fields[i]);
   }
   out << "]";
-  return (out);
+  return out;
 }
 
 std::ostream &print_binary_diff(std::ostream &out, const Binary_diff *bdiff,
@@ -3420,22 +3427,12 @@ std::ostream &upd_t::print_puvect(std::ostream &out, upd_field_t *uf) const {
   return (out);
 }
 
-upd_field_t *upd_t::get_field_by_field_no(ulint field_no,
-                                          dict_index_t *index) const {
-  const upd_field_t *uf;
+const upd_field_t *upd_t::get_field_by_field_no(
+    ulint field_no, const dict_index_t *index) const {
+  ut_ad(!(index->is_clustered() &&
+          index->get_field(field_no)->col->is_virtual()));
 
-  dict_field_t *field = index->get_field(field_no);
-  dict_col_t *col = field->col;
-
-  if (col->is_virtual()) {
-    const dict_v_col_t *vcol = reinterpret_cast<const dict_v_col_t *>(col);
-
-    uf = upd_get_field_by_field_no(this, vcol->v_pos, true);
-  } else {
-    uf = upd_get_field_by_field_no(this, field_no, false);
-  }
-
-  return (const_cast<upd_field_t *>(uf));
+  return upd_get_field_by_field_no(this, field_no, false);
 }
 
 /** Check if the given field number is partially updated.
@@ -3443,23 +3440,24 @@ upd_field_t *upd_t::get_field_by_field_no(ulint field_no,
 @return true if partially updated, false otherwise. */
 bool upd_t::is_partially_updated(ulint field_no) const {
   if (mysql_table == nullptr || !mysql_table->has_binary_diff_columns()) {
-    return (false);
+    return false;
   }
 
-  upd_field_t *uf = get_field_by_field_no(field_no, table->first_index());
+  const upd_field_t *const uf =
+      get_field_by_field_no(field_no, table->first_index());
 
   if (uf == nullptr || uf->mysql_field == nullptr) {
-    return (false);
+    return false;
   }
 
   ut_ad(mysql_table == uf->mysql_field->table);
 
   if (!mysql_table->is_binary_diff_enabled(uf->mysql_field)) {
-    return (false);
+    return false;
   }
 
   if (dict_table_has_atomic_blobs(table)) {
-    return (true);
+    return true;
   }
 
 #ifdef UNIV_DEBUG
@@ -3478,26 +3476,27 @@ bool upd_t::is_partially_updated(ulint field_no) const {
     const Binary_diff *bdiff = iter;
 
     if (bdiff->offset() < DICT_ANTELOPE_MAX_INDEX_COL_LEN) {
-      return (false);
+      return false;
     }
   }
 
-  return (true);
+  return true;
 }
 
 const Binary_diff_vector *upd_t::get_binary_diff_by_field_no(
     ulint field_no) const {
   ut_ad(table != nullptr);
 
-  upd_field_t *uf = get_field_by_field_no(field_no, table->first_index());
+  const upd_field_t *const uf =
+      get_field_by_field_no(field_no, table->first_index());
   ut_ad(uf != nullptr);
 
   Field *fld = uf->mysql_field;
 
   if (fld == nullptr) {
-    return (nullptr);
+    return nullptr;
   }
 
-  return (mysql_table->get_binary_diffs(fld));
+  return mysql_table->get_binary_diffs(fld);
 }
 #endif /* !UNIV_HOTBACKUP */

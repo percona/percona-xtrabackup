@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -129,6 +129,8 @@ class NdbSocket {
      See SSL_set_mode(3) for reference on flags.
   */
   int set_nonblocking(int on) const;
+
+  int disable_sigpipe() { return ndb_socket_disable_sigpipe(s); }
 
   /* ndb_socket.h */
   ssize_t recv(char *buf, size_t len, int peek = 0) const;

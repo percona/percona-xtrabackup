@@ -272,6 +272,14 @@ CALL db1.test_if_commit();
 IMPLICIT COMMIT
 NO
 #
+# SQLCOM_SHOW_STATUS_LIBRARY
+#
+INSERT INTO db1.trans (a) VALUES (1);
+show library status where (1) in (select * from t1);
+CALL db1.test_if_commit();
+IMPLICIT COMMIT
+NO
+#
 # SQLCOM_SHOW_STATUS_PROC
 #
 INSERT INTO db1.trans (a) VALUES (1);

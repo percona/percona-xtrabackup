@@ -1,0 +1,796 @@
+# Validate handling of function, configured to generate a ITEM response.
+#
+# Check handling of invalid: URL parameters, methods, payloads.
+# Validate the handling of input/output parameters.
+#
+#
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/functions_schema.sql
+
+--let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+--let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port --display REQUEST,BODY,RESULT
+
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+CREATE USER user_root@'%' IDENTIFIED BY 'secretpass';
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify error messages while providing faulty configuration to rest function
+--echo #
+--echo # 1. POST request is not supported by object/procedures
+--echo # 2. DELETE request is not supported by object/procedures
+--echo # 3. PUT request is rejected when there is not payload provided
+--echo # 4. PUT request is rejected when the payload is not JSON object
+--echo # 5. PUT request is rejected when the payloads, JSON object field
+--echo #    doesn't match registred input parameters.
+--echo # 6. GET request is rejected when the URL parameter name doesn'
+--echo #    match registred input parameters.
+--echo #
+
+--echo
+--echo ## II. Verify valid rest request to rest function
+--echo #
+--echo # 1. GET request, no arguments
+--echo # 2. POST request, no arguments
+--echo # 3. GET request, multiple arguments
+--echo # 4. POST request, multiple arguments
+
+--echo ## III. Verify handling of different MYSQL types as input and result of
+--echo ##      function, when they are transfered in GET requests
+--echo #
+--echo # 1. Verify if input varchar value is the same at output of function
+--echo # 2. Verify if input DATE value is the same at output of function
+--echo # 3. Verify if input YEAR value is the same at output of function
+--echo # 4. Verify if input TIME value is the same at output of function
+--echo # 5. Verify if input BIT(1) value is the same at output of function
+--echo # 6. Verify if input TINYINT(1) value is the same at output of function
+--echo # 7. Verify if input TINYINT(8) value is the same at output of function
+--echo # 8. Verify if input DECIMAL value is the same at output of function
+--echo # 9. Verify if input FLOAT value is the same at output of function
+--echo # 10. Verify if input DOUBLE value is the same at output of function
+--echo # 11. Verify if input JSON simple value is the same at output of function
+--echo # 11. Verify if input JSON complex value is the same at output of function
+
+--echo ## IV. Verify handling of different MYSQL types as input and result of
+--echo ##      function, when they are transfered in POST requests
+--echo #
+--echo # 1. Verify if input varchar value is the same at output of function
+--echo # 2. Verify if input DATE value is the same at output of function
+--echo # 3. Verify if input YEAR value is the same at output of function
+--echo # 4. Verify if input TIME value is the same at output of function
+--echo # 5. Verify if input BIT(1) value is the same at output of function
+--echo # 6. Verify if input TINYINT(1) value is the same at output of function
+--echo # 7. Verify if input TINYINT(8) value is the same at output of function
+--echo # 8. Verify if input DECIMAL value is the same at output of function
+--echo # 9. Verify if input FLOAT value is the same at output of function
+--echo # 10. Verify if input DOUBLE value is the same at output of function
+--echo # 11. Verify if input JSON simple value is the same at output of function
+--echo # 11. Verify if input JSON complex value is the same at output of function
+
+--echo ## V. Verify handling of different MYSQL types as input and result of
+--echo ##    function, when they are not specified in GET requests (MRS sets the to NULL)
+--echo #
+--echo # 1. Verify if ommiting varchar parameter will set it to NULL and its copied to output of function
+--echo # 2. Verify if ommiting DATE  parameter will set it to NULL and its copied to output of function
+--echo # 3. Verify if ommiting YEAR  parameter will set it to NULL and its copied to output of function
+--echo # 4. Verify if ommiting TIME  parameter will set it to NULL and its copied to output of function
+--echo # 5. Verify if ommiting BIT(1)  parameter will set it to NULL and its copied to output of function
+--echo # 6. Verify if ommiting TINYINT(1)  parameter will set it to NULL and its copied to output of function
+--echo # 7. Verify if ommiting TINYINT(8)  parameter will set it to NULL and its copied to output of function
+--echo # 8. Verify if ommiting DECIMAL  parameter will set it to NULL and its copied to output of function
+--echo # 9. Verify if ommiting FLOAT  parameter will set it to NULL and its copied to output of function
+--echo # 10. Verify if ommiting DOUBLE  parameter will set it to NULL and its copied to output of function
+--echo # 11. Verify if ommiting JSON simple  parameter will set it to NULL and its copied to output of function
+
+--echo ## VI. Verify handling of different MYSQL types as input and result of
+--echo ##    function, when they are not specified in PUT requests (MRS sets the to NULL)
+--echo #
+--echo # 1. Verify if ommiting varchar  parameter will set it to NULL and its copied to output of function
+--echo # 2. Verify if ommiting DATE  parameter will set it to NULL and its copied to output of function
+--echo # 3. Verify if ommiting YEAR  parameter will set it to NULL and its copied to output of function
+--echo # 4. Verify if ommiting TIME  parameter will set it to NULL and its copied to output of function
+--echo # 5. Verify if ommiting BIT(1)  parameter will set it to NULL and its copied to output of function
+--echo # 6. Verify if ommiting TINYINT(1)  parameter will set it to NULL and its copied to output of function
+--echo # 7. Verify if ommiting TINYINT(8)  parameter will set it to NULL and its copied to output of function
+--echo # 8. Verify if ommiting DECIMAL  parameter will set it to NULL and its copied to output of function
+--echo # 9. Verify if ommiting FLOAT  parameter will set it to NULL and its copied to output of function
+--echo # 10. Verify if ommiting DOUBLE  parameter will set it to NULL and its copied to output of function
+--echo # 11. Verify if ommiting JSON simple  parameter will set it to NULL and its copied to output of function
+
+--echo ## VII. Verify passing json-null as procedure parameter (PUT request)
+--echo # 1. Verify setting json-null to varchar parameter will be copied to output of function
+
+--echo ## VIII. Verify authentication and authorization with regard to rest functions.
+--echo #
+--echo # 1. User is not authenticated.
+--echo # 2. User is authenticated and authorized.
+--echo # 3. User is authenticated and not authorized.
+
+--echo ## IX. Verify how argument type mismatch is handled.
+--echo #
+--echo # 1. First argument.
+--echo # 2. Other argument.
+
+--source ../include/mrs/start_object_definition.inc
+
+# Roles
+--let $mrs_add_role_caption=ReadOnly
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=AccessAll
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,CREATE,UPDATE,DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=func_schema
+--let $mrs_add_schema_path=/func
+--let $mrs_add_schema_items_on_page=NULL
+--source ../include/mrs/db_schema/add.inc
+
+# Auth
+--let $mrs_add_auth_app=default authentication
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+# Users
+--let $mrs_add_user_ext_uid='user1@%'
+--let $mrs_add_user_name='user1'
+--let $mrs_add_user_role=ReadOnly
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid='user_root@%'
+--let $mrs_add_user_name='user_root'
+--let $mrs_add_user_role=AccessAll
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=func_sum
+--let $mrs_add_db_object_path=/sum
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_char
+--let $mrs_add_db_object_path=/move_char
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_date
+--let $mrs_add_db_object_path=/move_date
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_year
+--let $mrs_add_db_object_path=/move_year
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_time
+--let $mrs_add_db_object_path=/move_time
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_bit
+--let $mrs_add_db_object_path=/move_bit
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_tinyint1
+--let $mrs_add_db_object_path=/move_tinyint1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_tinyint8
+--let $mrs_add_db_object_path=/move_tinyint8
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_decimal
+--let $mrs_add_db_object_path=/move_decimal
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_float
+--let $mrs_add_db_object_path=/move_float
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_double
+--let $mrs_add_db_object_path=/move_double
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_json
+--let $mrs_add_db_object_path=/move_json
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_geo
+--let $mrs_add_db_object_path=/move_geo
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=move_line
+--let $mrs_add_db_object_path=/move_line
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=nothing
+--let $mrs_add_db_object_path=/nothing
+--source ../include/mrs/db_object/add.inc
+
+# Function that needs auth
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=func_sum
+--let $mrs_add_db_object_path=/func_sum
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_modify_name=result
+--let $mrs_modify_columns=result
+--let $mrs_modify_fields=my_result
+--source ../include/mrs/db_object/add_named_resultset.inc
+SET @db_object_id_func=@db_object_id;
+
+--let $mrs_sql_id_variable=@db_object_id_func
+--let $mrs_db_object_requires_auth=1
+--source ../include/mrs/db_object/modify_auth.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+# Wait until MySQLRouter fetches db-object.
+--source ../include/mrs/changes/fetch_object.inc
+
+--echo
+--echo #
+--echo # I.1
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/nothing -t POST
+  --wait-until-status 60
+  --expected-status BadRequest;
+
+--echo
+--echo #
+--echo # I.2
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/nothing -t DELETE
+  --expected-status Forbidden;
+
+--echo
+--echo #
+--echo # I.3
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/nothing -t PUT
+  --expected-status BadRequest;
+
+--echo
+--echo #
+--echo # I.4
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/nothing -t PUT
+  --payload 10
+  --expected-status BadRequest;
+
+--echo
+--echo #
+--echo # I.5
+--let $mrs_client_arg_path='/svc/func/nothing'
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_payload='{"not-existing-param":20}'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.6
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/nothing?not-existing-param=10
+  --expected-status BadRequest;
+
+
+
+--echo
+--echo #
+--echo # II.1
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/nothing;
+
+--echo
+--echo #
+--echo # II.2
+--let $mrs_client_arg_path='/svc/func/nothing'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.3
+--let $mrs_client_arg_path='/svc/func/sum?a=10&b=20'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # II.4
+--let $mrs_client_arg_path='/svc/func/sum'
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_payload='{"a":10,"b":20}'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.1
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_char?a=10;
+
+--echo
+--echo #
+--echo # III.2
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_date?a="1920-12-11";
+#
+--echo
+--echo #
+--echo # III.3
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_year?a="1920-12-11";
+#
+--echo
+--echo #
+--echo # III.4
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_time?a="12:34:12";
+
+--echo
+--echo #
+--echo # III.5
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_bit?a=1;
+
+--echo
+--echo #
+--echo # III.6
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_tinyint1?a=1;
+
+--echo
+--echo #
+--echo # III.7
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_tinyint8?a=10;
+
+--echo
+--echo #
+--echo # III.8
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_decimal?a=10;
+
+--echo
+--echo #
+--echo # III.9
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_float?a=10;
+
+--echo
+--echo #
+--echo # III.10
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_double?a=10;
+
+--echo
+--echo #
+--echo # III.11
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_json?a=100;
+
+--echo
+--echo #
+--echo # III.12
+--let $mrs_client_arg_path='/svc/func/move_json?a=["aaaa",20,30,{"field1":"value1"}]'
+--source ../include/mrs/mrs_client.inc
+
+
+
+--echo
+--echo #
+--echo # IV.1
+--let $mrs_client_arg_path='/svc/func/move_char'
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_payload='{"a":10}'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.2
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_date
+#  -t PUT --payload '{"a":"1920-12-11"}';
+#
+--echo
+--echo #
+--echo # IV.3
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_year
+#  -t PUT --payload '{"a":"1920-12-11"}';
+#
+--echo
+--echo #
+--echo # IV.4
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_time
+#  -t PUT --payload '{"a":"12:34:12"}';
+
+--echo
+--echo #
+--echo # IV.5
+--let $mrs_client_arg_path='/svc/func/move_bit'
+--let $mrs_client_arg_payload='{"a":1}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.6
+--let $mrs_client_arg_path='/svc/func/move_tinyint1'
+--let $mrs_client_arg_payload='{"a":1}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.7
+--let $mrs_client_arg_path='/svc/func/move_tinyint8'
+--let $mrs_client_arg_payload='{"a":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.8
+--let $mrs_client_arg_path='/svc/func/move_decimal'
+--let $mrs_client_arg_payload='{"a":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.9
+--let $mrs_client_arg_path='/svc/func/move_float'
+--let $mrs_client_arg_payload='{"a":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.10
+--let $mrs_client_arg_path='/svc/func/move_double'
+--let $mrs_client_arg_payload='{"a":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.10
+--let $mrs_client_arg_path='/svc/func/move_json'
+--let $mrs_client_arg_payload='{"a":100}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.11
+--let $mrs_client_arg_path='/svc/func/move_json'
+--let $mrs_client_arg_payload='{"a":["aaaa",20,30,{"field1":"value1"}]}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.12
+--echo # TODO(lkotula): wrong data are generated
+--let $mrs_client_arg_path='/svc/func/move_geo'
+--let $mrs_client_arg_payload='{"a":{"type":"Point", "coordinates":[10,0]}}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo # TODO(lkotula): wrong data are generated
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_geo
+#  -t PUT --payload '{"a":"POINT(11 0)"}';
+
+--let $mrs_client_arg_path='/svc/func/move_geo'
+--let $mrs_client_arg_payload='{"a":{"type":"LineString","coordinates":[[100,0],[0,0]]}}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.1
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_char;
+
+--echo
+--echo #
+--echo # V.2
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_date;
+#
+--echo
+--echo #
+--echo # V.3
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_year;
+#
+--echo
+--echo #
+--echo # V.4
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_time;
+
+--echo
+--echo #
+--echo # V.5
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_bit;
+
+--echo
+--echo #
+--echo # V.6
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_tinyint1;
+
+--echo
+--echo #
+--echo # V.7
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_tinyint8;
+
+--echo
+--echo #
+--echo # V.8
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_decimal;
+
+--echo
+--echo #
+--echo # V.9
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_float;
+
+--echo
+--echo #
+--echo # V.10
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_double;
+
+--echo
+--echo #
+--echo # V.11
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/move_json;
+
+--echo
+--echo #
+--echo # VI.1
+--let $mrs_client_arg_path='/svc/func/move_char'
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_payload='{}'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.2
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_date
+#  -t PUT --payload '{}';
+#
+--echo
+--echo #
+--echo # VI.3
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_year
+#  -t PUT --payload '{}';
+#
+--echo
+--echo #
+--echo # VI.4
+--echo DISABLED
+#exec $MRS_CLIENT_ARGS
+#  --path /svc/func/move_time
+#  -t PUT --payload '{}';
+
+--echo
+--echo #
+--echo # VI.5
+--let $mrs_client_arg_path='/svc/func/move_bit'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.6
+--let $mrs_client_arg_path='/svc/func/move_tinyint1'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.7
+--let $mrs_client_arg_path='/svc/func/move_tinyint8'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.8
+--let $mrs_client_arg_path='/svc/func/move_decimal'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.9
+--let $mrs_client_arg_path='/svc/func/move_float'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.10
+--let $mrs_client_arg_path='/svc/func/move_double'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.10
+--let $mrs_client_arg_path='/svc/func/move_json'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.11
+--let $mrs_client_arg_path='/svc/func/move_json'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.12
+--let $mrs_client_arg_path='/svc/func/move_geo'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VII.1
+--let $mrs_client_arg_path='/svc/func/move_char'
+--let $mrs_client_arg_payload='{"a":null}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VIII.1
+exec $MRS_CLIENT_ARGS
+  --path /svc/func/func_sum
+  --expected-status 401;
+
+--echo
+--echo #
+--echo # VIII.2
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user_root
+  -p secretpass
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -t PUT
+  --payload '{}'
+  --path /svc/func/func_sum
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--echo
+--echo #
+--echo # VIII.3
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+exec $MRS_CLIENT_ARGS
+  -t PUT
+  --payload '{}'
+  --path /svc/func/func_sum
+  --session-file $MYSQL_TMP_DIR/user_session1.dat
+  --expected-status 403;
+
+--echo
+--echo #
+--echo # IX.1
+--let $mrs_client_arg_path='/svc/func/sum'
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_payload='{"a":"bad","b":20}'
+--let $mrs_client_arg_expected_status='InternalError'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IX.2
+--let $mrs_client_arg_path='/svc/func/sum'
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_payload='{"a":10,"b":{"its":"no good"}}'
+--let $mrs_client_arg_expected_status='InternalError'
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+remove_file $MYSQL_TMP_DIR/user_session.dat;
+remove_file $MYSQL_TMP_DIR/user_session1.dat;
+drop user user1@'%';
+drop user user_root@'%';
+--source ../include/mrs/cleanup.inc

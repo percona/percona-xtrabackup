@@ -1,0 +1,84 @@
+################################################################################
+# Validate that foreign key handling on SQL layer generates write set values
+# for cascade rules.
+#
+# Test:
+# 0. The test requires one server.
+# 1. Create tables with foreign key cascade rules and
+#    populate them.
+# 2. Update row in t1 which will cascade to t2, t3 and t22,
+#    while a debug flag asserts the write sets values on server
+#    implementation.
+# 3. Delete row in t1 which will cascade to t2, t3 and t22,
+#    while a debug flag asserts the write sets values on server
+#    implementation.
+# 4. Clean up.
+################################################################################
+--source include/have_binlog_format_row.inc
+--source include/have_debug.inc
+
+
+--echo
+--echo ############################################################
+--echo # 1. Create tables with foreign key cascade rules and
+--echo #    populate them.
+# t1 - Parent table
+CREATE TABLE t1 (f1 BINARY(2) PRIMARY KEY);
+# t2(f1) -> t1(f1) -  ON DELETE | UPDATE CASCADE
+CREATE TABLE t2 (f1 BINARY(2) PRIMARY KEY, f2 BINARY(2),
+FOREIGN KEY(f1) REFERENCES t1(f1) ON DELETE CASCADE ON UPDATE CASCADE);
+# t3 (f2) -> t1(f1) - ON DELETE | UPDATE SET NULL
+CREATE TABLE t3 (f1 BINARY(2) PRIMARY KEY, f2 BINARY(2),
+FOREIGN KEY(f2) REFERENCES t1(f1) ON DELETE SET NULL ON UPDATE SET NULL);
+# Multi Level Cascade from t22(f1) -> t2(f1) -> t1(f1)
+CREATE TABLE t22 (f1 BINARY(2) PRIMARY KEY, f2 BINARY(2),
+FOREIGN KEY(f1) REFERENCES t2(f1) ON DELETE CASCADE ON UPDATE CASCADE);
+
+INSERT INTO t1 VALUES (10), (20), (30);
+INSERT INTO t2 VALUES (10, 10), (20, 20), (30, 30);
+INSERT INTO t3 VALUES (10, 10), (20, 20), (30, 30);
+INSERT INTO t22 VALUES (10, 10), (20, 20), (30, 30);
+
+--echo
+SELECT * FROM t1 ORDER BY f1;
+SELECT * FROM t2 ORDER BY f1;
+SELECT * FROM t3 ORDER BY f1;
+SELECT * FROM t22 ORDER BY f1;
+
+
+--echo
+--echo ############################################################
+--echo # 2. Update row in t1 which will cascade to t2, t3 and t22,
+--echo #    while a debug flag asserts the write sets values on server
+--echo #    implementation.
+SET @@GLOBAL.DEBUG= '+d,PKE_assert_single_primary_key_generated_update_fk_sql';
+UPDATE t1 SET f1=50 WHERE f1=20;
+SET @@GLOBAL.DEBUG= '-d,PKE_assert_single_primary_key_generated_update_fk_sql';
+
+--echo
+SELECT * FROM t1 ORDER BY f1;
+SELECT * FROM t2 ORDER BY f1;
+SELECT * FROM t3 ORDER BY f1;
+SELECT * FROM t22 ORDER BY f1;
+
+
+--echo
+--echo ############################################################
+--echo # 3. Delete row in t1 which will cascade to t2, t3 and t22,
+--echo #    while a debug flag asserts the write sets values on server
+--echo #    implementation.
+SET @@GLOBAL.DEBUG= '+d,PKE_assert_single_primary_key_generated_delete_fk_sql';
+DELETE FROM t1 WHERE f1=10;
+SET @@GLOBAL.DEBUG= '-d,PKE_assert_single_primary_key_generated_delete_fk_sql';
+
+--echo
+SELECT * FROM t1 ORDER BY f1;
+SELECT * FROM t2 ORDER BY f1;
+SELECT * FROM t3 ORDER BY f1;
+SELECT * FROM t22 ORDER BY f1;
+
+
+--echo
+--echo ############################################################
+--echo # 4. Clean up.
+DROP TABLE t22, t3, t2, t1;

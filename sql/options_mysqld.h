@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,6 +73,7 @@ enum options_mysqld {
   OPT_UPDATE_LOG,
   OPT_WANT_CORE,
   OPT_LOG_ERROR,
+  OPT_LOG_DIAGNOSTIC,
   OPT_MAX_LONG_DATA_SIZE,
   OPT_PLUGIN_LOAD,
   OPT_PLUGIN_LOAD_ADD,
@@ -107,12 +108,12 @@ enum options_mysqld {
   OPT_KEYRING_MIGRATION_TO_COMPONENT,
   OPT_KEYRING_MIGRATION_FROM_COMPONENT,
   OPT_SHOW_SLAVE_AUTH_INFO_DEPRECATED,
-  OPT_REPLICA_PARALLEL_TYPE,
   OPT_REPLICA_PARALLEL_WORKERS,
   OPT_SYNC_RELAY_LOG_INFO,
   OPT_CHARACTER_SET_CLIENT_HANDSHAKE,
   OPT_PFS_METER,
-  OPT_PFS_LOGGER
+  OPT_PFS_LOGGER,
+  OPT_INNODB_FOREIGN_KEYS
 };
 
 #endif  // OPTIONS_MYSQLD_INCLUDED

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -70,7 +70,7 @@ static std::string duration_to_us_string(
 
 stdx::expected<size_t, std::error_code> MySQLClassicProtocol::read_packet(
     std::vector<uint8_t> &payload) {
-  net::const_buffer buf = net::buffer(recv_buffer_);
+  net::const_buffer buf = net::buffer(recv_buffer());
 
   auto decode_res =
       classic_protocol::decode<classic_protocol::frame::Header>(buf, {});
@@ -101,7 +101,7 @@ stdx::expected<size_t, std::error_code> MySQLClassicProtocol::read_packet(
   net::buffer_copy(net::buffer(payload), buf, payload_size);
 
   // remove the bytes from the recv-buffer
-  net::dynamic_buffer(recv_buffer_).consume(hdr_size + payload_size);
+  net::dynamic_buffer(recv_buffer()).consume(hdr_size + payload_size);
 
   return payload_size;
 }
@@ -207,7 +207,7 @@ void MySQLServerMockSessionClassic::client_greeting() {
     return;
   }
 
-  if (auto *ssl = protocol_.ssl()) {
+  if (auto *ssl = protocol_.connection().ssl()) {
     json_reader_->set_session_ssl_info(ssl);
   }
 
@@ -230,10 +230,10 @@ void MySQLServerMockSessionClassic::client_greeting() {
 
   if (protocol_.shared_capabilities().test(
           classic_protocol::capabilities::pos::ssl) &&
-      !protocol_.is_tls()) {
-    protocol_.init_tls();
+      !protocol_.connection().is_tls()) {
+    protocol_.connection().init_tls();
 
-    protocol_.async_tls_accept([&](std::error_code ec) {
+    protocol_.connection().async_tls_accept([&](std::error_code ec) {
       if (ec) {
         if (ec != std::errc::operation_canceled) {
           logger_.warning("TLS accept failed: " + ec.message());
@@ -716,7 +716,7 @@ void MySQLClassicProtocol::encode_auth_fast_message() {
   auto encode_res = classic_protocol::encode<classic_protocol::frame::Frame<
       classic_protocol::message::server::AuthMethodData>>(
       {seq_no_++, {"\x03"}}, shared_capabilities(),
-      net::dynamic_buffer(send_buffer_));
+      net::dynamic_buffer(send_buffer()));
 
   if (!encode_res) {
     // ignore
@@ -728,7 +728,7 @@ void MySQLClassicProtocol::encode_auth_switch_message(
   auto encode_res = classic_protocol::encode<classic_protocol::frame::Frame<
       classic_protocol::message::server::AuthMethodSwitch>>(
       {seq_no_++, msg}, shared_capabilities(),
-      net::dynamic_buffer(send_buffer_));
+      net::dynamic_buffer(send_buffer()));
   if (!encode_res) {
     // ignore
   }
@@ -741,7 +741,7 @@ void MySQLClassicProtocol::encode_server_greeting(
   auto encode_res = classic_protocol::encode<classic_protocol::frame::Frame<
       classic_protocol::message::server::Greeting>>(
       {seq_no_++, greeting}, server_capabilities(),
-      net::dynamic_buffer(send_buffer_));
+      net::dynamic_buffer(send_buffer()));
   if (!encode_res) {
     // ignore
   }
@@ -803,7 +803,7 @@ stdx::expected<void, ErrorResponse> MySQLServerMockSessionClassic::authenticate(
   }
 
   if (handshake.cert_required) {
-    auto *ssl = protocol_.ssl();
+    auto *ssl = protocol_.connection().ssl();
 
     std::unique_ptr<X509, decltype(&X509_free)> client_cert{
         SSL_get_peer_certificate(ssl), &X509_free};
@@ -845,7 +845,7 @@ stdx::expected<void, ErrorResponse> MySQLServerMockSessionClassic::authenticate(
       }
     }
 
-    const auto verify_res = SSL_get_verify_result(protocol_.ssl());
+    const auto verify_res = SSL_get_verify_result(protocol_.connection().ssl());
 
     if (verify_res != X509_V_OK) {
       logger_.info("ssl-verify failed: " + std::to_string(verify_res));
@@ -864,7 +864,7 @@ void MySQLClassicProtocol::encode_error(const ErrorResponse &msg) {
   auto encode_res = classic_protocol::encode<
       classic_protocol::frame::Frame<classic_protocol::message::server::Error>>(
       {seq_no_++, msg}, shared_capabilities(),
-      net::dynamic_buffer(send_buffer_));
+      net::dynamic_buffer(send_buffer()));
 
   if (!encode_res) {
     //
@@ -885,7 +885,7 @@ void MySQLClassicProtocol::encode_ok(const OkResponse &msg) {
   auto encode_res = classic_protocol::encode<
       classic_protocol::frame::Frame<classic_protocol::message::server::Ok>>(
       {seq_no_++, tmp_msg}, shared_capabilities(),
-      net::dynamic_buffer(send_buffer_));
+      net::dynamic_buffer(send_buffer()));
 
   if (!encode_res) {
     //
@@ -899,7 +899,7 @@ void MySQLClassicProtocol::encode_resultset(const ResultsetResponse &response) {
   auto encode_res = classic_protocol::encode<
       classic_protocol::frame::Frame<classic_protocol::wire::VarInt>>(
       {seq_no_++, {static_cast<long>(response.columns.size())}}, shared_caps,
-      net::dynamic_buffer(send_buffer_));
+      net::dynamic_buffer(send_buffer()));
   if (!encode_res) {
     //
     return;
@@ -908,7 +908,7 @@ void MySQLClassicProtocol::encode_resultset(const ResultsetResponse &response) {
   for (const auto &column : response.columns) {
     encode_res = classic_protocol::encode<classic_protocol::frame::Frame<
         classic_protocol::message::server::ColumnMeta>>(
-        {seq_no_++, column}, shared_caps, net::dynamic_buffer(send_buffer_));
+        {seq_no_++, column}, shared_caps, net::dynamic_buffer(send_buffer()));
     if (!encode_res) {
       //
       return;
@@ -919,7 +919,7 @@ void MySQLClassicProtocol::encode_resultset(const ResultsetResponse &response) {
                             text_result_with_session_tracking)) {
     encode_res = classic_protocol::encode<
         classic_protocol::frame::Frame<classic_protocol::message::server::Eof>>(
-        {seq_no_++, {}}, shared_caps, net::dynamic_buffer(send_buffer_));
+        {seq_no_++, {}}, shared_caps, net::dynamic_buffer(send_buffer()));
     if (!encode_res) {
       //
       return;
@@ -929,7 +929,7 @@ void MySQLClassicProtocol::encode_resultset(const ResultsetResponse &response) {
   for (auto const &row : response.rows) {
     encode_res = classic_protocol::encode<
         classic_protocol::frame::Frame<classic_protocol::message::server::Row>>(
-        {seq_no_++, {row}}, shared_caps, net::dynamic_buffer(send_buffer_));
+        {seq_no_++, {row}}, shared_caps, net::dynamic_buffer(send_buffer()));
     if (!encode_res) {
       //
       return;
@@ -939,7 +939,7 @@ void MySQLClassicProtocol::encode_resultset(const ResultsetResponse &response) {
   encode_res = classic_protocol::encode<
       classic_protocol::frame::Frame<classic_protocol::message::server::Eof>>(
       {seq_no_++, response.end_of_rows}, shared_caps,
-      net::dynamic_buffer(send_buffer_));
+      net::dynamic_buffer(send_buffer()));
   if (!encode_res) {
     //
     return;

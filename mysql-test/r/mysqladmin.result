@@ -32,6 +32,8 @@ WARNING: --compress is deprecated and will be removed in a future version. Use -
 mysqld is alive
 CREATE USER testadmin_user1;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 mysqld is alive
 DROP USER testadmin_user1;
 CREATE USER tester@localhost IDENTIFIED WITH caching_sha2_password BY 'abcd';
@@ -60,4 +62,11 @@ mysqladmin: File '\nonexistent' not found (OS error
 mysqladmin: [ERROR] Stopped processing the 'include' directive in file file2 at line 1.
 mysqladmin: [Warning] Using a password on the command line interface can be insecure.
 mysqld is alive
+#
+# WL#16567: deprecate FLUSH PRIVILEGES
+#
+# check the output of mysqladmin for flush-privileges deprecation
+include/assert_grep.inc [check mysqladmin flush-privileges deprecation warning]
+# check the output of mysqladmin for reload deprecation
+include/assert_grep.inc [check mysqladmin reload deprecation warning]
 End of tests

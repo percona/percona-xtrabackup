@@ -1,1 +1,3 @@
 --initialize --innodb_page_size=16k
+--gtid-mode=off
+--enforce_gtid_consistency=off

@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #
 # Bug #28380961: CONTRIBUTION BY FACEBOOK: ADD MY_APPEND_EXT FLAG
 #  WHEN DETERMINING FILE NAME ...
@@ -246,3 +247,49 @@ USE `B35205310`;
 DROP TABLE B35205310.t1;
 DROP DATABASE B35205310;
 # End of 8.0 tests
+#
+# Bug#38284832: mysqldump --order-by-primary is sorting by
+#   all table indices instead of just the primary key
+#
+SET @saved_optimizer_switch = @@global.optimizer_switch;
+SET GLOBAL optimizer_switch = 'hypergraph_optimizer=off';
+CREATE DATABASE B38284832;
+CREATE TABLE B38284832.foo (
+`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+`col1` INT UNSIGNED NOT NULL,
+`col2` INT UNSIGNED NOT NULL,
+`data` JSON DEFAULT NULL,
+PRIMARY KEY (`id`),
+KEY `idx_col1` (`col1`),
+KEY `idx_col2` (`col2`)
+);
+INSERT INTO B38284832.foo (`col1`, `col2`, `data`)
+VALUES (111, 222, JSON_OBJECT('data', REPEAT('LotsOfData', 250000)));
+# Test: should not produce an execution error
+DROP DATABASE B38284832;
+SET GLOBAL optimizer_switch = @saved_optimizer_switch;
+# End of 8.4 tests
+#
+# Bug #37353658: Contribution: Remove whitespace between INSERT/REPLACE and IGNORE
+#
+CREATE DATABASE B37353658;
+CREATE TABLE B37353658.t1 (a INT);
+INSERT INTO B37353658.t1 VALUES (1),(2),(3),(4);
+# Test should not have double space between INSERT and IGNORE
+INSERT IGNORE INTO `t1` VALUES (1),(2),(3),(4);
+DROP DATABASE B37353658;
+#End of 9.3 tests
+#
+# Bug#22240504: MYSQLDUMP --ROUTINES MISQUOTES DATABASE NAMES
+#
+CREATE DATABASE `B\\22240504`;
+CREATE EVENT `B\\22240504`.inner_b22240404 ON SCHEDULE EVERY 1 DAY DO SELECT 1;
+CREATE EVENT outer_b22240404 ON SCHEDULE EVERY 1 DAY DO SELECT 1;
+# Test dump routines should not fail on USE
+# Test dump events should not fail on USE
+include/assert_grep.inc [check for inner_b22240404 present]
+include/assert_grep.inc [check for outer_b22240404 absent]
+DROP EVENT `B\\22240504`.inner_b22240404;
+DROP EVENT outer_b22240404;
+DROP DATABASE `B\\22240504`;
+include/rpl/set_gtid_mode_on.inc

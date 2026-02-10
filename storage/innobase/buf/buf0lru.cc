@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -1336,6 +1336,15 @@ loop:
     block->page.reset_flush_observer();
     return block;
   }
+
+  /* No free blocks found on the free list, we need to run a LRU scan to find a
+  block. In meantime, we wake up simulated AIO threads that may have requests
+  queued with IOREquest::DO_NOT_WAKE waiting for them to wake up. If one of
+  threads that are requesting the new IOs waits for a new block to place the
+  read IO for that block, this would deadlock. Waking up the simulated AIO
+  threads may cause some blocks to be IO_FIX unfixed and become available to
+  evict. */
+  os_aio_simulated_wake_handler_threads();
 
   MONITOR_INC(MONITOR_LRU_GET_FREE_LOOPS);
 

@@ -1,0 +1,218 @@
+# Verify global paths / /index.html exists even if there is no service
+# configured.
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v3_or_v4.inc
+
+# Set the router-id, to generate statistics
+# this way we can wait until router detects
+# changes to DB_OBJECTS.
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Show that files tested in next steps don't exist
+--echo #
+--echo # 1. request files on global level
+--echo #
+--echo ## II. Modify option on global level
+--echo #
+--echo # 1. add files
+--echo # 2. add indexes
+--echo # 3. add redirect
+--echo # 4. remove all
+--echo #
+
+
+--echo
+--echo #
+--echo # I.1
+
+--echo Clear the config.data
+--let $mrs_sql_changes_field=changesHosts
+--source ../include/mrs/changes/fetch_object.inc
+UPDATE  `mysql_rest_service_metadata`.`config` SET data='{}';
+SELECT data from  `mysql_rest_service_metadata`.`config`;
+
+--let $mrs_sql_changes_field=changesHosts
+--source ../include/mrs/changes/wait_object.inc
+
+
+## Check directory indexes
+exec $MRS_CLIENT_ARGS
+  --path /
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+exec $MRS_CLIENT_ARGS
+  --path /index.html
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+exec $MRS_CLIENT_ARGS
+  --path /other.html
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+exec $MRS_CLIENT_ARGS
+  --path /redirect.html
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+
+--echo
+--echo #
+--echo # II.1
+
+--let $mrs_sql_changes_field=changesHosts
+--source ../include/mrs/changes/fetch_object.inc
+UPDATE  `mysql_rest_service_metadata`.`config` SET data='{"defaultStaticContent":{"index.html":"first page", "other.html":"second page"}}';
+
+# Update of global configuration, causes all objects reconfiguration.
+# Thus we will wait for object update.
+--let $mrs_sql_changes_field=changesHosts
+--source ../include/mrs/changes/wait_object.inc
+
+
+exec $MRS_CLIENT_ARGS
+  --path /
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+exec $MRS_CLIENT_ARGS
+  --path /redirect.html
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+exec $MRS_CLIENT_ARGS
+  --path /index.html
+  --expected-header Content-Type=text/html
+  --response-type RAW;
+
+exec $MRS_CLIENT_ARGS
+  --path /other.html
+  --expected-header Content-Type=text/html
+  --response-type RAW;
+
+--echo
+--echo #
+--echo # II.2
+
+--let $mrs_sql_changes_field=changesHosts
+--source ../include/mrs/changes/fetch_object.inc
+--echo ## Check Directory Index generation
+UPDATE  `mysql_rest_service_metadata`.`config` SET data='{"defaultStaticContent":{"index.html":"first page", "other.html":"second page"}, "directoryIndexDirective":["other.html"],"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}';
+# Update of global configuration, causes all objects reconfiguration.
+# Thus we will wait for object update.
+--let $mrs_sql_changes_field=changesHosts
+--source ../include/mrs/changes/wait_object.inc
+
+# The index is not applied in this case
+exec $MRS_CLIENT_ARGS
+  --path /
+  --expected-header Content-Type=text/html
+  --response-type RAW;
+
+exec $MRS_CLIENT_ARGS
+  --path /redirect.html
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+exec $MRS_CLIENT_ARGS
+  --path /index.html
+  --expected-header Content-Type=text/html
+  --response-type RAW;
+
+exec $MRS_CLIENT_ARGS
+  --path /other.html
+  --expected-header Content-Type=text/html
+  --response-type RAW;
+
+--echo
+--echo #
+--echo # II.3
+--echo ## Check Redirect generation
+--let $mrs_sql_changes_field=changesHosts
+--source ../include/mrs/changes/fetch_object.inc
+UPDATE  `mysql_rest_service_metadata`.`config` SET data='{"defaultStaticContent":{"index.html":"first page", "other.html":"second page"}, "directoryIndexDirective":["other.html"],"defaultRedirects":{"redirect.html":"/svc1/sch1/obj1/1"}}';
+# Update of global configuration, causes all objects reconfiguration.
+# Thus we will wait for object update.
+--let $mrs_sql_changes_field=changesHosts
+--source ../include/mrs/changes/wait_object.inc
+
+
+exec $MRS_CLIENT_ARGS
+  --path /
+  --response-type RAW;
+
+--replace_regex /^Date.*/Date -> %DATE%/
+exec $MRS_CLIENT_ARGS
+  --path /redirect.html
+  --display REQUEST,STATUS
+  --expected-header Location=/svc1/sch1/obj1/1
+  --expected-status TemporaryRedirect
+  --response-type RAW;
+
+exec $MRS_CLIENT_ARGS
+  --path /index.html
+  --expected-header Content-Type=text/html
+  --response-type RAW;
+
+exec $MRS_CLIENT_ARGS
+  --path /other.html
+  --expected-header Content-Type=text/html
+  --response-type RAW;
+
+--echo
+--echo #
+--echo # II.4
+--echo ## Check that all files are removed
+--let $mrs_sql_changes_field=changesHosts
+--source ../include/mrs/changes/fetch_object.inc
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=NULL;
+# Update of global configuration, causes all objects reconfiguration.
+# Thus we will wait for object update.
+--let $mrs_sql_changes_field=changesHosts
+--source ../include/mrs/changes/wait_object.inc
+
+exec $MRS_CLIENT_ARGS
+  --path /
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+## Check files
+exec $MRS_CLIENT_ARGS
+  --path /index.html
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+exec $MRS_CLIENT_ARGS
+  --path /other.html
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+exec $MRS_CLIENT_ARGS
+  --path /redirect.html
+  --response-type RAW
+  --display REQUEST,STATUS
+  --expected-status NotFound;
+
+
+# Cleanup
+--let $cleanup_arg_mrs_skip_service_disable=1
+--source ../include/mrs/cleanup.inc

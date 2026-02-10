@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -78,6 +78,7 @@ Alter_info::Alter_info(const Alter_info &rhs, MEM_ROOT *mem_root)
       requested_algorithm(rhs.requested_algorithm),
       requested_lock(rhs.requested_lock),
       with_validation(rhs.with_validation),
+      guided_load(rhs.guided_load),
       new_db_name(rhs.new_db_name),
       new_table_name(rhs.new_table_name) {
   /*
@@ -444,6 +445,12 @@ bool Sql_cmd_secondary_load_unload::execute(THD *thd) {
       thd, &table_list->mdl_request.key, HA_ALTER_DDL};
 
   if (notification_guard.notify()) return true;
+
+  if (m_alter_info->validation_only && m_alter_info->validate_num_rows == 0) {
+    // There is nothing to do
+    my_ok(thd);
+    return false;
+  }
 
   return mysql_secondary_load_or_unload(thd, table_list);
 }

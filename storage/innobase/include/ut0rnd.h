@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2024, Oracle and/or its affiliates.
+Copyright (c) 1994, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -183,7 +183,17 @@ static inline uint64_t random_from_interval(uint64_t low, uint64_t high) {
 }
 
 static inline uint64_t random_from_interval_fast(uint64_t low, uint64_t high) {
-  return random_from_interval_gen<random_64_fast>(low, high);
+  /* FIXME: To keep backward compatibility with the previous ut_rnd_interval(),
+  high value is not to be returned to keep same behavior for performance tuning
+  parameter.
+  (Bug#37212019: behavior related to innodb_spin_wait_delay changed in 8.0.30)
+  This function is not required accurate randomness, no real problems. */
+
+  if (low == high) {
+    return (low);
+  }
+
+  return random_from_interval_gen<random_64_fast>(low, high - 1);
 }
 
 static inline uint64_t hash_uint64(uint64_t value) {

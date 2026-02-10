@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -71,7 +71,7 @@ class BackupRestore : public BackupConsumer {
  public:
   BackupRestore(Ndb_cluster_connection *conn, const char *instance_name,
                 Uint32 parallelism)
-      : m_ndb(NULL),
+      : m_ndb(nullptr),
         m_cluster_connection(conn),
         m_fatal_error(false)
 #ifdef ERROR_INSERT
@@ -86,7 +86,7 @@ class BackupRestore : public BackupConsumer {
     m_n_tables = 0;
     m_logBytes = m_dataBytes = 0;
     m_logCount = m_dataCount = 0;
-    m_metadata_work_requested = 0;
+    m_metadata_work_requested = false;
     m_restore = false;
     m_restore_meta = false;
     m_no_restore_disk = false;
@@ -94,13 +94,13 @@ class BackupRestore : public BackupConsumer {
     m_restore_epoch = false;
     m_delete_epoch_tuple = false;
     m_parallelism = parallelism;
-    m_callback = 0;
-    m_free_callback = 0;
+    m_callback = nullptr;
+    m_free_callback = nullptr;
     m_no_upgrade = false;
     m_tableChangesMask = 0;
     m_preserve_trailing_spaces = false;
     m_pk_update_warning_count = 0;
-    m_cache.m_old_table = 0;
+    m_cache.m_old_table = nullptr;
     m_with_apply_status = false;
     m_with_sql_metadata = false;
     m_disable_indexes = false;
@@ -124,10 +124,10 @@ class BackupRestore : public BackupConsumer {
   virtual void cback(int result, restore_callback_t *cb);
   virtual void cback_logentry(int result, restore_callback_t *cb);
   virtual bool errorHandler(restore_callback_t *cb);
-  void endOfTuples() override;
+  bool endOfTuples() override;
   bool logEntry(const LogEntry &) override;
   void logEntry_a(restore_callback_t *cb);
-  void endOfLogEntrys() override;
+  bool endOfLogEntrys() override;
   bool prepare_staging(const TableS &) override;
   bool finalize_staging(const TableS &) override;
   bool finalize_table(const TableS &) override;
@@ -221,6 +221,7 @@ class BackupRestore : public BackupConsumer {
   void update_next_auto_val(Uint32 orig_table_id, Uint64 next_val);
   bool get_fatal_error();
   void set_fatal_error(bool);
+  void report_error(restore_callback_t *cb, const NdbError &errObj);
 
   Ndb *m_ndb;
   Ndb_cluster_connection *m_cluster_connection;
@@ -257,8 +258,8 @@ class BackupRestore : public BackupConsumer {
   Uint64 m_logBytes;
   Uint64 m_dataBytes;
 
-  Uint32 m_logCount;
-  Uint32 m_dataCount;
+  Uint64 m_logCount;
+  Uint64 m_dataCount;
 
   static const Uint32 INSTANCE_ID_LEN = 20;
   char m_instance_name[INSTANCE_ID_LEN];

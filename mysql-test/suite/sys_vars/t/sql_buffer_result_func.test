@@ -25,6 +25,9 @@
 # Setup
 #
 
+# Reset status variables to get 0 as their base value.
+FLUSH STATUS;
+
 SET @original_sql_buffer_result = @@sql_buffer_result;
 
 #

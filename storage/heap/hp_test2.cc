@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,8 @@
 
 #include "my_config.h"
 
-#include <signal.h>
 #include <sys/types.h>
+#include <csignal>
 
 #include <algorithm>
 
@@ -372,14 +372,14 @@ int main(int argc, char *argv[]) {
   if (error) goto err;
   memmove(record2, record, reclength);
   if (heap_rsame(file, record, -1) || heap_rsame(file, record2, 2)) goto err;
-  if (memcmp(record2, record, reclength)) {
+  if (memcmp(record2, record, reclength) != 0) {
     puts("heap_rsame didn't find right record");
     goto end;
   }
 
   puts("- Test of read through position");
   if (heap_rrnd(file, record, &position)) goto err;
-  if (memcmp(record3, record, reclength)) {
+  if (memcmp(record3, record, reclength) != 0) {
     puts("heap_frnd didn't find right record");
     goto end;
   }

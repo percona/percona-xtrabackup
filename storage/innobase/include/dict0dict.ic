@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -45,7 +45,7 @@ static inline ulint dict_col_get_no(const dict_col_t *col) /*!< in: column */
 {
   ut_ad(col);
 
-  return (col->ind);
+  return col->ind;
 }
 
 static inline ulint dict_col_get_clust_pos(const dict_col_t *col,
@@ -217,8 +217,8 @@ static inline uint64_t dict_table_get_n_rows(
 }
 
 /** Increment the number of rows in the table by one.
- Notice that this operation is not protected by any latch, the number is
- approximate. */
+Notice that this operation is not protected by any latch, the number is
+approximate. */
 static inline void dict_table_n_rows_inc(
     dict_table_t *table) /*!< in/out: table */
 {
@@ -231,8 +231,8 @@ static inline void dict_table_n_rows_inc(
 }
 
 /** Decrement the number of rows in the table by one.
- Notice that this operation is not protected by any latch, the number is
- approximate. */
+Notice that this operation is not protected by any latch, the number is
+approximate. */
 static inline void dict_table_n_rows_dec(
     dict_table_t *table) /*!< in/out: table */
 {
@@ -365,75 +365,6 @@ static inline bool dict_tf2_is_valid(uint32_t flags, uint32_t flags2) {
   return (true);
 }
 
-/** Validate a SYS_TABLES TYPE field and return it.
- @return Same as input after validating it as a SYS_TABLES TYPE field.
- If there is an error, return ULINT_UNDEFINED. */
-static inline uint32_t dict_sys_tables_type_validate(
-    uint32_t type,   /*!< in: SYS_TABLES.TYPE */
-    uint32_t n_cols) /*!< in: SYS_TABLES.N_COLS */
-{
-  uint32_t low_order_bit = DICT_TF_GET_COMPACT(type);
-  uint32_t redundant = !(n_cols & DICT_N_COLS_COMPACT);
-  uint32_t zip_ssize = DICT_TF_GET_ZIP_SSIZE(type);
-  uint32_t atomic_blobs = DICT_TF_HAS_ATOMIC_BLOBS(type);
-  uint32_t unused = DICT_TF_GET_UNUSED(type);
-
-  /* The low order bit of SYS_TABLES.TYPE is always set to 1.
-  If !atomic_blobs, this field is the same
-  as dict_table_t::flags. Zero is not allowed here. */
-  if (!low_order_bit) {
-    return (UINT32_UNDEFINED);
-  }
-
-  if (redundant) {
-    if (zip_ssize || atomic_blobs) {
-      return (UINT32_UNDEFINED);
-    }
-  }
-
-  /* Make sure there are no bits that we do not know about. */
-  if (unused) {
-    return (UINT32_UNDEFINED);
-  }
-
-  if (atomic_blobs) {
-    /* ROW_FORMAT=COMPRESSED and ROW_FORMAT=DYNAMIC build on
-    the page structure introduced for the COMPACT row format
-    by allowing keys in secondary indexes to be made from
-    data stored off-page in the clustered index.
-
-    The DICT_N_COLS_COMPACT flag should be in N_COLS,
-    but we already know that. */
-
-  } else if (zip_ssize) {
-    /* Antelope does not support COMPRESSED format. */
-    return (UINT32_UNDEFINED);
-  }
-
-  if (zip_ssize) {
-    /* COMPRESSED row format must have low_order_bit and
-    atomic_blobs bits set and the DICT_N_COLS_COMPACT flag
-    should be in N_COLS, but we already know about the
-    low_order_bit and DICT_N_COLS_COMPACT flags. */
-    if (!atomic_blobs) {
-      return (UINT32_UNDEFINED);
-    }
-
-    /* Validate that the number is within allowed range. */
-    if (zip_ssize > PAGE_ZIP_SSIZE_MAX) {
-      return (UINT32_UNDEFINED);
-    }
-  }
-
-  /* There is nothing to validate for the data_dir field.
-  CREATE TABLE ... DATA DIRECTORY is supported for any row
-  format, so the DATA_DIR flag is compatible with any other
-  table flags. However, it is not used with TEMPORARY tables. */
-
-  /* Return the validated SYS_TABLES.TYPE. */
-  return (type);
-}
-
 /** Determine the page format from dict_table_t::flags
  The low order bit will be zero for REDUNDANT and 1 for COMPACT. For any
  other row_format, flags is nonzero and DICT_TF_COMPACT will also be set.
@@ -540,59 +471,6 @@ static inline uint32_t dict_tf_init(bool compact, ulint zip_ssize,
   return (flags);
 }
 
-/** Convert a 32 bit integer from SYS_TABLES.TYPE to dict_table_t::flags
- The following chart shows the translation of the low order bit.
- Other bits are the same.
- ========================= Low order bit ==========================
-                     | REDUNDANT | COMPACT | COMPRESSED and DYNAMIC
- SYS_TABLES.TYPE     |     1     |    1    |     1
- dict_table_t::flags |     0     |    1    |     1
- ==================================================================
- @return ulint containing SYS_TABLES.TYPE */
-static inline uint32_t dict_sys_tables_type_to_tf(
-    uint32_t type,   /*!< in: SYS_TABLES.TYPE field */
-    uint32_t n_cols) /*!< in: SYS_TABLES.N_COLS field */
-{
-  uint32_t flags;
-  uint32_t redundant = !(n_cols & DICT_N_COLS_COMPACT);
-
-  /* Adjust bit zero. */
-  flags = redundant ? 0 : 1;
-
-  /* ZIP_SSIZE, ATOMIC_BLOBS & DATA_DIR are the same. */
-  flags |= type & (DICT_TF_MASK_ZIP_SSIZE | DICT_TF_MASK_ATOMIC_BLOBS |
-                   DICT_TF_MASK_DATA_DIR | DICT_TF_MASK_SHARED_SPACE);
-
-  ut_ad(!DICT_TF_GET_ZIP_SSIZE(flags) || DICT_TF_HAS_ATOMIC_BLOBS(flags));
-
-  return (flags);
-}
-
-/** Convert a 32 bit integer table flags to the 32bit integer that is written
- to a SYS_TABLES.TYPE field. The following chart shows the translation of
- the low order bit.  Other bits are the same.
- ========================= Low order bit ==========================
-                     | REDUNDANT | COMPACT | COMPRESSED and DYNAMIC
- dict_table_t::flags |     0     |    1    |     1
- SYS_TABLES.TYPE     |     1     |    1    |     1
- ==================================================================
- @return ulint containing SYS_TABLES.TYPE */
-static inline ulint dict_tf_to_sys_tables_type(
-    uint32_t flags) /*!< in: dict_table_t::flags */
-{
-  ulint type;
-
-  ut_a(dict_tf_is_valid(flags));
-
-  /* Adjust bit zero. It is always 1 in SYS_TABLES.TYPE */
-  type = 1;
-
-  /* ZIP_SSIZE, ATOMIC_BLOBS & DATA_DIR are the same. */
-  type |= flags & (DICT_TF_MASK_ZIP_SSIZE | DICT_TF_MASK_ATOMIC_BLOBS |
-                   DICT_TF_MASK_DATA_DIR | DICT_TF_MASK_SHARED_SPACE);
-
-  return (type);
-}
 #endif /* !UNIV_HOTBACKUP */
 
 /** Extract the page size info from table flags.
@@ -664,7 +542,7 @@ static inline void dict_table_x_unlock_indexes(
 /** Gets the number of fields in the internal representation of an index,
  including fields added by the dictionary system.
  @return number of fields */
-static inline ulint dict_index_get_n_fields(
+inline uint16_t dict_index_get_n_fields(
     const dict_index_t *index) /*!< in: an internal
                                representation of index (in
                                the dictionary cache) */
@@ -684,7 +562,7 @@ static inline ulint dict_index_get_n_fields(
  we do not take multiversioning into account: in the B-tree use the value
  returned by dict_index_get_n_unique_in_tree.
  @return number of fields */
-static inline ulint dict_index_get_n_unique(
+inline uint16_t dict_index_get_n_unique(
     const dict_index_t *index) /*!< in: an internal representation
                                of index (in the dictionary cache) */
 {
@@ -692,14 +570,14 @@ static inline ulint dict_index_get_n_unique(
   ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
   ut_ad(index->cached);
 
-  return static_cast<uint16_t>(index->n_uniq);
+  return index->n_uniq;
 }
 
 /** Gets the number of fields in the internal representation of an index
  which uniquely determine the position of an index entry in the index, if
  we also take multiversioning into account.
  @return number of fields */
-static inline ulint dict_index_get_n_unique_in_tree(
+inline uint16_t dict_index_get_n_unique_in_tree(
     const dict_index_t *index) /*!< in: an internal representation
                                of index (in the dictionary cache) */
 {
@@ -708,10 +586,10 @@ static inline ulint dict_index_get_n_unique_in_tree(
   ut_ad(index->cached);
 
   if (index->is_clustered()) {
-    return (dict_index_get_n_unique(index));
+    return dict_index_get_n_unique(index);
   }
 
-  return (static_cast<uint16_t>(dict_index_get_n_fields(index)));
+  return dict_index_get_n_fields(index);
 }
 
 /**
@@ -721,7 +599,7 @@ index, if we also take multiversioning into account. Note, it doesn't
 include page no field.
 @param[in]      index   index
 @return number of fields */
-static inline uint16_t dict_index_get_n_unique_in_tree_nonleaf(
+inline uint16_t dict_index_get_n_unique_in_tree_nonleaf(
     const dict_index_t *index) {
   ut_ad(index != nullptr);
   ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
@@ -731,10 +609,10 @@ static inline uint16_t dict_index_get_n_unique_in_tree_nonleaf(
     /* For spatial index, on non-leaf page, we have only
     2 fields(mbr+page_no). So, except page no field,
     there's one field there. */
-    return (DICT_INDEX_SPATIAL_NODEPTR_SIZE);
-  } else {
-    return static_cast<uint16_t>(dict_index_get_n_unique_in_tree(index));
+    return DICT_INDEX_SPATIAL_NODEPTR_SIZE;
   }
+
+  return dict_index_get_n_unique_in_tree(index);
 }
 
 /** Gets the number of user-defined ordering fields in the index. In the
@@ -742,7 +620,7 @@ static inline uint16_t dict_index_get_n_unique_in_tree_nonleaf(
  fields to make a clustered index unique, but this function returns the number
  of fields the user defined in the index as ordering fields.
  @return number of fields */
-static inline ulint dict_index_get_n_ordering_defined_by_user(
+inline ulint dict_index_get_n_ordering_defined_by_user(
     const dict_index_t *index) /*!< in: an internal representation
                                of index (in the dictionary cache) */
 {

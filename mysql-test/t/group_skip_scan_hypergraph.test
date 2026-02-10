@@ -6,6 +6,10 @@
 # but needs to be kept for tests that would need MyISAM in future.
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 --source include/group_skip_scan_test.inc
 
 CREATE TABLE t(a INT, b INT, c INT, KEY k1 (a,b));
@@ -51,3 +55,5 @@ SELECT DISTINCT a, b FROM t WHERE b > 0 HAVING b < 10;
 DROP TABLE t;
 
 --source include/disable_hypergraph.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

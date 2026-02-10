@@ -24,6 +24,8 @@ SET SESSION debug_set_operations_secondary_overflow_at= '1 50 20';
 SELECT COUNT(*) FROM (SELECT * FROM t INTERSECT SELECT * FROM t) derived;
 COUNT(*)
 32768
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SELECT JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
 FROM information_schema.optimizer_trace;
 JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
@@ -58,7 +60,7 @@ JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
                     }
                   },
                   {
-                    "spill handling overflow, reverting to index": {
+                    "hash spill handling overflow, reverting to slower method of indexed tmp table. To avoid, try setting set_operations_buffer_size to 32768 or more. To avoid spill to disk, further increase it with a factor of 64 or 128.": {
                       "steps": [
                         {
                           "creating_tmp_table": {
@@ -132,6 +134,8 @@ SET SESSION debug_set_operations_secondary_overflow_at= '1 50 20';
 SELECT COUNT(*) FROM (SELECT * FROM t INTERSECT SELECT * FROM t) derived;
 COUNT(*)
 32768
+Warnings:
+Note	4168	System variable "set_operations_buffer_size" set too low for hashed set operation. Consult optimizer trace for recommendations.
 SELECT JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
 FROM information_schema.optimizer_trace;
 JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
@@ -166,7 +170,7 @@ JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
                     }
                   },
                   {
-                    "spill handling overflow, reverting to index": {
+                    "hash spill handling overflow, reverting to slower method of indexed tmp table. To avoid, try setting set_operations_buffer_size to 32768 or more. To avoid spill to disk, further increase it with a factor of 64 or 128.": {
                       "steps": [
                         {
                           "creating_tmp_table": {

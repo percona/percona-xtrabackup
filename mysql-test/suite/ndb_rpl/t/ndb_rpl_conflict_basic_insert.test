@@ -280,7 +280,7 @@ insert into t1_max_ins values (2, 2, repeat("A", 10002), repeat("T", 10003), 1);
 update t1_max_ins set X=20;
 
 --echo Initial values on Slave
-select a,b,SHA1(c),length(c), SHA1(d), length(d), X from t1_max_ins order by a;
+select a,b,SHA2(c,256),length(c), SHA2(d,256), length(d), X from t1_max_ins order by a;
 
 --connection master
 --echo Originate update which will be rejected due to NDB_MAX_INS algorithm.
@@ -289,7 +289,7 @@ update t1_max_ins set c=repeat("Z", 10006), d=repeat("I", 10005), X=2 where a=1;
 --sync_slave_with_master
 --connection slave
 --echo Check slave has rejected due to smaller timestamp.
-select a,b,SHA1(c),length(c), SHA1(d), length(d), X from t1_max_ins order by a;
+select a,b,SHA2(c,256),length(c), SHA2(d,256), length(d), X from t1_max_ins order by a;
 
 --connection master
 --echo Originate delete which will be rejected due to NDB_OLD algorithm.
@@ -300,7 +300,7 @@ delete from t1_max_ins where a=1;
 --sync_slave_with_master
 --connection slave
 --echo Check slave has rejected due to before image mismatch.
-select a,b,SHA1(c),length(c), SHA1(d), length(d), X from t1_max_ins order by a;
+select a,b,SHA2(c,256),length(c), SHA2(d,256), length(d), X from t1_max_ins order by a;
 
 --connection master
 --echo Originate insert which will be rejected due to NDB_MAX_INS algorithm.
@@ -309,7 +309,7 @@ insert into t1_max_ins values (1, 1, repeat("R", 10004), repeat("A", 10007), 1);
 --sync_slave_with_master
 --connection slave
 --echo Check slave has rejected due to smaller timestamp.
-select a,b,SHA1(c),length(c), SHA1(d), length(d), X from t1_max_ins order by a;
+select a,b,SHA2(c,256),length(c), SHA2(d,256), length(d), X from t1_max_ins order by a;
 
 --echo Expect t1_max_ins to have 3 entries
 select NDB$server_id, NDB$master_server_id, NDB$count, NDB$OP_TYPE, NDB$CFT_CAUSE, a from t1_max_ins$EX order by NDB$count;

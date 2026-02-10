@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,6 +37,7 @@
 #include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "prealloced_array.h"        // Prealloced_array
 #include "sql/auth/auth_acls.h"      // Access_bitmask
+#include "sql/key.h"                 // KEY
 #include "sql/locked_tables_list.h"  // enum_locked_tables_mode
 #include "sql/mdl.h"                 // MDL_savepoint
 #include "sql/sql_array.h"           // Bounds_checked_array
@@ -104,7 +105,8 @@ enum enum_tdc_remove_table_type {
   TDC_RT_REMOVE_NOT_OWN,
   TDC_RT_REMOVE_UNUSED,
   TDC_RT_REMOVE_NOT_OWN_KEEP_SHARE,
-  TDC_RT_MARK_FOR_REOPEN
+  TDC_RT_MARK_FOR_REOPEN,
+  TDC_RT_MARK_FOR_REOPEN_AND_INVALIDATE_SHARE
 };
 
 extern mysql_mutex_t LOCK_open;
@@ -259,6 +261,7 @@ bool find_field_in_table_ref(THD *thd, Table_ref *tr, const char *field_name,
 Field *find_field_in_table(TABLE *table, const char *field_name,
                            bool allow_rowid, uint *field_index);
 Field *find_field_in_table_sef(TABLE *table, const char *field_name);
+
 bool find_item_in_list(THD *thd, Item *item, mem_root_deque<Item *> *items,
                        Item ***found, uint *counter,
                        enum_resolution_type *resolution);
@@ -380,6 +383,39 @@ extern malloc_unordered_map<std::string,
 
 Table_ref *find_table_in_global_list(Table_ref *table, const char *db_name,
                                      const char *table_name);
+
+/**
+  The maximum length of a key in the table definition cache.
+
+  The key consists of the schema name, a '\0' character, the table
+  name and a '\0' character. Hence NAME_LEN * 2 + 1 + 1.
+
+  Additionally, the key can be suffixed with either 4 + 4 extra bytes
+  for slave tmp tables, or with a single extra byte for tables in a
+  secondary storage engine. Add 4 + 4 to account for either of these
+  suffixes.
+*/
+constexpr const size_t MAX_DBKEY_LENGTH{NAME_LEN * 2 + 1 + 1 + 4 + 4};
+
+/**
+  Create a table cache/table definition cache key for a table. The
+  table is neither a temporary table nor a table in a secondary
+  storage engine.
+
+  @note
+    The table cache_key is created from:
+
+        db_name + \0
+        table_name + \0
+
+  @param[in]  db_name     the database name
+  @param[in]  table_name  the table name
+  @param[out] key         buffer for the key to be created (must be of
+                          size MAX_DBKEY_LENGTH)
+  @return the length of the key
+*/
+size_t create_table_def_key(const char *db_name, const char *table_name,
+                            char *key);
 
 /**
   An abstract class for a strategy specifying how the prelocking

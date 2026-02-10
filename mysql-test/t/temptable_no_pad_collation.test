@@ -13,6 +13,9 @@
 --echo # Prepare
 --echo #
 
+# Reset status variables to get 0 as their base value.
+FLUSH STATUS;
+
 SET @big_tables_saved = @@big_tables;
 SET @optimizer_switch_saved = @@optimizer_switch;
 

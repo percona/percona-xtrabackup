@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -46,14 +46,10 @@ const THRConfig::T_Thread *THRConfigApplier::find_thread(
   int instanceNo;
   if ((instanceNo = findBlock(SUMA, instancelist, cnt)) >= 0) {
     Uint32 num_main_threads = getThreadCount(T_REP) + getThreadCount(T_MAIN);
-    if (num_main_threads == 2)
-      return &m_threads[T_REP][instanceNo];
-    else if (num_main_threads == 1)
-      return &m_threads[T_MAIN][instanceNo];
-    else if (num_main_threads == 0)
-      return &m_threads[T_RECV][instanceNo];
-    else
-      abort();
+    if (num_main_threads == 2) return &m_threads[T_REP][instanceNo];
+    if (num_main_threads == 1) return &m_threads[T_MAIN][instanceNo];
+    if (num_main_threads == 0) return &m_threads[T_RECV][instanceNo];
+    abort();
   } else if ((instanceNo = findBlock(DBDIH, instancelist, cnt)) >= 0) {
     return &m_threads[T_MAIN][instanceNo];
   } else if ((instanceNo = findBlock(DBLQH, instancelist, cnt)) >= 0) {
@@ -62,16 +58,16 @@ const THRConfig::T_Thread *THRConfigApplier::find_thread(
     int num_query_threads = (int)getThreadCount(T_QUERY);
     if ((instanceNo - 1) < num_query_threads) {
       return &m_threads[T_QUERY][instanceNo - 1];  // remove proxy...
-    } else {
-      instanceNo -= num_query_threads;
-      return &m_threads[T_RECOVER][instanceNo - 1];  // remove proxy...
     }
+    instanceNo -= num_query_threads;
+    return &m_threads[T_RECOVER][instanceNo - 1];  // remove proxy...
+
   } else if ((instanceNo = findBlock(TRPMAN, instancelist, cnt)) >= 0) {
     return &m_threads[T_RECV][instanceNo - 1];  // remove proxy
   } else if ((instanceNo = findBlock(DBTC, instancelist, cnt)) >= 0) {
     return &m_threads[T_TC][instanceNo - 1];  // remove proxy
   }
-  return 0;
+  return nullptr;
 }
 
 void THRConfigApplier::appendInfo(BaseString &str, const unsigned short list[],
@@ -160,8 +156,6 @@ THRConfigRebinder::THRConfigRebinder(THRConfigApplier *tca,
   }
   /* Bound */
   m_state = 2;
-
-  return;
 }
 
 THRConfigRebinder::~THRConfigRebinder() {
@@ -188,7 +182,6 @@ THRConfigRebinder::~THRConfigRebinder() {
     case 0:
       break;
   }
-  return;
 }
 
 int THRConfigApplier::do_bind_send(NdbThread *thread, unsigned instance) {
@@ -366,7 +359,7 @@ int THRConfigApplier::do_bind(NdbThread *thread, const T_Thread *thr) {
              thr->m_bind_type == T_Thread::B_CPUSET_EXCLUSIVE_BIND) {
     const SparseBitmask &tmp = m_cpu_sets[thr->m_bind_no];
     Uint32 num_cpu_ids = tmp.count();
-    Uint32 *cpu_ids = (Uint32 *)malloc(sizeof(Uint32) * num_cpu_ids);
+    auto *cpu_ids = (Uint32 *)malloc(sizeof(Uint32) * num_cpu_ids);
     if (!cpu_ids) {
       return -errno;
     }
@@ -387,10 +380,8 @@ int THRConfigApplier::do_bind(NdbThread *thread, const T_Thread *thr) {
   } else {
     return 0;
   }
-  if (res == 0)
-    return 1;
-  else
-    return -res;
+  if (res == 0) return 1;
+  return -res;
 }
 
 #define JAM_FILE_ID 297

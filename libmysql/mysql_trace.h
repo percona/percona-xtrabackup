@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,7 +60,7 @@
   is pointed by the trace_data member of MYSQL_EXTENSION structure
   attached to that connection handle.
 
-  If trace_data is NULL, for an initialized connection, then it means
+  If trace_data is nullptr, for an initialized connection, then it means
   that tracing in this connection is disabled.
 */
 
@@ -98,7 +98,7 @@ void mysql_trace_start(MYSQL *);
 
 #define MYSQL_TRACE(E, M, ARGS)                                    \
   do {                                                             \
-    if (NULL == TRACE_DATA(M)) break;                              \
+    if (nullptr == TRACE_DATA(M)) break;                           \
     {                                                              \
       struct st_trace_event_args event_args = TRACE_ARGS_##E ARGS; \
       mysql_trace_trace(M, TRACE_EVENT_##E, event_args);           \
@@ -134,41 +134,41 @@ void mysql_trace_start(MYSQL *);
 */
 
 #define TRACE_ARGS_SEND_SSL_REQUEST(Size, Packet) \
-  { NULL, 0, NULL, 0, Packet, Size }
+  { nullptr, 0, nullptr, 0, Packet, Size }
 #define TRACE_ARGS_SEND_AUTH_RESPONSE(Size, Packet) \
-  { NULL, 0, NULL, 0, Packet, Size }
+  { nullptr, 0, nullptr, 0, Packet, Size }
 #define TRACE_ARGS_SEND_AUTH_DATA(Size, Packet) \
-  { NULL, 0, NULL, 0, Packet, Size }
+  { nullptr, 0, nullptr, 0, Packet, Size }
 #define TRACE_ARGS_AUTH_PLUGIN(PluginName) \
-  { PluginName, 0, NULL, 0, NULL, 0 }
+  { PluginName, 0, nullptr, 0, nullptr, 0 }
 #define TRACE_ARGS_SEND_COMMAND(Command, HdrSize, ArgSize, Header, Args) \
-  { NULL, Command, Header, HdrSize, Args, ArgSize }
+  { nullptr, Command, Header, HdrSize, Args, ArgSize }
 #define TRACE_ARGS_SEND_FILE(Size, Packet) \
-  { NULL, 0, NULL, 0, Packet, Size }
+  { nullptr, 0, nullptr, 0, Packet, Size }
 
 #define TRACE_ARGS_PACKET_SENT(Size) \
-  { NULL, 0, NULL, 0, NULL, Size }
+  { nullptr, 0, nullptr, 0, nullptr, Size }
 #define TRACE_ARGS_PACKET_RECEIVED(Size, Packet) \
-  { NULL, 0, NULL, 0, Packet, Size }
+  { nullptr, 0, nullptr, 0, Packet, Size }
 #define TRACE_ARGS_INIT_PACKET_RECEIVED(Size, Packet) \
-  { NULL, 0, NULL, 0, Packet, Size }
+  { nullptr, 0, nullptr, 0, Packet, Size }
 
 #define TRACE_ARGS_ERROR() \
-  { NULL, 0, NULL, 0, NULL, 0 }
+  { nullptr, 0, nullptr, 0, nullptr, 0 }
 #define TRACE_ARGS_READ_PACKET() \
-  { NULL, 0, NULL, 0, NULL, 0 }
+  { nullptr, 0, nullptr, 0, nullptr, 0 }
 #define TRACE_ARGS_CONNECTING() \
-  { NULL, 0, NULL, 0, NULL, 0 }
+  { nullptr, 0, nullptr, 0, nullptr, 0 }
 #define TRACE_ARGS_CONNECTED() \
-  { NULL, 0, NULL, 0, NULL, 0 }
+  { nullptr, 0, nullptr, 0, nullptr, 0 }
 #define TRACE_ARGS_DISCONNECTED() \
-  { NULL, 0, NULL, 0, NULL, 0 }
+  { nullptr, 0, nullptr, 0, nullptr, 0 }
 #define TRACE_ARGS_AUTHENTICATED() \
-  { NULL, 0, NULL, 0, NULL, 0 }
+  { nullptr, 0, nullptr, 0, nullptr, 0 }
 #define TRACE_ARGS_SSL_CONNECT() \
-  { NULL, 0, NULL, 0, NULL, 0 }
+  { nullptr, 0, nullptr, 0, nullptr, 0 }
 #define TRACE_ARGS_SSL_CONNECTED() \
-  { NULL, 0, NULL, 0, NULL, 0 }
+  { nullptr, 0, nullptr, 0, nullptr, 0 }
 
 #endif /* !defined(CLIENT_PROTOCOL_TRACING) || defined(MYSQL_SERVER) */
 

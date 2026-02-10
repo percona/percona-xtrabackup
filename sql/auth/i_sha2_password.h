@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -67,9 +67,9 @@ const char DELIMITER = '$';
 /* Store digest length */
 const unsigned int STORED_SHA256_DIGEST_LENGTH = 43;
 /* stored digest rounds*/
-const size_t MIN_STORED_DIGEST_ROUNDS = ROUNDS_MIN;
-const size_t DEFAULT_STORED_DIGEST_ROUNDS = ROUNDS_DEFAULT;
-const size_t MAX_STORED_DIGEST_ROUNDS = ROUNDS_MAX;
+const size_t MIN_STORED_DIGEST_ROUNDS = SHA2_ROUNDS_MIN;
+const size_t DEFAULT_STORED_DIGEST_ROUNDS = SHA2_ROUNDS_DEFAULT;
+const size_t MAX_STORED_DIGEST_ROUNDS = SHA2_ROUNDS_MAX;
 /* Maximum password length */
 const size_t CACHING_SHA2_PASSWORD_MAX_PASSWORD_LENGTH = MAX_PLAINTEXT_LENGTH;
 /* Maximum supported passwords */
@@ -88,11 +88,11 @@ class SHA2_password_cache {
   typedef std::unordered_map<std::string, sha2_cache_entry> password_cache;
 
   SHA2_password_cache() = default;
-  ~SHA2_password_cache();
-  bool add(const std::string authorization_id,
+  ~SHA2_password_cache() = default;
+  bool add(const std::string &authorization_id,
            const sha2_cache_entry &entry_to_be_cached);
-  bool remove(const std::string authorization_id);
-  bool search(const std::string authorization_id,
+  bool remove(const std::string &authorization_id);
+  bool search(const std::string &authorization_id,
               sha2_cache_entry &cache_entry);
   /** Returns number of cache entries present  */
   size_t size() { return m_password_cache.size(); }
@@ -117,15 +117,15 @@ class Caching_sha2_password {
       Digest_info digest_type = Digest_info::SHA256_DIGEST);
   ~Caching_sha2_password();
   std::pair<bool, bool> authenticate(const std::string &authorization_id,
-                                     const std::string *serialized_string,
+                                     const std::string_view *serialized_string,
                                      const std::string &plaintext_password);
   std::pair<bool, bool> fast_authenticate(const std::string &authorization_id,
                                           const unsigned char *random,
                                           unsigned int random_length,
                                           const unsigned char *scramble,
                                           bool check_second);
-  void remove_cached_entry(const std::string authorization_id);
-  bool deserialize(const std::string &serialized_string,
+  void remove_cached_entry(const std::string &authorization_id);
+  bool deserialize(const std::string_view &serialized_string,
                    Digest_info &digest_type, std::string &salt,
                    std::string &digest, size_t &iterations);
   bool serialize(std::string &serialized_string, const Digest_info &digest_type,
@@ -134,11 +134,11 @@ class Caching_sha2_password {
   bool generate_fast_digest(const std::string &plaintext_password,
                             sha2_cache_entry &digest, unsigned int loc);
   bool generate_sha2_multi_hash(const std::string &src,
-                                const std::string &random, std::string *digest,
+                                const std::string &random, std::string &digest,
                                 unsigned int iterations);
   size_t get_cache_count();
   void clear_cache();
-  bool validate_hash(const std::string serialized_string);
+  bool validate_hash(const std::string &serialized_string);
   Digest_info get_digest_type() const { return m_digest_type; }
   size_t get_digest_rounds() { return m_stored_digest_rounds; }
 

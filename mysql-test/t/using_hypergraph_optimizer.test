@@ -88,7 +88,7 @@ PREPARE ps_set FROM 'SET @x = (SELECT COUNT(*) FROM t)';
 PREPARE ps_select FROM 'SELECT COUNT(*) FROM t';
 
 # Set 'hypergraph_optimizer=on' while suppressing warnings
---source include/have_hypergraph.inc
+SET optimizer_switch = 'hypergraph_optimizer=on';
 
 EXECUTE ps_set;
 SELECT COUNT(*) FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE
@@ -121,7 +121,7 @@ SELECT @x;
 --echo # Clean up for Bug #33296454
 
 DROP TABLE t;
---source include/have_hypergraph.inc
+SET optimizer_switch = 'hypergraph_optimizer=on';
 
 --echo # Bug #33296454 done
 
@@ -189,7 +189,7 @@ WHERE TRACE LIKE '%Constructed hypergraph%';
 --echo # Clean up for Bug #33296504
 
 DROP TABLE t1, t2, t3;
---source include/have_hypergraph.inc
+SET optimizer_switch = 'hypergraph_optimizer=on';
 
 --echo # Bug #33296504 done
 

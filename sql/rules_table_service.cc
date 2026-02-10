@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,8 +26,8 @@
   Implementation of the service for accessing the rewrite rules table.
 */
 
-#include <string.h>
 #include <sys/types.h>
+#include <cstring>
 
 #include "my_base.h"
 #include "my_bitmap.h"
@@ -114,8 +114,8 @@ Cursor::Cursor(THD *mysql_thd)
     m_table_list = nullptr;
     m_table_is_malformed = true;
     return;  // Error
-  } else
-    m_table_is_malformed = false;
+  }
+  m_table_is_malformed = false;
 
   add_column(table->read_set, pattern_column());
   add_column(table->read_set, pattern_database_column());
@@ -189,6 +189,6 @@ Cursor::~Cursor() {
   delete m_table_list;
 }
 
-Cursor end() { return Cursor(); }
+Cursor end() { return {}; }
 
 }  // namespace rules_table_service

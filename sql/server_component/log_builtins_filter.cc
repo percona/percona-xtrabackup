@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -406,8 +406,8 @@ int log_builtins_filter_init() {
     filter_inited = true;
 
     return 0;
-  } else
-    return -2;
+  }
+  return -2;
 }
 
 /**
@@ -438,7 +438,7 @@ static log_filter_apply log_filter_try_apply(log_line *ll, int ln,
 
     case LOG_FILTER_THROTTLE: {
       const ulonglong now = my_micro_time();
-      const ulong rate =
+      const auto rate =
           (ulong)((r->aux.data.data_integer < 0) ? 0
                                                  : r->aux.data.data_integer);
       ulong suppressed = 0;
@@ -577,11 +577,9 @@ static log_filter_match log_filter_try_match(log_item *li,
     return (ri->cond == LOG_FILTER_COND_ABSENT) ? LOG_FILTER_MATCH_SUCCESS
                                                 : LOG_FILTER_MATCH_UNSATISFIED;
 
-  else if (ri->cond == LOG_FILTER_COND_PRESENT)
-    return LOG_FILTER_MATCH_SUCCESS;
+  if (ri->cond == LOG_FILTER_COND_PRESENT) return LOG_FILTER_MATCH_SUCCESS;
 
-  else if (ri->cond == LOG_FILTER_COND_ABSENT)
-    return LOG_FILTER_MATCH_UNSATISFIED;
+  if (ri->cond == LOG_FILTER_COND_ABSENT) return LOG_FILTER_MATCH_UNSATISFIED;
 
   // item class on left hand side / right hand side
   rc = log_item_string_class(ri->match.item_class);
@@ -745,8 +743,8 @@ int log_builtins_filter_run(log_filter_ruleset *ruleset, log_line *ll) {
       if (r->verb == LOG_FILTER_CHAIN_AND)  // AND -- test next condition
         continue;                           // proceed with next cond
 
-      else if (r->verb == LOG_FILTER_CHAIN_OR)  // OR -- one match is enough
-      {  // skip any other conditions in OR
+      if (r->verb == LOG_FILTER_CHAIN_OR)  // OR -- one match is enough
+      {                                    // skip any other conditions in OR
         while (ruleset->rule[rn].verb == LOG_FILTER_CHAIN_OR) rn++;
         r = &ruleset->rule[rn];
       }
@@ -949,7 +947,7 @@ int log_builtins_filter_parse_suppression_list(char *list, bool update) {
     end = start;
 
     // find first non-token character (i.e. first character after token)
-    while ((*end != '\0') && !(isspace(*end) || (*end == ','))) end++;
+    while ((*end != '\0') && !isspace(*end) && (*end != ',')) end++;
 
     // no token found, end loop
     if ((len = (end - start)) == 0) {
@@ -978,9 +976,9 @@ int log_builtins_filter_parse_suppression_list(char *list, bool update) {
     else
       errcode = mysql_symbol_to_errno(symbol);
 
-    if (!(((errcode >= EE_ERROR_FIRST) && (errcode <= EE_ERROR_LAST)) ||
-          ((errcode >= ER_SERVER_RANGE_START) &&
-           (mysql_errno_to_builtin(errcode) >= 0))))
+    if (((errcode < EE_ERROR_FIRST) || (errcode > EE_ERROR_LAST)) &&
+        ((errcode < ER_SERVER_RANGE_START) ||
+         (mysql_errno_to_builtin(errcode) < 0)))
       goto fail;
 
     if (update) {
@@ -1011,7 +1009,7 @@ int log_builtins_filter_parse_suppression_list(char *list, bool update) {
       during assignment, but if we do it during the check phase, we protect the
       integrity of both the current rule-set and the variable's value.
     */
-    else if (uint32_t max_user_rules_in_list =
+    else if (uint32_t const max_user_rules_in_list =
                  log_filter_builtin_rules->alloc - builtin_count;
              ++list_len > max_user_rules_in_list)
       goto fail;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -46,7 +46,7 @@ class NdbTimer {
   void printTransactionStatistics(const char *text, int numTransactions,
                                   int numOperations);
   void printTestTimer(int numLoops, int numRecords);
-  void printTotalTime(void);
+  void printTotalTime();
 
  private:
   NDB_TICKS startTicks;
@@ -55,16 +55,16 @@ class NdbTimer {
 
 inline NdbTimer::NdbTimer() { doReset(); }
 
-inline void NdbTimer::doReset(void) {
+inline void NdbTimer::doReset() {
   NdbTick_Invalidate(&startTicks);
   NdbTick_Invalidate(&stopTicks);
 }
 
-inline void NdbTimer::doStart(void) { startTicks = NdbTick_getCurrentTicks(); }
+inline void NdbTimer::doStart() { startTicks = NdbTick_getCurrentTicks(); }
 
-inline void NdbTimer::doStop(void) { stopTicks = NdbTick_getCurrentTicks(); }
+inline void NdbTimer::doStop() { stopTicks = NdbTick_getCurrentTicks(); }
 
-inline Uint64 NdbTimer::elapsedTime(void) const {
+inline Uint64 NdbTimer::elapsedTime() const {
   return NdbTick_Elapsed(startTicks, stopTicks).milliSec();
 }
 
@@ -72,7 +72,7 @@ inline void NdbTimer::printTransactionStatistics(const char *text,
                                                  int numTransactions,
                                                  int numOperations) {
   // Convert to Uint32 in order to be able to print it to screen
-  Uint32 lapTime = (Uint32)elapsedTime();
+  auto lapTime = (Uint32)elapsedTime();
   ndbout_c(
       "%i transactions, %i %s total time = %d ms\nAverage %f ms/transaction, "
       "%f ms/%s.\n%f transactions/second, %f %ss/second.\n",
@@ -85,7 +85,7 @@ inline void NdbTimer::printTransactionStatistics(const char *text,
 
 inline void NdbTimer::printTestTimer(int numLoops, int numRecords) {
   // Convert to Uint32 in order to be able to print it to screen
-  Uint32 lapTime = (Uint32)elapsedTime();
+  auto lapTime = (Uint32)elapsedTime();
   ndbout_c(
       "%i loop * %i records, total time = %d ms\nAverage %f ms/loop, %f "
       "ms/record.\n%f looop/second, %f records/second.\n",
@@ -95,9 +95,9 @@ inline void NdbTimer::printTestTimer(int numLoops, int numRecords) {
       1000.0 / ((double)lapTime / (numLoops * numRecords)));
 }
 
-inline void NdbTimer::printTotalTime(void) {
+inline void NdbTimer::printTotalTime() {
   // Convert to Uint32 in order to be able to print it to screen
-  Uint32 lapTime = (Uint32)elapsedTime();
+  auto lapTime = (Uint32)elapsedTime();
   Uint32 secTime = lapTime / 1000;
   ndbout_c("Total time : %d seconds (%d ms)\n", secTime, lapTime);
 }

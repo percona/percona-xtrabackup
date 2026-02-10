@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -79,6 +79,56 @@ INSTANTIATE_TEST_SUITE_P(
       return sanitise(std::get<0>(param_info.param));
     });
 
+struct QueryParam {
+  struct Element {
+    std::string k, v;
+  };
+  std::vector<Element> query_elements;
+  std::string result;
+};
+
+class UriEncodeTest : public ::testing::TestWithParam<QueryParam> {
+ public:
+};
+
+TEST_P(UriEncodeTest, encode_query) {
+  const auto &[k_query_elements, k_result] = GetParam();
+  http::base::Uri uri{};
+
+  auto &qe = uri.get_query_elements();
+  for (const auto &[k, v] : k_query_elements) {
+    qe[k] = v;
+  }
+
+  ASSERT_EQ(k_result, uri.join());
+}
+
+TEST_P(UriEncodeTest, encode_query_with_url) {
+  const auto &[k_query_elements, k_result] = GetParam();
+  const std::string k_starting_url{"http://www.not.existing/somepath"};
+  http::base::Uri uri{k_starting_url};
+
+  auto &qe = uri.get_query_elements();
+  for (const auto &[k, v] : k_query_elements) {
+    qe[k] = v;
+  }
+
+  std::string k_expected_url =
+      (k_result == "/" ? k_starting_url : k_starting_url + k_result);
+  ASSERT_EQ(k_expected_url, uri.join());
+}
+
+using QElements = std::vector<QueryParam::Element>;
+
+INSTANTIATE_TEST_SUITE_P(
+    Spec, UriEncodeTest,
+    ::testing::Values(
+        QueryParam{QElements{}, "/"},
+        QueryParam{QElements{{"first", "1"}}, "?first=1"},
+        QueryParam{
+            QElements{{"first", "https://www.mysql.com/not/existing.proc"}},
+            "?first=https%3a%2f%2fwww.mysql.com%2fnot%2fexisting.proc"}));
+
 struct UriStringParam {
   UriStringParam(const std::string &param_uri) : uri{param_uri} {}
   UriStringParam(const std::string &param_uri,
@@ -111,7 +161,7 @@ class UrlParsingTest : public ::testing::Test,
 TEST_P(UrlParsingTest, parse_and_verify) {
   auto p = GetParam();
 
-  http::base::Uri u{p.uri.uri};
+  http::base::Uri const u{p.uri.uri};
 
   EXPECT_EQ(p.scheme, u.get_scheme());
   EXPECT_EQ(p.host, u.get_host());
@@ -158,7 +208,7 @@ TEST_P(UrlParsingTest, move_path_query) {
 TEST_P(UrlParsingTest, move_data) {
   auto p = GetParam();
 
-  http::base::Uri u_parsed{p.uri.uri};
+  http::base::Uri const u_parsed{p.uri.uri};
   http::base::Uri u;
 
   u.set_scheme(u_parsed.get_scheme());
@@ -202,10 +252,11 @@ TEST_P(UrlParsingTest, uri_join_before_after_overide) {
   const std::string k_fragment{"some_fragment=1"};
   auto p = GetParam();
   auto make_uri_without_path = [](auto &p) {
-    if (p.scheme.empty()) return std::string{"/"};
-    if (p.port >= 0)
-      return p.scheme + "://" + p.host + ":" + std::to_string(p.port);
-    return p.scheme + "://" + p.host;
+    if (p.scheme.empty() && p.host.empty()) return std::string{"/"};
+    std::string result = p.scheme.empty() ? "//" : p.scheme + "://";
+
+    if (p.port >= 0) return result + p.host + ":" + std::to_string(p.port);
+    return result + p.host;
   };
 
   http::base::Uri u{p.uri.uri};
@@ -227,6 +278,10 @@ TEST_P(UrlParsingTest, uri_join_before_after_overide) {
 INSTANTIATE_TEST_SUITE_P(
     InstantiateUriParsing, UrlParsingTest,
     ::testing::Values(
+        UrlParam{{"//HOST1"}, "", "HOST1", -1},
+        UrlParam{{"//HOST2:10"}, "", "HOST2", 10},
+        UrlParam{{"//[::2]"}, "", "[::2]", -1},
+        UrlParam{{"//[::3]:10"}, "", "[::3]", 10},
         UrlParam{{"http://[::1]"}, "http", "[::1]", -1},
         UrlParam{{"http://[1::1]:2100"}, "http", "[1::1]", 2100},
         UrlParam{
@@ -273,7 +328,7 @@ INSTANTIATE_TEST_SUITE_P(
             "a=%5b%22aaaa%22%2c20%2c30%2c%7b%22field1%22%3a%22value1%22%"
             "7d%5d"}));
 
-TEST(UrlParsingTest, reproduce) { mysqlrouter::URI u{"BEB://B:///"}; }
+TEST(UrlParsingTest, reproduce) { mysqlrouter::URI const u{"BEB://B:///"}; }
 
 int main(int argc, char *argv[]) {
   ::testing::InitGoogleTest(&argc, argv);

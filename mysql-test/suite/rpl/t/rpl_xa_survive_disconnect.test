@@ -234,8 +234,8 @@ connect (master_conn4, 127.0.0.1,root,,test,$MASTER_MYPORT,);
 
 --let $gtridlen=`SELECT 2*(1 + round(rand()*100) % 31)`
 --let $bquallen=`SELECT 2*(1 + round(rand()*100) % 31)`
---let $gtrid_rand=`SELECT substring(concat(MD5(rand()), MD5(rand())), 1, $gtridlen)`
---let $bqual_rand=`SELECT substring(concat(MD5(rand()), MD5(rand())), 1, $bquallen)`
+--let $gtrid_rand=`SELECT substring(concat(SHA2(rand(),224), SHA2(rand(), 224)), 1, $gtridlen)`
+--let $bqual_rand=`SELECT substring(concat(SHA2(rand(),225), SHA2(rand(), 224)), 1, $bquallen)`
 # formatID max is LONG_MAX
 --let $formt_rand=`SELECT floor((rand()*10000000000) % 2147483648)`
 --eval XA START X'$gtrid_rand',X'$bqual_rand',$formt_rand

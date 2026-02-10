@@ -11,16 +11,26 @@ mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
 caching_sha2@localhost
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
 caching_sha2@localhost
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
 caching_sha2@localhost
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
 sha256@localhost
@@ -28,6 +38,8 @@ mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
 sha256@localhost
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Change user tests
 SELECT CURRENT_USER();
 CURRENT_USER()
@@ -57,16 +69,26 @@ mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
 caching_sha2@localhost
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
 caching_sha2@localhost
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
 caching_sha2@localhost
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
 sha256@localhost
@@ -74,6 +96,8 @@ mysql: [Warning] Using a password on the command line interface can be insecure.
 CURRENT_USER()
 sha256@localhost
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Change user tests
 SELECT CURRENT_USER();
 CURRENT_USER()

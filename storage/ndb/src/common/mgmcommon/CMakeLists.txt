@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -38,11 +38,6 @@ ADD_CONVENIENCE_LIBRARY(ndbmgmcommon
   thr_config.cpp
   LINK_LIBRARIES ndbmgmapi
   )
-
-MY_CHECK_CXX_COMPILER_WARNING("format-overflow" HAS_WARN_FLAG)
-IF(HAS_WARN_FLAG)
-  ADD_COMPILE_FLAGS(thr_config.cpp COMPILE_FLAGS "-Wno-error=format-overflow")
-ENDIF()
 
 NDB_ADD_TEST(thr_config-t thr_config.cpp LIBS ndbmgmapi ndbgeneral ndbportlib)
 NDB_ADD_TEST(InitConfigFileParser-t InitConfigFileParser.cpp

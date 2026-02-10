@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,9 +31,10 @@
 
 #include "auth_kerberos_client_plugin.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <utility>
 
 #include <mysql.h>
 #include <mysql/client_plugin.h>
@@ -76,13 +77,12 @@ bool Kerberos_plugin_client::obtain_store_credentials() {
         "will be aborted. Please provide valid configuration, user name and "
         "password.");
     return false;
-  } else {
-    return true;
   }
+  return true;
 }
 
 void Kerberos_plugin_client::set_mysql_account_name(
-    std::string mysql_account_name) {
+    const std::string &mysql_account_name) {
   std::string cc_user_name;
   std::stringstream log_client_stream;
 
@@ -142,28 +142,25 @@ void Kerberos_plugin_client::set_mysql_account_name(
   }
 }
 
-void Kerberos_plugin_client::set_upn_info(std::string name, std::string pwd) {
+void Kerberos_plugin_client::set_upn_info(const std::string &name,
+                                          std::string pwd) {
   /*
     Setting UPN using MySQL account name + user realm.
   */
-  m_password = pwd;
+  m_password = std::move(pwd);
   if (!name.empty()) {
     create_upn(name);
   }
 }
 
-void Kerberos_plugin_client::create_upn(std::string account_name) {
+void Kerberos_plugin_client::create_upn(const std::string &account_name) {
   if (!m_as_user_relam.empty()) {
     m_user_principal_name = account_name + "@" + m_as_user_relam;
   }
 }
 
 bool Kerberos_plugin_client::authenticate() {
-  if (m_kerberos_client->authenticate()) {
-    return true;
-  } else {
-    return false;
-  }
+  return m_kerberos_client->authenticate();
 }
 
 bool Kerberos_plugin_client::read_spn_realm_from_server() {
@@ -203,15 +200,14 @@ static int kerberos_authenticate(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql) {
     log_client_stream.str("");
     log_client_stream << "Kerberos authentication has succeeded for the user: "
                       << mysql->user;
-    log_client_info(log_client_stream.str().c_str());
+    log_client_info(log_client_stream.str());
     return CR_OK;
-  } else {
-    log_client_stream.str("");
-    log_client_stream << "Kerberos authentication has failed for the user: "
-                      << mysql->user;
-    log_client_error(log_client_stream.str().c_str());
-    return CR_ERROR;
   }
+  log_client_stream.str("");
+  log_client_stream << "Kerberos authentication has failed for the user: "
+                    << mysql->user;
+  log_client_error(log_client_stream.str());
+  return CR_ERROR;
 }
 
 static int initialize_plugin(char *, size_t, int, va_list) {

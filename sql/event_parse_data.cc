@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -172,7 +172,7 @@ static bool ResolveScalarItem(THD *thd, Item **item) {
 */
 
 bool Event_parse_data::init_execute_at(THD *thd) {
-  MYSQL_TIME ltime;
+  Datetime_val dt;
   my_time_t ltime_utc = 0;
 
   DBUG_TRACE;
@@ -188,13 +188,13 @@ bool Event_parse_data::init_execute_at(THD *thd) {
                       (starts_null && ends_null)));
   assert(starts_null && ends_null);
 
-  if ((item_execute_at->get_date(&ltime, TIME_NO_ZERO_DATE))) {
+  if (item_execute_at->val_datetime(&dt, TIME_NO_ZERO_DATE)) {
     report_bad_value(thd, "AT", item_execute_at);
     return true;
   }
 
   bool is_in_dst_gap_ignored;
-  ltime_utc = thd->time_zone()->TIME_to_gmt_sec(&ltime, &is_in_dst_gap_ignored);
+  ltime_utc = thd->time_zone()->TIME_to_gmt_sec(&dt, &is_in_dst_gap_ignored);
 
   if (!ltime_utc) {
     DBUG_PRINT("error", ("Execute AT after year 2037"));
@@ -322,7 +322,7 @@ bool Event_parse_data::init_interval(THD *thd) {
 */
 
 bool Event_parse_data::init_starts(THD *thd) {
-  MYSQL_TIME ltime;
+  Datetime_val dt;
   my_time_t ltime_utc = 0;
 
   DBUG_TRACE;
@@ -332,13 +332,13 @@ bool Event_parse_data::init_starts(THD *thd) {
     return true;
   }
 
-  if ((item_starts->get_date(&ltime, TIME_NO_ZERO_DATE))) {
+  if (item_starts->val_datetime(&dt, TIME_NO_ZERO_DATE)) {
     report_bad_value(thd, "STARTS", item_starts);
     return true;
   }
 
   bool is_in_dst_gap_ignored;
-  ltime_utc = thd->time_zone()->TIME_to_gmt_sec(&ltime, &is_in_dst_gap_ignored);
+  ltime_utc = thd->time_zone()->TIME_to_gmt_sec(&dt, &is_in_dst_gap_ignored);
 
   if (ltime_utc == 0) {
     report_bad_value(thd, "STARTS", item_starts);
@@ -369,7 +369,7 @@ bool Event_parse_data::init_starts(THD *thd) {
 */
 
 bool Event_parse_data::init_ends(THD *thd) {
-  MYSQL_TIME ltime;
+  Datetime_val dt;
   my_time_t ltime_utc = 0;
 
   DBUG_TRACE;
@@ -381,13 +381,13 @@ bool Event_parse_data::init_ends(THD *thd) {
 
   DBUG_PRINT("info", ("convert to TIME"));
 
-  if (item_ends->get_date(&ltime, TIME_NO_ZERO_DATE)) {
+  if (item_ends->val_datetime(&dt, TIME_NO_ZERO_DATE)) {
     my_error(ER_EVENT_ENDS_BEFORE_STARTS, MYF(0));
     return true;
   }
 
   bool is_in_dst_gap_ignored = false;
-  ltime_utc = thd->time_zone()->TIME_to_gmt_sec(&ltime, &is_in_dst_gap_ignored);
+  ltime_utc = thd->time_zone()->TIME_to_gmt_sec(&dt, &is_in_dst_gap_ignored);
   if (ltime_utc == 0) {
     my_error(ER_EVENT_ENDS_BEFORE_STARTS, MYF(0));
     return true;
@@ -583,6 +583,11 @@ struct Sql_cmd_event : public Sql_cmd_event_base {
       return false;
     }
 
+    auto set_event_body_to_nullptr_guard = create_scope_guard([&]() {
+      if (!is_prepared()) {
+        event_parse_data.event_body = nullptr;
+      }
+    });
     if (!is_prepared()) {
       // For a non-prepared statement the sp_head created by the parser
       // is copied so that the event code can always find it in the same
@@ -717,7 +722,10 @@ Event_parse_data *get_event_parse_data(LEX *lex) {
 void cleanup_event_parse_data(LEX *lex) {
   if (lex->sql_command == SQLCOM_CREATE_EVENT ||
       lex->sql_command == SQLCOM_ALTER_EVENT) {
-    sp_head::destroy(pointer_cast<Sql_cmd_event_base *>(lex->m_sql_cmd)
-                         ->event_parse_data.event_body);
+    sp_head *event_body = pointer_cast<Sql_cmd_event_base *>(lex->m_sql_cmd)
+                              ->event_parse_data.event_body;
+    if (event_body != nullptr) {
+      sp_head::destroy(event_body);
+    }
   }
 }

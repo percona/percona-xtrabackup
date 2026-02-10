@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,6 +50,12 @@ struct Gcs_interface_runtime_requirements {
    *
    */
   Network_namespace_manager *namespace_manager;
+
+  /**
+   * @brief A class that provides the textual representation of the timestamps
+   * in the debug/trace log created by GCS.
+   */
+  std::shared_ptr<Clock_timestamp_interface> clock_timestamp_provider;
 };
 
 /**

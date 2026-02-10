@@ -46,6 +46,7 @@ ps_statement_avg_latency_histogram
 ps_trace_statement_digest
 ps_trace_thread
 ps_truncate_all_tables
+revoke_schema_privileges_from_all_accounts_except
 statement_performance_analyzer
 table_exists
 # restart:--upgrade=FORCE

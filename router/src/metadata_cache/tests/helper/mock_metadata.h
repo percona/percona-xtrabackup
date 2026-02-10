@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,11 +25,7 @@
 #ifndef MOCK_METADATA_INCLUDED
 #define MOCK_METADATA_INCLUDED
 
-#include <vector>
-
 #include "cluster_metadata_gr.h"
-
-#include "tcp_address.h"
 
 /** @class MockNG
  *
@@ -105,7 +101,7 @@ class MockNG : public GRClusterMetadata {
       mysqlrouter::TargetCluster &target_cluster, const unsigned /*router_id*/,
       const metadata_cache::metadata_servers_list_t &metadata_servers,
       bool needs_writable_node, const std::string &clusterset_id,
-      bool whole_topology, size_t &instance_id) override;
+      size_t &instance_id, std::string &guidelines) override;
 
 #if 0  // not used so far
   /**

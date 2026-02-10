@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1704,7 +1704,12 @@ int ha_ndbcluster::inplace__drop_fks(THD *thd, Ndb *ndb, const char *dbname,
   }
 
   for (const Alter_drop *drop_item : thd->lex->alter_info->drop_list) {
-    if (drop_item->type != Alter_drop::FOREIGN_KEY) continue;
+    DBUG_PRINT("info", ("drop_item: name=%s type=%u", drop_item->name,
+                        drop_item->type));
+    const bool skip =
+        drop_item->type != Alter_drop::FOREIGN_KEY &&   // drop fk
+        drop_item->type != Alter_drop::ANY_CONSTRAINT;  // drop constraint
+    if (skip) continue;
 
     bool found = false;
     for (unsigned i = 0; i < obj_list.count; i++) {

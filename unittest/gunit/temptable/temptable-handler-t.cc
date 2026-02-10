@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -577,6 +577,47 @@ TEST_F(Handler_test, IndexOnOff) {
 
   EXPECT_EQ(handler.close(), 0);
   EXPECT_EQ(handler.delete_table(table_name, nullptr), 0);
+}
+
+TEST_F(Handler_test, LeakTable) {
+  const char *table_name = "t1";
+
+  Table_helper table_helper(table_name, thd());
+  table_helper.add_field_varstring("col0", 20, false);
+  table_helper.add_field_varstring("col1", 20, false);
+  table_helper.add_field_varstring("col2", 20, false);
+  table_helper.add_index(HA_KEY_ALG_HASH, true, {0});
+  table_helper.add_index(HA_KEY_ALG_BTREE, true, {1});
+  table_helper.add_index(HA_KEY_ALG_HASH, false, {0, 1});
+  table_helper.add_index(HA_KEY_ALG_BTREE, false, {0, 1});
+  table_helper.finalize();
+
+  temptable::Handler *handler =
+      new temptable::Handler(hton(), table_helper.table_share());
+  table_helper.set_handler(handler);
+
+  EXPECT_EQ(handler->create(table_name, table_helper.table(), nullptr, nullptr),
+            0);
+  EXPECT_EQ(handler->open(table_name, 0, 0, nullptr), 0);
+
+  /* Insert (success). */
+  table_helper.field<Field_varstring>(0)->store(1, false);
+  table_helper.field<Field_varstring>(1)->store(1, false);
+  table_helper.field<Field_varstring>(2)->store(1, false);
+  EXPECT_EQ(handler->write_row(table_helper.record_0()), 0);
+
+  table_helper.field<Field_varstring>(0)->store(2, false);
+  table_helper.field<Field_varstring>(1)->store(2, false);
+  table_helper.field<Field_varstring>(2)->store(2, false);
+  EXPECT_EQ(handler->write_row(table_helper.record_0()), 0);
+
+  table_helper.field<Field_varstring>(0)->store(3, false);
+  table_helper.field<Field_varstring>(1)->store(3, false);
+  table_helper.field<Field_varstring>(2)->store(3, false);
+  EXPECT_EQ(handler->write_row(table_helper.record_0()), 0);
+
+  temptable::close_connection(thd());
+  delete handler;
 }
 
 }  // namespace temptable_test

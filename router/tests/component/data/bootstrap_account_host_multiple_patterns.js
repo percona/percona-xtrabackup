@@ -26,6 +26,7 @@ var common_stmts = require("common_statements");
           "router_start_transaction",
           "router_commit",
           "router_clusterset_present",
+          "get_routing_guidelines_version",
 
           // account verification
           "router_select_metadata_v2_gr",
@@ -41,9 +42,11 @@ var common_stmts = require("common_statements");
           "router_grant_on_metadata_db",
           "router_grant_on_pfs_db",
           "router_grant_on_routers",
+          "router_grant_on_router_stats",
           "router_update_routers_in_metadata",
           "router_update_router_options_in_metadata",
           "router_select_config_defaults_stored_gr_cluster",
+          "router_update_local_cluster_in_metadata",
         ],
         options);
 

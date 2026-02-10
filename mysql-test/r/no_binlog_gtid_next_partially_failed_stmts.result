@@ -142,7 +142,7 @@ FLUSH LOGS;
 include/assert.inc [Did not save gtid Source_UUID:7 into mysql.gtid_executed table]
 SET SESSION GTID_NEXT='MASTER_UUID:7';
 DROP USER u1@h, u2@h;
-ERROR HY000: Operation DROP USER failed for 'u2'@'h'
+ERROR HY000: Operation DROP USER failed for 'u2'@'h' (User account does not exist)
 #
 # The u1 is not removed from mysql.user which means that DROP USER
 # can not fail partially.
@@ -289,7 +289,7 @@ password_expired
 N
 SET SESSION GTID_NEXT='MASTER_UUID:13';
 ALTER USER u1@h, u3@h PASSWORD EXPIRE;
-ERROR HY000: Operation ALTER USER failed for 'u3'@'h'
+ERROR HY000: Operation ALTER USER failed for 'u3'@'h' (User account does not exist)
 #
 # The u1 is not altered on mysql.user which means that ALTER USER
 # cannot be failed partially.

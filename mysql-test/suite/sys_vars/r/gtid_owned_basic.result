@@ -2,6 +2,7 @@ SET @start_global_value = @@global.gtid_owned;
 SELECT @start_global_value;
 @start_global_value
 
+include/rpl/set_gtid_mode_off.inc
 select @@global.gtid_owned;
 @@global.gtid_owned
 
@@ -39,3 +40,4 @@ select @@session.gtid_owned;
 select @@global.gtid_owned;
 @@global.gtid_owned
 
+include/rpl/set_gtid_mode_on.inc

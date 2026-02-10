@@ -321,6 +321,8 @@ GRANT CREATE VIEW,SELECT ON db_datadict.* TO testuser1@localhost
 WITH GRANT OPTION;
 GRANT USAGE ON db_datadict.* TO testuser2@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 GRANT SELECT on information_schema.* TO testuser1@localhost;
 ERROR 42000: Access denied for user 'root'@'localhost' to database 'information_schema'
 GRANT CREATE VIEW ON information_schema.* TO 'u_6_401018'@'localhost';

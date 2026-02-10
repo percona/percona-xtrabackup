@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,7 @@
 
 bool printSCHEMA_TRANS_IMPL_REQ(FILE *output, const Uint32 *theData, Uint32 len,
                                 Uint16 rbn) {
-  const SchemaTransImplReq *sig = (const SchemaTransImplReq *)theData;
+  const auto *sig = (const SchemaTransImplReq *)theData;
   // const Uint32 phaseInfo = sig->phaseInfo;
   // Uint32 mode = SchemaTransImplReq::getMode(phaseInfo);
   // Uint32 phase = SchemaTransImplReq::getPhase(phaseInfo);
@@ -165,7 +165,7 @@ bool printSCHEMA_TRANS_IMPL_CONF(FILE *output, const Uint32 *theData,
     return false;
   }
 
-  const SchemaTransImplConf *sig = (const SchemaTransImplConf *)theData;
+  const auto *sig = (const SchemaTransImplConf *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " transKey: %u", sig->transKey);
   fprintf(output, "\n");
@@ -179,7 +179,7 @@ bool printSCHEMA_TRANS_IMPL_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const SchemaTransImplRef *sig = (const SchemaTransImplRef *)theData;
+  const auto *sig = (const SchemaTransImplRef *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " transKey: %u", sig->transKey);
   fprintf(output, "\n");

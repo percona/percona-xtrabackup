@@ -7,6 +7,9 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 select * from (select 2 from DUAL) AS b;
 -- error ER_BAD_FIELD_ERROR
 SELECT 1 as a FROM (SELECT 1 UNION SELECT a) AS b;
@@ -640,6 +643,7 @@ SHOW STATUS LIKE 'Handler_read%';
 EXPLAIN
   SELECT * FROM t1,v3 AS v31,v3 WHERE t1.f1=v31.f1 and t1.f1=v3.f1;
 FLUSH STATUS;
+--sorted_result
 SELECT * FROM t1,v3 AS v31,v3 WHERE t1.f1=v31.f1 and t1.f1=v3.f1;
 --skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read%';
@@ -2069,7 +2073,7 @@ CREATE TABLE t2 (
 INSERT INTO t2 VALUES (0),(1),(2);
 
 let query=
-SELECT SHA(pk) IN (SELECT * FROM (SELECT '' FROM t2) a) FROM t1;
+SELECT SHA2(pk,256) IN (SELECT * FROM (SELECT '' FROM t2) a) FROM t1;
 
 eval explain $query;
 eval $query;
@@ -3506,3 +3510,5 @@ SELECT _latin1 'Ã¥' AS a UNION SELECT c FROM t;
 SELECT * FROM (SELECT _latin1 'Ã¥' AS a) AS dt UNION SELECT c FROM t;
 
 DROP TABLE t;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

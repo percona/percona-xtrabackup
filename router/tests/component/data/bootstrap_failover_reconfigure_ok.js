@@ -26,6 +26,7 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_select_cluster_id_v2_ar",
       "router_select_view_id_bootstrap_ar",
       "router_commit",
+      "get_routing_guidelines_version",
     ],
     options);
 
@@ -38,11 +39,13 @@ var common_responses_regex = common_stmts.prepare_statement_responses_regex(
       "router_grant_on_metadata_db",
       "router_grant_on_pfs_db",
       "router_grant_on_v2_routers",
+      "router_grant_on_router_stats",
       "router_grant_on_routers",
       "router_update_routers_in_metadata",
       "router_update_router_options_in_metadata",
       "router_select_config_defaults_stored_gr_cluster",
       "router_select_config_defaults_stored_ar_cluster",
+      "router_update_local_cluster_in_metadata",
     ],
     options);
 

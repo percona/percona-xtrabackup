@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 
 #include <array>
 #include <functional>
+#include <set>
 
 #include "harness_export.h"
 #include "mysql/harness/loader_config.h"
@@ -47,7 +48,7 @@ extern mysql_harness::Plugin HARNESS_EXPORT harness_plugin_logger;
  * created
  * @param level     logging level for the newly create logging handlers
  *
- * @throws std::logic_error
+ * @throws std::logic_error On error.
  */
 void HARNESS_EXPORT
 create_plugin_loggers(const mysql_harness::LoaderConfig &config,
@@ -65,5 +66,15 @@ using on_switch_to_configured_loggers = std::function<void()>;
  */
 void HARNESS_EXPORT register_on_switch_to_configured_loggers_callback(
     on_switch_to_configured_loggers callback);
+
+void HARNESS_EXPORT register_supported_external_logging_handler_names(
+    const std::set<std::string> &names);
+
+void HARNESS_EXPORT register_external_logging_handler(
+    const std::string &name,
+    std::shared_ptr<mysql_harness::logging::ExternalHandler> handler);
+
+void HARNESS_EXPORT
+unregister_external_logging_handler(const std::string &name);
 
 #endif

@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +21,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-SET(GOOGLETEST_RELEASE googletest-1.14.0)
+SET(GOOGLETEST_RELEASE googletest-1.17.0)
 SET(GMOCK_SOURCE_DIR
   ${CMAKE_SOURCE_DIR}/extra/googletest/${GOOGLETEST_RELEASE}/googlemock)
 SET(GTEST_SOURCE_DIR
@@ -77,3 +77,9 @@ FOREACH(googletest_library
     TARGET_COMPILE_OPTIONS(${googletest_library} PRIVATE ${HAS_MISSING_PROFILE})
   ENDIF()
 ENDFOREACH()
+
+# googletest/src/gtest-internal-inl.h: In member function 'OnTestEnd'
+IF(MY_COMPILER_IS_GNU)
+  TARGET_LINK_OPTIONS(gmock INTERFACE -Wno-stringop-overflow)
+  TARGET_LINK_OPTIONS(gtest INTERFACE -Wno-stringop-overflow)
+ENDIF()

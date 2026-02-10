@@ -4,6 +4,11 @@
 # Test of flush table
 #
 
+# FLUSH TABLES may block the periodic update of `mysql.gtid_executed` by
+# `Clone_persist_gtid`, to avoid unrelated flush errors `GTID_MODE` is
+# disabled in this test.
+--source include/rpl/set_gtid_mode_off.inc
+
 --disable_warnings
 drop table if exists t1,t2;
 --enable_warnings
@@ -648,3 +653,5 @@ DROP TABLE t1;
 SET GLOBAL innodb_file_per_table= @old_innodb_file_per_table;
 
 --echo # End of 5.6 tests
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

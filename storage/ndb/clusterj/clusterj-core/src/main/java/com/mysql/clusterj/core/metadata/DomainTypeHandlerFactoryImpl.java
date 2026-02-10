@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -59,9 +59,12 @@ public class DomainTypeHandlerFactoryImpl implements DomainTypeHandlerFactory {
                 DomainTypeHandlerFactory.class, 
                 DOMAIN_TYPE_HANDLER_FACTORY_IMPL_CLASS_LOADER,
                 domainTypeHandlerFactoryErrorMessages);
-        logger.info("Found " + domainTypeHandlerFactories.size() + " DomainTypeHandlerFactories");
-        for (DomainTypeHandlerFactory factory: domainTypeHandlerFactories) {
-            logger.info(factory.toString());
+        if(logger.isDebugEnabled()) {
+            String msg = "Found " + domainTypeHandlerFactories.size() +
+                         " DomainTypeHandlerFactories:";
+            for (DomainTypeHandlerFactory factory: domainTypeHandlerFactories)
+                msg += " " + factory.toString();
+            logger.debug(msg);
         }
     }
 
@@ -96,15 +99,6 @@ public class DomainTypeHandlerFactoryImpl implements DomainTypeHandlerFactory {
         } catch (Exception e) {
             errorMessages.append(e.toString());
             throw new ClusterJUserException(errorMessages.toString(), e);
-        } finally {
-            // if handler is null, there may be a problem with the schema, so remove it from the local dictionary
-            if (handler == null) {
-                String tableName = DomainTypeHandlerImpl.getTableName(domainClass);
-                if (tableName != null) {
-                    logger.info(local.message("MSG_Removing_Schema", tableName, domainClass.getName()));
-                    dictionary.removeCachedTable(tableName);                    
-                }
-            }
         }
     }
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -460,6 +460,7 @@ bool partition_info::can_prune_insert(
   @param info             COPY_INFO used for default values handling
   @param copy_default_values  True if we should copy default values
   @param used_partitions  Bitmap to set
+  @param tables_locked    True if tables are locked
 
   @returns Operational status
     @retval false  Success
@@ -468,20 +469,43 @@ bool partition_info::can_prune_insert(
   so caller must check thd->is_error().
 */
 
-bool partition_info::set_used_partition(THD *thd,
-                                        const mem_root_deque<Item *> &fields,
-                                        const mem_root_deque<Item *> &values,
-                                        COPY_INFO &info,
-                                        bool copy_default_values,
-                                        MY_BITMAP *used_partitions) {
+bool partition_info::set_used_partition(
+    THD *thd, const mem_root_deque<Item *> &fields,
+    const mem_root_deque<Item *> &values, COPY_INFO &info,
+    bool copy_default_values, MY_BITMAP *used_partitions, bool tables_locked) {
   uint32 part_id;
   longlong func_value;
 
   assert(thd);
 
-  /* Only allow checking of constant values */
-  for (Item *item : values) {
-    if (!item->const_item()) return true;
+  /*
+    In prepare phase, allow partition pruning from constant values.
+    In execution phase, allow partition pruning for values that are
+    const-for-execution.
+  */
+  if (!fields.empty()) {
+    auto value_it = values.begin();
+    for (Item *fld : fields) {
+      Item *value = *value_it++;
+      Item_field *field = fld->field_for_view_update();
+      if (bitmap_is_set(&full_part_field_set, field->field->field_index())) {
+        if (!(value->const_item() ||
+              (tables_locked && value->const_for_execution()))) {
+          return true;
+        }
+      }
+    }
+  } else {
+    Field *field = nullptr;
+    for (Item *value : values) {
+      field = *table->field++;
+      if (bitmap_is_set(&full_part_field_set, field->field_index())) {
+        if (!(value->const_item() ||
+              (tables_locked && value->const_for_execution()))) {
+          return true;
+        }
+      }
+    }
   }
 
   if (copy_default_values) restore_record(table, s->default_values);

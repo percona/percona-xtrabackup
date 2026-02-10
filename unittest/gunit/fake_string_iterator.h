@@ -1,7 +1,7 @@
 #ifndef UNITTEST_GUNIT_FAKE_STRING_ITERATOR_H_
 #define UNITTEST_GUNIT_FAKE_STRING_ITERATOR_H_
 
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,12 +49,13 @@ class FakeStringIterator final : public TableRowIterator {
         m_field(field),
         m_dataset(std::move(dataset)) {}
 
-  bool Init() override {
+ private:
+  bool DoInit() override {
     m_current_index = 0;
     return false;
   }
 
-  int Read() override {
+  int DoRead() override {
     if (m_current_index == m_dataset.size()) {
       return -1;
     }
@@ -71,7 +72,6 @@ class FakeStringIterator final : public TableRowIterator {
     return 0;
   }
 
- private:
   size_t m_current_index{0};
   Field_varstring *m_field;
   std::vector<std::optional<std::string>> m_dataset;

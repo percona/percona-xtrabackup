@@ -1,7 +1,7 @@
 \page PageLibsMysqlAllocators Library: Allocators
 
 <!---
-Copyright (c) 2024, Oracle and/or its affiliates.
+Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 //
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -42,14 +42,15 @@ Allows libraries to allocate memory such that:
 
 ## Usage
 
-This library provides the `Memory_resource` class, which is used in different
-ways depending on who you are:
+This library provides the `Memory_resource` and `Allocator` classes, which are
+used in different ways depending on who you are:
 
 - *Library author*: If your library needs to allocate memory, add a
   `Memory_resource` parameter to either the function that allocates memory or
   the constructor for the class that manages the memory. The parameter must be
-  passed by value, not reference or pointer. Allocate memory through this
-  object. Make the parameter default to `Memory_resource()`.
+  passed by value, not reference or pointer. Allocate memory through an
+  `Allocator` based on this object. Make the parameter default to
+  `Memory_resource()`.
 
 - *Library user within the MySQL server*: When using the function or class that
   takes a `Memory_resource` object, call `psi_memory_resource(Psi_memory_key)`

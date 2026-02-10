@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
 
 #include "sql/filesort_utils.h"
 
-#include <string.h>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #include "add_with_saturate.h"
 #include "my_dbug.h"
@@ -275,7 +275,7 @@ void Filesort_buffer::reset() {
 }
 
 bool Filesort_buffer::preallocate_records(size_t num_records) {
-  if (m_max_record_length == 0xFFFFFFFFu) {
+  if (m_max_record_length == 0xFFFFFFFFU) {
     // The rest of the code uses this value for “infinite” and saturates to it,
     // so even if we have a large sort buffer (> 4 GB), we we can't know for
     // sure there's going to be room.
@@ -304,7 +304,7 @@ bool Filesort_buffer::preallocate_records(size_t num_records) {
     m_record_pointers.reserve(num_records);
   }
   while (m_record_pointers.size() < num_records) {
-    Bounds_checked_array<uchar> ptr =
+    Bounds_checked_array<uchar> const ptr =
         get_next_record_pointer(m_max_record_length);
     (void)ptr;
     assert(ptr.array() != nullptr);
@@ -359,7 +359,7 @@ bool Filesort_buffer::allocate_block(size_t num_bytes) {
     This means that, for smaller records, we could go above the maximum
     permitted total memory usage.
   */
-  size_t min_num_rows_capacity =
+  size_t const min_num_rows_capacity =
       m_record_pointers.size() +
       space_left /
           AddWithSaturate(m_max_record_length, sizeof(m_record_pointers[0]));
@@ -378,11 +378,11 @@ bool Filesort_buffer::allocate_block(size_t num_bytes) {
       sort huge rows that wouldn't fit in the buffer otherwise -- in other
       words, nearly never.
     */
-    size_t excess_bytes =
+    size_t const excess_bytes =
         (m_record_pointers.capacity() - m_record_pointers.size()) *
         sizeof(m_record_pointers[0]);
     if (excess_bytes >= 32768) {
-      size_t old_capacity = m_record_pointers.capacity();
+      size_t const old_capacity = m_record_pointers.capacity();
       m_record_pointers.shrink_to_fit();
       if (m_record_pointers.capacity() < old_capacity) {
         return allocate_block(num_bytes);
@@ -439,11 +439,10 @@ Bounds_checked_array<uchar> Filesort_buffer::get_contiguous_buffer() {
     free_sort_buffer();
 
     if (allocate_sized_block(m_max_size_in_bytes)) {
-      return Bounds_checked_array<uchar>(nullptr, 0);
+      return {nullptr, 0};
     }
   }
-  return Bounds_checked_array<uchar>(m_blocks.back().get(),
-                                     m_max_size_in_bytes);
+  return {m_blocks.back().get(), m_max_size_in_bytes};
 }
 
 void Filesort_buffer::update_peak_memory_used() const {

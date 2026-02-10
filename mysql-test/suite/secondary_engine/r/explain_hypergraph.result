@@ -11,17 +11,20 @@ EXPLAIN FORMAT=JSON SELECT * FROM t1;
 EXPLAIN
 {
   "query": "/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1`",
-  "operation": "Table scan on t1",
+  "query_plan": {
+    "operation": "Table scan on t1",
+    "table_name": "t1",
+    "access_type": "table",
+    "schema_name": "test",
+    "used_columns": [
+      "a"
+    ],
+    "estimated_rows": "elided",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "table_name": "t1",
-  "access_type": "table",
-  "schema_name": "test",
-  "used_columns": [
-    "a"
-  ],
-  "estimated_rows": "elided",
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 ALTER TABLE t1 SECONDARY_LOAD;
 # After table is loaded, the secondary engine should be used.
@@ -37,51 +40,54 @@ EXPLAIN FORMAT=JSON SELECT * FROM t1, t1 t2 WHERE t1.a = t2.a;
 EXPLAIN
 {
   "query": "/* select#1 */ select `test`.`t1`.`a` AS `a`,`t2`.`a` AS `a` from `test`.`t1` join `test`.`t1` `t2` where multiple equal(`test`.`t1`.`a`, `t2`.`a`)",
-  "inputs": [
-    {
-      "operation": "Table scan on t1 in secondary engine MOCK",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "used_columns": [
-        "a"
-      ],
-      "estimated_rows": "elided",
-      "secondary_engine": "MOCK",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "alias": "t2",
-      "heading": "Hash",
-      "operation": "Table scan on t2 in secondary engine MOCK",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "used_columns": [
-        "a"
-      ],
-      "estimated_rows": "elided",
-      "secondary_engine": "MOCK",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "join_type": "inner join",
-  "operation": "Inner hash join (t1.a = t2.a)",
+  "query_plan": {
+    "inputs": [
+      {
+        "operation": "Table scan on t1 in secondary engine MOCK",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "used_columns": [
+          "a"
+        ],
+        "estimated_rows": "elided",
+        "secondary_engine": "MOCK",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "alias": "t2",
+        "heading": "Hash",
+        "operation": "Table scan on t2 in secondary engine MOCK",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "used_columns": [
+          "a"
+        ],
+        "estimated_rows": "elided",
+        "secondary_engine": "MOCK",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "join_type": "inner join",
+    "operation": "Inner hash join (t1.a = t2.a)",
+    "access_type": "join",
+    "join_columns": [
+      "t2.a",
+      "test.t1.a"
+    ],
+    "estimated_rows": "elided",
+    "hash_condition": [
+      "(t1.a = t2.a)"
+    ],
+    "join_algorithm": "hash",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "join",
-  "join_columns": [
-    "t2.a",
-    "test.t1.a"
-  ],
-  "estimated_rows": "elided",
-  "hash_condition": [
-    "(t1.a = t2.a)"
-  ],
-  "join_algorithm": "hash",
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 Warnings:
 Note	1003	Query is executed in secondary engine; the actual query plan may diverge from the printed one

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -138,6 +138,21 @@ const CodecParam<classic_protocol::message::server::Ok>
          {1, 3, classic_protocol::status::autocommit, 4},
          classic_protocol::capabilities::protocol_41,
          {0x00, 0x01, 0x03, 0x02, 0x00, 0x04, 0x00}},
+        {"with_message",
+         {
+             0x01,                                        // affected
+             0x00,                                        // last-insert-id
+             classic_protocol::status::autocommit,        // status
+             4,                                           // warning-count
+             "Rows matched: 1  Changed: 0  Warnings: 0",  // message
+             {},                                          // no session-info
+         },
+         classic_protocol::capabilities::protocol_41,
+         {0x00, 0x01, 0x00, 0x02, 0x00, 0x04, 0x00, 0x28, 0x52, 0x6f,
+          0x77, 0x73, 0x20, 0x6d, 0x61, 0x74, 0x63, 0x68, 0x65, 0x64,
+          0x3a, 0x20, 0x31, 0x20, 0x20, 0x43, 0x68, 0x61, 0x6e, 0x67,
+          0x65, 0x64, 0x3a, 0x20, 0x30, 0x20, 0x20, 0x57, 0x61, 0x72,
+          0x6e, 0x69, 0x6e, 0x67, 0x73, 0x3a, 0x20, 0x30}},
         {"with_session_state_info",
          {1,
           3,

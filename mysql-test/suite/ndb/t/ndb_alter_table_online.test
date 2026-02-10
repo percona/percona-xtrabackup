@@ -339,6 +339,170 @@ SHOW WARNINGS;
 ALTER TABLE t1 algorithm=inplace, CHANGE col1 col1 int NOT NULL;
 DROP TABLE t1;
 
+--echo #
+--echo # Bug#35106114 ALTER table modify column default does not change
+--echo #               native default
+--echo # - check that modifying the default values value is not supported inplace
+--echo #
+CREATE TABLE t1 (
+  pk int PRIMARY KEY,
+  # 1. int columns
+  int_nullable_with_value int DEFAULT 20,
+  int_nullable_without_value int,
+  int_nonnullable_with_value int NOT NULL DEFAULT 20,
+  int_nonnullable_without_value int NOT NULL DEFAULT 20,
+  # 2. varchar_columns
+  varchar_nullable_with_value varchar(32) DEFAULT "20",
+  varchar_nullable_without_value varchar(32),
+  varchar_nonnullable_with_value varchar(32) NOT NULL DEFAULT "20",
+  varchar_nonnullable_without_value varchar(32) NOT NULL DEFAULT "20",
+  # 3. bit_columns
+  bit_nullable_with_value bit(32) DEFAULT "20",
+  bit_nullable_without_value bit(32),
+  bit_nonnullable_with_value bit(32) NOT NULL DEFAULT "20",
+  bit_nonnullable_without_value bit(32) NOT NULL DEFAULT "20"
+) engine=ndb;
+SHOW CREATE TABLE t1;
+
+# 1. int columns
+#
+# int_nullable_with_value
+# Change 20 -> 10
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN int_nullable_with_value int DEFAULT 10;
+
+# Change 20 -> NULL
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN int_nullable_with_value int DEFAULT NULL;
+
+#
+# int_nullable_without_value
+# Change NULL -> 10
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN int_nullable_without_value int DEFAULT 10;
+
+# Change NULL -> NULL
+# No change...
+
+#
+# int_nonnullable_with_value
+# Change 20 -> 10
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN int_nonnullable_with_value int NOT NULL DEFAULT 10;
+
+# Change 20 -> NULL
+--error ER_INVALID_DEFAULT
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN int_nonnullable_with_value int NOT NULL DEFAULT NULL;
+
+#
+# int_nonnullable_without_value
+# Change NULL -> 10
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN int_nonnullable_without_value int NOT NULL DEFAULT 10;
+
+# Change NULL -> NULL
+# No change...
+
+
+# 2. varchar columns
+#
+# varchar_nullable_with_value
+# Change "20" -> "10"
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN varchar_nullable_with_value varchar(32) DEFAULT "10";
+
+# Change "20" -> NULL
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN varchar_nullable_with_value varchar(32) DEFAULT NULL;
+
+#
+# varchar_nullable_without_value
+# Change NULL -> "10"
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN varchar_nullable_without_value varchar(32) DEFAULT "10";
+
+# Change NULL -> NULL
+# No change...
+
+#
+# varchar_nonnullable_with_value
+# Change "20" -> "10"
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN varchar_nonnullable_with_value varchar(32) NOT NULL DEFAULT "10";
+
+# Change "20" -> NULL
+--error ER_INVALID_DEFAULT
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN varchar_nonnullable_with_value varchar(32) NOT NULL DEFAULT NULL;
+
+#
+# varchar_nonnullable_without_value
+# Change NULL -> "10"
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN varchar_nonnullable_without_value varchar(32) NOT NULL DEFAULT "10";
+
+# Change NULL -> NULL
+# No change...
+
+
+# 3. bit columns
+#
+# bit_nullable_with_value
+# Change "20" -> "10"
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN bit_nullable_with_value bit(32) DEFAULT "10";
+
+# Change "20" -> NULL
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN bit_nullable_with_value bit(32) DEFAULT NULL;
+
+#
+# bit_nullable_without_value
+# Change NULL -> "10"
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN bit_nullable_without_value bit(32) DEFAULT "10";
+
+# Change NULL -> NULL
+# No change...
+
+#
+# bit_nonnullable_with_value
+# Change "20" -> "10"
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN bit_nonnullable_with_value bit(32) NOT NULL DEFAULT "10";
+
+# Change "20" -> NULL
+--error ER_INVALID_DEFAULT
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN bit_nonnullable_with_value bit(32) NOT NULL DEFAULT NULL;
+
+#
+# bit_nonnullable_without_value
+# Change NULL -> "10"
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+ALTER TABLE t1 algorithm=inplace,
+  MODIFY COLUMN bit_nonnullable_without_value bit(32) NOT NULL DEFAULT "10";
+
+# Change NULL -> NULL
+# No change...
+
+DROP TABLE t1;
+
 #####################################
 # Adding dropping primary key
 ######################################

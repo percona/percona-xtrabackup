@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2024, Oracle and/or its affiliates.
+Copyright (c) 1997, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -911,7 +911,7 @@ void ibuf_update_free_bits_for_two_pages_low(
     mtr_t *mtr)          /*!< in: mtr */
 {
   ulint state;
-
+  ut_ad(!fsp_is_system_temporary(block1->page.id.space()));
   ut_ad(block1->page.id.space() == block2->page.id.space());
 
   /* As we have to x-latch two random bitmap pages, we have to acquire
@@ -943,7 +943,7 @@ static inline bool ibuf_fixed_addr_page(const page_id_t &page_id,
 }
 
 /** Checks if a page is a level 2 or 3 page in the ibuf hierarchy of pages.
-Must not be called when recv_no_ibuf_operations==true.
+Must not be called when recv_recovery_is_on().
 @param[in]      page_id         page id
 @param[in]      page_size       page size
 @param[in]      x_latch         false if relaxed check (avoid latching the
@@ -959,7 +959,7 @@ bool ibuf_page_low(const page_id_t &page_id, const page_size_t &page_size,
   mtr_t local_mtr;
   page_t *bitmap_page;
 
-  ut_ad(!recv_no_ibuf_operations);
+  ut_ad(!recv_recovery_is_on());
   ut_ad(x_latch || mtr == nullptr);
 
   if (ibuf_fixed_addr_page(page_id, page_size)) {
@@ -2844,6 +2844,7 @@ void ibuf_update_max_tablespace_id(void) {
     max_space_id = mach_read_from_4(field);
   }
 
+  pcur.close();
   ibuf_mtr_commit(&mtr);
 
   /* printf("Maximum space id in insert buffer %lu\n", max_space_id); */
@@ -3505,6 +3506,7 @@ static void ibuf_insert_to_index_page(
   ut_ad(!dict_index_is_online_ddl(index));  // this is an ibuf_dummy index
   ut_ad(ibuf_inside(mtr));
   ut_ad(dtuple_check_typed(entry));
+  ut_d(entry->validate_for_index(index));
   /* A change buffer merge must occur before users are granted
   any access to the page. No adaptive hash index entries may
   point to a freshly read page. */

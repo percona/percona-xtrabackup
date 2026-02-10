@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include <chrono>
-#include <fstream>
-#include <stdexcept>
-#include <thread>
+#include <cstdlib>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 #include "my_rapidjson_size_t.h"
@@ -1548,6 +1546,205 @@ TEST_F(AsyncReplicasetTest, OnlyPrimaryLeftAcceptsRW) {
   verify_new_connection_fails(router_port_ro);
 }
 
+TEST_F(AsyncReplicasetTest, CloseConnectionAfterRefreshIsDefaultOff) {
+  RecordProperty("Worklog", "16652");
+  RecordProperty("RequirementId", "FR3");
+  RecordProperty(
+      "Description",
+      "close-connection-after-refresh MUST default to 0. "
+      "But with async-replica-set, it has no impact as the connection "
+      "switches between the servers.");
+
+  const unsigned CLUSTER_NODES = 2;
+  for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
+    cluster_nodes_ports.push_back(port_pool_.get_next_available());
+    cluster_http_ports.push_back(port_pool_.get_next_available());
+  }
+
+  SCOPED_TRACE("// Launch 2 server mocks that will act as our cluster members");
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
+  for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
+
+    SCOPED_TRACE("// Let us start with 2 members (PRIMARY and SECONDARY)");
+    set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports,
+                      /*primary_id=*/0, view_id);
+  }
+
+  const std::string state_file = create_state_file(
+      temp_test_dir.name(),
+      create_state_file_content(cluster_id, "", cluster_nodes_ports, view_id));
+
+  SCOPED_TRACE("// Create a configuration file.");
+  const std::string metadata_cache_section = get_metadata_cache_section(kTTL);
+  const uint16_t router_port_rw = port_pool_.get_next_available();
+  const std::string routing_section_rw = get_metadata_cache_routing_section(
+      router_port_rw, "PRIMARY", "first-available");
+  const uint16_t router_port_ro = port_pool_.get_next_available();
+  const std::string routing_section_ro = get_metadata_cache_routing_section(
+      router_port_ro, "SECONDARY", "round-robin");
+
+  const std::string routing_section =
+      routing_section_rw + "\n" + routing_section_ro;
+
+  SCOPED_TRACE("// Launch the router with the initial state file");
+  /*auto &router =*/launch_router(temp_test_dir.name(), metadata_cache_section,
+                                  routing_section, state_file);
+
+  SCOPED_TRACE("// Wait until the router at least once queried the metadata");
+  ASSERT_TRUE(wait_for_transaction_count_increase(cluster_http_ports[0], 2));
+
+  SCOPED_TRACE(
+      "// Check our state file content, it should contain the initial members");
+  check_state_file(state_file, ClusterType::RS_V2, cluster_id,
+                   cluster_nodes_ports, view_id);
+
+  // should be more than 1 connect-attempt as the async-replica-set
+  // implementation will close the connection and go to another node.
+  std::string server_globals =
+      MockServerRestClient(cluster_http_ports[0]).get_globals_as_json_string();
+
+  EXPECT_GE(get_int_field_value(server_globals, "connects"), 2);
+}
+
+TEST_F(AsyncReplicasetTest, CloseConnectionAfterRefreshOffWorks) {
+  RecordProperty("Worklog", "16652");
+  RecordProperty("RequirementId", "FR2.1");
+  RecordProperty(
+      "Description",
+      "If close-connection-after-refresh is 0, the connection after refresh "
+      "can stay open if it is same-server, but with async-replica-set, it has "
+      "no impact as the connection switches between the servers.");
+
+  const unsigned CLUSTER_NODES = 2;
+  for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
+    cluster_nodes_ports.push_back(port_pool_.get_next_available());
+    cluster_http_ports.push_back(port_pool_.get_next_available());
+  }
+
+  SCOPED_TRACE("// Launch 2 server mocks that will act as our cluster members");
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
+  for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
+
+    SCOPED_TRACE("// Let us start with 2 members (PRIMARY and SECONDARY)");
+    set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports,
+                      /*primary_id=*/0, view_id);
+  }
+
+  const std::string state_file = create_state_file(
+      temp_test_dir.name(),
+      create_state_file_content(cluster_id, "", cluster_nodes_ports, view_id));
+
+  SCOPED_TRACE("// Create a configuration file.");
+  const std::string metadata_cache_section =
+      get_metadata_cache_section(kTTL) +  //
+      "close_connection_after_refresh=0\n";
+  const uint16_t router_port_rw = port_pool_.get_next_available();
+  const std::string routing_section_rw = get_metadata_cache_routing_section(
+      router_port_rw, "PRIMARY", "first-available");
+  const uint16_t router_port_ro = port_pool_.get_next_available();
+  const std::string routing_section_ro = get_metadata_cache_routing_section(
+      router_port_ro, "SECONDARY", "round-robin");
+
+  const std::string routing_section =
+      routing_section_rw + "\n" + routing_section_ro;
+
+  SCOPED_TRACE("// Launch the router with the initial state file");
+  /*auto &router =*/launch_router(temp_test_dir.name(), metadata_cache_section,
+                                  routing_section, state_file);
+
+  SCOPED_TRACE("// Wait until the router at least once queried the metadata");
+  ASSERT_TRUE(wait_for_transaction_count_increase(cluster_http_ports[0], 2));
+
+  SCOPED_TRACE(
+      "// Check our state file content, it should contain the initial members");
+  check_state_file(state_file, ClusterType::RS_V2, cluster_id,
+                   cluster_nodes_ports, view_id);
+
+  // should be more than 1 connect-attempt as the async-replica-set
+  // implementation will close the connection and go to another node.
+  std::string server_globals =
+      MockServerRestClient(cluster_http_ports[0]).get_globals_as_json_string();
+
+  EXPECT_GE(get_int_field_value(server_globals, "connects"), 2);
+}
+
+TEST_F(AsyncReplicasetTest, CloseConnectionAfterRefreshOnWorks) {
+  RecordProperty("Worklog", "16652");
+  RecordProperty("RequirementId", "FR1");
+  RecordProperty(
+      "Description",
+      "if close-connection-after-refresh is 1, the connection after "
+      "refresh MUST be closed."
+      "With async-replica-set, it has no impact as the connection is "
+      "closed anyway as the cache switches between the servers.");
+
+  const unsigned CLUSTER_NODES = 2;
+  for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
+    cluster_nodes_ports.push_back(port_pool_.get_next_available());
+    cluster_http_ports.push_back(port_pool_.get_next_available());
+  }
+
+  SCOPED_TRACE("// Launch 2 server mocks that will act as our cluster members");
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
+  for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
+
+    SCOPED_TRACE("// Let us start with 2 members (PRIMARY and SECONDARY)");
+    set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports,
+                      /*primary_id=*/0, view_id);
+  }
+
+  const std::string state_file = create_state_file(
+      temp_test_dir.name(),
+      create_state_file_content(cluster_id, "", cluster_nodes_ports, view_id));
+
+  SCOPED_TRACE("// Create a configuration file.");
+  const std::string metadata_cache_section =
+      get_metadata_cache_section(kTTL) +  //
+      "close_connection_after_refresh=1\n";
+  const uint16_t router_port_rw = port_pool_.get_next_available();
+  const std::string routing_section_rw = get_metadata_cache_routing_section(
+      router_port_rw, "PRIMARY", "first-available");
+  const uint16_t router_port_ro = port_pool_.get_next_available();
+  const std::string routing_section_ro = get_metadata_cache_routing_section(
+      router_port_ro, "SECONDARY", "round-robin");
+
+  const std::string routing_section =
+      routing_section_rw + "\n" + routing_section_ro;
+
+  SCOPED_TRACE("// Launch the router with the initial state file");
+  /*auto &router =*/launch_router(temp_test_dir.name(), metadata_cache_section,
+                                  routing_section, state_file);
+
+  SCOPED_TRACE("// Wait until the router at least once queried the metadata");
+  ASSERT_TRUE(wait_for_transaction_count_increase(cluster_http_ports[0], 2));
+
+  SCOPED_TRACE(
+      "// Check our state file content, it should contain the initial members");
+  check_state_file(state_file, ClusterType::RS_V2, cluster_id,
+                   cluster_nodes_ports, view_id);
+
+  // should be more than 1 connect-attempt
+  std::string server_globals =
+      MockServerRestClient(cluster_http_ports[0]).get_globals_as_json_string();
+
+  EXPECT_GE(get_int_field_value(server_globals, "connects"), 2);
+}
+
 class NodeUnavailableTest : public AsyncReplicasetTest,
                             public ::testing::WithParamInterface<std::string> {
 };
@@ -1645,9 +1842,9 @@ TEST_P(NodeUnavailableTest, NodeUnavailable) {
 
     EXPECT_THAT(connected_ports,
                 ElementsAre(node_2,  // try [1], fallover to [2]
-                            node_2,  // use [2]
                             node_3,  // use [3]
-                            node_2   // use [2]
+                            node_2,  // use [2]
+                            node_3   // use [3]
                             ));
   }
 }

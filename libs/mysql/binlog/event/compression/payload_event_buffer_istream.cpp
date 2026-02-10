@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +25,7 @@
 
 #include "mysql/binlog/event/byteorder.h"
 #include "mysql/binlog/event/wrapper_functions.h"
-#include "mysql/utils/concat.h"
-
-using mysql::utils::concat;
+#include "mysql/utils/concat.h"  // concat
 
 namespace mysql::binlog::event::compression {
 
@@ -117,9 +115,9 @@ void Payload_event_buffer_istream::initialize() {
     m_decompressor = Factory_t::build_decompressor(m_compression_algorithm,
                                                    m_memory_resource);
     if (m_decompressor == nullptr) {
-      set_error_str(
-          concat("Unknown compression algorithm in Payload_log_event: ",
-                 m_compression_algorithm, "."));
+      set_error_str(mysql::utils::throwing::concat(
+          "Unknown compression algorithm in Payload_log_event: ",
+          m_compression_algorithm, "."));
       set_status(Status_t::corrupted);
       return;
     }
@@ -220,7 +218,7 @@ void Payload_event_buffer_istream::read_event() {
     reader.go_to(EVENT_LEN_OFFSET);
     read_length = reader.read<uint32_t>();
     if (read_length < LOG_EVENT_HEADER_LEN) {
-      set_error_str(concat(
+      set_error_str(mysql::utils::throwing::concat(
           "Length field of embedded event in Payload_log_event is only ",
           read_length, " bytes, but ", LOG_EVENT_HEADER_LEN, " are required."));
       set_status(Status_t::corrupted);
@@ -259,11 +257,11 @@ void Payload_event_buffer_istream::read_event() {
       set_status(status);
       return;
     case Status_t::exceeds_max_size: {
-      set_error_str(
-          concat("Length field of embedded event in Payload_log_event is ",
-                 read_length, " bytes, exceeding the maximum of ",
-                 m_managed_buffer_ptr->get_grow_calculator().get_max_size(),
-                 " bytes."));
+      set_error_str(mysql::utils::throwing::concat(
+          "Length field of embedded event in Payload_log_event is ",
+          read_length, " bytes, exceeding the maximum of ",
+          m_managed_buffer_ptr->get_grow_calculator().get_max_size(),
+          " bytes."));
       set_status(status);
       return;
     }

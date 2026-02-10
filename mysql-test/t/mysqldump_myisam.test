@@ -1,5 +1,7 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 #
 # Bug #16502: mysqlcheck tries to check views
@@ -177,7 +179,7 @@ DROP TABLE t1, t2, t3;
 
 CREATE DATABASE `test-database`;
 USE `test-database`;
-CREATE TABLE `test` (`c1` VARCHAR(10)) ENGINE=MYISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_unicode_ci;
+CREATE TABLE `test` (`c1` VARCHAR(10)) ENGINE=MYISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
 
 DELIMITER |;
 CREATE TRIGGER `trig` BEFORE INSERT ON `test` FOR EACH ROW BEGIN
@@ -300,6 +302,5 @@ SET NAMES default;
 USE test;
 SET GLOBAL EVENT_SCHEDULER = ON;
 --source include/running_event_scheduler.inc
-
-
-
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

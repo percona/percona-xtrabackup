@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -392,6 +392,8 @@ void BackupProxy::execSTOP_BACKUP_REQ(Signal *signal) {
   const StopBackupReq *req = (const StopBackupReq *)signal->getDataPtr();
   ss.m_req = *req;
   ss.masterRef = req->senderRef;
+  ss.logRecords = 0;
+  ss.logBytes = 0;
   sendREQ(signal, ss);
 }
 
@@ -410,6 +412,11 @@ void BackupProxy::sendSTOP_BACKUP_REQ(Signal *signal, Uint32 ssId,
 void BackupProxy::execSTOP_BACKUP_CONF(Signal *signal) {
   jam();
   Ss_STOP_BACKUP_REQ &ss = ssFind<Ss_STOP_BACKUP_REQ>(BackupSignalSsId);
+  const StopBackupConf *conf = (const StopBackupConf *)signal->getDataPtrSend();
+  ss.logBytes +=
+      (conf->noOfLogBytesLow + (Uint64(conf->noOfLogBytesHigh) << 32));
+  ss.logRecords +=
+      (conf->noOfLogRecordsLow + (Uint64(conf->noOfLogRecordsHigh) << 32));
   recvCONF(signal, ss);
 }
 
@@ -430,6 +437,12 @@ void BackupProxy::sendSTOP_BACKUP_CONF(Signal *signal, Uint32 ssId) {
 
   if (ss.m_error == 0) {
     jam();
+    StopBackupConf *conf = (StopBackupConf *)signal->getDataPtrSend();
+    conf->noOfLogBytesLow = Uint32(ss.logBytes);
+    conf->noOfLogBytesHigh = Uint32(ss.logBytes >> 32);
+    conf->noOfLogRecordsLow = Uint32(ss.logRecords);
+    conf->noOfLogRecordsHigh = Uint32(ss.logRecords >> 32);
+
     sendSignal(ss.masterRef, GSN_STOP_BACKUP_CONF, signal,
                StopBackupConf::SignalLength, JBB);
   } else {

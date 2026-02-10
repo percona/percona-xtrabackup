@@ -1,0 +1,40 @@
+include/rpl/set_gtid_mode_off.inc
+# FR 12) When replicating from a source running an older MySQL version that does
+# not support SQL foreign key handling, the replica must perform foreign key
+# CASCADE actions using InnoDB FK handling. Since the USE_SQL_FOREIGN_KEY_F flag
+# is not set in row-based binlogs from older versions, the applier must use
+# InnoDB FK handling.
+# This test simulates replication upgrade by using sql binlog dump taken 
+# from old MySQL Version 9.0 and replay them on the latest MySQL version
+# USE_SQL_FOREIGN_KEY_F should not be present in fk_both_binlog.sql as it is
+# created with older MySQL version 9.0 which does not support SQL FK handling.
+Pattern "USE_SQL_FOREIGN_KEY_F" not found
+#log event handler adds "SQL FK Handling = OFF" in error log with debug build
+Pattern "SQL FK Handling = OFF" found
+SELECT * FROM t1 ORDER BY f1;
+f1
+1
+9
+10
+SELECT * FROM t2 ORDER BY f1;
+f1	f2
+1	1
+3	9
+5	10
+SELECT * FROM t3 ORDER BY f1;
+f1	f2
+1	1
+2	NULL
+3	NULL
+4	NULL
+5	NULL
+# rows_deleted should not account child table record
+# InnoDB FK handling does not account this.
+SELECT table_name, rows_updated FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated
+t1	2
+t2	0
+t3	2
+DROP TABLE t3, t2, t1;
+include/rpl/set_gtid_mode_on.inc

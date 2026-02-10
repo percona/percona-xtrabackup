@@ -8,6 +8,8 @@
 # See opt file for the config:
 #   (1) --innodb-buffer-pool-in-core-file is set to ON initially
 #   (2) the buffer pool is set equal to limit below
+#   (3) --innodb-buffer-pool-instances=1 is set to have reproducible test results.
+#       That's because each instance can change the size of the core file.
 
 # madvise MADV_DONTDUMP is non-posix extension available in Linux 3.4
 --let $minimum_required_linux_version = 3.4
@@ -42,7 +44,7 @@ SELECT @@global.innodb_buffer_pool_in_core_file;
 # setting used in the .opt file. This will assure that if the core
 # file contains buffer pool, then the core size will for sure be
 # larger than this limit.
---let $expected_max_core_size = 2450
+--let $expected_max_core_size = 1700
 --source include/mysqld_core_dump.inc
 
 --remove_file $LOG_FILE

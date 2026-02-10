@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -27,8 +27,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "ut0wqueue.h"
 
-#include <stddef.h>
 #include <sys/types.h>
+#include <cstddef>
 
 #include "mem0mem.h"
 #include "ut0list.h"
@@ -49,7 +49,7 @@ struct ib_wqueue_t {
 
 /** Create a new work queue.
  @return work queue */
-ib_wqueue_t *ib_wqueue_create(void) {
+ib_wqueue_t *ib_wqueue_create() {
   ib_wqueue_t *wq = static_cast<ib_wqueue_t *>(
       ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*wq)));
 

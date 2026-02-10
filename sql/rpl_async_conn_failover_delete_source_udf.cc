@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -118,7 +118,7 @@ bool Rpl_async_conn_failover_delete_source::delete_source_init(
     return true;
   }
 
-  if (args->arg_type[2] != INT_RESULT) {
+  if (args->arg_type[2] != INT_RESULT || args->args[2] == nullptr) {
     my_stpcpy(message, "Wrong arguments: You need to specify value for port.");
     return true;
   }

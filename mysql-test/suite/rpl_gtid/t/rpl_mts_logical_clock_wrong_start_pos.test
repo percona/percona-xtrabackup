@@ -27,11 +27,9 @@ call mtr.add_suppression("QUERY.* is not expected in an event stream");
 
 --source include/rpl/stop_replica.inc
 
-SET @save_replica_parallel_type = @@GLOBAL.replica_parallel_type;
 SET @save_replica_parallel_workers = @@GLOBAL.replica_parallel_workers;
 SET @save_replica_transaction_retries = @@GLOBAL.replica_transaction_retries;
 
-SET GLOBAL replica_parallel_type = LOGICAL_CLOCK;
 SET GLOBAL replica_parallel_workers = 2;
 SET GLOBAL replica_transaction_retries = 0;
 --source include/rpl/start_replica.inc
@@ -61,7 +59,6 @@ DROP TABLE t1;
 --disable_warnings
 SET GLOBAL replica_parallel_workers = @save_replica_parallel_workers;
 --enable_warnings
-SET GLOBAL replica_parallel_type = @save_replica_parallel_type;
 SET GLOBAL replica_transaction_retries = @save_replica_transaction_retries;
 --source include/rpl/start_replica.inc
 

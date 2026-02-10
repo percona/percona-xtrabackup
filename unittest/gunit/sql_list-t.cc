@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,7 @@
 */
 
 #include <gtest/gtest.h>
-#include <stddef.h>
+#include <cstddef>
 
 #include <memory>
 #include <utility>
@@ -67,7 +67,7 @@ class SqlListTest : public ::testing::Test {
 
   void SetUp() override { THR_MALLOC = &m_mem_root_p; }
 
-  static void SetUpTestCase() {
+  static void SetUpTestSuite() {
     current_thd = nullptr;
     THR_MALLOC = nullptr;
   }
@@ -85,7 +85,7 @@ class SqlListTest : public ::testing::Test {
 // Tests that we can construct and destruct lists.
 TEST_F(SqlListTest, ConstructAndDestruct) {
   EXPECT_TRUE(m_int_list.is_empty());
-  List<int> *p_int_list = new (*THR_MALLOC) List<int>;
+  auto *p_int_list = new (*THR_MALLOC) List<int>;
   EXPECT_TRUE(p_int_list->is_empty());
   ::destroy_at(p_int_list);
 }
@@ -124,8 +124,8 @@ TEST_F(SqlListTest, DeepCopy) {
 TEST_F(SqlListTest, Iterate) {
   int values[] = {3, 2, 1};
   insert_values(values, &m_int_list);
-  for (size_t ix = 0; ix < array_elements(values); ++ix) {
-    EXPECT_EQ(values[ix], *m_int_list_iter++);
+  for (int &value : values) {
+    EXPECT_EQ(value, *m_int_list_iter++);
   }
   m_int_list_iter.init(m_int_list);
   int *value;
@@ -160,8 +160,8 @@ TEST(SqlIlistTest, PushBackAndIterate) {
   I_List_iterator<Linked_node> i_list_iter(i_list);
   int values[] = {11, 22, 33, 42, 5};
   EXPECT_EQ(null_node, i_list.head());
-  for (size_t ix = 0; ix < array_elements(values); ++ix) {
-    i_list.push_back(new Linked_node(values[ix]));
+  for (int value : values) {
+    i_list.push_back(new Linked_node(value));
   }
 
   Linked_node *node;
@@ -181,8 +181,8 @@ TEST(SqlIlistTest, PushFrontAndIterate) {
   I_List<Linked_node> i_list;
   I_List_iterator<Linked_node> i_list_iter(i_list);
   int values[] = {11, 22, 33, 42, 5};
-  for (size_t ix = 0; ix < array_elements(values); ++ix) {
-    i_list.push_front(new Linked_node(values[ix]));
+  for (int value : values) {
+    i_list.push_front(new Linked_node(value));
   }
 
   Linked_node *node;
@@ -319,7 +319,7 @@ TEST(Sql_I_ListTest, Construction) {
   SQL_I_List<Element> y(x);
   EXPECT_EQ(2, x.elements);
   EXPECT_EQ(2, y.elements);
-  SQL_I_List<Element> z(std::move(y));
+  SQL_I_List<Element> const z(std::move(y));
   EXPECT_EQ(2, z.elements);
   EXPECT_EQ(0, y.elements);
   EXPECT_EQ(&y.first, y.next);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -123,8 +123,6 @@ class IndexRangeScanIterator : public RowIDCapableRowIterator {
   /* Default move ctor used by ReverseIndexRangeScanIterator */
   IndexRangeScanIterator(IndexRangeScanIterator &&) = default;
 
-  bool Init() override;
-  int Read() override;
   void UnlockRow() override {
     // Override TableRowIterator::UnlockRow(), since we may use
     // a different handler from m_table->file.
@@ -136,6 +134,10 @@ class IndexRangeScanIterator : public RowIDCapableRowIterator {
     assert(need_rows_in_rowid_order);
     return file->ref;
   }
+
+ private:
+  bool DoInit() override;
+  int DoRead() override;
 };
 
 bool InitIndexRangeScan(TABLE *table, handler *file, int index,

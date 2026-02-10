@@ -1,7 +1,3 @@
---disable_query_log
-call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot add field.*");
---enable_query_log
-
 SET @saved_innodb_strict_mode=@@SESSION.innodb_strict_mode;
 
 SET SESSION innodb_strict_mode=OFF;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,10 @@
 
 #include "sql/dd/impl/system_views/resource_groups.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Resource_groups &Resource_groups::instance() {
-  static Resource_groups *s_instance = new Resource_groups();
+  static auto *s_instance = new Resource_groups();
   return *s_instance;
 }
 
@@ -48,5 +47,4 @@ Resource_groups::Resource_groups() {
   m_target_def.add_where("CAN_ACCESS_RESOURCE_GROUP(res.resource_group_name)");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

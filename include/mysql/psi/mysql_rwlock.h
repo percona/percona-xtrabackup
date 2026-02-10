@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -30,9 +30,9 @@
 */
 
 /* HAVE_PSI_*_INTERFACE */
-#include "my_psi_config.h"  // IWYU pragma: keep
+#include "my_psi_config.h"
 
-#include "mysql/components/services/bits/mysql_rwlock_bits.h"
+#include "mysql/components/services/bits/mysql_rwlock_bits.h"  // IWYU pragma: export
 #include "mysql/psi/psi_rwlock.h"
 #include "thr_rwlock.h"
 

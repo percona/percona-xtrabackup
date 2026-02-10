@@ -348,6 +348,32 @@ DROP FUNCTION IF EXISTS f1;
 ---> Creating procedure...
 /*!50003 CREATE PROCEDURE p1() SET @a = 1 */;
 /*!50003 CREATE FUNCTION f1() RETURNS INT RETURN 0 */;
+/*!90200 CREATE LIBRARY test_library LANGUAGE JAVASCRIPT AS $$ export function f(n) {  return n } $$ */;
+Warnings:
+Warning	6001	Language component: Not available.
+/*!90200 CREATE FUNCTION test_function(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT USING (test_library) AS $$ return test_library.f(n) $$ */;
+Warnings:
+Warning	6001	Language component: Not available.
+/*!90200 CREATE FUNCTION function_with_comment(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT USING (test_library) AS $$ return test_library.f(n) $$ */;
+Warnings:
+Warning	6001	Language component: Not available.
+/*!90300 CREATE LIBRARY library_with_comment COMMENT "library comment" LANGUAGE JAVASCRIPT AS $$ export function f(n) {  return n } $$ */;
+Warnings:
+Warning	6001	Language component: Not available.
+/*!90300 ALTER LIBRARY library_with_comment COMMENT 'library comment - updated' */;
+/*!90300 ALTER FUNCTION function_with_comment COMMENT "Updated function comment" USING (library_with_comment AS test_library) */;
+/*!90200 CREATE LIBRARY deleted_library LANGUAGE JAVASCRIPT AS $$ export function f(n) {  return n } $$ */;
+Warnings:
+Warning	6001	Language component: Not available.
+/*!90200 CREATE FUNCTION orphaned_function(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT USING (deleted_library) AS $$ return deleted_library.f(n) $$ */;
+Warnings:
+Warning	6001	Language component: Not available.
+/*!90200 CREATE FUNCTION orphaned_function_modified(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT USING (library_with_comment) AS $$ return library_with_comment.f(n) $$ */;
+Warnings:
+Warning	6001	Language component: Not available.
+/*!90200 DROP LIBRARY deleted_library */;
+/*!90300 ALTER FUNCTION orphaned_function_modified USING (deleted_library AS library_with_comment) */;
+ERROR 42000: LIBRARY deleted_library does not exist
 
 ---> Checking on master...
 SHOW CREATE PROCEDURE p1;
@@ -358,6 +384,58 @@ SHOW CREATE FUNCTION f1;
 Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
 f1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f1`() RETURNS int
 RETURN 0	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SHOW CREATE LIBRARY test_library;
+Library	sql_mode	Create Library
+test_library	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `test_library`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n } $$
+SHOW CREATE FUNCTION test_function;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+test_function	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `test_function`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`test_library`)
+AS $$ return test_library.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SHOW CREATE LIBRARY library_with_comment;
+Library	sql_mode	Create Library
+library_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_with_comment`
+    COMMENT 'library comment - updated'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n } $$
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_with_comment` AS `test_library`)
+    COMMENT 'Updated function comment'
+AS $$ return test_library.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SHOW CREATE FUNCTION orphaned_function;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+orphaned_function	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `orphaned_function`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`deleted_library`)
+AS $$ return deleted_library.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+Warnings:
+Warning	6436	The routine 'orphaned_function' references a missing library 'test.deleted_library' or definer/invoker of the routine lack rights to use it.
+SHOW CREATE FUNCTION orphaned_function_modified;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+orphaned_function_modified	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `orphaned_function_modified`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_with_comment`)
+AS $$ return library_with_comment.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	function_with_comment	FUNCTION	def	test	library_with_comment	NULL
+def	test	orphaned_function	FUNCTION	def	test	deleted_library	NULL
+def	test	orphaned_function_modified	FUNCTION	def	test	library_with_comment	NULL
+def	test	test_function	FUNCTION	def	test	test_library	NULL
+SELECT * FROM INFORMATION_SCHEMA.LIBRARIES ORDER BY LIBRARY_NAME;
+LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_DEFINITION	LANGUAGE	CREATED	LAST_ALTERED	SQL_MODE	LIBRARY_COMMENT	CREATOR
+def	test	library_with_comment	 export function f(n) {  return n } 	JAVASCRIPT	<created>	<modified>	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	library comment - updated	root@localhost
+def	test	test_library	 export function f(n) {  return n } 	JAVASCRIPT	<created>	<modified>	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION		root@localhost
+SHOW LIBRARY STATUS like "library_%";
+Db	Name	Language	Creator	Modified	Created	Comment
+test	library_with_comment	JAVASCRIPT	root@localhost	<modified>	<created>	library comment - updated
 
 ---> Synchronizing slave with master...
 ---> connection: master
@@ -371,12 +449,89 @@ SHOW CREATE FUNCTION f1;
 Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
 f1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f1`() RETURNS int
 RETURN 0	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SHOW CREATE LIBRARY test_library;
+Library	sql_mode	Create Library
+test_library	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `test_library`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n } $$
+SHOW CREATE FUNCTION test_function;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+test_function	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `test_function`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`test_library`)
+AS $$ return test_library.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SHOW CREATE LIBRARY library_with_comment;
+Library	sql_mode	Create Library
+library_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_with_comment`
+    COMMENT 'library comment - updated'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n } $$
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_with_comment` AS `test_library`)
+    COMMENT 'Updated function comment'
+AS $$ return test_library.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SHOW CREATE FUNCTION orphaned_function;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+orphaned_function	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `orphaned_function`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`deleted_library`)
+AS $$ return deleted_library.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+Warnings:
+Warning	6436	The routine 'orphaned_function' references a missing library 'test.deleted_library' or definer/invoker of the routine lack rights to use it.
+SHOW CREATE FUNCTION orphaned_function_modified;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+orphaned_function_modified	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `orphaned_function_modified`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_with_comment`)
+AS $$ return library_with_comment.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	function_with_comment	FUNCTION	def	test	library_with_comment	NULL
+def	test	orphaned_function	FUNCTION	def	test	deleted_library	NULL
+def	test	orphaned_function_modified	FUNCTION	def	test	library_with_comment	NULL
+def	test	test_function	FUNCTION	def	test	test_library	NULL
+SELECT * FROM INFORMATION_SCHEMA.LIBRARIES ORDER BY LIBRARY_NAME;
+LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_DEFINITION	LANGUAGE	CREATED	LAST_ALTERED	SQL_MODE	LIBRARY_COMMENT	CREATOR
+def	test	library_with_comment	 export function f(n) {  return n } 	JAVASCRIPT	<created>	<modified>	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	library comment - updated	root@localhost
+def	test	test_library	 export function f(n) {  return n } 	JAVASCRIPT	<created>	<modified>	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION		root@localhost
+SHOW LIBRARY STATUS like "library_%";
+Db	Name	Language	Creator	Modified	Created	Comment
+test	library_with_comment	JAVASCRIPT	root@localhost	<modified>	<created>	library comment - updated
 
 ---> connection: master
 
 ---> Cleaning up...
 DROP PROCEDURE p1;
 DROP FUNCTION f1;
+DROP FUNCTION test_function;
+DROP LIBRARY test_library;
+DROP FUNCTION function_with_comment;
+DROP LIBRARY library_with_comment;
+DROP FUNCTION orphaned_function;
+DROP FUNCTION orphaned_function_modified;
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+# Ensure that drop statement with 'IF EXISTS' is written to binlog, even though the library does not actually exist
+DROP LIBRARY IF EXISTS test_library;
+Warnings:
+Note	1305	LIBRARY test.test_library does not exist
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+SELECT * FROM INFORMATION_SCHEMA.LIBRARIES;
+LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_DEFINITION	LANGUAGE	CREATED	LAST_ALTERED	SQL_MODE	LIBRARY_COMMENT	CREATOR
+
+---> Checking on slave...
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+SELECT * FROM INFORMATION_SCHEMA.LIBRARIES;
+LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_DEFINITION	LANGUAGE	CREATED	LAST_ALTERED	SQL_MODE	LIBRARY_COMMENT	CREATOR
 drop table t1;
 drop database if exists mysqltest;
 drop database if exists mysqltest2;
@@ -577,8 +732,44 @@ master-bin.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` PROC
 SET @a = 1
 master-bin.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` FUNCTION `f1`() RETURNS int
 RETURN 0
+master-bin.000001	#	Query	#	#	use `test`; CREATE LIBRARY `test_library`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n } $$
+master-bin.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` FUNCTION `test_function`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`test_library`)
+AS $$ return test_library.f(n) $$
+master-bin.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`test_library`)
+AS $$ return test_library.f(n) $$
+master-bin.000001	#	Query	#	#	use `test`; CREATE LIBRARY `library_with_comment`
+    COMMENT 'library comment'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n } $$
+master-bin.000001	#	Query	#	#	use `test`; /*!90300 ALTER LIBRARY library_with_comment COMMENT 'library comment - updated' */
+master-bin.000001	#	Query	#	#	use `test`; /*!90300 ALTER FUNCTION function_with_comment COMMENT "Updated function comment" USING (library_with_comment AS test_library) */
+master-bin.000001	#	Query	#	#	use `test`; CREATE LIBRARY `deleted_library`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n } $$
+master-bin.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` FUNCTION `orphaned_function`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`deleted_library`)
+AS $$ return deleted_library.f(n) $$
+master-bin.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` FUNCTION `orphaned_function_modified`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_with_comment`)
+AS $$ return library_with_comment.f(n) $$
+master-bin.000001	#	Query	#	#	use `test`; /*!90200 DROP LIBRARY deleted_library */
 master-bin.000001	#	Query	#	#	use `test`; DROP PROCEDURE p1
 master-bin.000001	#	Query	#	#	use `test`; DROP FUNCTION f1
+master-bin.000001	#	Query	#	#	use `test`; DROP FUNCTION test_function
+master-bin.000001	#	Query	#	#	use `test`; DROP LIBRARY test_library
+master-bin.000001	#	Query	#	#	use `test`; DROP FUNCTION function_with_comment
+master-bin.000001	#	Query	#	#	use `test`; DROP LIBRARY library_with_comment
+master-bin.000001	#	Query	#	#	use `test`; DROP FUNCTION orphaned_function
+master-bin.000001	#	Query	#	#	use `test`; DROP FUNCTION orphaned_function_modified
+master-bin.000001	#	Query	#	#	use `test`; DROP LIBRARY IF EXISTS test_library
 master-bin.000001	#	Query	#	#	use `test`; DROP TABLE `t1` /* generated by server */
 master-bin.000001	#	Query	#	#	drop database if exists mysqltest
 master-bin.000001	#	Query	#	#	drop database if exists mysqltest2
@@ -1596,6 +1787,115 @@ RETURN 0
 /*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
 SET @@SESSION.GTID_NEXT= '#'/*!*/;
 SET TIMESTAMP=#/*!*/;
+CREATE LIBRARY `test_library`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n } $$
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+CREATE DEFINER=`root`@`localhost` FUNCTION `test_function`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`test_library`)
+AS $$ return test_library.f(n) $$
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`test_library`)
+AS $$ return test_library.f(n) $$
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+CREATE LIBRARY `library_with_comment`
+    COMMENT 'library comment'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n } $$
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+/*!90300 ALTER LIBRARY library_with_comment COMMENT 'library comment - updated' */
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+/*!90300 ALTER FUNCTION function_with_comment COMMENT "Updated function comment" USING (library_with_comment AS test_library) */
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+CREATE LIBRARY `deleted_library`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n } $$
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+CREATE DEFINER=`root`@`localhost` FUNCTION `orphaned_function`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`deleted_library`)
+AS $$ return deleted_library.f(n) $$
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+CREATE DEFINER=`root`@`localhost` FUNCTION `orphaned_function_modified`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_with_comment`)
+AS $$ return library_with_comment.f(n) $$
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+/*!90200 DROP LIBRARY deleted_library */
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
 DROP PROCEDURE p1
 /*!*/;
 # original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
@@ -1606,6 +1906,69 @@ DROP PROCEDURE p1
 SET @@SESSION.GTID_NEXT= '#'/*!*/;
 SET TIMESTAMP=#/*!*/;
 DROP FUNCTION f1
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+DROP FUNCTION test_function
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+DROP LIBRARY test_library
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+DROP FUNCTION function_with_comment
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+DROP LIBRARY library_with_comment
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+DROP FUNCTION orphaned_function
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+DROP FUNCTION orphaned_function_modified
+/*!*/;
+# original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+# immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
+/*!80001 SET @@session.original_commit_timestamp= MICROSECONDS-FROM-EPOCH*//*!*/;
+/*!80014 SET @@session.original_server_version= ORIGINAL_SERVER_VERSION*//*!*/;
+/*!80014 SET @@session.immediate_server_version= IMMEDIATE_SERVER_VERSION*//*!*/;
+SET @@SESSION.GTID_NEXT= '#'/*!*/;
+SET TIMESTAMP=#/*!*/;
+DROP LIBRARY IF EXISTS test_library
 /*!*/;
 # original_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)
 # immediate_commit_timestamp= MICROSECONDS-FROM-EPOCH (YYYY-MM-DD HOURS:MINUTES:SECONDS TZ)

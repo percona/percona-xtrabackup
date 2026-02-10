@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -158,7 +158,7 @@ class Uint32Buffer {
 #endif
       //    ndbout << "Uint32Buffer::alloc() Extend buffer from: " << m_avail
       //           << ", to: " << newSize << endl;
-      Uint32 *newBuf = new Uint32[newSize];
+      auto *newBuf = new Uint32[newSize];
       if (likely(newBuf != nullptr)) {
         assert(newBuf);
         memcpy(newBuf, m_array, m_size * sizeof(Uint32));
@@ -216,7 +216,7 @@ class Uint32Buffer {
    */
   void appendBytes(const void *src, Uint32 len) {
     if (likely(len > 0)) {
-      Uint32 wordCount = static_cast<Uint32>(
+      auto wordCount = static_cast<Uint32>(
           (len + sizeof(Uint32) - 1 - m_bytesLeft) / sizeof(Uint32));
       Uint32 *dst = alloc(wordCount);
       if (likely(dst != nullptr)) {
@@ -256,8 +256,8 @@ class Uint32Buffer {
 
  private:
   /** Should not be copied, nor assigned.*/
-  Uint32Buffer(Uint32Buffer &);
-  Uint32Buffer &operator=(Uint32Buffer &);
+  Uint32Buffer(Uint32Buffer &) = delete;
+  Uint32Buffer &operator=(Uint32Buffer &) = delete;
 
  private:
   Uint32 m_local[initSize];  // Initial static bufferspace
@@ -345,12 +345,9 @@ class NdbQueryOperationDefImpl {
 
   const NdbQueryOperationDefImpl *getFirstInEmbeddingNest() const {
     assert(m_firstInner == nullptr || m_firstUpper == nullptr);
-    if (m_firstInner != nullptr)
-      return m_firstInner;
-    else if (m_firstUpper != nullptr)
-      return m_firstUpper;
-    else
-      return nullptr;
+    if (m_firstInner != nullptr) return m_firstInner;
+    if (m_firstUpper != nullptr) return m_firstUpper;
+    return nullptr;
   }
 
   const NdbTableImpl &getTable() const { return m_table; }

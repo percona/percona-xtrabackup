@@ -1,0 +1,595 @@
+RESET BINARY LOGS AND GTIDS;
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+create table basic_schema.counter(id int primary key auto_increment);
+create procedure basic_schema.proc(out result text)
+begin
+insert into basic_schema.counter values (default);
+select count(*) into @res from basic_schema.counter;
+set result=@res;
+end$$
+create function basic_schema.func() returns text
+begin
+insert into basic_schema.counter values (default);
+select count(*) into @res from basic_schema.counter;
+return @res;
+end$$
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"responseCache":{"maxCacheSize":1000}, "fileCache":{"maxCacheSize":40}}');
+INSERT INTO `basic_schema`.`table4` (`id`, `first_name`, `last_name`)
+VALUES(42, "Big row", repeat('X', 1000));
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+# Registred DB_OBJECT at path: /svc/basic/t1
+# Registred DB_OBJECT at path: /svc/basic/t1lowttl
+# Registred DB_OBJECT at path: /svc/basic/t1auth
+# Registred DB_OBJECT at path: /svc/basic/t2auth
+# Registred DB_OBJECT at path: /svc/basic/t4
+# Registred DB_OBJECT at path: /svc/basic/t2
+# Registred DB_OBJECT at path: /svc/basic/t4_cached
+# Registred DB_OBJECT at path: /svc/basic/proc
+# Registred DB_OBJECT at path: /svc/basic/func
+# Registred DB_OBJECT at path: /svc/basic/procauth
+# Registred DB_OBJECT at path: /svc/basic/funcauth
+# Registred CONTENT_SET at path: /svc/static
+# Registred CONTENT_FILE at path: /svc/static/file1
+# Registred CONTENT_FILE at path: /svc/static/file2
+# Registered MRS ROLE: rolet1
+# Registered MRS Role Grant: * * /t1auth => READ,DELETE
+# Registered MRS ROLE: nopriv
+# Registred AUTH APP at path: NULL
+# Registred MRS USER: 'rolet1'
+# Registred MRS USER: 'rolet1b'
+# Registred MRS USER: 'nopriv'
+# Registred MRS USER: 'admin'
+update performance_schema.setup_consumers set enabled=1 where name='events_statements_history_long';
+TRUNCATE TABLE performance_schema.events_statements_history_long;
+select http_requests_get, http_requests_post, http_requests_put, http_requests_delete, json_object('endpoints', (details->'$.restCachedEndpoints'), 'itemLoads', (details->'$.restCacheItemLoads'), 'itemEjects', (details->'$.restCacheItemEjects'), 'itemHits', (details->'$.restCacheItemHits'), 'itemMisses', (details->'$.restCacheItemMisses'), 'items', (details->'$.restCachedItems'), 'fileLoads', (details->'$.restCacheFileLoads'), 'fileEjects', (details->'$.restCacheFileEjects'), 'fileHits', (details->'$.restCacheFileHits'), 'fileMisses', (details->'$.restCacheFileMisses'), 'files', (details->'$.restCachedFiles')) as stats from mysql_rest_service_metadata.router_status order by id desc limit 1;
+http_requests_get	http_requests_post	http_requests_put	http_requests_delete	stats
+0	0	0	0	{"files": 0, "items": 0, "fileHits": 0, "itemHits": 0, "endpoints": 11, "fileLoads": 0, "itemLoads": 0, "fileEjects": 0, "fileMisses": 0, "itemEjects": 0, "itemMisses": 0}
+PUT /svc/authentication/login
+
+OK
+PUT /svc/authentication/login
+
+OK
+PUT /svc/authentication/login
+
+OK
+PUT /svc/authentication/login
+
+OK
+PUT /svc/basic/t1auth/1 (payload-size:8)
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1auth/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+PUT /svc/basic/t1auth/1 (payload-size:8)
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1auth/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+POST /svc/basic/t1auth (payload-size:9)
+{
+    "id": 11,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1auth/11"
+        }
+    ],
+    "_metadata": {
+        "etag": "6AF4F18B73FB04387AC2237DE50A4D2A2AD1CBEBD1A038349FA580548CD75BAC",
+        "gtid": "GTID"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+POST /svc/basic/t1auth (payload-size:9)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+DELETE /svc/basic/t1auth/11
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+DELETE /svc/basic/t1auth/11
+{
+    "itemsDeleted": 0
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1/20
+{
+    "id": 20,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1/20"
+        }
+    ],
+    "_metadata": {
+        "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1/20
+{
+    "id": 20,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1/20"
+        }
+    ],
+    "_metadata": {
+        "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t2/1
+{
+    "id": 1,
+    "date": "1977-01-21 00:00:00.000000",
+    "name": "First row",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/1"
+        }
+    ],
+    "comments": "First comment",
+    "_metadata": {
+        "etag": "77004781476882B937CFE9FFC837CC8FC1D13F717B87F6ABCE20142D1C4140D6"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t2/1
+{
+    "id": 1,
+    "date": "1977-01-21 00:00:00.000000",
+    "name": "First row",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/1"
+        }
+    ],
+    "comments": "First comment",
+    "_metadata": {
+        "etag": "77004781476882B937CFE9FFC837CC8FC1D13F717B87F6ABCE20142D1C4140D6"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t4_cached/42
+{
+    "id": 42,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t4_cached/42"
+        }
+    ],
+    "last_name": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+    "table2_id": null,
+    "first_name": "Big row",
+    "_metadata": {
+        "etag": "BB71B9BBE3E32CC4D7DA2853639D50CB5BDC222B593892159F2E98883619E042"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t4_cached/42
+{
+    "id": 42,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t4_cached/42"
+        }
+    ],
+    "last_name": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+    "table2_id": null,
+    "first_name": "Big row",
+    "_metadata": {
+        "etag": "BB71B9BBE3E32CC4D7DA2853639D50CB5BDC222B593892159F2E98883619E042"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1?limit=1
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/basic/t1/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        }
+    ],
+    "limit": 1,
+    "offset": 0,
+    "hasMore": true,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/basic/t1/?offset=1&limit=1"
+        }
+    ]
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1?limit=1
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/basic/t1/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        }
+    ],
+    "limit": 1,
+    "offset": 0,
+    "hasMore": true,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/basic/t1/?offset=1&limit=1"
+        }
+    ]
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1?limit=2
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/basic/t1/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 20,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/basic/t1/20"
+                }
+            ],
+            "_metadata": {
+                "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975"
+            }
+        }
+    ],
+    "limit": 2,
+    "offset": 0,
+    "hasMore": true,
+    "count": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/basic/t1/?offset=2&limit=2"
+        }
+    ]
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1lowttl/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1lowttl/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1lowttl/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1lowttl/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+do sleep(3);
+GET /svc/basic/t1lowttl/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1lowttl/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1auth/50
+{
+    "id": 50,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1auth/50"
+        }
+    ],
+    "_metadata": {
+        "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1auth/50
+{
+    "id": 50,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1auth/50"
+        }
+    ],
+    "_metadata": {
+        "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1auth/50
+{
+    "id": 50,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1auth/50"
+        }
+    ],
+    "_metadata": {
+        "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+DELETE /svc/basic/t1auth/50
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+GET /svc/basic/t1auth/50
+{
+    "id": 50,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1auth/50"
+        }
+    ],
+    "_metadata": {
+        "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1auth/100
+{
+    "id": 100,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1auth/100"
+        }
+    ],
+    "_metadata": {
+        "etag": "88788929C8A1BCFA2E8ED12794DA7F0AA12FF117CC2CBCA43D3CFE7685D75EA3"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/t1auth/100
+{
+    "id": 100,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1auth/100"
+        }
+    ],
+    "_metadata": {
+        "etag": "88788929C8A1BCFA2E8ED12794DA7F0AA12FF117CC2CBCA43D3CFE7685D75EA3"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+update mysql_rest_service_metadata.mrs_privilege set crud_operations='DELETE' where object_path='/t1auth';
+GET /svc/basic/t1auth/100
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc/basic/t1auth/100
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/basic/proc
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "1"
+    },
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/proc
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "1"
+    },
+    "_metadata": {
+        "gtid":GTID
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+POST /svc/basic/proc (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "2"
+    },
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+POST /svc/basic/proc (payload-size:2)
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": "3"
+    },
+    "_metadata": {
+        "gtid":GTID
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/func
+{
+    "result": "4",
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+GET /svc/basic/func
+{
+    "result": "4",
+    "_metadata": {
+        "gtid":GTID
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+POST /svc/basic/func (payload-size:2)
+{
+    "result": "5",
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+POST /svc/basic/func (payload-size:2)
+{
+    "result": "6",
+    "_metadata": {
+        "gtid":GTID
+    }
+}
+OK
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+select max(TIMER_END) into @initial_time from performance_schema.events_statements_history_long;
+stats
+{"files": 1, "items": 5, "fileHits": 1.0, "itemHits": 10.0, "endpoints": 11, "fileLoads": 2.0, "itemLoads": 9.0, "fileEjects": 1.0, "fileMisses": 2.0, "itemEjects": 3.0, "itemMisses": 10.0}
+update performance_schema.setup_consumers set enabled="YES" where name='events_statements_history_long';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

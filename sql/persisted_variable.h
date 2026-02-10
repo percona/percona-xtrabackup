@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -251,6 +251,9 @@ class Persisted_variables_cache final {
 
   /** Helper function to handle changes in option type */
   void handle_option_type_change();
+
+  /** Remove persisted variable from all collections. */
+  void remove_persisted_variable_from_all(const char *name);
 
  private:
   /* Helper functions for file IO */

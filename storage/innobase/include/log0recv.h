@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2024, Oracle and/or its affiliates.
+Copyright (c) 1997, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -293,16 +293,9 @@ lsn_t recv_calc_lsn_on_data_add(lsn_t lsn, os_offset_t len);
 
 /** Empties the hash table of stored log records, applying them to appropriate
 pages.
-@param[in,out]  log             redo log
-@param[in]      allow_ibuf      if true, ibuf operations are allowed during
-                                the application; if false, no ibuf operations
-                                are allowed, and after the application all
-                                file pages are flushed to disk and invalidated
-                                in buffer pool: this alternative means that
-                                no new log records can be generated during
-                                the application; the caller must in this case
-                                own the log mutex */
-void recv_apply_hashed_log_recs(log_t &log, bool allow_ibuf);
+@param[in,out]  log             redo log */
+
+void recv_apply_hashed_log_recs(log_t &log);
 
 #if defined(UNIV_DEBUG) || defined(UNIV_HOTBACKUP)
 /** Return string name of the redo log record type.
@@ -705,17 +698,6 @@ extern recv_sys_t *recv_sys;
 otherwise.  Note that this is false while a background thread is
 rolling back incomplete transactions. */
 extern volatile bool recv_recovery_on;
-
-/** If the following is true, the buffer pool file pages must be invalidated
-after recovery and no ibuf operations are allowed; this becomes true if
-the log record hash table becomes too full, and log records must be merged
-to file pages already before the recovery is finished: in this case no
-ibuf operations are allowed, as they could modify the pages read in the
-buffer pool before the pages have been recovered to the up-to-date state.
-
-true means that recovery is running and no operations on the log files
-are allowed yet: the variable name is misleading. */
-extern bool recv_no_ibuf_operations;
 
 /** true when recv_init_crash_recovery() has been called. */
 extern bool recv_needed_recovery;

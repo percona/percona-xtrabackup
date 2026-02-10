@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -76,7 +76,7 @@ int Local::clone() {
   /* End PFS table state. */
   const char *err_mesg = nullptr;
   uint32_t err_number = 0;
-  auto thd = m_clone_client.get_thd();
+  auto *thd = m_clone_client.get_thd();
 
   mysql_service_clone_protocol->mysql_clone_get_error(thd, &err_number,
                                                       &err_mesg);
@@ -85,8 +85,8 @@ int Local::clone() {
 }
 
 int Local::clone_exec() {
-  auto thd = m_clone_client.get_thd();
-  auto dir_name = m_clone_client.get_data_dir();
+  auto *thd = m_clone_client.get_thd();
+  const auto *dir_name = m_clone_client.get_data_dir();
   auto is_master = m_clone_client.is_master();
   auto acquire_backup_lock = (is_master && clone_block_ddl);
   auto num_workers = m_clone_client.get_max_concurrency() - 1;
@@ -194,7 +194,7 @@ int Local_Callback::file_cbk(Ha_clone_file from_file, uint len) {
   assert(!m_apply_data);
 
   /* Set source file to external handle of "Clone Client". */
-  auto ext_link = get_client_data_link();
+  auto *ext_link = get_client_data_link();
 
   ext_link->set_file(from_file, len);
 
@@ -213,7 +213,7 @@ int Local_Callback::buffer_cbk(uchar *from_buffer, uint buf_len) {
   }
 
   /* Set source buffer to external handle of "Clone Client". */
-  auto ext_link = get_client_data_link();
+  auto *ext_link = get_client_data_link();
 
   ext_link->set_buffer(from_buffer, buf_len);
 
@@ -225,7 +225,7 @@ int Local_Callback::buffer_cbk(uchar *from_buffer, uint buf_len) {
 int Local_Callback::apply_ack() {
   assert(m_apply_data);
 
-  auto client = get_clone_client();
+  auto *client = get_clone_client();
 
   uint64_t data_estimate = 0;
   /* Check and update PFS table while beginning state. */
@@ -239,12 +239,12 @@ int Local_Callback::apply_ack() {
 
   uint loc_len = 0;
 
-  auto hton = get_hton();
+  auto *hton = get_hton();
 
-  auto server = get_clone_server();
+  auto *server = get_clone_server();
 
-  auto thd = server->get_thd();
-  auto server_loc = server->get_locator(get_loc_index(), loc_len);
+  auto *thd = server->get_thd();
+  const auto *server_loc = server->get_locator(get_loc_index(), loc_len);
 
   /* Use master task ID = 0 */
   auto error = hton->clone_interface.clone_ack(hton, thd, server_loc, loc_len,
@@ -256,11 +256,11 @@ int Local_Callback::apply_ack() {
 int Local_Callback::apply_data() {
   uint loc_len = 0;
 
-  auto client = get_clone_client();
-  auto client_loc = client->get_locator(get_loc_index(), loc_len);
+  auto *client = get_clone_client();
+  const auto *client_loc = client->get_locator(get_loc_index(), loc_len);
 
-  auto hton = get_hton();
-  auto thd = client->get_thd();
+  auto *hton = get_hton();
+  auto *thd = client->get_thd();
 
   /* Check and abort, if killed */
   if (thd_killed(thd)) {
@@ -307,8 +307,8 @@ int Local_Callback::apply_cbk(Ha_clone_file to_file, bool apply_file,
 
   assert(m_apply_data);
 
-  auto client = get_clone_client();
-  auto server = get_clone_server();
+  auto *client = get_clone_client();
+  auto *server = get_clone_server();
   auto &info = client->get_thread_info();
 
   /* Update statistics. */
@@ -319,12 +319,12 @@ int Local_Callback::apply_cbk(Ha_clone_file to_file, bool apply_file,
   auto func = std::bind(clone_local, _1, server, _2);
   client->spawn_workers(num_workers, func);
 
-  auto ext_link = get_client_data_link();
+  auto *ext_link = get_client_data_link();
 
   auto dest_type = ext_link->get_type();
 
   if (dest_type == CLONE_HANDLE_BUFFER) {
-    auto from_buf = ext_link->get_buffer();
+    auto *from_buf = ext_link->get_buffer();
 
     /* Assert alignment to CLONE_OS_ALIGN for O_DIRECT */
     assert(is_os_buffer_cache() ||
@@ -360,7 +360,7 @@ int Local_Callback::apply_cbk(Ha_clone_file to_file, bool apply_file,
       }
     }
 
-    auto from_file = ext_link->get_file();
+    auto *from_file = ext_link->get_file();
 
     if (apply_file) {
       error = clone_os_copy_file_to_file(from_file->m_file_desc, to_file,

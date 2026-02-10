@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,6 @@
 
 #ifndef COMPONENTS_INCLUDED
 #define COMPONENTS_INCLUDED
-
 #include <mysql/components/minimal_chassis.h> /* Minimal chassis */
 #include <mysql/components/my_service.h>
 #include <mysql/components/service.h>
@@ -35,6 +34,7 @@
 #include <mysql/components/services/keyring_reader_with_status.h>
 #include <mysql/components/services/keyring_writer.h>
 #include <mysql/components/services/registry.h>
+#include <string>
 
 namespace components {
 using registry_type_t = SERVICE_TYPE_NO_CONST(registry);

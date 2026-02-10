@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -276,8 +276,8 @@ int NdbSqlUtil::cmpOlddecimal(const void *info [[maybe_unused]], const void *p1,
                               unsigned n1, const void *p2,
                               unsigned n2 [[maybe_unused]]) {
   assert(info == nullptr && n1 == n2);
-  const uchar *v1 = (const uchar *)p1;
-  const uchar *v2 = (const uchar *)p2;
+  const auto *v1 = (const uchar *)p1;
+  const auto *v2 = (const uchar *)p2;
   int sgn = +1;
   unsigned i = 0;
   while (i < n1) {
@@ -323,9 +323,9 @@ int NdbSqlUtil::cmpChar(const void *info, const void *p1, unsigned n1,
                         const void *p2, unsigned n2) {
   // Require same lengths
   assert(info != nullptr && n1 == n2);
-  const uchar *v1 = (const uchar *)p1;
-  const uchar *v2 = (const uchar *)p2;
-  const CHARSET_INFO *cs = (const CHARSET_INFO *)info;
+  const auto *v1 = (const uchar *)p1;
+  const auto *v2 = (const uchar *)p2;
+  const auto *cs = (const CHARSET_INFO *)info;
 
   // Comparing with a NO_PAD collation requires trailing spaces to be stripped.
   if (cs->pad_attribute == NO_PAD) {
@@ -339,12 +339,12 @@ int NdbSqlUtil::cmpVarchar(const void *info, const void *p1, unsigned n1,
                            const void *p2, unsigned n2) {
   assert(info != nullptr);
   const uint lb = 1;
-  const uchar *v1 = (const uchar *)p1;
-  const uchar *v2 = (const uchar *)p2;
+  const auto *v1 = (const uchar *)p1;
+  const auto *v2 = (const uchar *)p2;
   uint m1 = v1[0];
   uint m2 = v2[0];
   require(lb + m1 <= n1 && lb + m2 <= n2);
-  const CHARSET_INFO *cs = (const CHARSET_INFO *)info;
+  const auto *cs = (const CHARSET_INFO *)info;
   // compare with space padding
   return (*cs->coll->strnncollsp)(cs, v1 + lb, m1, v2 + lb, m2);
 }
@@ -377,8 +377,8 @@ int NdbSqlUtil::cmpVarbinary(const void *info [[maybe_unused]], const void *p1,
                              unsigned n1, const void *p2, unsigned n2) {
   assert(info == nullptr);
   const uint lb = 1;
-  const uchar *v1 = (const uchar *)p1;
-  const uchar *v2 = (const uchar *)p2;
+  const auto *v1 = (const uchar *)p1;
+  const auto *v2 = (const uchar *)p2;
   uint m1 = v1[0];
   uint m2 = v2[0];
   require(lb + m1 <= n1 && lb + m2 <= n2);
@@ -451,8 +451,8 @@ int NdbSqlUtil::cmpBit(const void *info, const void *p1, unsigned n1,
     return cmpBit(info, copyP1, bytes, copyP2, bytes);
   }
 
-  const Uint32 *wp1 = (const Uint32 *)p1;
-  const Uint32 *wp2 = (const Uint32 *)p2;
+  const auto *wp1 = (const Uint32 *)p1;
+  const auto *wp2 = (const Uint32 *)p2;
   while (--words) {
     if (*wp1 < *wp2) return -1;
     if (*(wp1++) > *(wp2++)) return 1;
@@ -494,12 +494,12 @@ int NdbSqlUtil::cmpLongvarchar(const void *info, const void *p1, unsigned n1,
                                const void *p2, unsigned n2) {
   assert(info != nullptr);
   const uint lb = 2;
-  const uchar *v1 = (const uchar *)p1;
-  const uchar *v2 = (const uchar *)p2;
+  const auto *v1 = (const uchar *)p1;
+  const auto *v2 = (const uchar *)p2;
   uint m1 = v1[0] | (v1[1] << 8);
   uint m2 = v2[0] | (v2[1] << 8);
   require(lb + m1 <= n1 && lb + m2 <= n2);
-  const CHARSET_INFO *cs = (const CHARSET_INFO *)info;
+  const auto *cs = (const CHARSET_INFO *)info;
   // compare with space padding
   return (*cs->coll->strnncollsp)(cs, v1 + lb, m1, v2 + lb, m2);
 }
@@ -509,8 +509,8 @@ int NdbSqlUtil::cmpLongvarbinary(const void *info [[maybe_unused]],
                                  unsigned n2) {
   assert(info == nullptr);
   const uint lb = 2;
-  const uchar *v1 = (const uchar *)p1;
-  const uchar *v2 = (const uchar *)p2;
+  const auto *v1 = (const uchar *)p1;
+  const auto *v2 = (const uchar *)p2;
   uint m1 = v1[0] | (v1[1] << 8);
   uint m2 = v2[0] | (v2[1] << 8);
   require(lb + m1 <= n1 && lb + m2 <= n2);
@@ -574,7 +574,7 @@ int NdbSqlUtil::likeChar(const void *info, const void *p1, unsigned n1,
                          const void *p2, unsigned n2) {
   const char *v1 = (const char *)p1;
   const char *v2 = (const char *)p2;
-  const CHARSET_INFO *cs = (const CHARSET_INFO *)(info);
+  const auto *cs = (const CHARSET_INFO *)(info);
   // strip end spaces to match (incorrect) MySQL behaviour
   n1 = (unsigned)(*cs->cset->lengthsp)(cs, v1, n1);
   int k = (*cs->coll->wildcmp)(cs, v1, v1 + n1, v2, v2 + n2, ndb_wild_prefix,
@@ -592,14 +592,14 @@ int NdbSqlUtil::likeVarchar(const void *info, const void *p1, unsigned n1,
                             const void *p2, unsigned n2) {
   const unsigned lb = 1;
   if (n1 >= lb) {
-    const uchar *v1 = (const uchar *)p1;
-    const uchar *v2 = (const uchar *)p2;
+    const auto *v1 = (const uchar *)p1;
+    const auto *v2 = (const uchar *)p2;
     unsigned m1 = *v1;
     unsigned m2 = n2;
     if (lb + m1 <= n1) {
       const char *w1 = (const char *)v1 + lb;
       const char *w2 = (const char *)v2;
-      const CHARSET_INFO *cs = (const CHARSET_INFO *)(info);
+      const auto *cs = (const CHARSET_INFO *)(info);
       int k =
           (*cs->coll->wildcmp)(cs, w1, w1 + m1, w2, w2 + m2, ndb_wild_prefix,
                                ndb_wild_one, ndb_wild_many);
@@ -619,14 +619,14 @@ int NdbSqlUtil::likeLongvarchar(const void *info, const void *p1, unsigned n1,
                                 const void *p2, unsigned n2) {
   const unsigned lb = 2;
   if (n1 >= lb) {
-    const uchar *v1 = (const uchar *)p1;
-    const uchar *v2 = (const uchar *)p2;
+    const auto *v1 = (const uchar *)p1;
+    const auto *v2 = (const uchar *)p2;
     unsigned m1 = uint2korr(v1);
     unsigned m2 = n2;
     if (lb + m1 <= n1) {
       const char *w1 = (const char *)v1 + lb;
       const char *w2 = (const char *)v2;
-      const CHARSET_INFO *cs = (const CHARSET_INFO *)(info);
+      const auto *cs = (const CHARSET_INFO *)(info);
       int k =
           (*cs->coll->wildcmp)(cs, w1, w1 + m1, w2, w2 + m2, ndb_wild_prefix,
                                ndb_wild_one, ndb_wild_many);
@@ -668,8 +668,8 @@ int NdbSqlUtil::maskBit(const void *data, unsigned dataLen, const void *mask,
     return maskBit(data, bytes, mask, bytes, cmpZero);
   }
 
-  const Uint32 *wdata = (const Uint32 *)data;
-  const Uint32 *wmask = (const Uint32 *)mask;
+  const auto *wdata = (const Uint32 *)data;
+  const auto *wmask = (const Uint32 *)mask;
 
   if (cmpZero) {
     while (--words) {
@@ -685,23 +685,22 @@ int NdbSqlUtil::maskBit(const void *data, unsigned dataLen, const void *mask,
     if ((lastDataWord & lastMaskWord) != 0) return 1;
 
     return 0;
-  } else {
-    while (--words) {
-      if ((*(wdata++) & *wmask) != *wmask) return 1;
-
-      wmask++;
-    }
-
-    /* For the last word, we mask out any insignificant bytes */
-    const Uint32 sigBytes = bytes & 3;  // 0..3; 0 == all bytes significant
-    const Uint32 comparisonMask = sigBytes ? (1 << (sigBytes * 8)) - 1 : ~0;
-    const Uint32 lastDataWord = *wdata & comparisonMask;
-    const Uint32 lastMaskWord = *wmask & comparisonMask;
-
-    if ((lastDataWord & lastMaskWord) != lastMaskWord) return 1;
-
-    return 0;
   }
+  while (--words) {
+    if ((*(wdata++) & *wmask) != *wmask) return 1;
+
+    wmask++;
+  }
+
+  /* For the last word, we mask out any insignificant bytes */
+  const Uint32 sigBytes = bytes & 3;  // 0..3; 0 == all bytes significant
+  const Uint32 comparisonMask = sigBytes ? (1 << (sigBytes * 8)) - 1 : ~0;
+  const Uint32 lastDataWord = *wdata & comparisonMask;
+  const Uint32 lastMaskWord = *wmask & comparisonMask;
+
+  if ((lastDataWord & lastMaskWord) != lastMaskWord) return 1;
+
+  return 0;
 }
 
 // check charset
@@ -712,7 +711,7 @@ uint NdbSqlUtil::check_column_for_pk(Uint32 typeId, const void *info) {
     case Type::Char:
     case Type::Varchar:
     case Type::Longvarchar: {
-      const CHARSET_INFO *cs = (const CHARSET_INFO *)info;
+      const auto *cs = (const CHARSET_INFO *)info;
       if (cs != nullptr && cs->cset != nullptr && cs->coll != nullptr) {
         /**
          * Check that we can produce a hash value
@@ -758,12 +757,11 @@ uint NdbSqlUtil::check_column_for_ordered_index(Uint32 typeId,
     case Type::Varchar:
     case Type::Longvarchar: {
       // Note: Only strnncollsp used for compare - no strnxfrm!
-      const CHARSET_INFO *cs = (const CHARSET_INFO *)info;
+      const auto *cs = (const CHARSET_INFO *)info;
       if (cs != nullptr && cs->cset != nullptr && cs->coll != nullptr &&
           cs->coll->strnncollsp != nullptr)
         return 0;
-      else
-        return 743;
+      return 743;
     } break;
     case Type::Undefined:
     case Type::Blob:
@@ -780,7 +778,7 @@ uint NdbSqlUtil::check_column_for_ordered_index(Uint32 typeId,
 
 bool NdbSqlUtil::get_var_length(Uint32 typeId, const void *p, unsigned attrlen,
                                 Uint32 &lb, Uint32 &len) {
-  const unsigned char *const src = (const unsigned char *)p;
+  const auto *const src = (const unsigned char *)p;
   switch (typeId) {
     case NdbSqlUtil::Type::Varchar:
     case NdbSqlUtil::Type::Varbinary:
@@ -948,7 +946,8 @@ Uint32 NdbSqlUtil::strnxfrm_hash_len(const CHARSET_INFO *cs, unsigned maxLen) {
   if (cs->pad_attribute == NO_PAD && cs != &my_charset_bin) {
     // The hash_sort() value, see strnxfrm_hash
     return sizeof(uint64);
-  } else if (likely(cs->strxfrm_multiply > 0)) {
+  }
+  if (likely(cs->strxfrm_multiply > 0)) {
     // The full space-padded string will be produced
     return cs->strxfrm_multiply * maxLen;
   }
@@ -1205,7 +1204,7 @@ void NdbSqlUtil::pack_time(const Time &s, uchar *d) {
 void NdbSqlUtil::unpack_datetime(Datetime &s, const uchar *d) {
   uint64 w;
   memcpy(&w, d, 8);
-  const uint64 f = (uint64)100;
+  const auto f = (uint64)100;
   s.second = (w % f);
   w /= f;
   s.minute = (w % f);
@@ -1220,7 +1219,7 @@ void NdbSqlUtil::unpack_datetime(Datetime &s, const uchar *d) {
 }
 
 void NdbSqlUtil::pack_datetime(const Datetime &s, uchar *d) {
-  const uint64 f = (uint64)100;
+  const auto f = (uint64)100;
   uint64 w = 0;
   w += s.year;
   w *= f;
@@ -1284,7 +1283,7 @@ static void pack_bigendian(uint64 val, uchar *d, uint len) {
 // Time2 : big-endian time(3 bytes).fraction(0-3 bytes)
 
 void NdbSqlUtil::unpack_time2(Time2 &s, const uchar *d, uint prec) {
-  const uint64 one = (uint64)1;
+  const auto one = (uint64)1;
   uint flen = (1 + prec) / 2;
   uint fbit = 8 * flen;
   uint64 val = unpack_bigendian(&d[0], 3 + flen);
@@ -1308,7 +1307,7 @@ void NdbSqlUtil::unpack_time2(Time2 &s, const uchar *d, uint prec) {
 }
 
 void NdbSqlUtil::pack_time2(const Time2 &s, uchar *d, uint prec) {
-  const uint64 one = (uint64)1;
+  const auto one = (uint64)1;
   uint flen = (1 + prec) / 2;
   uint fbit = 8 * flen;
   uint spos = 23 + fbit;
@@ -1332,7 +1331,7 @@ void NdbSqlUtil::pack_time2(const Time2 &s, uchar *d, uint prec) {
 // Datetime2 : big-endian date(5 bytes).fraction(0-3 bytes)
 
 void NdbSqlUtil::unpack_datetime2(Datetime2 &s, const uchar *d, uint prec) {
-  const uint64 one = (uint64)1;
+  const auto one = (uint64)1;
   uint flen = (1 + prec) / 2;
   uint fbit = 8 * flen;
   uint64 val = unpack_bigendian(&d[0], 5 + flen);
@@ -1360,7 +1359,7 @@ void NdbSqlUtil::unpack_datetime2(Datetime2 &s, const uchar *d, uint prec) {
 }
 
 void NdbSqlUtil::pack_datetime2(const Datetime2 &s, uchar *d, uint prec) {
-  const uint64 one = (uint64)1;
+  const auto one = (uint64)1;
   uint flen = (1 + prec) / 2;
   uint fbit = 8 * flen;
   uint spos = 39 + fbit;

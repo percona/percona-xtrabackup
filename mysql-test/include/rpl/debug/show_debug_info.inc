@@ -246,7 +246,9 @@ while ($_rpl_server <= $rpl_server_count) {
     --echo **** extra_debug_table on $CURRENT_CONNECTION ****
     --echo # $extra_debug_table
     eval SHOW CREATE TABLE $extra_debug_table;
+    --vertical_results
     eval SELECT * FROM $extra_debug_table;
+    --horizontal_results
   }
 
   if ($extra_debug_sql != '') {

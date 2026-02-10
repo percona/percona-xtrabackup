@@ -48,6 +48,7 @@ innodb.slow_shutdown                              : Bug#31763837 mtr hits this d
 innodb.instant_ddl_recovery_old                   : WL#12527 Redo format has changed - crashed_datadir.zip needs to be recreated.
 innodb.log_logical_size                           : Bug#35543413 Test is shaky - needs to be fixed.
 innodb.set_concurrency_in_readonly                : Bug#35573783 innodb.set_concurrency_in_readonly is failing in trunk
+innodb.innodb_upd_stats_if_needed_not_inited      : WL#11249 SQL Engine foreign key replaces InnoDB FK handling.
 
 # Tests that run ALTER on the "mysql" database
 innodb.mysql_ts_alter_encrypt_1                 : BUG#29531106 - ATTACHABLE_TRX(): ASSERTION `!M_THD->TRANSACTION_ROLLBACK_REQUEST' FAILED
@@ -60,7 +61,6 @@ innodb.innodb_autoextend_upgrade           : Bug#36312666 Several InnoDB testcas
 innodb.instant_ddl_recovery_old_2          : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
 innodb.log_8_0_11_case1                    : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
 innodb.log_8_0_19_case1                    : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
-innodb.log_deprecated_params_upgrade       : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
 innodb.partition_upgrade_8013              : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
 innodb.partition_upgrade_8013_debug        : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
 innodb.partition_upgrade_8015              : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
@@ -84,6 +84,25 @@ innodb.portability_tablespace_windows       : Bug#36312666 Several InnoDB testca
 innodb.log_upgrade_empty_disabled_log_normal_shutdown : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
 innodb.log_upgrade_empty_log_fast_shutdown            : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
 innodb.log_upgrade                                    : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
+innodb.partition_import_8013                          : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8013_debug                    : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8015                          : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8015_debug                    : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8017                          : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8017_debug                    : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_lin_lctn_0               : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_lin_lctn_0_debug         : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_lin_lctn_1               : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_lin_lctn_1_debug         : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_mac_lctn_1               : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_mac_lctn_1_debug         : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_mac_lctn_2               : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_mac_lctn_2_debug         : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_win_lctn_1               : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_win_lctn_1_debug         : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_win_lctn_2               : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+innodb.partition_import_8019_win_lctn_2_debug         : Bug#37461062  Remove ALT_PART_SEPARATOR from 9.0 code
+
 main.partition_prefixkey_upgrade            : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
 main.dd_upgrade_error_cs                    : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
 main.dd_upgrade_cs                          : Bug#36312666 Several InnoDB testcases fail after the change to 9.0
@@ -152,6 +171,7 @@ sysschema.v_wait_classes_global_by_avg_latency : BUG#21550054 Test fails too oft
 
 # These will only run in XCom because of the following issue:
 group_replication.gr_join_with_suspect_member : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
+group_replication.gr_kill_restart : BUG#37181867 Disabled until the bug is fixed
 group_replication.gr_leave_with_suspect_member : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
 group_replication.gr_majority_loss_restored_after_timeout : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
 group_replication.gr_primary_manual_failover_vs_dcl_rename_user : BUG#36020917 Disabled until bug is fixed
@@ -163,3 +183,8 @@ group_replication.gr_xa_commit_failure_before_gtid_externalization @windows : BU
 group_replication.gr_xa_commit_one_phase_failure_before_gtid_externalization @windows : BUG#34155238 Disabled until bug is fixed
 group_replication.gr_xa_prepare_failure_before_gtid_externalization @windows : BUG#34155238 Disabled until bug is fixed
 group_replication.gr_xa_rollback_failure_before_gtid_externalization @windows : BUG#34155238 Disabled until bug is fixed
+
+rpl_nogtid.rpl_nogtid_rollback_on_anonymous_gtid : Bug#37582501 Replication tests break MTA asserts with user viable scenarios
+
+#Daily test failures
+rpl.rpl_row_idempotency : WL#11249 old error - timeout

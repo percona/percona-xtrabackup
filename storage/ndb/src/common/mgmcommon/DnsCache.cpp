@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -54,7 +54,7 @@ bool LocalDnsCache::getCachedOrResolveAddress(ndb_sockaddr *result,
 
 int LocalDnsCache::getAddress(ndb_sockaddr *result_address,
                               const char *hostname) {
-  if (m_failed_lookups.count(hostname) != 0) {
+  if (m_failed_lookups.contains(hostname)) {
     // Lookup failed earlier, same result now
     return -1;
   }

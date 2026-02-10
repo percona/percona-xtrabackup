@@ -1,0 +1,19 @@
+create table t1 (a int primary key,
+b int,
+c int,
+key(c)) engine = ndb;
+Insert a number of rows
+Define a statement that will use MRR to read
+Show use of MRR
+explain format=json into @e select * from t1 where
+(c > 1 and c < 6) or        
+(c > 20 and c < 30) or
+(c > 60 and c < 65) or
+(c > 70 and c < 73) or
+(c > 200 and c < 210) order by a;
+select json_extract(@e, "$.query_plan.inputs[0].multi_range_read") as using_MRR;
+using_MRR
+true
+Run a number of iterations to likely get query thread usage
+Cleanup
+drop table t1;

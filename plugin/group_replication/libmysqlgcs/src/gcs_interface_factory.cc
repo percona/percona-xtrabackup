@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,8 +21,8 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <stddef.h>
 #include <algorithm>
+#include <cstddef>
 #include <string>
 #ifdef _WIN32
 #include <iterator>
@@ -47,7 +47,7 @@ Gcs_interface *Gcs_interface_factory::get_interface_implementation(
 
 Gcs_interface *Gcs_interface_factory::get_interface_implementation(
     const std::string &binding) {
-  enum_available_interfaces binding_translation =
+  enum_available_interfaces const binding_translation =
       Gcs_interface_factory::from_string(binding);
 
   return Gcs_interface_factory::get_interface_implementation(
@@ -55,7 +55,7 @@ Gcs_interface *Gcs_interface_factory::get_interface_implementation(
 }
 
 void Gcs_interface_factory::cleanup(const std::string &binding) {
-  enum_available_interfaces binding_translation =
+  enum_available_interfaces const binding_translation =
       Gcs_interface_factory::from_string(binding);
 
   Gcs_interface_factory::cleanup(binding_translation);
@@ -73,7 +73,7 @@ void Gcs_interface_factory::cleanup(enum_available_interfaces binding) {
 
 void Gcs_interface_factory::cleanup_thread_communication_resources(
     const std::string &binding) {
-  enum_available_interfaces binding_translation =
+  enum_available_interfaces const binding_translation =
       Gcs_interface_factory::from_string(binding);
 
   Gcs_interface_factory::cleanup_thread_communication_resources(
@@ -100,7 +100,7 @@ enum_available_interfaces Gcs_interface_factory::from_string(
   std::transform(binding.begin(), binding.end(),
                  std::back_inserter(binding_to_lower), ::tolower);
 
-  if (binding_to_lower.compare("xcom") == 0) retval = XCOM;
+  if (binding_to_lower == "xcom") retval = XCOM;
 
   return retval;
 }

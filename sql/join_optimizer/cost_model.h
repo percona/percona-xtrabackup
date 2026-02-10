@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@
 #define SQL_JOIN_OPTIMIZER_COST_MODEL_H_
 
 #include <algorithm>  // std::clamp
+#include <span>
 
 #include "my_base.h"
 #include "my_bitmap.h"  // bitmap_bits_set
@@ -53,6 +54,41 @@ constexpr size_t kMaxItemLengthEstimate = 4096;
 /// cannot provide one (like for table functions). It's a fairly arbitrary
 /// non-zero value.
 constexpr ha_rows kRowEstimateFallback = 1000;
+
+/**
+   We model the IO cost for InnoDB tables with the DYNAMIC row format. For
+   other storage engines the IO cost is currently set to zero. For other
+   InnoDB row formats, the model may not be a good fit.
+
+   We only count the cost of accessing the leaf pages of indexes (clustered
+   or unclustered)that are not already in the buffer pool. For tables/indexes
+   that are (estimated to be) fully cached we get an IO cost of zero.
+   Tables that are small relative to the buffer pool are assumed to be fully
+   cached (all pages are in the buffer pool).
+   The only operations for which we count IO cost are random and sequential
+   page reads.
+
+   The cost of a disk IO operation is modeled as an affine function:
+
+   io_cost = kIOStartCost + no_of_bytes * kIOByteCost
+
+   Note that the granularity of no_of_bytes is the storage engine page size.
+   The values used here are derived from measurements in a cloud setting.
+   This means that they may be wrong in another context, such as when
+   running against a local SSD. Cloud measurements may also give inconsistent
+   results due to heterogeneous cloud hardware, and the impact of activity
+   in other cloud VMs.
+   Ideally we should be able to configure these parameters, or even set them
+   dynamically based on observed behavior.
+*/
+constexpr double kIOStartCost{937.0};
+
+/// The additional cost of reading an extra byte from disk.
+constexpr double kIOByteCost{0.0549};
+
+/// This is the estimated fraction of an (innodb) block that is in use
+/// (i.e. not free for future inserts).
+constexpr double kBlockFillFactor{0.75};
 
 /// See EstimateFilterCost.
 struct FilterCost {
@@ -120,6 +156,9 @@ void EstimateSortCost(THD *thd, AccessPath *path,
 
 void EstimateMaterializeCost(THD *thd, AccessPath *path);
 
+/// Array of aggregation terms.
+using TermArray = std::span<const Item *const>;
+
 /**
    Estimate the number of rows with a distinct combination of values for
    'terms'. @see EstimateDistinctRowsFromStatistics for additional details.
@@ -129,8 +168,7 @@ void EstimateMaterializeCost(THD *thd, AccessPath *path);
                 combinations.
    @returns The estimated number of output rows.
 */
-double EstimateDistinctRows(THD *thd, double child_rows,
-                            Bounds_checked_array<const Item *const> terms);
+double EstimateDistinctRows(THD *thd, double child_rows, TermArray terms);
 /**
    Estimate costs and result row count for an aggregate operation.
    @param[in,out] thd The current thread.
@@ -139,11 +177,34 @@ double EstimateDistinctRows(THD *thd, double child_rows,
  */
 void EstimateAggregateCost(THD *thd, AccessPath *path,
                            const Query_block *query_block);
+
+/**
+  Estimate costs and result row count for a skip scan operation.
+   @param[in] table              The table which is to be scanned
+   @param[in] key_idx            The location of the index to be scanned
+   @param[in] num_subrange_scans Number of subrange scans to be executed
+   @param[in] records            Number of rows to be scanned
+   @retval                       Calculated cost value
+ */
+double EstimateSkipScanCost(TABLE *table, uint key_idx, uint num_subrange_scans,
+                            ha_rows records);
+
+/**
+  Estimate costs for a group skip scan operation.
+   @param[in] table              The table which is to be scanned
+   @param[in] key_idx            The location of the index to be scanned
+   @param[in] num_groups         Number of GROUP BY groups to be scanned
+   @param[in] has_max            True if the query contains MAX(), else false
+   @retval                       Calculated cost value
+ */
+double EstimateGroupSkipScanCost(TABLE *table, uint key_idx, uint num_groups,
+                                 bool has_max);
+
 void EstimateDeleteRowsCost(AccessPath *path);
 void EstimateUpdateRowsCost(AccessPath *path);
 
 /// Estimate the costs and row count for a STREAM AccessPath.
-void EstimateStreamCost(AccessPath *path);
+void EstimateStreamCost(THD *thd, AccessPath *path);
 
 /**
    Estimate the costs and row count for a WINDOW AccessPath. As described in
@@ -269,9 +330,78 @@ constexpr unsigned kMinEstimatedBytesPerRow = 8;
 /// estimates since we have performed our calibration within this range, and we
 /// would like to prevent cost estimates from running away in case the
 /// underlying statistics are off in some instances. In such cases we prefer
-/// capping the resulting estimate. As a reasonable upper limit we use the
+/// capping the resulting estimate. As a reasonable upper limit we use half the
 /// default InnoDB page size of 2^14 = 16384 bytes.
-constexpr unsigned kMaxEstimatedBytesPerRow = 16384;
+constexpr unsigned kMaxEstimatedBytesPerRow = 8 * 1024;
+
+/**
+   This struct represents the number of bytes we expect to read for a table row.
+   Note that the split between b-tree and overflow pages is specific to InnoDB
+   and may not be a good fit for other storage engines. Ideally we should
+   calculate row size and IO-cost in the handler, in a way that is specific to
+   each particular storage engine.
+   When using the DYNAMIC row format, an InnoDB B-tree record cannot be bigger
+   than about half a page. (The default page size is 16KB). Above that, the
+   longest fields are stored in separate overflow pages.
+*/
+struct BytesPerTableRow {
+  /**
+      The number of bytes read from the B-tree record. This also includes those
+      fields that were not in the projection.
+  */
+  int64_t record_bytes;
+
+  /**
+     The number of bytes read from overflow pages. This is the combined size
+     of those long variable-sized fields that are in the projection but stored
+     in overflow pages.
+  */
+  int64_t overflow_bytes;
+
+  /*
+    The probability of reading from an overflow page (i.e. an estimate
+    of the probability that at least one of the columns in the
+    projection overflows).
+  */
+  double overflow_probability;
+};
+
+/**
+   Calculate an estimate of the row size of the read set of 'table'.
+*/
+int64_t CalculateReadSetWidth(const TABLE *table);
+
+/**
+   Estimate the average number of bytes that we need to read from the
+   storage engine when reading a row from 'table'. This is the size of
+   the (b-tree) record and the overflow pages of any field that is
+   part of the projection. This is similar to what EstimateBytesPerRowTable()
+   does, but this function is intended to do a more accurate but also more
+   expensive calculation for tables with potentially large rows (i.e. tables
+   with BLOBs or large VARCHAR fields).
+
+   Note that this function tailored for InnoDB (and also for the
+   DYNAMIC row format of InnoDB). At some point we may want to move
+   this logic to the handler, so that we can customize it for other
+   engines as well.
+
+   @param table The target table
+   @returns The estimated row size.
+*/
+BytesPerTableRow EstimateBytesPerRowWideTable(const TABLE *table);
+
+/// We clamp the block size to lie in the interval between the max and min
+/// allowed block size for InnoDB (2^12 to 2^16). Ideally we would have a
+/// guarantee that stats.block_size has a reasonable value (across all storage
+/// engines, types of tables, state of statistics), but in the absence of such
+/// a guarantee we clamp to the values for the InnoDB storage engine since the
+/// cost model has been calibrated for these values.
+inline unsigned ClampedBlockSize(const TABLE *table) {
+  constexpr unsigned kMinEstimatedBlockSize = 4096;
+  constexpr unsigned kMaxEstimatedBlockSize = 65536;
+  return std::clamp(table->file->stats.block_size, kMinEstimatedBlockSize,
+                    kMaxEstimatedBlockSize);
+}
 
 /**
   Estimates the number of bytes that MySQL must process when reading a row from
@@ -279,7 +409,7 @@ constexpr unsigned kMaxEstimatedBytesPerRow = 16384;
 
   @param table The table to produce an estimate for.
 
-  @returns The estimated number of bytes.
+  @returns The estimated row size.
 
   @note There are two different relevant concepts of bytes per row:
 
@@ -294,32 +424,36 @@ constexpr unsigned kMaxEstimatedBytesPerRow = 16384;
   in bytes. This could be a more accurate statistic when determining the CPU
   cost of processing a row (i.e., it does not matter very much if InnoDB pages
   are only half-full). As an approximation to the size of a row in bytes on the
-  server side we use the length of the record buffer. This does not accurately
-  represent the size of some variable length fields as we only store pointers to
-  such fields in the record buffer. So in a sense the record buffer length is an
-  estimate for the bytes per row but with an 8-byte cap on variable length
-  fields -- i.e. better than no estimate, and capped to ensure that costs do not
-  explode.
+  server side we use the length of the record buffer for rows that should
+  not exceed the maximal size of an InnoDB B-tree record. (Otherwise, we call
+  EstimateBytesPerRowWideTable() to make the estimate).
 
-  For now, we will use the record buffer length (share->rec_buff_length) since
-  it is more robust compared to the storage engine mean record length
-  (file->stats.mean_rec_length) in the following cases:
-
-  - When the table fits in a single page stats.mean_rec_length will tend to
-    overestimate the record length since it is computed as
-    stats.data_file_length / stats.records and the data file length is at least
-    a full page which defaults to 16384 bytes (for InnoDB at least).
-
-  - When the table contains records that are stored off-page it would seem that
-    stats->data_file_length includes the overflow pages which are not relevant
-    when estimating the height of the B-tree.
-
-  The downside of using this estimate is that we do not accurately account for
-  the presence of variable length fields that are stored in-page.
+  Note that when the table fits in a single page stats.mean_rec_length
+  will tend to overestimate the record length since it is computed as
+  stats.data_file_length / stats.records and the data file length is
+  at least a full page which defaults to 16384 bytes (for InnoDB at
+  least). We may then get a better estimate from table->s->rec_buff_length.
 */
-inline unsigned EstimateBytesPerRowTable(const TABLE *table) {
-  return std::clamp(table->s->rec_buff_length, kMinEstimatedBytesPerRow,
-                    kMaxEstimatedBytesPerRow);
+inline BytesPerTableRow EstimateBytesPerRowTable(const TABLE *table) {
+  int64_t max_bytes{0};
+
+  for (uint i = 0; i < table->s->fields; i++) {
+    // max_data_length() is the maximal size (in bytes) of this field.
+    max_bytes += table->field[i]->max_data_length();
+  }
+
+  if (max_bytes < ClampedBlockSize(table) / 2) {
+    // The row should fit in a b-tree record.
+    return {.record_bytes =
+                std::clamp(table->s->rec_buff_length, kMinEstimatedBytesPerRow,
+                           kMaxEstimatedBytesPerRow),
+            .overflow_bytes = 0,
+            .overflow_probability = 0.0};
+  }
+
+  // Make a more sophisticated estimate for tables that may have very
+  // large rows.
+  return EstimateBytesPerRowWideTable(table);
 }
 
 /**
@@ -360,19 +494,9 @@ inline unsigned EstimateBytesPerRowIndex(const TABLE *table, unsigned key_idx) {
   @return The estimated height of the index.
 */
 inline int IndexHeight(const TABLE *table, unsigned key_idx) {
-  // We clamp the block size to lie in the interval between the max and min
-  // allowed block size for InnoDB (2^12 to 2^16). Ideally we would have a
-  // guarantee that stats.block_size has a reasonable value (across all storage
-  // engines, types of tables, state of statistics), but in the absence of such
-  // a guarantee we clamp to the values for the InnoDB storage engine since the
-  // cost model has been calibrated for these values.
-  constexpr unsigned kMinEstimatedBlockSize = 4096;
-  constexpr unsigned kMaxEstimatedBlockSize = 65536;
-  unsigned block_size =
-      std::clamp(table->file->stats.block_size, kMinEstimatedBlockSize,
-                 kMaxEstimatedBlockSize);
+  unsigned block_size = ClampedBlockSize(table);
   unsigned bytes_per_row = IsClusteredPrimaryKey(table, key_idx)
-                               ? EstimateBytesPerRowTable(table)
+                               ? table->bytes_per_row()->record_bytes
                                : EstimateBytesPerRowIndex(table, key_idx);
 
   // Ideally we should always have that block_size >= bytes_per_row, but since
@@ -397,6 +521,15 @@ inline int IndexHeight(const TABLE *table, unsigned key_idx) {
   }
   return height;
 }
+
+/// Calculate the IO-cost of reading 'num_rows' rows from 'table'.
+double TableAccessIOCost(const TABLE *table, double num_rows,
+                         BytesPerTableRow row_size);
+
+/// Calculate the IO-cost of doing a lookup on index 'key_idx' on 'table'
+/// and then read 'num_rows' rows.
+double CoveringIndexAccessIOCost(const TABLE *table, unsigned key_idx,
+                                 double num_rows);
 
 /**
   Computes the expected cost of reading a number of rows. The cost model takes
@@ -438,8 +571,11 @@ inline double RowReadCost(double num_rows, double fields_read_per_row,
 */
 inline double RowReadCostTable(const TABLE *table, double num_rows) {
   double fields_read_per_row = bitmap_bits_set(table->read_set);
-  double bytes_per_row = EstimateBytesPerRowTable(table);
-  return RowReadCost(num_rows, fields_read_per_row, bytes_per_row);
+  const BytesPerTableRow &bytes_per_row = *table->bytes_per_row();
+  return RowReadCost(
+             num_rows, fields_read_per_row,
+             bytes_per_row.record_bytes + bytes_per_row.overflow_bytes) +
+         TableAccessIOCost(table, num_rows, bytes_per_row);
 }
 
 /**
@@ -466,7 +602,8 @@ inline double RowReadCostIndex(const TABLE *table, unsigned key_idx,
                                    : kDefaultFieldsReadFromCoveringIndex;
 
   double bytes_per_row = EstimateBytesPerRowIndex(table, key_idx);
-  return RowReadCost(num_rows, fields_read_per_row, bytes_per_row);
+  return RowReadCost(num_rows, fields_read_per_row, bytes_per_row) +
+         CoveringIndexAccessIOCost(table, key_idx, num_rows);
 }
 
 /**
@@ -538,6 +675,15 @@ inline double IndexLookupCost(const TABLE *table, unsigned key_idx) {
   return 0.5 * (cost_with_ahi + cost_without_ahi);
 }
 
+/// Type of range scan operation.
+enum class RangeScanType : char {
+  /// Using the MRR optimization.
+  kMultiRange,
+
+  /// Plain range scan, without the MRR optimization.
+  kSingleRange
+};
+
 /**
    Estimates the cost of an index range scan.
 
@@ -550,36 +696,15 @@ inline double IndexLookupCost(const TABLE *table, unsigned key_idx) {
 
    @param table The table to which the index belongs.
    @param key_idx The position of the key in table->key_info[].
+   @param scan_type Whether this an MRR or a regular index range scan.
    @param num_ranges The number of ranges.
    @param num_output_rows The estimated expected number of output rows.
 
    @returns The estimated cost of the index range scan operation.
 */
-inline double EstimateIndexRangeScanCost(const TABLE *table, unsigned key_idx,
-                                         double num_ranges,
-                                         double num_output_rows) {
-  double cost = num_ranges * IndexLookupCost(table, key_idx) +
-                RowReadCostIndex(table, key_idx, num_output_rows);
-
-  if (!IsClusteredPrimaryKey(table, key_idx) &&
-      !table->covering_keys.is_set(key_idx)) {
-    // If we are operating on a secondary non-covering index we have to perform
-    // a lookup into the primary index for each matching row. This is the case
-    // for the InnoDB storage engine, but with the MEMORY engine we do not have
-    // a primary key, so we instead assign a default lookup cost.
-    double lookup_cost = table->s->is_missing_primary_key()
-                             ? kIndexLookupDefaultCost
-                             : IndexLookupCost(table, table->s->primary_key);
-
-    // When this function is called by e.g. EstimateRefAccessCost() we can have
-    // num_output_rows < 1 and it becomes important that our cost estimate
-    // reflects expected cost, i.e. that it scales linearly with the expected
-    // number of output rows.
-    cost += num_output_rows * lookup_cost +
-            RowReadCostTable(table, num_output_rows);
-  }
-  return cost;
-}
+double EstimateIndexRangeScanCost(const TABLE *table, unsigned key_idx,
+                                  RangeScanType scan_type, double num_ranges,
+                                  double num_output_rows);
 
 /**
    Estimates the cost of an index scan. An index scan scans all rows in the
@@ -591,8 +716,8 @@ inline double EstimateIndexRangeScanCost(const TABLE *table, unsigned key_idx,
    @returns The estimated cost of the index scan.
 */
 inline double EstimateIndexScanCost(const TABLE *table, unsigned key_idx) {
-  return EstimateIndexRangeScanCost(table, key_idx, 1.0,
-                                    table->file->stats.records);
+  return EstimateIndexRangeScanCost(table, key_idx, RangeScanType::kSingleRange,
+                                    1.0, table->file->stats.records);
 }
 
 /**
@@ -612,7 +737,50 @@ inline double EstimateRefAccessCost(const TABLE *table, unsigned key_idx,
   // iterator uses caching to improve performance.
   constexpr double kRefAccessCostDiscount = 0.05;
   return (1.0 - kRefAccessCostDiscount) *
-         EstimateIndexRangeScanCost(table, key_idx, 1.0, num_output_rows);
+         EstimateIndexRangeScanCost(table, key_idx, RangeScanType::kSingleRange,
+                                    1.0, num_output_rows);
 }
+
+/**
+   Input to HashJoinCost, for calculating the cost of a hash join.
+*/
+struct HashJoinMetrics final {
+  /// The number of rows in the 'build' input.
+  double build_rows;
+  /// The average size of rows in the 'build' input (in bytes).
+  double build_row_size;
+  /// The size of the join key, in bytes.
+  double key_size;
+  /// The number of rows in the 'probe' input.
+  double probe_rows;
+  /// The average size of rows in the 'probe' input (in bytes).
+  double probe_row_size;
+  /// The number of rows in the result set.
+  double result_rows;
+};
+
+/** This class represents the cost of a hash join (excluding the cost
+    of sub-paths).
+*/
+class HashJoinCost final {
+ public:
+  HashJoinCost(THD *thd, const HashJoinMetrics &metrics);
+
+  double spill_to_disk_probability() const {
+    return m_spill_to_disk_probability;
+  }
+
+  double init_cost() const { return m_init_cost; }
+
+  double cost() const { return m_cost; }
+
+ private:
+  /// The probability (range [0.0, 1.0]) of needing spill to disk.
+  double m_spill_to_disk_probability;
+  /// The cost of preparing to produce the first result row.
+  double m_init_cost;
+  /// The cost of the hash join.
+  double m_cost;
+};
 
 #endif  // SQL_JOIN_OPTIMIZER_COST_MODEL_H_

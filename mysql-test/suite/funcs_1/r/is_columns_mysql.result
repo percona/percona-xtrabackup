@@ -104,7 +104,7 @@ def	mysql	procs_priv	Host	1		NO	char	255	255	NULL	NULL	NULL	ascii	ascii_general_
 def	mysql	procs_priv	Db	2		NO	char	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	char(64)	PRI		select,insert,update,references			NULL
 def	mysql	procs_priv	User	3		NO	char	32	96	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	char(32)	PRI		select,insert,update,references			NULL
 def	mysql	procs_priv	Routine_name	4		NO	char	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	char(64)	PRI		select,insert,update,references			NULL
-def	mysql	procs_priv	Routine_type	5	NULL	NO	enum	9	27	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE')	PRI		select,insert,update,references			NULL
+def	mysql	procs_priv	Routine_type	5	NULL	NO	enum	9	27	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE','LIBRARY')	PRI		select,insert,update,references			NULL
 def	mysql	procs_priv	Grantor	6		NO	varchar	288	864	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(288)	MUL		select,insert,update,references			NULL
 def	mysql	procs_priv	Proc_priv	7		NO	set	27	81	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	set('Execute','Alter Routine','Grant')			select,insert,update,references			NULL
 def	mysql	procs_priv	Timestamp	8	CURRENT_TIMESTAMP	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp		DEFAULT_GENERATED on update CURRENT_TIMESTAMP	select,insert,update,references			NULL
@@ -469,7 +469,7 @@ NULL	mysql	password_history	Password_timestamp	timestamp	NULL	NULL	NULL	NULL	tim
 3.0000	mysql	procs_priv	Db	char	64	192	utf8mb3	utf8mb3_bin	char(64)
 3.0000	mysql	procs_priv	User	char	32	96	utf8mb3	utf8mb3_bin	char(32)
 3.0000	mysql	procs_priv	Routine_name	char	64	192	utf8mb3	utf8mb3_general_ci	char(64)
-3.0000	mysql	procs_priv	Routine_type	enum	9	27	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE')
+3.0000	mysql	procs_priv	Routine_type	enum	9	27	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE','LIBRARY')
 3.0000	mysql	procs_priv	Grantor	varchar	288	864	utf8mb3	utf8mb3_bin	varchar(288)
 3.0000	mysql	procs_priv	Proc_priv	set	27	81	utf8mb3	utf8mb3_general_ci	set('Execute','Alter Routine','Grant')
 NULL	mysql	procs_priv	Timestamp	timestamp	NULL	NULL	NULL	NULL	timestamp

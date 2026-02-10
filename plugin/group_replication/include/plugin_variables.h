@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -176,8 +176,6 @@ struct plugin_options_variables {
   char *recovery_tls_ciphersuites_var;
 
   ulong components_stop_timeout_var;
-
-  bool allow_local_lower_version_join_var;
 
   /*
     The default value for auto_increment_increment is chosen taking into

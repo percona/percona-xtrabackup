@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -129,5 +129,8 @@
   optimization, even if they are known to produce a constant result.
 */
 #define OPTION_NO_SUBQUERY_DURING_OPTIMIZATION (1ULL << 39)  // intern
+
+// Is set while thread is using SQL FOREIGN KEY handling instead of SE's.
+#define OPTION_USE_SQL_FOREIGN_KEY_HANDLING (1ULL << 40)  // THD, intern
 
 #endif /* QUERY_OPTIONS_INCLUDED */

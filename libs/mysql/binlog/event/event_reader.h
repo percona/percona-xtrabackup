@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -439,6 +439,14 @@ class Event_reader {
     @param[in] dest_length the max length supported by the destination buffer.
   */
   void strncpyz(char *destination, size_t max_length, size_t dest_length);
+
+  /**
+    Reserves the vector memory for at least a specified length.
+
+    @param[out] destination the vector.
+    @param[in] length the amount of elements to reserve.
+  */
+  void reserve(std::vector<uint8_t> *destination, size_t length);
 
   /**
     Fills a vector with a sequence of bytes from the cursor.

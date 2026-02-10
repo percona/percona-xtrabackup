@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -360,7 +360,26 @@ TEST_F(ConnectJoinTest, OuterJoin) {
       join->qep_tab[2].condition(), /*f - trigger variable=*/nullptr,
       query_block->join, join->qep_tab[2].first_inner(),
       Item_func_trig_cond::IS_NOT_NULL_COMPL);
+  Item *outer_join_cond2 = new (m_thd->mem_root) Item_func_trig_cond(
+      join->qep_tab[2].condition(), /*f - trigger variable=*/nullptr,
+      query_block->join, join->qep_tab[2].first_inner(),
+      Item_func_trig_cond::IS_NOT_NULL_COMPL);
+  Item *outer_join_cond3 = new (m_thd->mem_root) Item_func_trig_cond(
+      join->qep_tab[2].condition(), /*f - trigger variable=*/nullptr,
+      query_block->join, join->qep_tab[2].first_inner(),
+      Item_func_trig_cond::FOUND_MATCH);
+  Item *outer_join_cond4 = new (m_thd->mem_root) Item_func_trig_cond(
+      join->qep_tab[2].condition(), /*f - trigger variable=*/nullptr,
+      query_block->join, join->qep_tab[2].first_inner(),
+      Item_func_trig_cond::OUTER_FIELD_IS_NOT_NULL);
   outer_join_cond->quick_fix_field();
+  outer_join_cond2->quick_fix_field();
+  outer_join_cond3->quick_fix_field();
+  outer_join_cond4->quick_fix_field();
+  EXPECT_NE(outer_join_cond->hash(), 0);
+  EXPECT_EQ(outer_join_cond->hash(), outer_join_cond2->hash());
+  EXPECT_NE(outer_join_cond3->hash(), outer_join_cond2->hash());
+  EXPECT_NE(outer_join_cond3->hash(), outer_join_cond4->hash());
   join->qep_tab[2].set_condition(outer_join_cond);
 
   // Finally create access paths.

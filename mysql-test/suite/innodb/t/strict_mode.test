@@ -5,7 +5,7 @@
 --echo # INNODB_STRICT_MODE = 1
 --echo #
 
-call mtr.add_suppression("Cannot add field");
+call mtr.add_suppression("Cannot alter the table .* because the record size will exceed the maximum allowed size for a record .*");
 
 set innodb_strict_mode = 0;
 

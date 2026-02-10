@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,7 +44,7 @@ static const int MAX_TRANSACTIONS = 4;
 Thd_ndb *Thd_ndb::seize(THD *thd, const char *name) {
   DBUG_TRACE;
 
-  Thd_ndb *thd_ndb = new Thd_ndb(thd, name);
+  auto *thd_ndb = new Thd_ndb(thd, name);
   if (thd_ndb == nullptr) {
     return nullptr;
   }
@@ -71,7 +71,7 @@ void Thd_ndb::release(Thd_ndb *thd_ndb) {
   delete thd_ndb;
 }
 
-bool Thd_ndb::recycle_ndb(void) {
+bool Thd_ndb::recycle_ndb() {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("ndb: %p", ndb));
 
@@ -105,7 +105,7 @@ bool Thd_ndb::recycle_ndb(void) {
   return true;
 }
 
-bool Thd_ndb::valid_ndb(void) const {
+bool Thd_ndb::valid_ndb() const {
   // The ndb object should be valid as long as a
   // global schema lock transaction is ongoing
   if (global_schema_lock_trans) return true;
@@ -252,7 +252,7 @@ void Thd_ndb::set_trans_option(Trans_options option) {
   trans_options |= option;
 }
 
-void Thd_ndb::reset_trans_options(void) {
+void Thd_ndb::reset_trans_options() {
   DBUG_PRINT("info", ("Resetting trans_options"));
   trans_options = 0;
 }

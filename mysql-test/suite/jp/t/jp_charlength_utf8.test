@@ -38,18 +38,27 @@ INSERT INTO `Ｔ８` VALUES ('あいうえお'),('あいうえ'),('あいう'),(
 INSERT INTO `Ｔ９` VALUES ('龔龖龗龞龡'),('龔龖龗龞'),('龔龖龗'),('龔龖'),('龔'),('');
 
 #InnoDB
+--sorted_result
 SELECT `Ｃ１`, CHAR_LENGTH(`Ｃ１`) FROM `Ｔ１`;
+--sorted_result
 SELECT `Ｃ１`, CHAR_LENGTH(`Ｃ１`) FROM `Ｔ２`;
+--sorted_result
 SELECT `Ｃ１`, CHAR_LENGTH(`Ｃ１`) FROM `Ｔ３`;
 
 #MyISAM
+--sorted_result
 SELECT `Ｃ１`, CHAR_LENGTH(`Ｃ１`) FROM `Ｔ４`;
+--sorted_result
 SELECT `Ｃ１`, CHAR_LENGTH(`Ｃ１`) FROM `Ｔ５`;
+--sorted_result
 SELECT `Ｃ１`, CHAR_LENGTH(`Ｃ１`) FROM `Ｔ６`;
 
 #MEMORY
+--sorted_result
 SELECT `Ｃ１`, CHAR_LENGTH(`Ｃ１`) FROM `Ｔ７`;
+--sorted_result
 SELECT `Ｃ１`, CHAR_LENGTH(`Ｃ１`) FROM `Ｔ８`;
+--sorted_result
 SELECT `Ｃ１`, CHAR_LENGTH(`Ｃ１`) FROM `Ｔ９`;
 
 DROP TABLE `Ｔ１`;

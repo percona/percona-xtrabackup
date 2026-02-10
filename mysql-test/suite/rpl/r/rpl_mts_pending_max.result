@@ -8,6 +8,8 @@ Note	####	Storing MySQL user name or password information in the connection meta
 #      and replica_parallel_workers to 2 to make the test easy.
 #
 [connection slave]
+SET @save_replica_preserve_commit_order= @@GLOBAL.replica_preserve_commit_order;
+SET GLOBAL replica_preserve_commit_order = FALSE;
 SET @save.replica_pending_jobs_size_max= @@global.replica_pending_jobs_size_max;
 SET @save.replica_parallel_workers= @@global.replica_parallel_workers;
 SET @@GLOBAL.replica_pending_jobs_size_max= 1024;
@@ -21,8 +23,8 @@ include/rpl/start_replica.inc
 [connection master]
 CREATE DATABASE db1;
 CREATE DATABASE db2;
-CREATE TABLE db1.t (a TEXT) ENGINE=INNODB;
-CREATE TABLE db2.t (a TEXT) ENGINE=INNODB;
+CREATE TABLE db1.t (c1 INT PRIMARY KEY, a TEXT) ENGINE=INNODB;
+CREATE TABLE db2.t (c1 INT PRIMARY KEY, a TEXT) ENGINE=INNODB;
 include/rpl/sync_to_replica.inc
 #
 #   2) Prove that Coordinator will make a big event (bigger in size than
@@ -39,7 +41,7 @@ LOCK TABLE db1.t WRITE;
 #  2) Execute query that is going to wait for the table lock.
 #
 [connection master]
-INSERT INTO db1.t VALUES ('small event');
+INSERT INTO db1.t VALUES (1, 'small event');
 #
 #  3) Wait on Slave till a worker picks this event and wait for the
 #     lock (which is acquired in step 1)
@@ -49,7 +51,7 @@ INSERT INTO db1.t VALUES ('small event');
 #  4) Now on Master, insert another query that reaches slave.
 #
 [connection master]
-INSERT INTO db2.t VALUES (REPEAT('big event', 1024));
+INSERT INTO db2.t VALUES (1, REPEAT('big event', 1024));
 #
 #  5) Check that Coordinator waits for the query (at step 2) to be
 #     executed before dedicating this new query (at step 4) to
@@ -94,7 +96,7 @@ LOCK TABLE db1.t WRITE;
 #  2) Execute query that is going to wait for the table lock.
 #
 [connection master]
-INSERT INTO db1.t VALUES (REPEAT('big event', 1024));
+INSERT INTO db1.t VALUES (2, REPEAT('big event', 1024));
 #
 #  3) Wait on Slave till a worker picks this event and wait for the
 #     lock (which is acquired in step 1)
@@ -104,7 +106,7 @@ INSERT INTO db1.t VALUES (REPEAT('big event', 1024));
 #  4) Now on Master, insert another query that reaches slave.
 #
 [connection master]
-INSERT INTO db2.t VALUES ('small event');
+INSERT INTO db2.t VALUES (2, 'small event');
 #
 #  5) Check that Coordinator waits for the query (at step 2) to be
 #     executed before dedicating this new query (at step 4) to
@@ -148,7 +150,7 @@ LOCK TABLE db1.t WRITE;
 #  2) Execute query that is going to wait for the table lock.
 #
 [connection master]
-INSERT INTO db1.t VALUES (REPEAT('big event', 1024));
+INSERT INTO db1.t VALUES (3, REPEAT('big event', 1024));
 #
 #  3) Wait on Slave till a worker picks this event and wait for the
 #     lock (which is acquired in step 1)
@@ -158,7 +160,7 @@ INSERT INTO db1.t VALUES (REPEAT('big event', 1024));
 #  4) Now on Master, insert another query that reaches slave.
 #
 [connection master]
-INSERT INTO db2.t VALUES (REPEAT('big event', 1024));
+INSERT INTO db2.t VALUES (3, REPEAT('big event', 1024));
 #
 #  5) Check that Coordinator waits for the query (at step 2) to be
 #     executed before dedicating this new query (at step 4) to
@@ -197,5 +199,6 @@ include/rpl/sync_to_replica.inc
 include/rpl/stop_applier.inc
 SET @@global.replica_pending_jobs_size_max=  @save.replica_pending_jobs_size_max;
 SET @@GLOBAL.replica_parallel_workers= @save.replica_parallel_workers;
+SET @@GLOBAL.replica_preserve_commit_order= @save_replica_preserve_commit_order;
 include/rpl/start_applier.inc
 include/rpl/deinit.inc

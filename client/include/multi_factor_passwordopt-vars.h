@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -39,9 +39,9 @@ void free_passwords();
 
 #define PARSE_COMMAND_LINE_PASSWORD_OPTION             \
   case 'p':                                            \
-    parse_command_line_password_option(opt, argument); \
-    break;                                             \
-  case MYSQL_OPT_USER_PASSWORD:                        \
+  case OPT_MFA_PASSWORD1:                              \
+  case OPT_MFA_PASSWORD2:                              \
+  case OPT_MFA_PASSWORD3:                              \
     parse_command_line_password_option(opt, argument); \
     break;
 

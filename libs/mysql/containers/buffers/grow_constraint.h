@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,6 @@
 
 #ifndef MYSQL_CONTAINERS_BUFFERS_GROW_CONSTRAINT_H
 #define MYSQL_CONTAINERS_BUFFERS_GROW_CONSTRAINT_H
-
-#include "mysql/utils/nodiscard.h"  // NODISCARD
 
 #include <algorithm>  // std::min
 #include <limits>     // std::numeric_limits
@@ -146,7 +144,7 @@ class Grow_constraint {
   /// and `other`, and the largest `grow_factor`, `grow_increment`, and
   /// `block_size`.
   template <class T>
-  [[NODISCARD]] T combine_with(const T &other) const {
+  [[nodiscard]] T combine_with(const T &other) const {
     T ret;
     ret.set_max_size(std::min(get_max_size(), other.get_max_size()));
     ret.set_grow_factor(std::max(get_grow_factor(), other.get_grow_factor()));

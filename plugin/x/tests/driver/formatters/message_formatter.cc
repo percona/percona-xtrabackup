@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -176,7 +176,8 @@ static std::string message_to_text(const std::string &binary_message) {
   message.ParseFromString(binary_message);
   google::protobuf::TextFormat::PrintToString(message, &result);
 
-  return message.GetDescriptor()->full_name() + " { " + result + " }";
+  return std::string(message.GetDescriptor()->full_name()) + " { " + result +
+         " }";
 }
 
 static std::string messages_field_to_text(const Message &message,
@@ -206,7 +207,7 @@ static std::string messages_field_to_text(const Message &message,
       return xpl::to_string(reflection->GetBool(message, fd));
 
     case FieldDescriptor::CPPTYPE_ENUM:
-      return reflection->GetEnum(message, fd)->name();
+      return std::string(reflection->GetEnum(message, fd)->name());
 
     case FieldDescriptor::CPPTYPE_STRING:
       return reflection->GetString(message, fd);
@@ -247,7 +248,8 @@ static std::string messages_repeated_field_to_text(const Message &message,
       return xpl::to_string(reflection->GetRepeatedBool(message, fd, index));
 
     case FieldDescriptor::CPPTYPE_ENUM:
-      return reflection->GetRepeatedEnum(message, fd, index)->name();
+      return std::string(
+          reflection->GetRepeatedEnum(message, fd, index)->name());
 
     case FieldDescriptor::CPPTYPE_STRING:
       return reflection->GetRepeatedString(message, fd, index);
@@ -313,7 +315,8 @@ std::string message_to_text(const Message &message) {
     printer.PrintToString(message, &output);
   }
 
-  return message.GetDescriptor()->full_name() + " {\n" + output + "}\n";
+  return std::string(message.GetDescriptor()->full_name()) + " {\n" + output +
+         "}\n";
 }
 
 /**
@@ -348,11 +351,11 @@ std::string message_to_text(const Message &message,
         std::find_if(output.begin(), output.end(), expected_field);
 
     if (output.end() == i) {
-      throw std::logic_error("Message '" + msg->GetDescriptor()->full_name() +
-                             "' doesn't contains field '" +
-                             expected_field.m_name +
-                             "'"
-                             " or the field isn't set");
+      throw std::logic_error(
+          "Message '" + std::string(msg->GetDescriptor()->full_name()) +
+          "' doesn't contains field '" + expected_field.m_name +
+          "'"
+          " or the field isn't set");
     }
 
     field_descriptor = *i;
@@ -405,7 +408,8 @@ std::string message_to_text(const Message &message,
   std::string prefix = "";
 
   if (show_message_name)
-    prefix = message.GetDescriptor()->full_name() + "(" + field_path + ") = ";
+    prefix = std::string(message.GetDescriptor()->full_name()) + "(" +
+             field_path + ") = ";
 
   if (!field_descriptor->is_repeated())
     return prefix + messages_field_to_text(*msg, field_descriptor);

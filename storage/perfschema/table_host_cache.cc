@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -70,6 +70,8 @@ Plugin_table table_host_cache::m_table_def(
     "  COUNT_DEFAULT_DATABASE_ERRORS BIGINT not null,\n"
     "  COUNT_INIT_CONNECT_ERRORS BIGINT not null,\n"
     "  COUNT_LOCAL_ERRORS BIGINT not null,\n"
+    "  COUNT_ACCOUNT_LOCKED_ERRORS BIGINT not null,\n"
+    "  COUNT_TEMPORARY_ACCOUNT_LOCKED_ERRORS BIGINT not null,\n"
     "  COUNT_UNKNOWN_ERRORS BIGINT not null,\n"
     "  FIRST_SEEN TIMESTAMP(0) not null,\n"
     "  LAST_SEEN TIMESTAMP(0) not null,\n"
@@ -220,6 +222,9 @@ int table_host_cache::make_row(Host_entry *entry, row_host_cache *row) {
   row->m_count_default_database_errors = entry->m_errors.m_default_database;
   row->m_count_init_connect_errors = entry->m_errors.m_init_connect;
   row->m_count_local_errors = entry->m_errors.m_local;
+  row->m_count_account_locked_errors = entry->m_errors.m_account_locked;
+  row->m_count_temporary_account_locked_errors =
+      entry->m_errors.m_temporary_account_locked;
 
   /*
     Reserved for future use, to help with backward compatibility.
@@ -397,23 +402,30 @@ int table_host_cache::read_row_values(TABLE *table, unsigned char *buf,
         case 23: /* COUNT_LOCAL_ERRORS */
           set_field_ulonglong(f, m_row->m_count_local_errors);
           break;
-        case 24: /* COUNT_UNKNOWN_ERRORS */
+        case 24: /* COUNT_ACCOUNT_LOCKED_ERRORS */
+          set_field_ulonglong(f, m_row->m_count_account_locked_errors);
+          break;
+        case 25: /* COUNT_TEMPORARY_ACCOUNT_LOCKED_ERRORS */
+          set_field_ulonglong(f,
+                              m_row->m_count_temporary_account_locked_errors);
+          break;
+        case 26: /* COUNT_UNKNOWN_ERRORS */
           set_field_ulonglong(f, m_row->m_count_unknown_errors);
           break;
-        case 25: /* FIRST_SEEN */
+        case 27: /* FIRST_SEEN */
           set_field_timestamp(f, m_row->m_first_seen);
           break;
-        case 26: /* LAST_SEEN */
+        case 28: /* LAST_SEEN */
           set_field_timestamp(f, m_row->m_last_seen);
           break;
-        case 27: /* FIRST_ERROR_SEEN */
+        case 29: /* FIRST_ERROR_SEEN */
           if (m_row->m_first_error_seen != 0) {
             set_field_timestamp(f, m_row->m_first_error_seen);
           } else {
             f->set_null();
           }
           break;
-        case 28: /* LAST_ERROR_SEEN */
+        case 30: /* LAST_ERROR_SEEN */
           if (m_row->m_last_error_seen != 0) {
             set_field_timestamp(f, m_row->m_last_error_seen);
           } else {

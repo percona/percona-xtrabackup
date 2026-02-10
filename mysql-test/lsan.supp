@@ -1,4 +1,4 @@
-# Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -76,3 +76,9 @@ leak:ndb_select_all
 leak:ndb_select_count
 leak:ndb_show_tables
 leak:ndb_sign_keys
+
+# Internal leak in Graal's libjitexecutor.so
+# https://jira.oci.oraclecorp.com/browse/GR-67473
+# Originally reported in "Bug#37977799 Memory leak issue with
+#   router.app_specific_metadata_v_latest test on asan build"
+leak:Source*buildSource

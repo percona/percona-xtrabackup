@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -42,9 +42,7 @@ struct SHOW_VAR;
 DEFINE_BOOL_METHOD(mysql_status_variable_registration_imp::register_variable,
                    (SHOW_VAR * status_var)) {
   try {
-    if (add_status_vars(status_var)) return true;
-
-    return false;
+    return add_status_vars(status_var);
   } catch (...) {
     mysql_components_handle_std_exception(__func__);
   }

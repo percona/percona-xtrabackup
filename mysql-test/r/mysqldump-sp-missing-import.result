@@ -1,0 +1,50 @@
+# Bug#37375233 Stored program that imports a non existing library is dumped in mysqldump.
+CREATE DATABASE mysqldump_test_db;
+USE mysqldump_test_db;
+CREATE LIBRARY deleted_library LANGUAGE JAVASCRIPT AS " export function f(n) {  return n+1 } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE FUNCTION orphaned_function(n INTEGER) RETURNS INTEGER
+LANGUAGE JAVASCRIPT USING (deleted_library) AS "return lib.f(42)";
+Warnings:
+Warning	6001	Language component: Not available.
+DROP LIBRARY deleted_library;
+SHOW CREATE FUNCTION orphaned_function;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+orphaned_function	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `orphaned_function`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`mysqldump_test_db`.`deleted_library`)
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+Warnings:
+Warning	6436	The routine 'orphaned_function' references a missing library 'mysqldump_test_db.deleted_library' or definer/invoker of the routine lack rights to use it.
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	mysqldump_test_db	orphaned_function	FUNCTION	def	mysqldump_test_db	deleted_library	NULL
+# Try to dump the routines - will produce an error.
+Warning: A partial dump from a server that has GTIDs will by default include the GTIDs of all transactions, even those that changed suppressed parts of the database. If you don't want to restore GTIDs, pass --set-gtid-purged=OFF. To make a complete dump, pass --all-databases --triggers --routines --events. 
+Warning: A dump from a server that has GTIDs enabled will by default include the GTIDs of all transactions, even those that were executed during its extraction and might not be represented in the dumped data. This might result in an inconsistent data dump. 
+In order to ensure a consistent backup of the database, pass --single-transaction or --lock-all-tables or --source-data. 
+mysqldump: Routine mysqldump_test_db.orphaned_function is missing one or more of its imported libraries.
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8mb4 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;
+SET @@SESSION.SQL_LOG_BIN= 0;
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ 'GTID_SET';
+
+CREATE DATABASE /*!32312 IF NOT EXISTS*/ `mysqldump_test_db` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
+
+USE `mysqldump_test_db`;
+
+-- One or more of the libraries used by mysqldump_test_db.orphaned_function routine, do not exist. 
+# Cleanup.
+DROP DATABASE mysqldump_test_db;

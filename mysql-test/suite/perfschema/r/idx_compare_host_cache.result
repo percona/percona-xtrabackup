@@ -53,6 +53,8 @@ flush status;
 TRUNCATE TABLE performance_schema.host_cache;
 flush user_resources;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 select @@global.debug;
 @@global.debug
 
@@ -107,6 +109,8 @@ COUNT_MAX_USER_CONNECTIONS_PER_HOUR_ERRORS	0
 COUNT_DEFAULT_DATABASE_ERRORS	0
 COUNT_INIT_CONNECT_ERRORS	0
 COUNT_LOCAL_ERRORS	0
+COUNT_ACCOUNT_LOCKED_ERRORS	0
+COUNT_TEMPORARY_ACCOUNT_LOCKED_ERRORS	0
 COUNT_UNKNOWN_ERRORS	0
 FIRST_ERROR_SEEN	null
 LAST_ERROR_SEEN	null

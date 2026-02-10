@@ -263,18 +263,18 @@ SET DEBUG='-d,histogram_force_sampling';
 SET GLOBAL innodb_monitor_disable = module_sampling;
 SET GLOBAL innodb_monitor_reset_all = "module_sampling";
 #
-# RAPID use case : Break from sampling after sampling half the records
+# RAPID use case : Break from sampling after sampling five records
 #
 CREATE TABLE t1 (id int);
 INSERT INTO t1 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
-SET DEBUG = "+d,sample_read_sample_half";
+SET DEBUG = "+d,sample_read_sample_five";
 ANALYZE TABLE t1 UPDATE HISTOGRAM ON id WITH 50 BUCKETS;
 Table	Op	Msg_type	Msg_text
 test.t1	histogram	status	Histogram statistics created for column 'id'.
 SELECT SCHEMA_NAME, TABLE_NAME, COLUMN_NAME, JSON_REMOVE(histogram, '$."last-updated"') FROM information_schema.column_statistics WHERE COLUMN_NAME = 'id';
 SCHEMA_NAME	TABLE_NAME	COLUMN_NAME	JSON_REMOVE(histogram, '$."last-updated"')
 test	t1	id	{"buckets": [[1, 0.2], [2, 0.4], [3, 0.6], [4, 0.8], [5, 1.0]], "data-type": "int", "auto-update": false, "null-values": 0.0, "collation-id": 8, "sampling-rate": 1.0, "histogram-type": "singleton", "number-of-buckets-specified": 50}
-SET DEBUG = "-d, sample_read_sample_half";
+SET DEBUG = "-d,sample_read_sample_five";
 DROP TABLE t1;
 #
 # Error case where the table is discared

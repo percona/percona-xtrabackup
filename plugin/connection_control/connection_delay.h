@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -121,6 +121,7 @@ class Connection_delay_action : public Connection_event_observer,
                                 public Connection_control_alloc {
  public:
   Connection_delay_action(int64 threshold, int64 min_delay, int64 max_delay,
+                          bool exempt_unknown_users,
                           opt_connection_control *sys_vars,
                           size_t sys_vars_size,
                           stats_connection_control *status_vars,
@@ -183,6 +184,19 @@ class Connection_delay_action : public Connection_event_observer,
 
   void fill_IS_table(THD *thd, Table_ref *tables, Item *cond);
 
+  /**
+    Set if component should exempt un-authenticated connections
+    from connection control.
+    @param new_value [in]        New value
+  */
+  void set_exempt_unknown_users(bool new_value) {
+    m_exempt_unknown_users = new_value;
+  }
+  /** Get exempt_unknown_users flag */
+  [[nodiscard]] bool get_exempt_unknown_users() const {
+    return m_exempt_unknown_users;
+  }
+
   /** Overridden functions */
   bool notify_event(MYSQL_THD thd,
                     Connection_event_coordinator_services *coordinator,
@@ -195,6 +209,7 @@ class Connection_delay_action : public Connection_event_observer,
  private:
   void deinit();
   void make_hash_key(MYSQL_THD thd, Sql_string &s);
+  void get_priv_account(MYSQL_THD thd, Sql_string &s);
   /**
     Generates wait time
 
@@ -229,6 +244,8 @@ class Connection_delay_action : public Connection_event_observer,
   std::atomic<int64> m_min_delay;
   /** Upper cap on delay to be generated */
   std::atomic<int64> m_max_delay;
+  /** Do not apply delays for failing unauthenticated TCP connections */
+  bool m_exempt_unknown_users;
   /** System variables */
   std::vector<opt_connection_control> m_sys_vars;
   /** Status variables */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,6 +38,7 @@ class List;
 namespace dd {
 class Column;
 class Table;
+class Abstract_table;
 }  // namespace dd
 struct TABLE;
 struct TABLE_SHARE;
@@ -127,8 +128,7 @@ bool prepare_default_value(THD *thd, uchar *buf, TABLE *table,
   @retval         false        Success.
 */
 
-bool prepare_default_value_buffer_and_table_share(THD *thd,
-                                                  const dd::Table &table,
-                                                  TABLE_SHARE *share);
+bool prepare_default_value_buffer_and_table_share(
+    THD *thd, const dd::Abstract_table *table, TABLE_SHARE *share);
 
 #endif /* DEFAULT_VALUES_INCLUDED */

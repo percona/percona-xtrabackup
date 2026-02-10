@@ -6,10 +6,6 @@
 --source include/not_valgrind.inc
 --source include/have_lowercase0.inc
 
---disable_query_log
-call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot add field.*");
---enable_query_log
-
 # ------------------------------------------------------------
 # Tables created on 8.0.28 with following (--innodb_page_size=4k)
 # ------------------------------------------------------------

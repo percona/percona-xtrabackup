@@ -1,0 +1,74 @@
+-- source include/rpl/init_source_replica.inc
+
+--echo # FR-10) Replica must enforce foreign key checks on the parent table, and any
+--echo # CASCADE operations affecting child tables must produce identical results on
+--echo # the replica as they do on the source server.
+--echo # Note:rpl_row_idempotency.test verifies FK check
+
+--echo # Also tests FR 11.1) Source(SQL FK) -> Replica(SQL FK)
+
+--echo #Source
+--echo #t1 - Parent table
+eval CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=$engine_type;
+--echo #t2(f1) -> t1(f1) -  ON DELETE | UPDATE CASCADE
+eval CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT,
+FOREIGN KEY(f1) REFERENCES t1(f1) ON DELETE CASCADE ON UPDATE CASCADE) ENGINE=$engine_type;
+
+--echo #t3(f2) -> t1(f1) - ON DELETE | UPDATE SET NULL
+eval CREATE TABLE t3 (f1 INT PRIMARY KEY, f2 INT,
+FOREIGN KEY(f2) REFERENCES t1(f1) ON DELETE SET NULL ON UPDATE SET NULL) ENGINE=$engine_type;
+
+--echo #Multi Level Cascade from t22(f1) -> t2(f1) -> t1(f1)
+eval CREATE TABLE t22 (f1 INT PRIMARY KEY, f2 INT,
+FOREIGN KEY(f1) REFERENCES t2(f1) ON DELETE CASCADE ON UPDATE CASCADE) ENGINE=$engine_type;
+
+INSERT INTO t1 VALUES (10), (20), (30);
+INSERT INTO t2 VALUES (10, 10), (20, 20), (30, 30);
+INSERT INTO t3 VALUES (10, 10), (20, 20), (30, 30);
+INSERT INTO t22 VALUES (10, 10), (20, 20), (30, 30);
+SELECT * FROM t1 ORDER BY f1;
+SELECT * FROM t2 ORDER BY f1;
+SELECT * FROM t3 ORDER BY f1;
+SELECT * FROM t22 ORDER BY f1;
+
+--source include/rpl/sync_to_replica.inc
+--echo #Replica
+SELECT * FROM t1 ORDER BY f1;
+SELECT * FROM t2 ORDER BY f1;
+SELECT * FROM t3 ORDER BY f1;
+SELECT * FROM t22 ORDER BY f1;
+
+connection master;
+--echo #Source
+--echo # Update row in t1 and verify that it cascades to t2 and t3 correctly on
+--echo #  both the master and replica.
+UPDATE t1 SET f1=50 where f1=20;
+--echo # Delete a row from t1 and verify that it cascades to t2 and t3 correctly on
+--echo #  both the master and replica.
+DELETE FROM t1 where f1=10;
+
+SHOW VARIABLES LIKE '%innodb_native_foreign_key%';
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_table_statistics
+  WHERE table_schema='test' ORDER BY table_name;
+
+SELECT * FROM t1 ORDER BY f1;
+SELECT * FROM t2 ORDER BY f1;
+SELECT * FROM t3 ORDER BY f1;
+SELECT * FROM t22 ORDER BY f1;
+
+--source include/rpl/sync_to_replica.inc
+--echo #Replica
+
+SHOW VARIABLES LIKE '%innodb_native_foreign_key%';
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_table_statistics
+  WHERE table_schema='test' ORDER BY table_name;
+
+SELECT * FROM t1 ORDER BY f1;
+SELECT * FROM t2 ORDER BY f1;
+SELECT * FROM t3 ORDER BY f1;
+SELECT * FROM t22 ORDER BY f1;
+
+connection master;
+drop table t3,t22, t2,t1;
+
+--source include/rpl/deinit.inc

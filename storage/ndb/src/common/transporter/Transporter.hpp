@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -408,9 +408,8 @@ inline void Transporter::iovec_data_sent(int nBytesSent) {
 inline bool Transporter::checksum_state::compute(const void *buf, size_t len) {
   const Uint32 inputSum = chksum;
   Uint32 off = 0;
-  unsigned char *psum =
-      static_cast<unsigned char *>(static_cast<void *>(&chksum));
-  const unsigned char *bytes = static_cast<const unsigned char *>(buf);
+  auto *psum = static_cast<unsigned char *>(static_cast<void *>(&chksum));
+  const auto *bytes = static_cast<const unsigned char *>(buf);
 
   while (off < len) {
     const Uint32 available = len - off;

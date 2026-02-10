@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,21 +45,21 @@ class GcsXcomExpelsInProgressTest : public GcsBaseTest {
    about expels once they take effect in a
    configuration after the one in which the expels were issued. */
 TEST_F(GcsXcomExpelsInProgressTest, ExpelTracking) {
-  std::string m1_endpoint{"127.0.0.1:12345"};
+  std::string const m1_endpoint{"127.0.0.1:12345"};
   auto m1_gcs = std::make_unique<Gcs_member_identifier>(m1_endpoint);
-  Gcs_xcom_node_information m1_xcom{m1_endpoint};
-  std::string m2_endpoint{"127.0.0.1:12346"};
+  Gcs_xcom_node_information const m1_xcom{m1_endpoint};
+  std::string const m2_endpoint{"127.0.0.1:12346"};
   auto m2_gcs = std::make_unique<Gcs_member_identifier>(m2_endpoint);
-  Gcs_xcom_node_information m2_xcom{m2_endpoint};
-  std::string m3_endpoint{"127.0.0.1:12347"};
+  Gcs_xcom_node_information const m2_xcom{m2_endpoint};
+  std::string const m3_endpoint{"127.0.0.1:12347"};
   auto m3_gcs = std::make_unique<Gcs_member_identifier>(m3_endpoint);
-  Gcs_xcom_node_information m3_xcom{m3_endpoint};
+  Gcs_xcom_node_information const m3_xcom{m3_endpoint};
 
   Gcs_xcom_nodes expels_issued;
-  synode_no synode_0{0, 0, 0};
-  synode_no synode_1{0, 1, 0};
-  synode_no synode_2{0, 2, 0};
-  synode_no synode_3{0, 3, 0};
+  synode_no const synode_0{0, 0, 0};
+  synode_no const synode_1{0, 1, 0};
+  synode_no const synode_2{0, 2, 0};
+  synode_no const synode_3{0, 3, 0};
   std::vector<Gcs_member_identifier *> suspected_members;
   std::vector<Gcs_member_identifier *> suspected_nonmembers;
   std::vector<Gcs_member_identifier *> members_that_left;

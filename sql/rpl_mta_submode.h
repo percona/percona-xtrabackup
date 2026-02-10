@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -46,7 +46,7 @@ typedef Prealloced_array<Slave_worker *, 4> Slave_worker_array;
 
 enum enum_mts_parallel_type {
   /* Parallel slave based on Database name */
-  MTS_PARALLEL_TYPE_DB_NAME = 0,
+  /* MTS_PARALLEL_TYPE_DB_NAME = 0, */ /* UNUSED, REMOVED */
   /* Parallel slave based on group information from Binlog group commit */
   MTS_PARALLEL_TYPE_LOGICAL_CLOCK = 1
 };
@@ -97,33 +97,6 @@ class Mts_submode {
   }
 
   virtual ~Mts_submode() = default;
-};
-
-/**
-  DB partitioned submode
-  For significance of each method check definition of Mts_submode
-*/
-class Mts_submode_database : public Mts_submode {
- public:
-  Mts_submode_database() { type = MTS_PARALLEL_TYPE_DB_NAME; }
-  int schedule_next_event(Relay_log_info *rli, Log_event *ev) override;
-  void attach_temp_tables(THD *thd, const Relay_log_info *rli,
-                          Query_log_event *ev) override;
-  void detach_temp_tables(THD *thd, const Relay_log_info *rli,
-                          Query_log_event *ev) override;
-  Slave_worker *get_least_occupied_worker(Relay_log_info *,
-                                          Slave_worker_array *ws,
-                                          Log_event *) override;
-  ~Mts_submode_database() override = default;
-  int wait_for_workers_to_finish(Relay_log_info *rli,
-                                 Slave_worker *ignore = nullptr) override;
-  bool set_multi_threaded_applier_context(const Relay_log_info &rli,
-                                          Log_event &ev) override;
-
- private:
-  bool unfold_transaction_payload_event(
-      mysql::binlog::event::Format_description_event &fde,
-      Transaction_payload_log_event &tple, std::vector<Log_event *> &events);
 };
 
 /**

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -47,7 +47,7 @@
 #include "sql/sql_error.h"  // Sql_condition
 #include "sql/sql_lex.h"
 #include "sql/sql_parse.h"  // parse_sql
-#include "sql/sql_show.h"   // append_identifier
+#include "sql/sql_show.h"   // append_identifier_*
 #include "sql/strfunc.h"
 #include "sql/system_variables.h"
 #include "sql/trigger_creation_ctx.h"  // Trigger_creation_ctx
@@ -394,6 +394,12 @@ bool Trigger::execute(THD *thd) {
 
   thd->reset_sub_statement_state(&statement_state, SUB_STMT_TRIGGER);
 
+  Secondary_engine_optimization saved_state =
+      thd->secondary_engine_optimization();
+
+  thd->set_secondary_engine_optimization(
+      Secondary_engine_optimization::PRIMARY_TENTATIVELY);
+
   /*
     Reset current_query_block before call execute_trigger() and
     restore it after return from one. This way error is set
@@ -406,6 +412,8 @@ bool Trigger::execute(THD *thd) {
   thd->lex->set_current_query_block(save_current_query_block);
 
   thd->restore_sub_statement_state(&statement_state);
+
+  thd->set_secondary_engine_optimization(saved_state);
 
   return err_status;
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -277,9 +277,8 @@ bool Gcs_packet::allocate_serialization_buffer() {
   bool error = true;
 
   /* Allocate the serialization buffer. */
-  unsigned long long buffer_size = m_fixed_header.get_total_length();
-  unsigned char *buffer =
-      static_cast<unsigned char *>(std::malloc(buffer_size));
+  unsigned long long const buffer_size = m_fixed_header.get_total_length();
+  auto *buffer = static_cast<unsigned char *>(std::malloc(buffer_size));
   if (buffer != nullptr) {
     m_serialized_packet.reset(buffer);
     m_serialized_packet_size = buffer_size;
@@ -375,11 +374,11 @@ void Gcs_packet::deserialize(buffer_ptr &&buffer,
 void Gcs_packet::dump(std::ostringstream &output) const {
   m_fixed_header.dump(output);
 
-  for (auto &dynamic_header : m_dynamic_headers) {
+  for (const auto &dynamic_header : m_dynamic_headers) {
     dynamic_header.dump(output);
   }
 
-  for (auto &stage_header : m_stage_metadata) {
+  for (const auto &stage_header : m_stage_metadata) {
     stage_header->dump(output);
   }
 }

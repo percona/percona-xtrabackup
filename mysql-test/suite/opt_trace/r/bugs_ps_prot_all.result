@@ -1,4 +1,5 @@
 set optimizer_switch='semijoin=on,materialization=on,firstmatch=on,loosescan=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=off';
+include/rpl/set_gtid_mode_off.inc
 set optimizer_trace_max_mem_size=1048576;
 SET end_markers_in_json=on;
 SET optimizer_trace="enabled=on,one_line=off";
@@ -1949,7 +1950,7 @@ ON table2 .col_int_key = table1 .col_int_key
                       ] /* setup_range_conditions */,
                       "group_index_skip_scan": {
                         "chosen": false,
-                        "cause": "not_single_table"
+                        "cause": "not_original_query_table"
                       } /* group_index_skip_scan */,
                       "skip_scan_range": {
                         "chosen": false,
@@ -2842,3 +2843,4 @@ FROM information_schema.optimizer_trace;
 json_extract(trace,'$**.decorrelated_predicates')
 NULL
 DROP TABLE t1, t2;
+include/rpl/set_gtid_mode_on.inc

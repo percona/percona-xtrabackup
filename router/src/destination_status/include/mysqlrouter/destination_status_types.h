@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,21 +26,21 @@
 #ifndef MYSQLROUTER_DESTINATION_STATUS_TYPES_INCLUDED
 #define MYSQLROUTER_DESTINATION_STATUS_TYPES_INCLUDED
 
-#include <memory>
+#include <functional>
 #include <vector>
 
+#include "mysql/harness/destination.h"
 #include "mysqlrouter/datatypes.h"
-#include "tcp_address.h"
 
 struct QuarantineRoutingCallbacks {
-  std::function<std::vector<mysql_harness::TCPAddress>(const std::string &)>
+  std::function<std::vector<mysql_harness::Destination>(const std::string &)>
       on_get_destinations;
   std::function<void(const std::string &)> on_start_acceptors;
   std::function<void(const std::string &)> on_stop_acceptors;
 
   void reset() {
     on_get_destinations =
-        [](const std::string &) -> std::vector<mysql_harness::TCPAddress> {
+        [](const std::string &) -> std::vector<mysql_harness::Destination> {
       return {};
     };
 
@@ -50,11 +50,11 @@ struct QuarantineRoutingCallbacks {
 };
 
 struct AvailableDestination {
-  AvailableDestination(mysql_harness::TCPAddress a, std::string i,
+  AvailableDestination(mysql_harness::Destination dst, std::string i,
                        mysqlrouter::ServerMode m)
-      : address{std::move(a)}, id{std::move(i)}, mode(m) {}
+      : destination{std::move(dst)}, id{std::move(i)}, mode(m) {}
 
-  mysql_harness::TCPAddress address;
+  mysql_harness::Destination destination;
   std::string id;
   mysqlrouter::ServerMode mode;
 };

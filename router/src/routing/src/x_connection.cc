@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,6 @@
 #include "x_connection.h"
 
 #include <exception>
-#include <mutex>
 
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream.h>
@@ -46,6 +45,7 @@
 #include "mysqlrouter/connection_pool_component.h"
 #include "mysqlrouter/routing_component.h"
 #include "mysqlrouter/ssl_mode.h"
+#include "scope_guard.h"
 #include "tls_content_type.h"
 
 IMPORT_LOG_FUNCTIONS()
@@ -740,9 +740,10 @@ void MysqlRoutingXConnection::forward_server_to_client(Function this_func,
 }
 
 void MysqlRoutingXConnection::connect() {
+  Scope_guard connect_done_guard([&]() { completed(); });
   auto &connector = this->connector();
 
-  auto connect_res = connector.connect();
+  auto connect_res = connector.connect(get_session_info());
   if (!connect_res) {
     const auto ec = connect_res.error();
 
@@ -829,6 +830,8 @@ void MysqlRoutingXConnection::connect() {
   auto server_connection = std::move(connect_res.value());
 
   server_conn().assign_connection(std::move(server_connection));
+
+  server_address(server_conn().endpoint());
 
   this->connected();
 
@@ -1183,12 +1186,19 @@ void MysqlRoutingXConnection::forward_tls_init() {
 }
 
 static stdx::expected<TlsClientContext *, std::error_code> get_dest_ssl_ctx(
-    MySQLRoutingContext &ctx, const std::string &id) {
-  return mysql_harness::make_tcp_address(id).and_then(
-      [&ctx, &id](const auto &addr)
-          -> stdx::expected<TlsClientContext *, std::error_code> {
-        return ctx.dest_ssl_ctx(id, addr.address());
-      });
+    MySQLRoutingContext &ctx,
+    const std::optional<mysql_harness::Destination> &opt_dest) {
+  if (!opt_dest) {
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
+  }
+
+  const auto &dest = *opt_dest;
+
+  if (dest.is_local()) {
+    return ctx.dest_ssl_ctx(dest.str(), dest.as_local().path());
+  }
+
+  return ctx.dest_ssl_ctx(dest.str(), dest.as_tcp().hostname());
 }
 
 void MysqlRoutingXConnection::tls_connect_init() {

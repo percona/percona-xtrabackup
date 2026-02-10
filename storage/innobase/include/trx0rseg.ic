@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -136,35 +136,21 @@ static inline ulint trx_rsegf_undo_find_free(
 }
 
 /** Convert a 7-bit ID stored in a rollback pointer to an undo space ID.
-Before 8.0, this ID is called an rseg_id and is a slot in the TRX_SYS page
-where the space_id can be read.
 After 8.0 this is an undo space number which can be converted directly to
 an undo space ID.
-@param[in]      id              a 7-bit ID from a rollback pointer
+@param[in]      num             a 7-bit num from a rollback pointer
 @param[in]      is_temp         true if rseg from Temp Tablespace else false.
 @return undo tablespace ID containing the rollback segment */
-inline space_id_t trx_rseg_id_to_space_id(ulint id, bool is_temp) {
-  /* The rseg_id must be an undo_space_num between 0 and 127. */
-  ut_ad(id < TRX_SYS_N_RSEGS);
+inline space_id_t trx_undo_num_to_space_id(ulint num, bool is_temp) {
+  /* The num must be an undo_space_num between 0 and 127. */
+  ut_ad(num <= FSP_MAX_UNDO_TABLESPACES);
 
-  /*  MySQL versions before v5.7.2 used the first 32 slots in the
-  TRX_SYS page for redo rollback segments. v5.7.2 uses these seg_ids
-  for no-redo rollback segments in the temporary tablespace.
-  v8 will once again use them for durable/redo rollback segments. */
   if (is_temp) {
+    ut_ad_eq(num, 0);
     return (srv_tmp_space.space_id());
   }
 
-  /* If the ID is 0 then use the system tablespace. */
-  if (id == 0) {
-    return (TRX_SYS_SPACE);
-  }
-
-  if (srv_upgrade_old_undo_found) {
-    /* Interpret the id as a slot in the TRX_SYS page. */
-    trx_rseg_t *rseg = trx_sys->rsegs.find(id);
-    return (rseg->space_id);
-  }
+  ut_ad_ne(num, 0);
 
   /* We assume at this point that all undo tablespaces have
   reserved space_ids and RSEG_ARRAY pages. */
@@ -173,7 +159,7 @@ inline space_id_t trx_rseg_id_to_space_id(ulint id, bool is_temp) {
   /* The space_id_bank for this slot cannot change since this call is done
   by purge or MVCC. This space_id can only change during truncate when
   there are no more undo logs in this undo tablespace. */
-  space_id_t space_id = undo::num2id(static_cast<space_id_t>(id));
+  space_id_t space_id = undo::num2id(static_cast<space_id_t>(num));
   ut_ad(space_id != SPACE_UNKNOWN);
 
   return (space_id);

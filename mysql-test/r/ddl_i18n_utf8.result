@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 set names utf8mb3;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
@@ -2923,3 +2924,4 @@ t2	CREATE TABLE `t2` (
 USE test;
 DROP DATABASE mysqltest1;
 DROP DATABASE mysqltest2;
+include/rpl/set_gtid_mode_on.inc

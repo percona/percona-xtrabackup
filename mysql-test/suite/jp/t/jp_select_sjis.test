@@ -44,16 +44,25 @@ LOAD DATA LOCAL INFILE 'suite/jp/std_data/jisx0208_sjis.dat' INTO TABLE `‚s‚W`;
 LOAD DATA LOCAL INFILE 'suite/jp/std_data/jisx0208_sjis2.dat' INTO TABLE `‚s‚X`;
 
 #InnoDB
+--sorted_result
 SELECT * FROM `‚s‚P`;
+--sorted_result
 SELECT * FROM `‚s‚Q`;
+--sorted_result
 SELECT * FROM `‚s‚R`;
 #MyISAM
+--sorted_result
 SELECT * FROM `‚s‚S`;
+--sorted_result
 SELECT * FROM `‚s‚T`;
+--sorted_result
 SELECT * FROM `‚s‚U`;
 #MEMORY
+--sorted_result
 SELECT * FROM `‚s‚V`;
+--sorted_result
 SELECT * FROM `‚s‚W`;
+--sorted_result
 SELECT * FROM `‚s‚X`;
 
 drop table `‚s‚P`;

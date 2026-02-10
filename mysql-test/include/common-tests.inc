@@ -1735,6 +1735,7 @@ select t2.fld4,t2.fld1,count(price),sum(price),min(price),max(price),avg(price) 
 
 --sorted_result
 select t3.companynr,fld3,sum(price) from t3,t2 where t2.fld1 = t3.t2nr and t3.companynr = 512 group by companynr,fld3;
+--sorted_result
 select t2.companynr,count(*),min(fld3),max(fld3),sum(price),avg(price) from t2,t3 where t3.companynr >= 30 and t3.companynr <= 58 and t3.t2nr = t2.fld1 and 1+1=2 group by t2.companynr;
 
 #

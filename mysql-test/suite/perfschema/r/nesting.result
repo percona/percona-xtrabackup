@@ -1,3 +1,5 @@
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 "================== con1 connected =================="
 select "MARKER_BEGIN" as marker;
 marker
@@ -231,3 +233,5 @@ relative_event_id	relative_end_event_id	event_name	comment	nesting_event_type	re
 111	111	stage/sql/freeing items	(stage)	STATEMENT	98
 112	113	stage/sql/cleaning up	(stage)	STATEMENT	98
 113	113	wait/synch/mutex/sql/THD::LOCK_thd_query	lock	STAGE	112
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

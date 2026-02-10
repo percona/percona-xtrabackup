@@ -1,0 +1,3 @@
+--source include/have_binlog_format_row.inc
+--echo #FR 11.2:Source(InnoDB FK) -> Replica(SQL FK)
+--source common/rpl/rpl_foreign_key_interop.test

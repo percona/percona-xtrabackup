@@ -1,5 +1,7 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 --echo #
 --echo # Bug#24807594 SDI FILE LOSTS AFTER ALTERING DATABASE
@@ -199,3 +201,5 @@ disconnect con1;
 --source include/wait_until_disconnected.inc
 connection default;
 --disable_connect_log
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

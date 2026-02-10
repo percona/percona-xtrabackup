@@ -68,12 +68,12 @@ DROP VIEW v1;
 
 CREATE PROCEDURE sp1() BEGIN END;
 ALTER PROCEDURE sp1 COMMENT 'proc🐬';
-ERROR HY000: Comment for stored routine 'test.sp1' contains an invalid utf8mb3 character string: '\xF0\x9F\x90'.
+ERROR HY000: Comment for PROCEDURE 'test.sp1' contains an invalid utf8mb3 character string: '\xF0\x9F\x90'.
 DROP PROCEDURE sp1;
 
 CREATE FUNCTION sf1() RETURNS INT DETERMINISTIC RETURN 0;
 ALTER FUNCTION sf1 COMMENT 'func🐬';
-ERROR HY000: Comment for stored routine 'test.sf1' contains an invalid utf8mb3 character string: '\xF0\x9F\x90'.
+ERROR HY000: Comment for FUNCTION 'test.sf1' contains an invalid utf8mb3 character string: '\xF0\x9F\x90'.
 DROP FUNCTION sf1;
 
 CREATE EVENT evt1 ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1 HOUR DO SELECT 0;

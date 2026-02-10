@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -59,11 +59,11 @@ TEST_F(registry, basic_operations) {
 }
 
 TEST_F(registry, register_twice) {
-  my_service<SERVICE_TYPE(registry_registration)> registration_service(
+  my_service<SERVICE_TYPE(registry_registration)> const registration_service(
       "registry_registration", reg);
   ASSERT_FALSE(registration_service);
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_TRUE(service);
   }
   ASSERT_FALSE(registration_service->register_service(
@@ -71,57 +71,57 @@ TEST_F(registry, register_twice) {
   ASSERT_TRUE(registration_service->register_service(
       "test.test1", reinterpret_cast<my_h_service_imp *>(1)));
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_FALSE(service);
   }
 
   ASSERT_FALSE(registration_service->unregister("test.test1"));
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_TRUE(service);
   }
 }
 
 TEST_F(registry, unregister_activelly_used) {
-  my_service<SERVICE_TYPE(registry_registration)> registration_service(
+  my_service<SERVICE_TYPE(registry_registration)> const registration_service(
       "registry_registration", reg);
   ASSERT_FALSE(registration_service);
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_TRUE(service);
   }
   ASSERT_FALSE(registration_service->register_service(
       "test.test1", reinterpret_cast<my_h_service_imp *>(1)));
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_FALSE(service);
     ASSERT_TRUE(registration_service->unregister("test.test1"));
   }
 
   ASSERT_FALSE(registration_service->unregister("test.test1"));
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_TRUE(service);
   }
 }
 
 TEST_F(registry, unregister_non_registered) {
-  my_service<SERVICE_TYPE(registry_registration)> registration_service(
+  my_service<SERVICE_TYPE(registry_registration)> const registration_service(
       "registry_registration", reg);
   ASSERT_FALSE(registration_service);
   ASSERT_TRUE(registration_service->unregister("test.test1"));
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_TRUE(service);
   }
 }
 
 TEST_F(registry, registration_and_default) {
-  my_service<SERVICE_TYPE(registry_registration)> registration_service(
+  my_service<SERVICE_TYPE(registry_registration)> const registration_service(
       "registry_registration", reg);
   ASSERT_FALSE(registration_service);
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_TRUE(service);
   }
   /* Null interface */
@@ -139,7 +139,7 @@ TEST_F(registry, registration_and_default) {
   ASSERT_FALSE(registration_service->register_service(
       "test.test1", reinterpret_cast<my_h_service_imp *>(1)));
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_FALSE(service);
     ASSERT_EQ(
         static_cast<my_h_service_imp *>(static_cast<my_h_service>(service)),
@@ -150,7 +150,7 @@ TEST_F(registry, registration_and_default) {
   ASSERT_TRUE(registration_service->register_service(
       "test.test2", reinterpret_cast<my_h_service_imp *>(3)));
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_FALSE(service);
     ASSERT_EQ(
         static_cast<my_h_service_imp *>(static_cast<my_h_service>(service)),
@@ -159,7 +159,7 @@ TEST_F(registry, registration_and_default) {
   ASSERT_FALSE(registration_service->set_default("test.test2"));
   ASSERT_TRUE(registration_service->set_default("bad_name.test2"));
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_FALSE(service);
     ASSERT_EQ(
         static_cast<my_h_service_imp *>(static_cast<my_h_service>(service)),
@@ -167,7 +167,7 @@ TEST_F(registry, registration_and_default) {
   }
   ASSERT_FALSE(registration_service->unregister("test.test2"));
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_FALSE(service);
     ASSERT_EQ(
         static_cast<my_h_service_imp *>(static_cast<my_h_service>(service)),
@@ -175,7 +175,7 @@ TEST_F(registry, registration_and_default) {
   }
   ASSERT_FALSE(registration_service->unregister("test.test1"));
   {
-    my_service<SERVICE_TYPE(registry)> service("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service("test", reg);
     ASSERT_TRUE(service);
   }
 }
@@ -185,7 +185,8 @@ TEST_F(registry, my_service) {
   ASSERT_TRUE(hreg != nullptr);
 
   {
-    my_service<SERVICE_TYPE(registry_query)> service("registry_query", reg);
+    my_service<SERVICE_TYPE(registry_query)> const service("registry_query",
+                                                           reg);
     ASSERT_FALSE(service);
     ASSERT_TRUE(hreg == service);
   }
@@ -194,7 +195,7 @@ TEST_F(registry, my_service) {
   ASSERT_TRUE(reg->release(hreg));
 }
 TEST_F(registry, acquire_related) {
-  my_service<SERVICE_TYPE(registry_registration)> registration_service(
+  my_service<SERVICE_TYPE(registry_registration)> const registration_service(
       "registry_registration", reg);
   ASSERT_FALSE(registration_service);
   ASSERT_FALSE(registration_service->register_service(
@@ -209,40 +210,40 @@ TEST_F(registry, acquire_related) {
       "another_service.component2", reinterpret_cast<my_h_service_imp *>(12)));
 
   {
-    my_service<SERVICE_TYPE(registry)> service1("test", reg);
+    my_service<SERVICE_TYPE(registry)> const service1("test", reg);
     ASSERT_FALSE(service1);
     ASSERT_EQ(
         static_cast<my_h_service_imp *>(static_cast<my_h_service>(service1)),
         reinterpret_cast<my_h_service_imp *>(1));
 
-    my_service<SERVICE_TYPE(registry)> service2("test.component2", reg);
+    my_service<SERVICE_TYPE(registry)> const service2("test.component2", reg);
     ASSERT_FALSE(service2);
     ASSERT_EQ(
         static_cast<my_h_service_imp *>(static_cast<my_h_service>(service2)),
         reinterpret_cast<my_h_service_imp *>(2));
 
-    my_service<SERVICE_TYPE(registry)> service3("test.component3", reg);
+    my_service<SERVICE_TYPE(registry)> const service3("test.component3", reg);
     ASSERT_FALSE(service3);
     ASSERT_EQ(
         static_cast<my_h_service_imp *>(static_cast<my_h_service>(service3)),
         reinterpret_cast<my_h_service_imp *>(3));
 
-    my_service<SERVICE_TYPE(registry)> another_service1("another_service",
-                                                        service1, reg);
+    my_service<SERVICE_TYPE(registry)> const another_service1("another_service",
+                                                              service1, reg);
     ASSERT_FALSE(another_service1);
     ASSERT_EQ(static_cast<my_h_service_imp *>(
                   static_cast<my_h_service>(another_service1)),
               reinterpret_cast<my_h_service_imp *>(11));
 
-    my_service<SERVICE_TYPE(registry)> another_service2("another_service",
-                                                        service2, reg);
+    my_service<SERVICE_TYPE(registry)> const another_service2("another_service",
+                                                              service2, reg);
     ASSERT_FALSE(another_service2);
     ASSERT_EQ(static_cast<my_h_service_imp *>(
                   static_cast<my_h_service>(another_service2)),
               reinterpret_cast<my_h_service_imp *>(12));
 
-    my_service<SERVICE_TYPE(registry)> another_service3("another_service",
-                                                        service3, reg);
+    my_service<SERVICE_TYPE(registry)> const another_service3("another_service",
+                                                              service3, reg);
     ASSERT_TRUE(another_service3);
   }
 
@@ -264,7 +265,7 @@ TEST_F(registry, acquire_related) {
       nullptr));
 
   {
-    my_service<SERVICE_TYPE(registry)> scheme_file_service(
+    my_service<SERVICE_TYPE(registry)> const scheme_file_service(
         "dynamic_loader_scheme_file.mysql_minimal_chassis", reg);
     ASSERT_FALSE(scheme_file_service);
 
@@ -272,7 +273,7 @@ TEST_F(registry, acquire_related) {
       No other services implemented with that implementation name, should
       fallback to default.
     */
-    my_service<SERVICE_TYPE(registry)> another_service(
+    my_service<SERVICE_TYPE(registry)> const another_service(
         "registry", scheme_file_service, reg);
     ASSERT_FALSE(another_service);
     ASSERT_EQ(another_service, reg);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -86,8 +86,9 @@ bool Statement_runnable::execute_server_code(THD *thd) {
   assert(!executing_statement_under_stored_program ||
          thd->lex->sphead == thd->sp_runtime_ctx->sp);
 
-  // Set multi-result state if statement belongs to SP.
-  if (executing_statement_under_stored_program) {
+  // Set multi-result state if statement belongs to Stored procedure.
+  if (executing_statement_under_stored_program &&
+      thd->sp_runtime_ctx->sp->m_type == enum_sp_type::PROCEDURE) {
     error = set_sp_multi_result_state(thd, thd->lex);
     if (error) goto end;
   }

@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 RESET BINARY LOGS AND GTIDS;
 CREATE TABLE t1 (c1 INT);
 SET @@GLOBAL.GTID_MODE = OFF_PERMISSIVE;
@@ -23,3 +24,4 @@ ERROR HY000: The system variable gtid_next cannot be set when there is an ongoin
 COMMIT;
 SET SESSION autocommit = 1;
 SET @@GLOBAL.GTID_MODE = OFF;
+include/rpl/set_gtid_mode_on.inc

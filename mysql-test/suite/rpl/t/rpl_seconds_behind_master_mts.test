@@ -23,19 +23,11 @@
 connection slave;
 --let $debug_point= dbug.mta.force_clock_diff_eq_0
 --source include/add_debug_point.inc
-SET @save_replica_parallel_type = @@GLOBAL.replica_parallel_type;
 SET @save.replica_parallel_workers= @@global.replica_parallel_workers;
 SET @save_replica_transaction_retries= @@global.replica_transaction_retries;
 SET @save_replica_preserve_commit_order= @@global.replica_preserve_commit_order;
 
---echo # Test for PARALLEL_DATABASE
-SET GLOBAL replica_parallel_type = 'DATABASE';
-SET @@global.replica_parallel_workers= 4;
-SET @@global.replica_preserve_commit_order=0;
---source common/rpl/rpl_seconds_behind_source_mta_type_database.test
-
 --echo # Test for LOGICAL_CLOCK
-SET GLOBAL replica_parallel_type = 'LOGICAL_CLOCK';
 SET GLOBAL replica_parallel_workers = 3;
 SET GLOBAL replica_preserve_commit_order=1;
 --source common/rpl/rpl_seconds_behind_source_mta_logical_clock.test
@@ -43,7 +35,6 @@ SET GLOBAL replica_preserve_commit_order=1;
 #Cleanup
 --let $debug_point= dbug.mta.force_clock_diff_eq_0
 --source include/remove_debug_point.inc
-SET @@GLOBAL.replica_parallel_type= @save_replica_parallel_type;
 --disable_warnings
 SET @@global.replica_parallel_workers= @save.replica_parallel_workers;
 --enable_warnings

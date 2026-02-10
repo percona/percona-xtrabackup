@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -84,7 +84,7 @@ class SparseBitmask {
   }
 
   /* Clear all bits */
-  void clear(void) { m_vec.clear(); }
+  void clear() { m_vec.clear(); }
 
   /* Find first bit >= n */
   unsigned find(unsigned n) const {
@@ -105,7 +105,7 @@ class SparseBitmask {
     return m_vec[n];
   }
 
-  void print(void) const {
+  void print() const {
     for (unsigned i = 0; i < m_vec.size(); i++) {
       const unsigned j = m_vec[i];
       printf("[%u]: %u\n", i, j);

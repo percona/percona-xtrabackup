@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -142,7 +142,7 @@ int NdbTick_GetMonotonicClockId(clockid_t *clk) {
 }
 #endif
 
-const NDB_TICKS NdbTick_getCurrentTicks(void) {
+NDB_TICKS NdbTick_getCurrentTicks() {
   assert(isInited);
 
 #if defined(HAVE_CLOCK_GETTIME)
@@ -215,7 +215,7 @@ const NDB_TICKS NdbTick_getCurrentTicks(void) {
   }
 }
 
-const NDB_TICKS NdbTick_AddMilliseconds(NDB_TICKS ticks, Uint64 ms) {
+NDB_TICKS NdbTick_AddMilliseconds(NDB_TICKS ticks, Uint64 ms) {
   assert(isInited);
   assert(NdbTick_IsValid(ticks));
   assert(NdbDuration::tick_frequency >= MILLISEC_PER_SEC);

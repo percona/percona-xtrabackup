@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2024, Oracle and/or its affiliates.
+  Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -28,8 +28,7 @@
 #include <cassert>
 #include <string>
 
-namespace http {
-namespace cno {
+namespace http::cno {
 namespace {
 
 class ErrorCategory : public std::error_category {
@@ -58,14 +57,13 @@ class ErrorCategory : public std::error_category {
   }
 
   static const std::error_category &singleton() noexcept {
-    static ErrorCategory instance;
+    static ErrorCategory const instance;
     return instance;
   }
 };
 
 }  // namespace
-}  // namespace cno
-}  // namespace http
+}  // namespace http::cno
 
 std::error_code make_error_code(const cno_error_t *ec) {
   return {ec->code, http::cno::ErrorCategory::singleton()};

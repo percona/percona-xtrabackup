@@ -4784,7 +4784,7 @@ FLUSH STATUS;
 EXPLAIN INSERT INTO t2 VALUES ((SELECT max(a) FROM t1),
 (SELECT min(a) FROM t1));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	INSERT	t2	p0,p1,p2	ALL	NULL	NULL	NULL	NULL	#	NULL	NULL
+1	INSERT	t2	p2	ALL	NULL	NULL	NULL	NULL	#	NULL	NULL
 3	SUBQUERY	t1	p0,p1,p2	ALL	NULL	NULL	NULL	NULL	#	100.00	NULL
 2	SUBQUERY	t1	p0,p1,p2	ALL	NULL	NULL	NULL	NULL	#	100.00	NULL
 Warnings:
@@ -4792,6 +4792,9 @@ Note	1003	insert into `test`.`t2` values ((/* select#2 */ select max(`test`.`t1`
 VARIABLE_NAME	VARIABLE_VALUE
 Handler_commit	1
 Handler_external_lock	6
+Handler_read_first	3
+Handler_read_key	3
+Handler_read_rnd_next	8
 # I.e. No lock pruning possible
 FLUSH STATUS;
 INSERT INTO t2 VALUES ((SELECT a FROM t1 WHERE a = 1),
@@ -4809,7 +4812,7 @@ FLUSH STATUS;
 EXPLAIN INSERT INTO t2 VALUES ((SELECT a FROM t1 WHERE a = 1),
 (SELECT b FROM t1 WHERE a = 2));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	INSERT	t2	p0,p1,p2	ALL	NULL	NULL	NULL	NULL	#	NULL	NULL
+1	INSERT	t2	p1	ALL	NULL	NULL	NULL	NULL	#	NULL	NULL
 3	SUBQUERY	t1	p2	ALL	NULL	NULL	NULL	NULL	#	25.00	Using where
 2	SUBQUERY	t1	p1	ALL	NULL	NULL	NULL	NULL	#	25.00	Using where
 Warnings:
@@ -4817,6 +4820,9 @@ Note	1003	insert into `test`.`t2` values ((/* select#2 */ select `test`.`t1`.`a`
 VARIABLE_NAME	VARIABLE_VALUE
 Handler_commit	1
 Handler_external_lock	6
+Handler_read_first	1
+Handler_read_key	1
+Handler_read_rnd_next	4
 # I.e. No lock pruning possible on insert table
 SELECT * FROM t2 ORDER BY a, b;
 a	b
@@ -5024,9 +5030,9 @@ Handler_read_next	12
 UNLOCK TABLES;
 EXPLAIN SELECT * FROM t2 WHERE a = sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t2	p1	const	PRIMARY	PRIMARY	4	const	#	100.00	NULL
+1	SIMPLE	t2	p0,p1,p2	eq_ref	PRIMARY	PRIMARY	4	const	#	100.00	Using where
 Warnings:
-Note	1003	/* select#1 */ select '1' AS `a`,'1' AS `b` from `test`.`t2` where true
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a`,`test`.`t2`.`b` AS `b` from `test`.`t2` where (`test`.`t2`.`a` = <cache>(`sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
 START TRANSACTION;
 SELECT * FROM t2 WHERE a = sf_a_from_t1b_d('1');
@@ -5080,9 +5086,9 @@ Handler_read_next	12
 UNLOCK TABLES;
 EXPLAIN SELECT * FROM t2 WHERE a = 7 + sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t2	p2	const	PRIMARY	PRIMARY	4	const	#	100.00	NULL
+1	SIMPLE	t2	p0,p1,p2	eq_ref	PRIMARY	PRIMARY	4	const	#	100.00	Using where
 Warnings:
-Note	1003	/* select#1 */ select '8' AS `a`,'8' AS `b` from `test`.`t2` where true
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a`,`test`.`t2`.`b` AS `b` from `test`.`t2` where (`test`.`t2`.`a` = <cache>((7 + `sf_a_from_t1b_d`('1'))))
 FLUSH STATUS;
 START TRANSACTION;
 SELECT * FROM t2 WHERE a = 7 + sf_a_from_t1b_d('1');
@@ -5132,9 +5138,9 @@ Handler_read_next	7
 UNLOCK TABLES;
 EXPLAIN SELECT * FROM t2 WHERE a = sf_a_from_t1b_d('1') AND a = 2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	NULL	Impossible WHERE
+1	SIMPLE	t2	p2	const	PRIMARY	PRIMARY	4	const	#	100.00	NULL
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a`,`test`.`t2`.`b` AS `b` from `test`.`t2` where false
+Note	1003	/* select#1 */ select '2' AS `a`,'2' AS `b` from `test`.`t2` where ((2 = `sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
 START TRANSACTION;
 SELECT * FROM t2 WHERE a = sf_a_from_t1b_d('1') AND a = 2;
@@ -5316,9 +5322,9 @@ Handler_read_next	12
 UNLOCK TABLES;
 EXPLAIN SELECT sf_add_1(a) - 1, sf_add_hello(b) FROM t2 WHERE a = sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t2	p1	const	PRIMARY	PRIMARY	4	const	#	100.00	NULL
+1	SIMPLE	t2	p0,p1,p2	eq_ref	PRIMARY	PRIMARY	4	const	#	100.00	Using where
 Warnings:
-Note	1003	/* select#1 */ select (`sf_add_1`('1') - 1) AS `sf_add_1(a) - 1`,`sf_add_hello`('1') AS `sf_add_hello(b)` from `test`.`t2` where true
+Note	1003	/* select#1 */ select (`sf_add_1`(`test`.`t2`.`a`) - 1) AS `sf_add_1(a) - 1`,`sf_add_hello`(`test`.`t2`.`b`) AS `sf_add_hello(b)` from `test`.`t2` where (`test`.`t2`.`a` = <cache>(`sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
 START TRANSACTION;
 SELECT sf_add_1(a) - 1, sf_add_hello(b) FROM t2 WHERE a = sf_a_from_t1b_d('1');
@@ -5372,9 +5378,9 @@ Handler_read_next	12
 UNLOCK TABLES;
 EXPLAIN SELECT sf_add_1(a) - 1, sf_add_hello(b) FROM t2 WHERE a = 7 + sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t2	p2	const	PRIMARY	PRIMARY	4	const	#	100.00	NULL
+1	SIMPLE	t2	p0,p1,p2	eq_ref	PRIMARY	PRIMARY	4	const	#	100.00	Using where
 Warnings:
-Note	1003	/* select#1 */ select (`sf_add_1`('8') - 1) AS `sf_add_1(a) - 1`,`sf_add_hello`('8') AS `sf_add_hello(b)` from `test`.`t2` where true
+Note	1003	/* select#1 */ select (`sf_add_1`(`test`.`t2`.`a`) - 1) AS `sf_add_1(a) - 1`,`sf_add_hello`(`test`.`t2`.`b`) AS `sf_add_hello(b)` from `test`.`t2` where (`test`.`t2`.`a` = <cache>((7 + `sf_a_from_t1b_d`('1'))))
 FLUSH STATUS;
 START TRANSACTION;
 SELECT sf_add_1(a) - 1, sf_add_hello(b) FROM t2 WHERE a = 7 + sf_a_from_t1b_d('1');
@@ -5424,9 +5430,9 @@ Handler_read_next	7
 UNLOCK TABLES;
 EXPLAIN SELECT sf_add_1(a) - 1, sf_add_hello(b) FROM t2 WHERE a = sf_a_from_t1b_d('1') AND a = 2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	NULL	Impossible WHERE
+1	SIMPLE	t2	p2	const	PRIMARY	PRIMARY	4	const	#	100.00	NULL
 Warnings:
-Note	1003	/* select#1 */ select (`sf_add_1`(`test`.`t2`.`a`) - 1) AS `sf_add_1(a) - 1`,`sf_add_hello`(`test`.`t2`.`b`) AS `sf_add_hello(b)` from `test`.`t2` where false
+Note	1003	/* select#1 */ select (`sf_add_1`('2') - 1) AS `sf_add_1(a) - 1`,`sf_add_hello`('2') AS `sf_add_hello(b)` from `test`.`t2` where ((2 = `sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
 START TRANSACTION;
 SELECT sf_add_1(a) - 1, sf_add_hello(b) FROM t2 WHERE a = sf_a_from_t1b_d('1') AND a = 2;
@@ -5646,7 +5652,7 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN UPDATE t2 SET b = CONCAT('+', b) WHERE a = sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	UPDATE	t2	p1	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
+1	UPDATE	t2	p0,p1,p2	index	NULL	PRIMARY	4	NULL	#	100.00	Using where
 Warnings:
 Note	1003	update `test`.`t2` set `test`.`t2`.`b` = concat('+',`test`.`t2`.`b`) where (`test`.`t2`.`a` = `sf_a_from_t1b_d`('1'))
 FLUSH STATUS;
@@ -5728,7 +5734,7 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN UPDATE t2 SET b = CONCAT('+', b) WHERE a = 7 + sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	UPDATE	t2	p2	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
+1	UPDATE	t2	p0,p1,p2	index	NULL	PRIMARY	4	NULL	#	100.00	Using where
 Warnings:
 Note	1003	update `test`.`t2` set `test`.`t2`.`b` = concat('+',`test`.`t2`.`b`) where (`test`.`t2`.`a` = (7 + `sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
@@ -5802,9 +5808,9 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN UPDATE t2 SET b = CONCAT('+', b) WHERE a = sf_a_from_t1b_d('1') AND a = 2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	UPDATE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	NULL	Impossible WHERE
+1	UPDATE	t2	p2	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
 Warnings:
-Note	1003	update `test`.`t2` set `test`.`t2`.`b` = concat('+',`test`.`t2`.`b`) where ()
+Note	1003	update `test`.`t2` set `test`.`t2`.`b` = concat('+',`test`.`t2`.`b`) where ((`test`.`t2`.`a` = 2) and (2 = `sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
 START TRANSACTION;
 UPDATE t2 SET b = CONCAT('+', b) WHERE a = sf_a_from_t1b_d('1') AND a = 2;
@@ -6058,7 +6064,7 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN UPDATE t2 SET b = sf_add_hello(b) WHERE a = sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	UPDATE	t2	p1	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
+1	UPDATE	t2	p0,p1,p2	index	NULL	PRIMARY	4	NULL	#	100.00	Using where
 Warnings:
 Note	1003	update `test`.`t2` set `test`.`t2`.`b` = `sf_add_hello`(`test`.`t2`.`b`) where (`test`.`t2`.`a` = `sf_a_from_t1b_d`('1'))
 FLUSH STATUS;
@@ -6140,7 +6146,7 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN UPDATE t2 SET b = sf_add_hello(b) WHERE a = 7 + sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	UPDATE	t2	p2	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
+1	UPDATE	t2	p0,p1,p2	index	NULL	PRIMARY	4	NULL	#	100.00	Using where
 Warnings:
 Note	1003	update `test`.`t2` set `test`.`t2`.`b` = `sf_add_hello`(`test`.`t2`.`b`) where (`test`.`t2`.`a` = (7 + `sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
@@ -6214,9 +6220,9 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN UPDATE t2 SET b = sf_add_hello(b) WHERE a = sf_a_from_t1b_d('1') AND a = 2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	UPDATE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	NULL	Impossible WHERE
+1	UPDATE	t2	p2	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
 Warnings:
-Note	1003	update `test`.`t2` set `test`.`t2`.`b` = `sf_add_hello`(`test`.`t2`.`b`) where ()
+Note	1003	update `test`.`t2` set `test`.`t2`.`b` = `sf_add_hello`(`test`.`t2`.`b`) where ((`test`.`t2`.`a` = 2) and (2 = `sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
 START TRANSACTION;
 UPDATE t2 SET b = sf_add_hello(b) WHERE a = sf_a_from_t1b_d('1') AND a = 2;
@@ -6476,7 +6482,7 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN UPDATE t2 SET a = sf_add_1(a) + 4 WHERE a = sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	UPDATE	t2	p1	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
+1	UPDATE	t2	p0,p1,p2	index	NULL	PRIMARY	4	NULL	#	100.00	Using where; Using temporary
 Warnings:
 Note	1003	update `test`.`t2` set `test`.`t2`.`a` = (`sf_add_1`(`test`.`t2`.`a`) + 4) where (`test`.`t2`.`a` = `sf_a_from_t1b_d`('1'))
 FLUSH STATUS;
@@ -6562,7 +6568,7 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN UPDATE t2 SET a = sf_add_1(a) + 4 WHERE a = 7 + sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	UPDATE	t2	p2	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
+1	UPDATE	t2	p0,p1,p2	index	NULL	PRIMARY	4	NULL	#	100.00	Using where; Using temporary
 Warnings:
 Note	1003	update `test`.`t2` set `test`.`t2`.`a` = (`sf_add_1`(`test`.`t2`.`a`) + 4) where (`test`.`t2`.`a` = (7 + `sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
@@ -6638,9 +6644,9 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN UPDATE t2 SET a = sf_add_1(a) + 4 WHERE a = sf_a_from_t1b_d('1') AND a = 2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	UPDATE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	NULL	Impossible WHERE
+1	UPDATE	t2	p2	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
 Warnings:
-Note	1003	update `test`.`t2` set `test`.`t2`.`a` = (`sf_add_1`(`test`.`t2`.`a`) + 4) where ()
+Note	1003	update `test`.`t2` set `test`.`t2`.`a` = (`sf_add_1`(`test`.`t2`.`a`) + 4) where ((`test`.`t2`.`a` = 2) and (2 = `sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
 START TRANSACTION;
 UPDATE t2 SET a = sf_add_1(a) + 4 WHERE a = sf_a_from_t1b_d('1') AND a = 2;
@@ -6893,7 +6899,7 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN DELETE FROM t2 WHERE a = sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	DELETE	t2	p1	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
+1	DELETE	t2	p0,p1,p2	ALL	NULL	NULL	NULL	NULL	#	100.00	Using where
 Warnings:
 Note	1003	delete from `test`.`t2` where (`test`.`t2`.`a` = `sf_a_from_t1b_d`('1'))
 FLUSH STATUS;
@@ -6971,7 +6977,7 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN DELETE FROM t2 WHERE a = 7 + sf_a_from_t1b_d('1');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	DELETE	t2	p2	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
+1	DELETE	t2	p0,p1,p2	ALL	NULL	NULL	NULL	NULL	#	100.00	Using where
 Warnings:
 Note	1003	delete from `test`.`t2` where (`test`.`t2`.`a` = (7 + `sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
@@ -7043,9 +7049,9 @@ ROLLBACK;
 UNLOCK TABLES;
 EXPLAIN DELETE FROM t2 WHERE a = sf_a_from_t1b_d('1') AND a = 2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	DELETE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	NULL	Impossible WHERE
+1	DELETE	t2	p2	range	PRIMARY	PRIMARY	4	const	#	100.00	Using where
 Warnings:
-Note	1003	delete from `test`.`t2` where ()
+Note	1003	delete from `test`.`t2` where ((`test`.`t2`.`a` = 2) and (2 = `sf_a_from_t1b_d`('1')))
 FLUSH STATUS;
 START TRANSACTION;
 DELETE FROM t2 WHERE a = sf_a_from_t1b_d('1') AND a = 2;

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2024, Oracle and/or its affiliates.
+Copyright (c) 1997, 2025, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -99,23 +99,23 @@ constexpr uint32_t SEL_RETRY = 2;
  fields are compared with collation!
  @return true if the columns are equal */
 static bool row_sel_sec_rec_is_for_blob(
-    trx_t *trx,              /*!< in: the operating transaction */
-    ulint mtype,             /*!< in: main type */
-    ulint prtype,            /*!< in: precise type */
-    ulint mbminmaxlen,       /*!< in: minimum and maximum length of
-                             a multi-byte character */
-    const byte *clust_field, /*!< in: the locally stored part of
-                             the clustered index column, including
-                             the BLOB pointer; the clustered
-                             index record must be covered by
-                             a lock or a page latch to protect it
-                             against deletion (rollback or purge) */
-    ulint clust_len,         /*!< in: length of clust_field */
-    const byte *sec_field,   /*!< in: column in secondary index */
-    ulint sec_len,           /*!< in: length of sec_field */
-    ulint prefix_len,        /*!< in: index column prefix length
-                             in bytes */
-    dict_table_t *table)     /*!< in: table */
+    trx_t *trx,                /*!< in: the operating transaction */
+    ulint mtype,               /*!< in: main type */
+    ulint prtype,              /*!< in: precise type */
+    ulint mbminmaxlen,         /*!< in: minimum and maximum length of
+                               a multi-byte character */
+    const byte *clust_field,   /*!< in: the locally stored part of
+                               the clustered index column, including
+                               the BLOB pointer; the clustered
+                               index record must be covered by
+                               a lock or a page latch to protect it
+                               against deletion (rollback or purge) */
+    ulint clust_len,           /*!< in: length of clust_field */
+    const byte *sec_field,     /*!< in: column in secondary index */
+    ulint sec_len,             /*!< in: length of sec_field */
+    ulint prefix_len,          /*!< in: index column prefix length
+                               in bytes */
+    const dict_table_t *table) /*!< in: table */
 {
   ulint len;
   byte buf[REC_VERSION_56_MAX_INDEX_COL_LEN];
@@ -177,8 +177,8 @@ clustered record has been marked for deletion; only valid if DB_SUCCESS was
 returned
 @return DB_SUCCESS or error code */
 static dberr_t row_sel_sec_rec_is_for_clust_rec(
-    const rec_t *sec_rec, dict_index_t *sec_index, const rec_t *clust_rec,
-    dict_index_t *clust_index, que_thr_t *thr, bool &is_equal) {
+    const rec_t *sec_rec, const dict_index_t *sec_index, const rec_t *clust_rec,
+    const dict_index_t *clust_index, que_thr_t *thr, bool &is_equal) {
   const byte *sec_field;
   ulint sec_len;
   const byte *clust_field;
@@ -191,13 +191,14 @@ static dberr_t row_sel_sec_rec_is_for_clust_rec(
   ulint *sec_offs = sec_offsets_;
   trx_t *trx = thr_get_trx(thr);
   dberr_t err = DB_SUCCESS;
+  const dict_table_t *const table = clust_index->table;
 
   is_equal = true;
 
   rec_offs_init(clust_offsets_);
   rec_offs_init(sec_offsets_);
 
-  if (rec_get_deleted_flag(clust_rec, dict_table_is_comp(clust_index->table))) {
+  if (rec_get_deleted_flag(clust_rec, dict_table_is_comp(table))) {
     /* The clustered index record is delete-marked;
     it is not visible in the read view.  Besides,
     if there are any externally stored columns,
@@ -229,19 +230,15 @@ static dberr_t row_sel_sec_rec_is_for_clust_rec(
     /* For virtual column, its value will need to be
     reconstructed from base column in cluster index */
     if (col->is_virtual()) {
-      const dict_v_col_t *v_col;
-      const dtuple_t *row;
-      dfield_t *vfield;
+      const dict_v_col_t *v_col = reinterpret_cast<const dict_v_col_t *>(col);
 
-      v_col = reinterpret_cast<const dict_v_col_t *>(col);
+      const dtuple_t *const row =
+          row_build(ROW_COPY_POINTERS, clust_index, clust_rec, clust_offs,
+                    nullptr, nullptr, nullptr, &ext, heap);
 
-      row = row_build(ROW_COPY_POINTERS, clust_index, clust_rec, clust_offs,
-                      nullptr, nullptr, nullptr, &ext, heap);
-
-      vfield = innobase_get_computed_value(row, v_col, clust_index, &heap, heap,
-                                           nullptr, thr_get_trx(thr)->mysql_thd,
-                                           thr->prebuilt->m_mysql_table,
-                                           nullptr, nullptr, nullptr);
+      const dfield_t *const vfield = innobase_get_computed_value(
+          row, v_col, table, &heap, heap, thr_get_trx(thr)->mysql_thd,
+          thr->prebuilt->m_mysql_table);
 
       if (vfield == nullptr) {
         /* This may happen e.g. when this statement is executed in
@@ -284,8 +281,7 @@ static dberr_t row_sel_sec_rec_is_for_clust_rec(
            (dict_table_has_atomic_blobs(sec_index->table) && sec_len == 0))) {
         if (!row_sel_sec_rec_is_for_blob(
                 trx, col->mtype, col->prtype, col->mbminmaxlen, clust_field,
-                clust_len, sec_field, sec_len, ifield->prefix_len,
-                clust_index->table)) {
+                clust_len, sec_field, sec_len, ifield->prefix_len, table)) {
           is_equal = false;
           goto func_exit;
         }
@@ -317,7 +313,12 @@ static dberr_t row_sel_sec_rec_is_for_clust_rec(
                          reinterpret_cast<double *>(&tmp_mbr), nullptr);
       rtr_read_mbr(sec_field, &sec_mbr);
 
-      if (!mbr_equal_cmp(sec_index->rtr_srs.get(), &sec_mbr, &tmp_mbr)) {
+      /* We use mbr_equal_physically() here because during UPDATE we have
+      skipped updating Spatial Index only when existing MBR was matching
+      physically to MBR of updated geometry.
+      Checking for logical equality here will result in duplicate results
+      if the MBR was logically equal but physically different. */
+      if (!mbr_equal_physically(&sec_mbr, &tmp_mbr)) {
         is_equal = false;
         goto func_exit;
       }
@@ -2809,6 +2810,18 @@ void row_sel_field_store_in_mysql_format_func(
       const byte *field_ref =
           field_data + local_len - BTR_EXTERN_FIELD_REF_SIZE;
 
+      /* TODO: The latest version of lob is available in lob_version.  The
+      version of the lob needed is available in field_ref. We need to
+      reconstruct the version of the lob needed from the latest lob.  For this
+      to be correctly done, we not only need the update vector from the undo
+      logs, but also the update vector in the lob itself (move from version 2
+      to version 1, for example).
+
+      Currently we only have the update vector from undo logs. Until we
+      implement the feature to obtain update vector from lob (the partial
+      update), we have to restrict the small partial update to version 1 of
+      the lob. This will avoid interaction between small partial updates and
+      the partial updates. */
       lob::ref_t ref(const_cast<byte *>(field_ref));
       lob_undo->apply(clust_index, field_no, const_cast<byte *>(data), len,
                       lob_version, ref.page_no());
@@ -3411,8 +3424,7 @@ static bool sel_restore_position_for_mysql(
   ut_ad(!success || pcur->m_rel_pos == BTR_PCUR_ON);
 #ifdef UNIV_DEBUG
   if (pcur->m_pos_state == BTR_PCUR_IS_POSITIONED_OPTIMISTIC) {
-    ut_ad(pcur->m_rel_pos == BTR_PCUR_BEFORE ||
-          pcur->m_rel_pos == BTR_PCUR_AFTER);
+    ut_ad(pcur->m_rel_pos == BTR_PCUR_BEFORE);
   } else {
     ut_ad(pcur->m_pos_state == BTR_PCUR_IS_POSITIONED);
     ut_ad((pcur->m_rel_pos == BTR_PCUR_ON) == pcur->is_on_user_rec());
@@ -4342,9 +4354,8 @@ static row_to_range_relation_t row_compare_row_to_range(
   In particular we only handle cases where we iterate the index in its
   natural order. */
   if (index == clust_index && (mode == PAGE_CUR_GE || mode == PAGE_CUR_G) &&
-      (direction == 0 || direction == ROW_SEL_NEXT) &&
-      prebuilt->is_reading_range()) {
-    ut_ad(moves_up);
+      (direction == 0 || direction == ROW_SEL_NEXT)) {
+    ut_a(moves_up);
     const auto stop_len = dtuple_get_n_fields_cmp(prebuilt->m_stop_tuple);
     if (0 < stop_len) {
       const auto index_len = dict_index_get_n_unique(index);
@@ -4441,7 +4452,6 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
 #endif /* UNIV_DEBUG */
   const rec_t *rec = nullptr;
   byte *end_range_cache = nullptr;
-  const dtuple_t *prev_vrow = nullptr;
   const dtuple_t *vrow = nullptr;
   const rec_t *result_rec = nullptr;
   const rec_t *clust_rec;
@@ -4468,7 +4478,6 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
   bool table_lock_waited = false;
   byte *next_buf = nullptr;
   bool spatial_search = false;
-  ulint end_loop = 0;
 
   rec_offs_init(offsets_);
 
@@ -4827,6 +4836,7 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
 
     if (!srv_read_only_mode) {
       trx_assign_read_view(trx);
+      DEBUG_SYNC_C("after_mvcc_assign_read_view");
     }
 
     prebuilt->sql_stat_start = false;
@@ -4965,10 +4975,7 @@ rec_loop:
   }
 
   if (page_rec_is_supremum(rec)) {
-    DBUG_EXECUTE_IF(
-        "compare_end_range", if (end_loop < 100) { end_loop = 100; });
-
-    /** Compare the last record of the page with end range
+    /* Compare the last record of the page with end range
     passed to InnoDB when there is no ICP and number of
     loops in row_search_mvcc for rows found but not
     reporting due to search views etc.
@@ -4978,35 +4985,41 @@ rec_loop:
     column type (array of values).  */
     if (prev_rec != nullptr && !prebuilt->innodb_api &&
         prebuilt->m_mysql_handler->end_range != nullptr &&
-        prebuilt->idx_cond == false && end_loop >= 100 &&
+        prebuilt->idx_cond == false &&
         !(clust_templ_for_sec && index->is_multi_value())) {
-      dict_index_t *key_index = prebuilt->index;
-
-      if (end_range_cache == nullptr) {
-        end_range_cache = static_cast<byte *>(ut::malloc_withkey(
-            UT_NEW_THIS_FILE_PSI_KEY, prebuilt->mysql_row_len));
-      }
-
-      if (clust_templ_for_sec) {
-        /** Secondary index record but the template
-        based on PK. */
-        key_index = clust_index;
-      }
-
-      /** Create offsets based on prebuilt index. */
+      /* Create offsets based on prebuilt index. */
       offsets = rec_get_offsets(prev_rec, prebuilt->index, offsets,
                                 ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
 
-      if (row_sel_store_mysql_rec(end_range_cache, prebuilt, prev_rec,
-                                  prev_vrow, clust_templ_for_sec, key_index,
-                                  prebuilt->index, offsets, clust_templ_for_sec,
-                                  prebuilt->get_lob_undo(),
-                                  prebuilt->blob_heap)) {
-        if (row_search_end_range_check(end_range_cache, prev_rec, prebuilt,
-                                       clust_templ_for_sec, offsets,
-                                       record_buffer)) {
-          /** In case of prebuilt->fetch,
-          set the error in prebuilt->end_range. */
+      ut_a(prebuilt->m_stop_tuple);
+
+      const auto stop_len = dtuple_get_n_fields_cmp(prebuilt->m_stop_tuple);
+
+      /* If we have prebuilt->m_mysql_handler->end_range we should also
+      have a (populated) stop tuple. */
+      ut_ad_ne(stop_len, 0);
+
+      if (stop_len > 0) {
+        const auto index_len = dict_index_get_n_unique(index);
+        ut_a_le(stop_len, index_len);
+
+        /* we can only reach supremum after having scanned another record
+          (prev_rec != nullptr) if we are "moving up". The end range check
+          optimization does not apply to reverse scans. */
+        ut_ad(moves_up);
+        const auto cmp =
+            cmp_dtuple_rec(prebuilt->m_stop_tuple, prev_rec, index, offsets);
+
+        if (cmp < 0 ||
+            (cmp == 0 && prebuilt->m_mysql_handler->end_range->flag ==
+                             HA_READ_BEFORE_KEY)) {
+          /* Set flag to remeber that the scan reached end of range, so that,
+          on subsequent calls to row_search_mvcc(), prebuilt->fetch_cache is
+          not filled and DB_RECORD_NOT_FOUND is returned when
+          prebuilt->n_fetch_cached is 0, rather than refilling it.
+          In case next_buf == nullptr, DB_RECORD_NOT_FOUND is returned
+          immediately, otherwise DB_SUCCESS is returned with data row stored
+          in next_buf. */
           if (next_buf != nullptr) {
             prebuilt->m_end_range = true;
           }
@@ -5015,7 +5028,6 @@ rec_loop:
           goto normal_return;
         }
       }
-      DEBUG_SYNC_C("allow_insert");
     }
 
     if (set_also_gap_locks && !trx->skip_gap_locks() &&
@@ -5040,7 +5052,6 @@ rec_loop:
         default:
           goto lock_wait_or_error;
       }
-      DEBUG_SYNC_C("allow_insert");
     }
 
     /* A page supremum record cannot be in the result set: skip
@@ -5558,7 +5569,14 @@ rec_loop:
                                       UT_LOCATION_HERE, &heap);
       rtr_get_mbr_from_rec(rec, index_offsets, &index_mbr);
 
-      if (mbr_equal_cmp(index->rtr_srs.get(), &clust_mbr, &index_mbr)) {
+      /* We use mbr_equal_physically() because we are comparing
+      MBR between Clustured Index & Spatial Index to identify duplicates.
+      As during UPDATE we check for MBR being physically equal, check
+      for duplicate should also happen physically.*/
+      if (mbr_equal_physically(&clust_mbr, &index_mbr)) {
+        ut_ad(!rec_get_deleted_flag(clust_rec, comp));
+        /* Duplicate because it has the same MBR as the record in PK,
+        but the record in PK is not delete marked, while ours is. */
         *is_dup_rec = true;
       }
     }
@@ -5773,19 +5791,6 @@ idx_cond_failed:
   goto normal_return;
 
 next_rec:
-
-  if (end_loop >= 99 && need_vrow && vrow == nullptr && prev_rec != nullptr) {
-    if (!heap) {
-      heap = mem_heap_create(100, UT_LOCATION_HERE);
-    }
-
-    prev_vrow = nullptr;
-    row_sel_fill_vrow(prev_rec, index, &prev_vrow, heap);
-  } else {
-    prev_vrow = vrow;
-  }
-
-  end_loop++;
 
   /* Reset the old and new "did semi-consistent read" flags. */
   if (UNIV_UNLIKELY(prebuilt->row_read_type == ROW_READ_DID_SEMI_CONSISTENT)) {

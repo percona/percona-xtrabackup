@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,12 +26,9 @@
 #ifndef METADATA_CACHE_PLUGIN_CONFIG_INCLUDED
 #define METADATA_CACHE_PLUGIN_CONFIG_INCLUDED
 
-#include "mysqlrouter/metadata_cache.h"
-
 #include "mysqlrouter/metadata_cache_plugin_export.h"
 
 #include <chrono>
-#include <map>
 #include <string>
 #include <vector>
 
@@ -40,8 +37,8 @@
 #include "mysql/harness/plugin.h"
 #include "mysql/harness/plugin_config.h"
 #include "mysqlrouter/cluster_metadata_dynamic_state.h"
+#include "mysqlrouter/metadata_cache.h"
 #include "router_options.h"
-#include "tcp_address.h"
 
 extern "C" {
 extern mysql_harness::Plugin METADATA_CACHE_PLUGIN_EXPORT
@@ -95,6 +92,10 @@ class METADATA_CACHE_PLUGIN_EXPORT MetadataCachePluginConfig final
   mysqlrouter::ClusterType cluster_type;
   /** @brief  Id of the router in the metadata. */
   unsigned int router_id;
+
+  // close the connection after a refresh.
+  bool close_connection_after_refresh;
+
   /** @brief  SSL settings for metadata cache connection. */
   mysqlrouter::SSLOptions ssl_options;
 
@@ -132,9 +133,9 @@ class METADATA_CACHE_PLUGIN_EXPORT MetadataCachePluginConfig final
    * Throws std::invalid_argument on errors.
    *
    * @param default_port Use this port when none was provided
-   * @return std::vector<mysql_harness::TCPAddress>
+   * @return std::vector<mysql_harness::TcpDestination>
    */
-  std::vector<mysql_harness::TCPAddress> get_metadata_servers(
+  std::vector<mysql_harness::TcpDestination> get_metadata_servers(
       uint16_t default_port) const;
 
   mysqlrouter::ClusterType get_cluster_type(

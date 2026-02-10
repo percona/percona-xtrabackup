@@ -1,0 +1,10 @@
+--connect(con1, localhost, root)
+--let $THREAD_ID = `SELECT thread_id FROM performance_schema.threads WHERE processlist_id = CONNECTION_ID()`
+--connection default
+--let $OUTFILE = $MYSQL_TMP_DIR/stack_trace.dot
+--replace_result $OUTFILE OUTFILE "1 thread" THREAD $THREAD_ID THREAD_ID
+--eval CALL sys.ps_trace_thread($THREAD_ID, "$OUTFILE", 0, NULL, TRUE, TRUE, TRUE)
+--replace_result $OUTFILE OUTFILE "1 thread" THREAD "ERROR 1086" ER_FILE_EXISTS_ERROR $THREAD_ID THREAD_ID
+--eval CALL sys.ps_trace_thread($THREAD_ID, "$OUTFILE", 0, NULL, TRUE, TRUE, TRUE)
+--remove_file $OUTFILE
+--disconnect con1

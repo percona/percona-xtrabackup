@@ -7,7 +7,6 @@ FLUSH STATUS;
 --sorted_result
 eval $check_query;
 --echo 
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'handler_read%';
 --disable_query_log
 eval create table group_query $check_query;

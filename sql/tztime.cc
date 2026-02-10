@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -95,6 +95,7 @@
 
 #include <algorithm>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 
@@ -1063,21 +1064,20 @@ static MEM_ROOT tz_storage;
   above to take.
 */
 static mysql_mutex_t tz_LOCK;
-static bool tz_inited = false;
 
 /*
   These two static variables are intended for holding info about leap seconds
   shared by all time zones.
 */
 static uint tz_leapcnt = 0;
-static LS_INFO *tz_lsis = nullptr;
+static LS_INFO tz_lsis[TZ_MAX_LEAPS];
 
 /*
   Shows whenever we have found time zone tables during start-up.
   Used for avoiding of putting those tables to global table list
   for queries that use time zone info.
 */
-static bool time_zone_tables_exist = true;
+static bool time_zone_tables_exist = false;
 
 /*
   Names of tables (with their lengths) that are needed
@@ -1097,8 +1097,11 @@ static const LEX_CSTRING tz_tables_db_name = {STRING_WITH_LEN("mysql")};
 class Tz_names_entry {
  public:
   String name;
-  Time_zone *tz;
+  Time_zone *tz = nullptr;
 };
+
+static Tz_names_entry tz_ne_system = {
+    {STRING_WITH_LEN("SYSTEM"), &my_charset_latin1}, my_tz_SYSTEM};
 
 /*
   Prepare table list with time zone related tables from preallocated array.
@@ -1132,6 +1135,7 @@ static PSI_memory_key key_memory_tz_storage;
 
 #ifdef HAVE_PSI_INTERFACE
 static PSI_mutex_key key_tz_LOCK;
+static bool tz_inited = false;
 
 static PSI_mutex_info all_tz_mutexes[] = {
     {&key_tz_LOCK, "tz_LOCK", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}};
@@ -1140,10 +1144,13 @@ static PSI_memory_info all_tz_memory[] = {{&key_memory_tz_storage, "tz_storage",
                                            PSI_FLAG_ONLY_GLOBAL_STAT, 0,
                                            "Shared time zone data."}};
 
-class Tz_names_entry;
-
 static collation_unordered_map<std::string, Tz_names_entry *> tz_names{
     &my_charset_latin1, key_memory_tz_storage};
+[[maybe_unused]] static auto unused1 = [] {
+  tz_names.emplace(std::string{STRING_WITH_LEN("SYSTEM")}, &tz_ne_system);
+  return 0;
+}();
+
 static malloc_unordered_map<long, Time_zone_offset *> offset_tzs{
     key_memory_tz_storage};
 
@@ -1159,14 +1166,34 @@ static void init_tz_psi_keys(void) {
 }
 #endif /* HAVE_PSI_INTERFACE */
 
+/**
+  Minimal initalization which allows tz_find() to be called.
+  Only initializes psi keys, tz mem_root, and the tz_LOCK mutex.
+  Only system tz and offsets tz can actually be used.
+  Timezone table is not loaded (requires SE) and default
+  time zone variable is not assigned (requires options to be processed).
+ */
+bool my_tz_minimal_init() {
+#ifdef HAVE_PSI_INTERFACE
+  init_tz_psi_keys();
+#endif
+  /* Init all memory structures that require explicit destruction, only
+     the first time the function is called. The steps below are not idempotent
+     so redoing them will cause memory leaks. */
+  init_sql_alloc(key_memory_tz_storage, &tz_storage, 32 * 1024);
+  if (mysql_mutex_init(key_tz_LOCK, &tz_LOCK, MY_MUTEX_INIT_FAST)) return true;
+  tz_inited = true;
+  return false;
+}
+
 /*
-  Initialize time zone support infrastructure.
+  Fully initialize time zone support infrastructure.
 
   SYNOPSIS
-    my_tz_init()
-      thd            - current thread object
+    my_tz_full_init()
       default_tzname - default time zone or 0 if none.
-      bootstrap      - indicates whenever we are in bootstrap mode
+      opt_init       - indicates that server is running with
+  --initialize(-insecure)
 
   DESCRIPTION
     This function will init memory structures needed for time zone support,
@@ -1184,44 +1211,28 @@ static void init_tz_psi_keys(void) {
     0 - ok
     1 - Error
 */
-bool my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap) {
-  THD *thd;
+bool my_tz_full_init(const char *default_tzname, bool opt_init) {
   Table_ref tz_tables[1 + MY_TZ_TABLES_COUNT];
-  TABLE *table;
-  Tz_names_entry *tmp_tzname;
+  TABLE *table = nullptr;
   bool return_val = true;
   const LEX_CSTRING db = {STRING_WITH_LEN("mysql")};
-  int res;
+  int res = 0;
   DBUG_TRACE;
-
-#ifdef HAVE_PSI_INTERFACE
-  init_tz_psi_keys();
-#endif
 
   /*
     To be able to run this from boot, we allocate a temporary THD
   */
-  if (!(thd = new THD)) return true;
-  thd->thread_stack = (char *)&thd;
+  THD thd_object;
+  THD *thd = &thd_object;
+
+  thd->thread_stack = pointer_cast<char *>(&thd);
   thd->store_globals();
 
-  /* Init all memory structures that require explicit destruction */
-  init_sql_alloc(key_memory_tz_storage, &tz_storage, 32 * 1024);
-  mysql_mutex_init(key_tz_LOCK, &tz_LOCK, MY_MUTEX_INIT_FAST);
-  tz_inited = true;
+  assert(tz_names.contains("SYSTEM"));
 
-  /* Add 'SYSTEM' time zone to tz_names hash */
-  if (!(tmp_tzname = new (&tz_storage) Tz_names_entry())) {
-    LogErr(ERROR_LEVEL, ER_TZ_OOM_INITIALIZING_TIME_ZONES);
-    goto end_with_cleanup;
-  }
-  tmp_tzname->name.set(STRING_WITH_LEN("SYSTEM"), &my_charset_latin1);
-  tmp_tzname->tz = my_tz_SYSTEM;
-  tz_names.emplace("SYSTEM", tmp_tzname);
-
-  if (bootstrap) {
-    /* If we are in bootstrap mode we should not load time zone tables */
-    return_val = time_zone_tables_exist = false;
+  if (opt_init) {
+    /* If we are doing --initialize we should not load time zone tables */
+    return_val = false;
     goto end_with_setting_default_tz;
   }
 
@@ -1250,45 +1261,34 @@ bool my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap) {
     LogErr(WARNING_LEVEL, ER_TZ_CANT_OPEN_AND_LOCK_TIME_ZONE_TABLE,
            thd->get_stmt_da()->message_text());
     /* We will try emulate that everything is ok */
-    return_val = time_zone_tables_exist = false;
+    return_val = false;
     goto end_with_setting_default_tz;
   }
 
-  for (Table_ref *tl = tz_tables; tl; tl = tl->next_global) {
+  for (Table_ref *tl = tz_tables; tl != nullptr; tl = tl->next_global) {
     /* Force close at the end of the function to free memory. */
     tl->table->invalidate_dict();
   }
 
-  /*
-    Now we are going to load leap seconds descriptions that are shared
-    between all time zones that use them. We are using index for getting
-    records in proper order. Since we share the same MEM_ROOT between
-    all time zones we just allocate enough memory for it first.
-  */
-  if (!(tz_lsis =
-            (LS_INFO *)tz_storage.Alloc(sizeof(LS_INFO) * TZ_MAX_LEAPS))) {
-    LogErr(ERROR_LEVEL, ER_TZ_OOM_LOADING_LEAP_SECOND_TABLE);
-    goto end_with_close;
-  }
-
   table = tz_tables[0].table;
 
-  if (table->file->ha_index_init(0, true)) goto end_with_close;
+  if (table->file->ha_index_init(0, true) != 0) goto end_with_close;
   table->use_all_columns();
 
   tz_leapcnt = 0;
 
   res = table->file->ha_index_first(table->record[0]);
 
-  while (!res) {
+  while (res == 0) {
     if (tz_leapcnt + 1 > TZ_MAX_LEAPS) {
       LogErr(ERROR_LEVEL, ER_TZ_TOO_MANY_LEAPS_IN_LEAP_SECOND_TABLE);
       table->file->ha_index_end();
       goto end_with_close;
     }
 
-    tz_lsis[tz_leapcnt].ls_trans = (my_time_t)table->field[0]->val_int();
-    tz_lsis[tz_leapcnt].ls_corr = (long)table->field[1]->val_int();
+    tz_lsis[tz_leapcnt].ls_trans =
+        static_cast<my_time_t>(table->field[0]->val_int());
+    tz_lsis[tz_leapcnt].ls_corr = static_cast<long>(table->field[1]->val_int());
 
     tz_leapcnt++;
 
@@ -1310,7 +1310,7 @@ bool my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap) {
   /*
     Loading of info about leap seconds succeeded
   */
-
+  time_zone_tables_exist = true;
   return_val = false;
 
 end_with_close:
@@ -1318,29 +1318,26 @@ end_with_close:
 
 end_with_setting_default_tz:
   /* If we have default time zone try to load it */
-  if (!return_val && default_tzname) {
+  if (!return_val && default_tzname != nullptr) {
     const String tmp_tzname2(default_tzname, &my_charset_latin1);
     /*
       Time zone tables may be open here, and my_tz_find() may open
       most of them once more, but this is OK for system tables open
       for READ.
     */
-    if (!(global_system_variables.time_zone = my_tz_find(thd, &tmp_tzname2))) {
+    global_system_variables.time_zone = my_tz_find(thd, &tmp_tzname2);
+    if (global_system_variables.time_zone == nullptr) {
       LogErr(ERROR_LEVEL, ER_TZ_UNKNOWN_OR_ILLEGAL_DEFAULT_TIME_ZONE,
              default_tzname);
       return_val = true;
     }
   }
 
-end_with_cleanup:
   /* if there were error free time zone describing structs */
   if (return_val) my_tz_free();
 
-  delete thd;
-  if (org_thd) org_thd->store_globals(); /* purecov: inspected */
-
-  default_tz =
-      default_tz_name ? global_system_variables.time_zone : my_tz_SYSTEM;
+  default_tz = default_tz_name != nullptr ? global_system_variables.time_zone
+                                          : my_tz_SYSTEM;
 
   return return_val;
 }
@@ -1353,15 +1350,15 @@ end_with_cleanup:
 */
 
 void my_tz_free() {
+  default_tz = nullptr;
+  global_system_variables.time_zone = my_tz_SYSTEM;
   if (tz_inited) {
-    default_tz = nullptr;
-    global_system_variables.time_zone = my_tz_SYSTEM;
-    tz_inited = false;
     mysql_mutex_destroy(&tz_LOCK);
-    offset_tzs.clear();
-    tz_names.clear();
-    tz_storage.Clear();
   }
+  tz_inited = true;
+  offset_tzs.clear();
+  tz_names.clear();
+  tz_storage.Clear();
 }
 
 /*
@@ -1816,8 +1813,6 @@ Time_zone *my_tz_find(THD *thd, const String *name) {
     if (it != offset_tzs.end())
       return it->second;
     else {
-      DBUG_PRINT("info", ("Creating new Time_zone_offset object"));
-
       auto new_tz = new (&tz_storage) Time_zone_offset(displacement);
       if (new_tz != nullptr) {
         offset_tzs.emplace(displacement, new_tz);
@@ -1828,6 +1823,8 @@ Time_zone *my_tz_find(THD *thd, const String *name) {
       }
     }
   } else {
+    DBUG_LOG("tz", "No displacement found. time_zone_tables_exist:"
+                       << time_zone_tables_exist);
     /*
       The time zone information is not a valid numeric displacement, so we
       assume it's a time zone *name*.

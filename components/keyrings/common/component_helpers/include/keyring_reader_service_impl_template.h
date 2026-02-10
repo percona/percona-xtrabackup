@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -76,7 +76,6 @@ int init_reader_template(
     if (data_id == nullptr || !*data_id) {
       LogComponentErr(INFORMATION_LEVEL,
                       ER_NOTE_KEYRING_COMPONENT_EMPTY_DATA_ID);
-      assert(false);
       return 0;
     }
 

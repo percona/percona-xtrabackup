@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,13 +25,13 @@
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_member_identifier.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_utils.h"  // gcs_protocol_to_mysql_version
 
-#include <assert.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
 #include <algorithm>  // std::find_if
+#include <cassert>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging_system.h"
@@ -184,7 +184,7 @@ int Gcs_xcom_communication::add_event_listener(
   int handler_key = 0;
   do {
     handler_key = rand();
-  } while (event_listeners.count(handler_key) != 0);
+  } while (event_listeners.contains(handler_key));
 
   event_listeners.emplace(handler_key, event_listener);
 
@@ -197,8 +197,7 @@ void Gcs_xcom_communication::remove_event_listener(int event_listener_handle) {
 
 void Gcs_xcom_communication::notify_received_message(
     std::unique_ptr<Gcs_message> &&message) {
-  map<int, const Gcs_communication_event_listener &>::iterator callback_it =
-      event_listeners.begin();
+  auto callback_it = event_listeners.begin();
 
   while (callback_it != event_listeners.end()) {
     callback_it->second.on_message_received(*message);
@@ -218,8 +217,7 @@ void Gcs_xcom_communication::buffer_incoming_packet(
 
   MYSQL_GCS_LOG_TRACE("Buffering packet cargo=%u", packet.get_cargo_type());
 
-  m_buffered_packets.push_back(
-      std::make_pair(std::move(packet), std::move(xcom_nodes)));
+  m_buffered_packets.emplace_back(std::move(packet), std::move(xcom_nodes));
 }
 
 void Gcs_xcom_communication::deliver_buffered_packets() {
@@ -257,7 +255,7 @@ Gcs_xcom_communication::possible_packet_recovery_donors() const {
 
   std::vector<Gcs_xcom_node_information> donors;
 
-  Gcs_xcom_interface *const xcom_interface =
+  auto *const xcom_interface =
       static_cast<Gcs_xcom_interface *>(Gcs_xcom_interface::get_interface());
   if (xcom_interface != nullptr) {
     Gcs_member_identifier myself{
@@ -539,7 +537,7 @@ end:
 
 void Gcs_xcom_communication::process_user_data_packet(
     Gcs_packet &&packet, std::unique_ptr<Gcs_xcom_nodes> &&xcom_nodes) {
-  m_protocol_changer.decrement_nr_packets_in_transit(packet, *xcom_nodes.get());
+  m_protocol_changer.decrement_nr_packets_in_transit(packet, *xcom_nodes);
 
   /*
    If a view exchange phase is being executed, messages are buffered
@@ -580,10 +578,10 @@ static bool are_we_still_in_the_group(
     Gcs_xcom_view_change_control_interface &view_control) {
   bool still_in_the_group = false;
 
-  Gcs_xcom_interface *const xcom_interface =
+  auto *const xcom_interface =
       static_cast<Gcs_xcom_interface *>(Gcs_xcom_interface::get_interface());
   if (xcom_interface != nullptr) {
-    std::string &myself =
+    std::string const &myself =
         xcom_interface->get_node_address()->get_member_address();
     Gcs_view const *const view = view_control.get_unsafe_current_view();
     still_in_the_group = (view != nullptr && view->has_member(myself));

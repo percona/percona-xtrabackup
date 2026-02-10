@@ -76,13 +76,13 @@ Warnings:
 Warning	1292	Truncated incorrect DECIMAL value: '18446744073709551616'
 Warning	1292	Truncated incorrect DECIMAL value: '18446744073709551616'
 Warning	1301	Result of rpad() was larger than max_allowed_packet (67108864) - truncated
-# The function should return an empty string if padstr is empty.
+# The function should return the input string if padstr is empty.
 SELECT RPAD('a', 5, '') AS result;
 result
-
+a
 SELECT RPAD('a', 5, '') AS result;
 result
-
+a
 # The function should do nothing if str is of length len.
 SELECT RPAD('12345', 5, 'x');
 RPAD('12345', 5, 'x')
@@ -104,3 +104,12 @@ RPAD('123', 5, 'x')
 SELECT RPAD('a', 5, 'xy');
 RPAD('a', 5, 'xy')
 axyxy
+#
+# Bug#37498117 LPAD function false
+#
+SELECT RPAD("I LOVE SQL", 20, "");
+RPAD("I LOVE SQL", 20, "")
+I LOVE SQL
+SELECT RPAD("I LOVE SQL in the morning", 20, "");
+RPAD("I LOVE SQL in the morning", 20, "")
+I LOVE SQL in the mo

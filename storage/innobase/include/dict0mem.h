@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -72,6 +72,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "sql/table.h"
 
 #include <algorithm>
+#include <atomic>
 #include <iterator>
 #include <memory> /* std::unique_ptr */
 #include <set>
@@ -770,8 +771,8 @@ struct dict_col_t {
   bool assert_equal(const dtype_t *type) const {
     ut_ad(type);
 
-    ut_ad(mtype == type->mtype);
-    ut_ad(prtype == type->prtype);
+    ut_ad_eq(mtype, type->mtype);
+    ut_ad_eq((prtype | DATA_VIRTUAL), (type->prtype | DATA_VIRTUAL));
     // ut_ad(col->len == type->len);
 #ifndef UNIV_HOTBACKUP
     ut_ad(mbminmaxlen == type->mbminmaxlen);
@@ -1020,6 +1021,31 @@ class last_ops_cur_t {
   bool invalid;
 };
 
+/** Data structure storing index statistics for query optimization. */
+struct dict_index_stats_t {
+#ifndef UNIV_HOTBACKUP
+  /** approximate number of different key values for this index, for each
+  n-column prefix where 1 <= n <= dict_get_n_unique(index) (the array is
+  indexed from 0 to n_uniq-1); we periodically calculate new estimates */
+  uint64_t *n_diff_key_vals;
+
+  /** number of pages that were sampled  to calculate each of
+  n_diff_key_vals[], e.g. stat_n_sample_sizes[3] pages were sampled to get
+  the number n_diff_key_vals[3]. */
+  uint64_t *n_sample_sizes;
+
+  /* approximate number of non-null key values for this index, for each column
+  where 1 <= n <= dict_get_n_unique(index) (the array is indexed from 0 to
+  n_uniq-1); This is used when innodb_stats_method is "nulls_ignored". */
+  uint64_t *n_non_null_key_vals;
+
+  /** approximate index size in database pages */
+  ulint index_size;
+#endif /* !UNIV_HOTBACKUP */
+  /** approximate number of leaf pages in the index tree */
+  ulint n_leaf_pages;
+};
+
 /** "GEN_CLUST_INDEX" is the name reserved for InnoDB default
 system clustered index when there is no primary key. */
 const char innobase_index_reserve_name[] = "GEN_CLUST_INDEX";
@@ -1180,30 +1206,12 @@ struct dict_index_t {
   /** the log of modifications during online index creation;
   valid when online_status is ONLINE_INDEX_CREATION */
   row_log_t *online_log;
+#endif /* !UNIV_HOTBACKUP */
 
   /*----------------------*/
   /** Statistics for query optimization */
   /** @{ */
-  /** approximate number of different key values for this index, for each
-  n-column prefix where 1 <= n <= dict_get_n_unique(index) (the array is
-  indexed from 0 to n_uniq-1); we periodically calculate new estimates */
-  uint64_t *stat_n_diff_key_vals;
-
-  /** number of pages that were sampled  to calculate each of
-  stat_n_diff_key_vals[], e.g. stat_n_sample_sizes[3] pages were sampled to get
-  the number stat_n_diff_key_vals[3]. */
-  uint64_t *stat_n_sample_sizes;
-
-  /* approximate number of non-null key values for this index, for each column
-  where 1 <= n <= dict_get_n_unique(index) (the array is indexed from 0 to
-  n_uniq-1); This is used when innodb_stats_method is "nulls_ignored". */
-  uint64_t *stat_n_non_null_key_vals;
-
-  /** approximate index size in database pages */
-  ulint stat_index_size;
-#endif /* !UNIV_HOTBACKUP */
-  /** approximate number of leaf pages in the index tree */
-  ulint stat_n_leaf_pages;
+  dict_index_stats_t stats;
   /** @} */
 
   /** cache the last insert position. Currently limited to auto-generated
@@ -1627,6 +1635,10 @@ struct dict_index_t {
   /** Get the space id of the tablespace to which this index belongs.
   @return the space id. */
   space_id_t space_id() const { return space; }
+
+  /** Check if it is a full-text search (FTS) index
+  @return true if this is a FTS index, false otherwise. */
+  bool is_fts_index() const { return type & DICT_FTS; }
 };
 
 /** The status of online index creation */
@@ -1693,6 +1705,15 @@ struct dict_foreign_t {
 
   dict_vcol_set *v_cols; /*!< set of virtual columns affected
                          by foreign key constraint. */
+
+  /** Check whether foreign key constraint contains a column with a full
+  index on it. The function is used in the context of cascading DML
+  operations.
+  @retval true  if the column has FTS index on it.
+  @retval false if the FK table has no FTS index or has self referential
+               relationship
+  */
+  bool is_fts_col_affected() const;
 };
 
 std::ostream &operator<<(std::ostream &out, const dict_foreign_t &foreign);
@@ -2090,6 +2111,9 @@ struct dict_table_t {
   reason s_cols is a part of dict_table_t */
   dict_s_col_list *s_cols;
 
+  /** Check if the given column is a stored generated column. */
+  dict_s_col_t *is_stored_gcol(dict_col_t *col) const;
+
   /** Column names packed in a character string
   "name1\0name2\0...nameN\0". Until the string contains n_cols, it will
   be allocated from a temporary heap. The final string will be allocated
@@ -2155,11 +2179,6 @@ struct dict_table_t {
   bool in_dirty_dict_tables_list;
 #endif /* UNIV_DEBUG */
 
-  /** Maximum recursive level we support when loading tables chained
-  together with FK constraints. If exceeds this level, we will stop
-  loading child table into memory along with its parent table. */
-  unsigned fk_max_recusive_level : 8;
-
   /** Count of how many foreign key check operations are currently being
   performed on the table. We cannot drop the table while there are
   foreign key checks running on it. */
@@ -2202,16 +2221,26 @@ struct dict_table_t {
   "dict_table_t::stat_clustered_index_size",
   "dict_table_t::stat_sum_of_other_index_sizes",
   "dict_table_t::stat_modified_counter (*)",
-  "dict_table_t::indexes*::stat_n_diff_key_vals[]",
-  "dict_table_t::indexes*::stat_index_size",
-  "dict_table_t::indexes*::stat_n_leaf_pages".
+  "dict_table_t::indexes*::stats::n_diff_key_vals[]",
+  "dict_table_t::indexes*::stats::index_size",
+  "dict_table_t::indexes*::stats::n_leaf_pages".
   (*) Those are not always protected for
   performance reasons. */
   rw_lock_t *stats_latch;
 
+  /** Creation state of 'stats_compute_mutex'. */
+  std::atomic<os_once::state_t> stats_compute_mutex_created;
+
+  /** Mutex protecting table and index statistics calculation process. */
+  ib_mutex_t *stats_compute_mutex;
+
   /** true if statistics have been calculated the first time after
   database startup or table creation. */
   unsigned stat_initialized : 1;
+
+  /** true if statistics have been updated in the background and not yet
+  collected by the optimizer */
+  std::atomic<bool> stats_updated = false;
 
   /** Timestamp of last recalc of the stats. */
   std::chrono::steady_clock::time_point stats_last_recalc;
@@ -2292,8 +2321,8 @@ detect this and will eventually quit sooner. */
 
   /** The state of the background stats thread wrt this table.
   See BG_STAT_NONE, BG_STAT_IN_PROGRESS and BG_STAT_SHOULD_QUIT.
-  Writes are covered by dict_sys->mutex. Dirty reads are possible. */
-  byte stats_bg_flag;
+  Writes are covered by dict_sys->mutex. It is read without mutex. */
+  std::atomic<int8_t> stats_bg_flag;
 
   /** @} */
 #endif /* !UNIV_HOTBACKUP */
@@ -2715,6 +2744,17 @@ detect this and will eventually quit sooner. */
   inline bool support_instant_add_drop() const;
 };
 
+inline dict_s_col_t *dict_table_t::is_stored_gcol(dict_col_t *col) const {
+  if (s_cols != nullptr) {
+    for (auto &stored_gcol : *s_cols) {
+      if (stored_gcol.m_col == col) {
+        return &stored_gcol;
+      }
+    }
+  }
+  return nullptr;
+}
+
 static inline void DICT_TF2_FLAG_SET(dict_table_t *table, uint32_t flag) {
   table->flags2 |= flag;
 }
@@ -3100,6 +3140,17 @@ inline bool dict_table_autoinc_own(const dict_table_t *table) {
   return (mutex_own(table->autoinc_mutex));
 }
 #endif /* UNIV_DEBUG */
+
+#ifndef UNIV_HOTBACKUP
+/** Data structure storing index statistics. Used as
+temporary state during statistics calculation. The final version of statistics
+for reading by optimizer are stored in dict_index_t::stats. */
+struct dict_index_constructed_stats_t {
+  dict_index_stats_t stats;
+  unsigned type : DICT_IT_BITS;
+  unsigned n_uniq : 10;
+};
+#endif /* !UNIV_HOTBACKUP */
 
 #include "dict0mem.ic"
 

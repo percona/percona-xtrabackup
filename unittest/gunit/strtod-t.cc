@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,9 +33,9 @@ namespace string_to_double_unittest {
 TEST(StringToDoubleTest, Balloc) {
   // This is the original mtr test case:
   // concat(rpad(-75.51891750, 11283536, 0), "767521D9");
-  std::string dec = "-75.5189175";
-  std::string zeros(11283536 - dec.length(), '0');
-  std::string hexdigs = "767521D9";
+  std::string const dec = "-75.5189175";
+  std::string const zeros(11283536 - dec.length(), '0');
+  std::string const hexdigs = "767521D9";
 
   std::string str = dec + zeros + hexdigs;
   const char *str_start = str.c_str();
@@ -54,7 +54,7 @@ TEST(StringToDoubleTest, Balloc) {
 }
 
 TEST(StringToDoubleTest, ManyZeros) {
-  std::string zeros(DBL_MAX_10_EXP, '0');
+  std::string const zeros(DBL_MAX_10_EXP, '0');
   std::string str = "0." + zeros + "12345";
   const char *str_start = str.c_str();
   const char *str_end = str_start + str.length();
@@ -70,7 +70,7 @@ TEST(StringToDoubleTest, ManyZeros) {
 }
 
 TEST(StringToDoubleTest, ZerosAndOnes) {
-  std::string zeros(DBL_MAX_10_EXP, '0');
+  std::string const zeros(DBL_MAX_10_EXP, '0');
   std::string str = "0.";
   for (int i = 0; i < 20; ++i) {
     str.append(zeros);
@@ -79,7 +79,7 @@ TEST(StringToDoubleTest, ZerosAndOnes) {
   const char *str_start = str.c_str();
   const char *str_end = str_start + str.length();
   int error = 0;
-  double result = my_strtod(str_start, &str_end, &error);
+  double const result = my_strtod(str_start, &str_end, &error);
   EXPECT_EQ(result, 1.0e-309);
 }
 

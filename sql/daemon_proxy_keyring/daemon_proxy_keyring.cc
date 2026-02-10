@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <functional>
 #include <string>
+#include <utility>
 
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/my_service.h>
@@ -152,7 +153,7 @@ static bool key_plugin_cb_fn(THD *, plugin_ref plugin, void *arg) {
   @return Result of the fn call.
 */
 static bool iterate_plugins(std::function<bool(st_mysql_keyring *keyring)> fn) {
-  Callback callback(fn);
+  Callback callback(std::move(fn));
   plugin_foreach(current_thd, key_plugin_cb_fn, MYSQL_KEYRING_PLUGIN,
                  &callback);
   return callback.result();
@@ -220,7 +221,7 @@ class Keyring_proxy_imp {
         return false;
       });
 
-      if (retval) {
+      if (retval || local_object->iterator == nullptr) {
         delete local_object;
         return true;
       }
@@ -308,9 +309,7 @@ class Keyring_proxy_imp {
       const auto *local_object =
           reinterpret_cast<my_h_keyring_keys_metadata_iterator_keyring_proxy *>(
               forward_iterator);
-      if (local_object == nullptr || !local_object->iterator_valid)
-        return false;
-      return true;
+      return !(local_object == nullptr || !local_object->iterator_valid);
     } catch (...) {
       return false;
     }

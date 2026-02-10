@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@
 #include "sql/protocol_classic.h"
 #include "sql/sql_class.h"
 
-extern ReplSemiSyncMaster *repl_semisync;
+extern ReplSemiSyncSource *repl_semisync;
 
 #ifdef HAVE_PSI_INTERFACE
 extern PSI_stage_info stage_waiting_for_semi_sync_ack_from_replica;
@@ -134,14 +134,15 @@ void Ack_receiver::stop() {
   function_exit(kWho);
 }
 
-bool Ack_receiver::add_slave(THD *thd) {
-  Slave slave;
-  const char *kWho = "Ack_receiver::add_slave";
+bool Ack_receiver::add_replica(THD *thd) {
+  Replica replica;
+  const char *kWho = "Ack_receiver::add_replica";
   function_enter(kWho);
 
-  slave.thread_id = thd->thread_id();
-  slave.server_id = thd->server_id;
-  slave.compress_ctx.algorithm = enum_compression_algorithm::MYSQL_UNCOMPRESSED;
+  replica.thread_id = thd->thread_id();
+  replica.server_id = thd->server_id;
+  replica.compress_ctx.algorithm =
+      enum_compression_algorithm::MYSQL_UNCOMPRESSED;
   char *cmp_algorithm_name = thd->get_protocol()->get_compression_algorithm();
   if (cmp_algorithm_name != nullptr) {
     enum enum_compression_algorithm algorithm =
@@ -149,11 +150,11 @@ bool Ack_receiver::add_slave(THD *thd) {
     if (algorithm != enum_compression_algorithm::MYSQL_UNCOMPRESSED &&
         algorithm != enum_compression_algorithm::MYSQL_INVALID)
       mysql_compress_context_init(
-          &slave.compress_ctx, algorithm,
+          &replica.compress_ctx, algorithm,
           thd->get_protocol_classic()->get_compression_level());
   }
-  slave.vio = thd->get_protocol_classic()->get_vio();
-  slave.vio->mysql_socket.m_psi = nullptr;
+  replica.vio = thd->get_protocol_classic()->get_vio();
+  replica.vio->mysql_socket.m_psi = nullptr;
 
   /* push_back() may throw an exception */
   try {
@@ -161,8 +162,8 @@ bool Ack_receiver::add_slave(THD *thd) {
 
     DBUG_EXECUTE_IF("rpl_semisync_simulate_add_replica_failure", throw 1;);
 
-    m_slaves.push_back(slave);
-    m_slaves_changed = true;
+    m_replicas.push_back(replica);
+    m_replicas_changed = true;
     mysql_cond_broadcast(&m_cond);
     mysql_mutex_unlock(&m_mutex);
   } catch (...) {
@@ -172,49 +173,50 @@ bool Ack_receiver::add_slave(THD *thd) {
   return function_exit(kWho, false);
 }
 
-void Ack_receiver::remove_slave(THD *thd) {
-  const char *kWho = "Ack_receiver::remove_slave";
+void Ack_receiver::remove_replica(THD *thd) {
+  const char *kWho = "Ack_receiver::remove_replica";
   function_enter(kWho);
 
   mysql_mutex_lock(&m_mutex);
-  Slave_vector_it it;
+  Replica_vector_it it;
 
   /*
-    Mark in the slave object that remove slave request
+    Mark in the replica object that remove replica request
     is received. And also inform to Ack_receiver::run()
-    that slaves vector is changed.
+    that replicas vector is changed.
   */
-  for (it = m_slaves.begin(); it != m_slaves.end(); ++it) {
+  for (it = m_replicas.begin(); it != m_replicas.end(); ++it) {
     if (it->thread_id == thd->thread_id()) {
-      it->m_status = Slave::EnumStatus::leaving;
-      m_slaves_changed = true;
+      it->m_status = Replica::EnumStatus::leaving;
+      m_replicas_changed = true;
       break;
     }
   }
-  assert(it != m_slaves.end());
+  assert(it != m_replicas.end());
   /*
     Wait till Ack_receiver::run() is done reading from the
-    slave's socket.
+    replica's socket.
   */
-  while ((it != m_slaves.end()) &&
-         (it->m_status == Slave::EnumStatus::leaving) && (m_status == ST_UP)) {
+  while ((it != m_replicas.end()) &&
+         (it->m_status == Replica::EnumStatus::leaving) &&
+         (m_status == ST_UP)) {
     mysql_cond_wait(&m_cond, &m_mutex);
     /*
       In above cond_wait, we release and reacquire m_mutex.
-      So it can happen that slave vector is changed.
-      So rescan the vector to get the correct slave
+      So it can happen that replica vector is changed.
+      So rescan the vector to get the correct replica
       object.
     */
-    for (it = m_slaves.begin(); it != m_slaves.end(); ++it) {
+    for (it = m_replicas.begin(); it != m_replicas.end(); ++it) {
       if (it->thread_id == thd->thread_id()) break;
     }
   }
-  if (it != m_slaves.end()) {
+  if (it != m_replicas.end()) {
     mysql_compress_context_deinit(&it->compress_ctx);
-    m_slaves.erase(it);
+    m_replicas.erase(it);
   }
 
-  m_slaves_changed = true;
+  m_replicas_changed = true;
   mysql_mutex_unlock(&m_mutex);
   function_exit(kWho);
 }
@@ -226,7 +228,7 @@ inline void Ack_receiver::set_stage_info(const PSI_stage_info &stage
 #endif /* HAVE_PSI_STAGE_INTERFACE */
 }
 
-inline void Ack_receiver::wait_for_slave_connection() {
+inline void Ack_receiver::wait_for_replica_connection() {
   set_stage_info(stage_waiting_for_semi_sync_replica);
   mysql_cond_wait(&m_cond, &m_mutex);
 }
@@ -254,7 +256,7 @@ void Ack_receiver::run() {
   net.extension = &server_extn;
 
   mysql_mutex_lock(&m_mutex);
-  m_slaves_changed = true;
+  m_replicas_changed = true;
   mysql_mutex_unlock(&m_mutex);
 
   while (true) {
@@ -264,14 +266,14 @@ void Ack_receiver::run() {
     if (unlikely(m_status == ST_STOPPING)) goto end;
 
     set_stage_info(stage_waiting_for_semi_sync_ack_from_replica);
-    if (unlikely(m_slaves_changed)) {
-      if (unlikely(m_slaves.empty())) {
-        wait_for_slave_connection();
+    if (unlikely(m_replicas_changed)) {
+      if (unlikely(m_replicas.empty())) {
+        wait_for_replica_connection();
         mysql_mutex_unlock(&m_mutex);
         continue;
       }
-      if (!listener.init_replica_sockets(m_slaves)) goto end;
-      m_slaves_changed = false;
+      if (!listener.init_replica_sockets(m_replicas)) goto end;
+      m_replicas_changed = false;
       mysql_cond_broadcast(&m_cond);
     }
     mysql_mutex_unlock(&m_mutex);
@@ -289,18 +291,18 @@ void Ack_receiver::run() {
 
     set_stage_info(stage_reading_semi_sync_ack);
     i = 0;
-    while (i < listener.number_of_slave_sockets() && m_status == ST_UP) {
+    while (i < listener.number_of_replica_sockets() && m_status == ST_UP) {
       if (listener.is_socket_active(i)) {
-        Slave slave_obj = listener.get_slave_obj(i);
+        Replica replica_obj = listener.get_replica_obj(i);
         ulong len;
-        net.vio = slave_obj.vio;
+        net.vio = replica_obj.vio;
         /*
           Set compress flag. This is needed to support
-          Slave_compress_protocol flag enabled Slaves
+          Replica_compress_protocol flag enabled Replicas
         */
 
         NET_SERVER *server_extension = static_cast<NET_SERVER *>(net.extension);
-        server_extension->compress_ctx = slave_obj.compress_ctx;
+        server_extension->compress_ctx = replica_obj.compress_ctx;
         net.compress =
             (server_extension->compress_ctx.algorithm == MYSQL_ZLIB) ||
             (server_extension->compress_ctx.algorithm == MYSQL_ZSTD);
@@ -310,8 +312,8 @@ void Ack_receiver::run() {
 
           len = my_net_read(&net);
           if (likely(len != packet_error))
-            repl_semisync->reportReplyPacket(slave_obj.server_id, net.read_pos,
-                                             len);
+            repl_semisync->reportReplyPacket(replica_obj.server_id,
+                                             net.read_pos, len);
           else if (net.last_errno == ER_NET_READ_ERROR) {
             listener.clear_socket_info(i);
           }

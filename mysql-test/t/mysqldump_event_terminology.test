@@ -21,6 +21,9 @@
 # WL#14190: Replace old terms in replication SQL commands on the SOURCE
 #
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 --disable_warnings
 DROP DATABASE IF EXISTS mysqldump_test_db;
 --enable_warnings
@@ -139,3 +142,6 @@ SET @@GLOBAL.terminology_use_previous = BEFORE_8_0_26;
 --remove_file $dump_file_replica
 
 DROP DATABASE mysqldump_test_db;
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

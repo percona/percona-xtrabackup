@@ -1,0 +1,101 @@
+#
+# Bug 36342348 - MVCC is broken for small partial update of blob
+#
+CREATE TABLE t1
+( pkey int not null auto_increment,
+j json,
+primary key (pkey)) engine=innodb row_format=dynamic;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pkey` int NOT NULL AUTO_INCREMENT,
+  `j` json DEFAULT NULL,
+  PRIMARY KEY (`pkey`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC
+INSERT INTO t1(j) values
+(JSON_ARRAY(REPEAT("MySQL", 40), REPEAT("BlobPartialUpdate", 512)));
+# Connection con0:
+set transaction_isolation = 'REPEATABLE-READ';
+start transaction;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"MySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQL"
+select json_extract(j, '$[0]') into @var_0 from t1 where pkey = 1;
+# Doing partial update of length=60: (MVCC in undo)
+# Connection default:
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"MySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQL"
+start transaction;
+update t1 set j = json_set(j, '$[0]', REPEAT("InnoDB", 10)) where pkey = 1;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"InnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDB"
+commit;
+# Connection con1:
+set transaction_isolation = 'REPEATABLE-READ';
+start transaction;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"InnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDB"
+select @var_1 := json_extract(j, '$[0]') from t1 where pkey = 1;
+# Doing partial update of length=140: (MVCC in blob)
+# Connection default:
+start transaction;
+update t1 set j = json_set(j, '$[0]', REPEAT("PolarDB", 20)) where pkey = 1;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"PolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDBPolarDB"
+commit;
+# Doing partial update of length=70: (MVCC in undo)
+# Connection default:
+start transaction;
+update t1 set j = json_set(j, '$[0]', REPEAT("abcde", 14)) where pkey = 1;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"abcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcde"
+commit;
+# Doing partial update of length=200: (MVCC in blob)
+# Connection default:
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"abcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcde"
+start transaction;
+update t1 set j = json_set(j, '$[0]', REPEAT("fungo", 40)) where pkey = 1;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"fungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungo"
+commit;
+# Doing partial update of length=90: (MVCC in undo)
+# Connection default:
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"fungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungofungo"
+start transaction;
+update t1 set j = json_set(j, '$[0]', REPEAT("abcde", 18)) where pkey = 1;
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"abcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcde"
+commit;
+# Connection con0:
+## Result should be
+select @var_0;
+@var_0
+"MySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQL"
+## but in actual, it is
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"MySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQLMySQL"
+commit;
+# Connection con1:
+## Result should be
+select @var_1;
+@var_1
+"InnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDB"
+## but in actual, it is
+select json_extract(j, '$[0]') from t1 where pkey = 1;
+json_extract(j, '$[0]')
+"InnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDBInnoDB"
+commit;
+# Connection default:
+drop table t1;

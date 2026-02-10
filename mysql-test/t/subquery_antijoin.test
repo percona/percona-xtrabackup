@@ -66,6 +66,7 @@ eval EXPLAIN $query;
 # Looking at JSON format to make sure the materialized tmp table has
 # the IS NULL condition.
 # Cost value change a bit with different InnoDB page sizes, hide them
+SET explain_json_format_version = 1;
 --replace_regex /(cost.*)/cost: #/
 --skip_if_hypergraph  # Depends on the query plan.
 eval EXPLAIN FORMAT=JSON $query;

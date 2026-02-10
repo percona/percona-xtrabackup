@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -144,7 +144,8 @@ int table_variables_info::rnd_pos(const void *pos) {
 }
 
 int table_variables_info::make_row(const System_variable *system_var) {
-  memcpy(m_row.m_variable_name, system_var->m_name, system_var->m_name_length);
+  memcpy(m_row.m_variable_name, system_var->m_name_str,
+         system_var->m_name_length);
   m_row.m_variable_name_length = system_var->m_name_length;
 
   m_row.m_variable_source = system_var->m_source;

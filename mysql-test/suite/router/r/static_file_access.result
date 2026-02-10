@@ -1,0 +1,354 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+CREATE USER user2@'%' IDENTIFIED BY 'secretpass2';
+# Registered MRS ROLE: AllPriv
+# Registered MRS Role Grant: /svc1 * * => READ,CREATE,UPDATE,DELETE
+# Registered MRS ROLE: NoRead
+# Registered MRS Role Grant: /svc1 * * => DELETE
+# Registred SERVICE at path: /svc1
+# Registred AUTH APP at path: /svc1
+# Registred MRS USER: 'user1'
+# Registred MRS USER: 'user2'
+# Registred CONTENT_SET at path: /svc1/secret_set
+SET @auth_content_set_id=@content_set_id;
+# Registred CONTENT_FILE at path: /svc1/secret_set/first.gif
+# Registred CONTENT_FILE at path: /svc1/secret_set/second.txt
+# Registred CONTENT_SET at path: /svc1/set
+SET @my_set=@content_set_id;
+# Registred CONTENT_FILE at path: /svc1/set/a.txt
+SET @auth_content_file_id=@content_file_id;
+# Registred CONTENT_FILE at path: /svc1/set/b.txt
+# Registred CONTENT_FILE at path: /svc1/set/private_file.txt
+# Registred CONTENT_FILE at path: /svc1/set/disabled_file.txt
+# Registred CONTENT_SET at path: /svc1/set_private
+SET @private_set=@content_set_id;
+# Registred CONTENT_FILE at path: /svc1/set_private/1.txt
+# Registred CONTENT_SET at path: /svc1/set_disabled
+SET @disabled_set=@content_set_id;
+# Registred CONTENT_FILE at path: /svc1/set_disabled/1.txt
+# Registred DB_SCHEMA at path: /svc1/basic_schema
+# Registred DB_OBJECT at path: /svc1/basic_schema/obj
+
+
+## I. Accessing Content File from Content Set that requires authentication.
+#
+# 1. User is authenticated with correct privileges
+# 2. User is not authenticated
+# 3. User is authenticated with insufficient privilages.
+#
+## II. Accessing Content Set that requires authentication directly through directoryIndexDirective.
+#
+# 1. User is authenticated with correct privileges
+# 2. User is not authenticated
+# 3. User is authenticated with insufficient privilages.
+#
+## III. Accessing Content File that requires authentication.
+#
+# 1. User is authenticated with correct privileges
+# 2. User is not authenticated
+# 3. User is authenticated with insufficient privilages.
+#
+## IV. Accessing Content File from private Content Set.
+#
+# 1. User is not authenticated.
+# 2. User is authenticated.
+#
+## V. Accessing Content File from disabled Content Set.
+#
+# 1. User is not authenticated.
+# 2. User is authenticated.
+# 3. redirection not allowed.
+# 4. default index not accessible.
+# 5. static file not accessible
+#
+## VI. Accessing private Content File.
+#
+# 1. User is not authenticated.
+# 2. User is authenticated.
+# 3. redirection not allowed.
+# 4. default index not accessible.
+# 5. static file not accessible
+#
+## VII. Accessing disabled Content File.
+#
+# 1. User is not authenticated.
+# 2. User is authenticated.
+#
+## VIII. Unsupported HTTP requsts (PUT, POST, DELETE)
+#
+# 1. for defaultRedirects address
+# 2. for Content Set with directoryIndexDirective
+# 3. for Content File
+#
+
+#
+# I.1
+GET /svc1/authentication/login
+
+OK
+Date -> %DATE%
+Access-Control-Allow-Methods  ->  GET, OPTIONS
+Cache-Control  ->  no-cache
+ETag -> %ETag%
+Content-Type  ->  image/gif
+Content-Length  ->  10
+first file
+#
+# I.2
+GET /svc1/secret_set/first.gif
+
+OK
+#
+# I.3
+GET /svc1/authentication/login
+
+OK
+GET /svc1/secret_set/first.gif
+{"message":"Forbidden","status":403}
+OK
+#
+# II.1
+GET /svc1/authentication/login
+
+OK
+Date -> %DATE%
+Access-Control-Allow-Methods  ->  GET, OPTIONS
+Cache-Control  ->  no-cache
+ETag -> %ETag%
+Content-Type  ->  image/gif
+Content-Length  ->  10
+first file
+#
+# II.2
+GET /svc1/secret_set/
+
+OK
+#
+# II.3
+GET /svc1/authentication/login
+
+OK
+GET /svc1/secret_set/
+{"message":"Forbidden","status":403}
+OK
+#
+# III.1
+GET /svc1/authentication/login
+
+OK
+Date -> %DATE%
+Access-Control-Allow-Methods  ->  GET, OPTIONS
+Cache-Control  ->  no-cache
+ETag -> %ETag%
+Content-Type  ->  text/plain
+Content-Length  ->  6
+a file
+#
+# III.2
+GET /svc1/set/a.txt
+
+OK
+#
+# III.3
+GET /svc1/authentication/login
+
+OK
+GET /svc1/set/a.txt
+{"message":"Forbidden","status":403}
+OK
+#
+# IV.1
+GET /svc1/set_private/1.txt
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# IV.2
+GET /svc1/authentication/login
+
+OK
+GET /svc1/set_private/1.txt
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# V.1
+GET /svc1/set_disabled/1.txt
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# V.2
+GET /svc1/authentication/login
+
+OK
+GET /svc1/set_disabled/1.txt
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# V.3
+GET /svc1/set_disabled/redirect.html
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# V.4
+GET /svc1/set_disabled/
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# V.5
+GET /svc1/set_disabled/index.html
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# VI.1
+GET /svc1/set/private_file.txt
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# VI.2
+GET /svc1/authentication/login
+
+OK
+GET /svc1/set/private_file.txt
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# VI.3
+GET /svc1/set_private/redirect.html
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# VI.4
+GET /svc1/set_private/
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# VI.5
+GET /svc1/set_private/index.html
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# VII.1
+GET /svc1/set/disabled_file.txt
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# VII.2
+GET /svc1/authentication/login
+
+OK
+GET /svc1/set/disabled_file.txt
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# VIII.1
+POST /svc1/set/redirect.html
+{"message":"Forbidden","status":403}
+OK
+PUT /svc1/set/redirect.html
+{"message":"Forbidden","status":403}
+OK
+DELETE /svc1/set/redirect.html
+{"message":"Forbidden","status":403}
+OK
+#
+# VIII.2
+POST /svc1/set/
+{"message":"Forbidden","status":403}
+OK
+PUT /svc1/set/
+{"message":"Forbidden","status":403}
+OK
+DELETE /svc1/set/
+{"message":"Forbidden","status":403}
+OK
+#
+# VIII.3
+POST /svc1/set/b.txt
+{"message":"Forbidden","status":403}
+OK
+PUT /svc1/set/b.txt
+{"message":"Forbidden","status":403}
+OK
+DELETE /svc1/set/b.txt
+{"message":"Forbidden","status":403}
+OK
+drop user user1@'%';
+drop user user2@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

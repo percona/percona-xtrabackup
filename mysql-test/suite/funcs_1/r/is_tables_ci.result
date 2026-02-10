@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 SHOW TABLES FROM information_schema LIKE 'TABLES';
 Tables_in_information_schema (TABLES)
 TABLES
@@ -446,3 +447,4 @@ ERROR 42000: Access denied for user 'root'@'localhost' to database 'information_
 ALTER TABLE information_schema.tables RENAME information_schema.xtables;
 ERROR 42000: Access denied for user 'root'@'localhost' to database 'information_schema'
 DROP DATABASE db_datadict;
+include/rpl/set_gtid_mode_on.inc

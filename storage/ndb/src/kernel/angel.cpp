@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -210,7 +210,7 @@ static void reportShutdown(const ndb_mgm_configuration *config, NodeId nodeid,
   assert(restart || (!restart && !initial && !nostart));
 
   Uint32 length, theData[25];
-  EventReport *rep = CAST_PTR(EventReport, &theData[0]);
+  auto *rep = CAST_PTR(EventReport, &theData[0]);
   rep->eventType = 0; /* Ensure it's initialised */
 
   rep->setNodeId(nodeid);
@@ -233,7 +233,10 @@ static void reportShutdown(const ndb_mgm_configuration *config, NodeId nodeid,
   }
 
   // Log event locally
-  g_eventLogger->log(rep->getEventType(), theData, length, rep->getNodeId(), 0);
+  LogLevel ll;
+  // llStartUp are log category for NDB_LE_NDBStopXXX event types [sic!]
+  ll.setLogLevel(LogLevel::llStartUp, 15);
+  g_eventLogger->log(rep->getEventType(), theData, length, 0, &ll);
 
   // Log event to cluster log
   ndb_mgm_configuration_iterator iter(config, CFG_SECTION_NODE);
@@ -251,7 +254,7 @@ static void reportShutdown(const ndb_mgm_configuration *config, NodeId nodeid,
     connect_str.assfmt("%s %d", hostname, port);
 
     NdbMgmHandle h = ndb_mgm_create_handle();
-    if (h == 0) {
+    if (h == nullptr) {
       g_eventLogger->warning(
           "Unable to report shutdown reason "
           "to '%s'(failed to create mgm handle)",
@@ -274,7 +277,7 @@ static void reportShutdown(const ndb_mgm_configuration *config, NodeId nodeid,
   }
 }
 
-static void ignore_signals(void) {
+static void ignore_signals() {
   static const int ignore_list[] = {
 #ifdef SIGBREAK
     SIGBREAK,
@@ -354,10 +357,10 @@ extern int real_main(int, char **);
 
 static char **create_argv(const Vector<BaseString> &args) {
   char **argv = (char **)malloc(sizeof(char *) * (args.size() + 1));
-  if (argv == NULL) return NULL;
+  if (argv == nullptr) return nullptr;
 
   for (unsigned i = 0; i < args.size(); i++) argv[i] = strdup(args[i].c_str());
-  argv[args.size()] = NULL;
+  argv[args.size()] = nullptr;
   return argv;
 }
 
@@ -522,9 +525,9 @@ static bool configure(const ndb_mgm_configuration *conf, NodeId nodeid) {
 
   NdbConfig_SetPath(datadir);
 
-  if (NdbDir::chdir(NdbConfig_get_path(NULL)) != 0) {
+  if (NdbDir::chdir(NdbConfig_get_path(nullptr)) != 0) {
     g_eventLogger->warning("Cannot change directory to '%s', error: %d",
-                           NdbConfig_get_path(NULL), errno);
+                           NdbConfig_get_path(nullptr), errno);
     // Ignore error
   }
 
@@ -672,6 +675,12 @@ void angel_run(const char *progname, const Vector<BaseString> &original_args,
     one_arg.assfmt("--angel-pid=%d", getpid());
     args.push_back(one_arg);
 
+    if (opt_ndb_log_timestamps < std::size(NdbStdOpt::timestamps_names) - 1) {
+      one_arg.assfmt("--ndb-log-timestamps=%s",
+                     NdbStdOpt::timestamps_names[opt_ndb_log_timestamps]);
+      args.push_back(one_arg);
+    }
+
     if (have_password_option) {
       /**
        * Removes all password opts and adds a new one
@@ -783,9 +792,9 @@ void angel_run(const char *progname, const Vector<BaseString> &original_args,
       switch (WEXITSTATUS(status)) {
         case NRT_Default:
           g_eventLogger->info("Angel shutting down");
-          reportShutdown(config.get(), nodeid, 0, 0, false, false, child_error,
-                         child_signal, child_sphase, retriever.ssl_ctx(),
-                         mgm_tls_level);
+          reportShutdown(config.get(), nodeid, 0, false, false, false,
+                         child_error, child_signal, child_sphase,
+                         retriever.ssl_ctx(), mgm_tls_level);
           angel_exit(0);
           break;
         case NRT_NoStart_Restart:
@@ -806,8 +815,8 @@ void angel_run(const char *progname, const Vector<BaseString> &original_args,
             /**
              * Error shutdown && stopOnError()
              */
-            reportShutdown(config.get(), nodeid, error_exit, 0, false, false,
-                           child_error, child_signal, child_sphase,
+            reportShutdown(config.get(), nodeid, error_exit, false, false,
+                           false, child_error, child_signal, child_sphase,
                            retriever.ssl_ctx(), mgm_tls_level);
             angel_exit(0);
           }
@@ -831,7 +840,7 @@ void angel_run(const char *progname, const Vector<BaseString> &original_args,
         /**
          * Error shutdown && stopOnError()
          */
-        reportShutdown(config.get(), nodeid, error_exit, 0, false, false,
+        reportShutdown(config.get(), nodeid, error_exit, false, false, false,
                        child_error, child_signal, child_sphase,
                        retriever.ssl_ctx(), mgm_tls_level);
         angel_exit(0);
@@ -854,7 +863,7 @@ void angel_run(const char *progname, const Vector<BaseString> &original_args,
             "Angel detected too many startup failures(%d), "
             "not restarting again",
             failed_startups_counter);
-        reportShutdown(config.get(), nodeid, error_exit, 0, false, false,
+        reportShutdown(config.get(), nodeid, error_exit, false, false, false,
                        child_error, child_signal, child_sphase,
                        retriever.ssl_ctx(), mgm_tls_level);
         angel_exit(0);
@@ -868,7 +877,7 @@ void angel_run(const char *progname, const Vector<BaseString> &original_args,
       failed_startups_counter = 0;
     }
 
-    reportShutdown(config.get(), nodeid, error_exit, 1, no_start, initial,
+    reportShutdown(config.get(), nodeid, error_exit, true, no_start, initial,
                    child_error, child_signal, child_sphase, retriever.ssl_ctx(),
                    mgm_tls_level);
     g_eventLogger->info(
@@ -922,4 +931,4 @@ void angel_run(const char *progname, const Vector<BaseString> &original_args,
 /*
   Order angel to shutdown it's ndbd
 */
-void angel_stop(void) { stop_child = true; }
+void angel_stop() { stop_child = true; }

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,8 @@
 
 #include "authentication_policy.h"
 
-#include <ctype.h>
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 
 #include "mysql/components/services/log_builtins.h"
@@ -122,7 +122,7 @@ bool Policy::parse(const std::string &new_policy_value,
   if (!is_first_factor && policy_strm.eof() && policy_strm.fail())
     parsed_factors.push_back(Factor("", ""));
 
-  if (parsed_factors.size() > MAX_AUTH_FACTORS || parsed_factors.size() == 0)
+  if (parsed_factors.size() > MAX_AUTH_FACTORS || parsed_factors.empty())
     goto error;
 
   return false;
@@ -132,7 +132,7 @@ error:
 }
 
 bool Policy::validate(const char *new_policy_value) {
-  std::string new_policy_str(new_policy_value ? new_policy_value : "");
+  std::string const new_policy_str(new_policy_value ? new_policy_value : "");
   st_mysql_auth *auth(nullptr);
   bool ret(true);
   Factors parsed_factors;
@@ -194,7 +194,7 @@ end:
 }
 
 bool Policy::update(const char *new_policy_value) {
-  std::string new_policy_str(new_policy_value ? new_policy_value : "");
+  std::string const new_policy_str(new_policy_value ? new_policy_value : "");
   bool ret(true);
 
   /* Ensure the new policy was already verified */

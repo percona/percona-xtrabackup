@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 #include "include/mysql.h"
 #include "include/mysqld_errmsg.h"
 #include "include/sql_common.h"
+#include "my_dbug.h"
 #include "mysql/service_srv_session.h"
 #include "mysql_command_delegates.h"
 #include "sql/current_thd.h"
@@ -223,12 +224,12 @@ mysql_state_machine_status cssm_begin_connect(mysql_async_connect *ctx) {
     thd = mysql_session->get_thd();
     mcs_extn->is_thd_associated = false;
     Security_context_handle sc;
+    mcs_extn->session_svc = mysql_session;
     if (mysql_security_context_imp::get(thd, &sc)) return STATE_MACHINE_FAILED;
     if (mysql_security_context_imp::lookup(sc, user, host, nullptr, db))
       return STATE_MACHINE_FAILED;
     mcs_extn->mcs_thd = thd;
     mysql->thd = thd;
-    mcs_extn->session_svc = mysql_session;
   } else {
     mysql->thd = reinterpret_cast<void *>(mcs_extn->mcs_thd);
   }
@@ -291,10 +292,13 @@ bool csi_advanced_command(MYSQL *mysql, enum enum_server_command command,
   }
 
   mysql_handle.mysql = mysql;
-  if (mcs_extn->consumer_srv_data != nullptr)
-    srv_ctx_h = reinterpret_cast<SRV_CTX_H>(mcs_extn->consumer_srv_data);
-  else if (((class mysql_command_consumer_refs *)(command_consumer_srv))
-               ->factory_srv->start(&srv_ctx_h, (MYSQL_H *)&mysql_handle)) {
+  if (mcs_extn->consumer_srv_data != nullptr) {
+    ((class mysql_command_consumer_refs *)(command_consumer_srv))
+        ->factory_srv->end(
+            reinterpret_cast<SRV_CTX_H>(mcs_extn->consumer_srv_data));
+  }
+  if (((class mysql_command_consumer_refs *)(command_consumer_srv))
+          ->factory_srv->start(&srv_ctx_h, (MYSQL_H *)&mysql_handle)) {
     sprintf(*err_msg, "Could not create %s service",
             "mysql_text_consumer_factory_v1");
     goto error;
@@ -314,11 +318,18 @@ bool csi_advanced_command(MYSQL *mysql, enum enum_server_command command,
           ->error_srv->error(srv_ctx_h, &err_num,
                              const_cast<const char **>(ch_ptr));
       strcpy(*err_msg, *ch_ptr);
+      // Forward the errno from the srv-session to the mysql handle
+      mysql->net.last_errno = err_num;
       goto error;
     }
   }
   ret = false;
 error:
+  // Debug hook to simulate a successful command execution even if an error
+  // occurred. Useful for testing how consumers handle error codes without
+  // triggering a failure.
+  DBUG_EXECUTE_IF("mysql_command_services_component_test_errno", return true;);
+
   if (ret) my_error(ER_COMMAND_SERVICE_BACKEND_FAILED, MYF(0), err_msg);
   return ret ? true : false;
 }

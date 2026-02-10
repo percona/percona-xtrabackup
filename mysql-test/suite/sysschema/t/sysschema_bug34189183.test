@@ -16,9 +16,22 @@ REVOKE SESSION_VARIABLES_ADMIN ON *.* FROM 'test'@'localhost';
 
 connect (con1, localhost, test, , );
 
-# Should NOT return Access Denied
+# Check for 'current' config
+# Must NOT return Access Denied
 let $complete_log= $MYSQLTEST_VARDIR/log/sys_diagnose.log;
 --exec $MYSQL -utest -e "CALL sys.diagnostics(180, 60, 'current');" > $complete_log 2>&1
+--remove_file $complete_log
+
+# Check for 'medium' config
+# Must NOT return Access Denied
+let $complete_log= $MYSQLTEST_VARDIR/log/sys_diagnose.log;
+--exec $MYSQL -utest -e "CALL sys.diagnostics(60, 10, 'medium');" > $complete_log 2>&1
+--remove_file $complete_log
+
+# Check for 'full' config
+# Must NOT return Access Denied
+let $complete_log= $MYSQLTEST_VARDIR/log/sys_diagnose.log;
+--exec $MYSQL -utest -e "CALL sys.diagnostics(60, 10, 'full');" > $complete_log 2>&1
 --remove_file $complete_log
 
 # Revoke the privileges

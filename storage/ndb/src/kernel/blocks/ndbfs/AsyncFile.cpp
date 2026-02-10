@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -193,28 +193,15 @@ void AsyncFile::openReq(Request *request) {
     } else {
 #if defined(VM_TRACE) || !defined(NDEBUG)
       /*
-       * LCP/0/T13F7.ctl has been seen with zero size, open flags OM_READWRITE |
-       * OM_APPEND Likely a partial read or failed read will be caught by
-       * application level, and file ignored. Are there ever files that can be
-       * empty in ndb_x_fs? Else we could treat zero file as no file, must then
-       * remove I guess to not trick create_if_none?
-       *
-       * D1/NDBCNTR/P0.sysfile: ABORT: open empty not fake created page_size 0
-       * flags 0x00000000  : OM_READONLY?
+       * Existing files should normally not be empty. Log extra debug
+       * information here to give more context if block code fails in case this
+       * open operation or later read operation fails.
        */
-      if (strstr(theFileName.c_str(), "LCP") &&
-          strstr(theFileName.c_str(), ".ctl"))
-        ;  // TODO maybe not safe on all os file system, upper/lowercase?
-      else if (strstr(theFileName.c_str(), "NDBCNTR") &&
-               strstr(theFileName.c_str(), ".sysfile"))
-        ;  // OM_READONLY?
-      else if (strstr(theFileName.c_str(), "DBDIH") &&
-               strstr(theFileName.c_str(), ".FragList")) {
-        ;  // OM_READWRITE existing: D1/DBDIH/S17.FragList - disk full?
-        // Maybe should fail open-request? Or wait for underflow on later read?
-      } else {
-        abort();  // TODO: relax since could be caused by previous disk full?
-      }
+      g_eventLogger->info(
+          "(debug) NDBFS: signal FSOPENREQ - -: file - %s: flags=%0x. Opened "
+          "empty file!",
+          theFileName.c_str(), flags);
+
 #endif
     }
   }
@@ -585,7 +572,6 @@ void AsyncFile::closeReq(Request *request) {
                       FsOpenReq::OM_APPEND)) {
     if (!abort) syncReq(request);
   }
-  int r = 0;
 #ifndef NDEBUG
   if (!m_file.is_open()) {
     DEBUG(g_eventLogger->info("close on already closed file"));
@@ -594,17 +580,23 @@ void AsyncFile::closeReq(Request *request) {
 #endif
   if (m_xfile.is_open()) {
     int r = m_xfile.close(abort);
-    if (r != 0) {
-      NDBFS_SET_REQUEST_ERROR(request,
-                              FsRef::fsErrUnknown);  // TODO better error
+    if (r == -1) {
+      NDBFS_SET_REQUEST_ERROR(request, get_last_os_error());
+      if (request->error.code == 0) {
+        NDBFS_SET_REQUEST_ERROR(request, FsRef::fsErrUnknown);
+      }
     }
   }
   if (m_file.is_open()) {
-    if (!abort) m_file.sync();
-    r = m_file.close();
-  }
-  if (-1 == r) {
-    NDBFS_SET_REQUEST_ERROR(request, get_last_os_error());
+    int sync_ret = 0;
+    if (!abort) sync_ret = m_file.sync();
+    int r = m_file.close();
+    if (r == -1 || sync_ret == -1) {
+      NDBFS_SET_REQUEST_ERROR(request, get_last_os_error());
+      if (request->error.code == 0) {
+        NDBFS_SET_REQUEST_ERROR(request, FsRef::fsErrUnknown);
+      }
+    }
   }
 }
 
@@ -944,7 +936,8 @@ void AsyncFile::syncReq(Request *request) {
 bool AsyncFile::check_odirect_request(const char *buf, size_t sz,
                                       ndb_off_t offset) {
   if (m_open_flags & FsOpenReq::OM_DIRECT) {
-    if ((sz % NDB_O_DIRECT_WRITE_ALIGNMENT) ||
+    if (/*(sz % NDB_O_DIRECT_WRITE_ALIGNMENT) ||  // Do not check size on last
+           block, but have no info about that */
         (((UintPtr)buf) % NDB_O_DIRECT_WRITE_ALIGNMENT) ||
         (offset % NDB_O_DIRECT_WRITE_ALIGNMENT)) {
       g_eventLogger->info(
@@ -1128,27 +1121,29 @@ void AsyncFile::log_set_odirect_result(int result) {
 
   if (odirect_failure)  // Failed set ODirect
     g_eventLogger->warning(
-        "Failed to set ODirect for file %s %s%s (errno: %u, block size %zu, "
-        "alignment %zu, direct io %d, avoid on append %d, io block size %zu, "
-        "alignment %zu).",
+        "Failed to set ODirect for file %s %s%s (errno: %u, block size %ju, "
+        "alignment %ju, direct io %d, avoid on append %d, io block size %ju, "
+        "alignment %ju).",
         filename, (param ? "under " : ""), (param ? param : ""),
-        get_last_os_error(), m_file.get_block_size(),
-        m_file.get_block_alignment(), m_file.have_direct_io_support(),
-        m_file.avoid_direct_io_on_append(), m_file.get_direct_io_block_size(),
-        m_file.get_direct_io_block_alignment());
+        get_last_os_error(), uintmax_t{m_file.get_block_size()},
+        uintmax_t{m_file.get_block_alignment()},
+        m_file.have_direct_io_support(), m_file.avoid_direct_io_on_append(),
+        uintmax_t{m_file.get_direct_io_block_size()},
+        uintmax_t{m_file.get_direct_io_block_alignment()});
   else if (success)  // Succeeded to set ODirect
     g_eventLogger->info("Succeeded to set ODirect for file %s %s%s.", filename,
                         (param ? "under " : ""), (param ? param : ""));
   else  // Failed checking ODirect
     g_eventLogger->warning(
-        "Failed to probe ODirect for file %s %s%s (errno: %u, block size %zu, "
-        "alignment %zu, direct io %d, avoid on append %d, io block size %zu, "
-        "alignment %zu).",
+        "Failed to probe ODirect for file %s %s%s (errno: %u, block size %ju, "
+        "alignment %ju, direct io %d, avoid on append %d, io block size %ju, "
+        "alignment %ju).",
         filename, (param ? "under " : ""), (param ? param : ""),
-        get_last_os_error(), m_file.get_block_size(),
-        m_file.get_block_alignment(), m_file.have_direct_io_support(),
-        m_file.avoid_direct_io_on_append(), m_file.get_direct_io_block_size(),
-        m_file.get_direct_io_block_alignment());
+        get_last_os_error(), uintmax_t{m_file.get_block_size()},
+        uintmax_t{m_file.get_block_alignment()},
+        m_file.have_direct_io_support(), m_file.avoid_direct_io_on_append(),
+        uintmax_t{m_file.get_direct_io_block_size()},
+        uintmax_t{m_file.get_direct_io_block_alignment()});
 }
 
 void AsyncFile::log_set_odirect_result(const char *param, const char *filename,

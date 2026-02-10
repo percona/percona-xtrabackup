@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cstdio>
+#include <cstdlib>
 
 #include "client/include/client_priv.h"
 #include "m_string.h"
@@ -57,7 +57,6 @@ static char *opt_socket = nullptr;
 static MYSQL mysql_handle;
 static char *password = nullptr;
 static bool password_provided = false;
-static bool g_expire_password_on_exit = false;
 static bool opt_use_default = false;
 
 #if defined(_WIN32)
@@ -202,7 +201,7 @@ static int get_response(const char *opt_message, int default_answer = -1) {
   int i = 0;
   if (opt_message) {
     fprintf(stdout, "%s", opt_message);
-    if (opt_use_default == true && default_answer != -1) {
+    if (opt_use_default && default_answer != -1) {
       fprintf(stdout, " %c \n", (char)default_answer);
       return default_answer;
     }
@@ -262,7 +261,7 @@ static void execute_query_with_message(const char *query,
 static bool execute_query(const char **query, size_t length) {
   if (!mysql_real_query(&mysql_handle, (const char *)*query, (ulong)length))
     return false;
-  else if (mysql_errno(&mysql_handle) == CR_SERVER_GONE_ERROR) {
+  if (mysql_errno(&mysql_handle) == CR_SERVER_GONE_ERROR) {
     fprintf(stdout, " ... Failed! Error: %s\n", mysql_error(&mysql_handle));
     free_resources();
     exit(1);
@@ -410,64 +409,6 @@ static void estimate_password_strength(char *password_string) {
 }
 
 /**
-  During rpm deployments the password expires immediately and needs to be
-  renewed before the DBA can set the final password. This helper subroutine
-  will use an active connection to set a password.
-
-  @param mysql The MYSQL handle
-  @param password A password character string
-
-  Function might fail with an error message which can be retrieved using
-  mysql_error(mysql)
-
-  @return Success or failure
-    @retval true success
-    @retval false failure
-*/
-
-static bool mysql_set_password(MYSQL *mysql, char *password) {
-  const size_t password_len = strlen(password);
-  char *query, *end;
-  query =
-      (char *)my_malloc(PSI_NOT_INSTRUMENTED, password_len + 50, MYF(MY_WME));
-  end = my_stpmov(query, "SET PASSWORD=");
-  *end++ = '\'';
-  end += mysql_real_escape_string_quote(mysql, end, password,
-                                        (ulong)password_len, '\'');
-  *end++ = '\'';
-  if (mysql_real_query(mysql, query, (ulong)(end - query))) {
-    my_free(query);
-    return false;
-  }
-
-  my_free(query);
-  return true;
-}
-
-/**
-  Expires the password for all users if executed with sufficient
-  privileges. This is primarily used as a helper function during rpm
-  deployments.
-
-  @param mysql The MYSQL handle
-
-  Function might fail with an error message which can be retrieved using
-  mysql_error(mysql)
-
-  @return Success or failure
-    @retval true success
-    @retval false failure
-*/
-
-static bool mysql_expire_password(MYSQL *mysql) {
-  char sql[] = "UPDATE mysql.user SET password_expired= 'Y'";
-  const size_t sql_len = strlen(sql);
-  if (mysql_real_query(mysql, sql, (ulong)sql_len)) return false;
-
-  return true;
-}
-
-/**
   Sets the user password with the string provided during the flow
   of the method. It checks for the strength of the password before
   changing it and displays the same to the user. The user can decide
@@ -501,7 +442,7 @@ static void set_opt_user_password(int component_set) {
 
     password2 = get_tty_password("\nRe-enter new password: ");
 
-    if (strcmp(password1, password2)) {
+    if (strcmp(password1, password2) != 0) {
       fprintf(stdout, "Sorry, passwords do not match.\n");
       continue;
     }
@@ -539,8 +480,8 @@ static void set_opt_user_password(int component_set) {
       if (!execute_query(&query_const, (unsigned int)(end - query))) {
         my_free(query);
         break;
-      } else
-        fprintf(stdout, " ... Failed! Error: %s\n", mysql_error(&mysql_handle));
+      }
+      fprintf(stdout, " ... Failed! Error: %s\n", mysql_error(&mysql_handle));
     }
   }
 }
@@ -553,7 +494,6 @@ static void set_opt_user_password(int component_set) {
   @return    Returns 1 if a password already exists and 0 if it doesn't.
 */
 static int get_opt_user_password() {
-  bool using_temporary_password = false;
   int res;
 
   if (!password_provided) {
@@ -597,35 +537,18 @@ static int get_opt_user_password() {
       }
 
       /*
-        Password worked but has expired. If this happens during a silent
-        deployment using the rpm package system we cannot stop and ask
-        for a password. Instead we just renew the previous password and set
-        it to expire.
+        Password worked but has expired. Ask the user to fix this.
       */
-      if (using_temporary_password) {
-        if (!mysql_set_password(&mysql_handle, password)) {
-          fprintf(stdout, "... Failed! Error: %s\n",
-                  mysql_error(&mysql_handle));
-          free_resources();
-          exit(1);
-        }
-        g_expire_password_on_exit = true;
-      } else {
-        /*
-          This path is only executed if no temporary password can be found and
-          should only happen when manual interaction is possible.
-        */
-        fprintf(stdout,
-                "\nThe existing password for the user account %s has "
-                "expired. Please set a new password.\n",
-                opt_user);
-        set_opt_user_password(0);
-      }
+      fprintf(stdout,
+              "\nThe existing password for the user account %s has "
+              "expired. Please set a new password.\n",
+              opt_user);
+      set_opt_user_password(0);
     } else {
       fprintf(stdout, "Error: %s\n", mysql_error(&mysql_handle));
-      free_resources();
-      exit(1);
     }
+    free_resources();
+    exit(1);
   }
   res = (password && password[0] != '\0') ? 1 : 0;
   return (res);
@@ -818,7 +741,7 @@ int main(int argc, char *argv[]) {
   if (!hadpass) {
     fprintf(stdout, "Please set the password for %s here.\n", opt_user);
     set_opt_user_password(component_set);
-  } else if (opt_use_default == false) {
+  } else if (!opt_use_default) {
     char prompt[256];
     fprintf(stdout, "Using existing password for %s.\n", opt_user);
 
@@ -844,27 +767,6 @@ int main(int argc, char *argv[]) {
 
   // Remove test database
   remove_test_database();
-
-  /*
-    During an unattended rpm deployment a temporary password is created and
-    stored in a file by 'mysqld --initialize'. This program uses this password
-    to perform security configurations after the bootstrap phase, but it needs
-    to be marked for expiration upon exit so the DBA will remember to set a new
-    one.
-  */
-  if (g_expire_password_on_exit == true) {
-    if (mysql_expire_password(&mysql_handle) == false) {
-      fprintf(stdout,
-              "... Failed to expire password!\n"
-              "** Please consult the MySQL server documentation. **\n"
-              "Error: %s\n",
-              mysql_error(&mysql_handle));
-      // Reload privilege tables before exiting
-      reload_privilege_tables();
-      free_resources();
-      exit(1);
-    }
-  }
 
   // Reload privilege tables
   reload_privilege_tables();

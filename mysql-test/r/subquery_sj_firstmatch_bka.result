@@ -2,6 +2,7 @@ set optimizer_switch='batched_key_access=on,mrr_cost_based=off';
 set optimizer_switch='semijoin=on,firstmatch=on';
 set @old_opt_switch=@@optimizer_switch;
 set optimizer_switch='subquery_materialization_cost_based=off';
+SET explain_json_format_version = 1;
 drop table if exists t0, t1, t2, t10, t11, t12;
 create table t1 (a int not null, b int, primary key (a));
 create table t2 (a int not null, primary key (a));
@@ -125,6 +126,14 @@ create table t10 (pk int, a int, primary key(pk));
 insert into t10 select a,a from t0;
 create table t12 like t10;
 insert into t12 select * from t10;
+ANALYZE TABLE t0, t1, t2, t10, t11, t12;
+Table	Op	Msg_type	Msg_text
+test.t0	analyze	status	OK
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t10	analyze	status	OK
+test.t11	analyze	status	OK
+test.t12	analyze	status	OK
 Flattened because of dependency, t10=func(t1)
 explain select * from t1 where a in (select pk from t10);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -340,6 +349,11 @@ drop table t10, t11, t12;
 CREATE TABLE t1 (i INTEGER);
 CREATE TABLE t2 (i INTEGER);
 CREATE TABLE t3 (i INTEGER);
+ANALYZE TABLE t1, t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -465,6 +479,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (2);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -590,6 +607,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (1);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -715,8 +735,15 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (0);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 DELETE FROM t3;
 INSERT INTO t2 VALUES (2);
+ANALYZE TABLE t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -842,6 +869,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (2);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -967,6 +997,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (1);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -1092,8 +1125,15 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (0);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 DELETE FROM t3;
 INSERT INTO t2 VALUES (1);
+ANALYZE TABLE t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -1219,6 +1259,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (2);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -1344,6 +1387,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (1);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -1469,10 +1515,21 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (0);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 DELETE FROM t3;
 INSERT INTO t2 VALUES (0);
+ANALYZE TABLE t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 DELETE FROM t2;
 INSERT INTO t1 VALUES (2);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -1598,6 +1655,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (2);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -1724,6 +1784,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (1);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -1850,8 +1913,15 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (0);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 DELETE FROM t3;
 INSERT INTO t2 VALUES (2);
+ANALYZE TABLE t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -1977,6 +2047,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (2);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -2111,6 +2184,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (1);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -2245,8 +2321,15 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (0);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 DELETE FROM t3;
 INSERT INTO t2 VALUES (1);
+ANALYZE TABLE t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -2372,6 +2455,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (2);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -2506,6 +2592,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (1);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -2640,10 +2729,21 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (0);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 DELETE FROM t3;
 INSERT INTO t2 VALUES (0);
+ANALYZE TABLE t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 DELETE FROM t2;
 INSERT INTO t1 VALUES (1);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -2769,6 +2869,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (2);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -2895,6 +2998,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (1);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -3022,8 +3128,15 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (0);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 DELETE FROM t3;
 INSERT INTO t2 VALUES (2);
+ANALYZE TABLE t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -3149,6 +3262,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (2);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -3283,6 +3399,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (1);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -3419,8 +3538,15 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (0);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 DELETE FROM t3;
 INSERT INTO t2 VALUES (1);
+ANALYZE TABLE t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -3546,6 +3672,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (2);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -3680,6 +3809,9 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (1);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 SELECT (SELECT COUNT(*) from t1) AS c1,
 (SELECT COUNT(*) from t2) AS c2,
 (SELECT COUNT(*) from t3) AS c3;
@@ -3823,10 +3955,21 @@ SELECT * FROM t1 WHERE (11) IN
 (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
 INSERT INTO t3 VALUES (0);
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 DELETE FROM t3;
 INSERT INTO t2 VALUES (0);
+ANALYZE TABLE t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 DELETE FROM t2;
 INSERT INTO t1 VALUES (0);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 DROP TABLE t1, t2, t3;
 create table x1(k int primary key, d1 int, d2 int);
 create table x2(k int primary key, d1 int, d2 int);
@@ -4059,6 +4202,9 @@ a	b	c
 drop table t1, t11, t12, t21, t22;
 create table t1(a int);
 insert into t1 values (0),(1);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 explain 
 select (select max(y.a) from t1 y where a in (select a from t1 z) and a < x.a) as subq from t1 x;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -4391,6 +4537,9 @@ Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi joi
 drop table t1, t2, t3;
 create table t1 (a decimal);
 insert into t1 values (1),(2);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 explain select * from t1 where a in (select a from t1);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
@@ -4398,6 +4547,578 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t1`) where (`test`.`t1`.`a` = `test`.`t1`.`a`)
 drop table t1;
+SET internal_tmp_mem_storage_engine='memory';
+CREATE TABLE t1 (a BIT(7)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES (64),(65),(65),(NULL),(66);
+CREATE TABLE t2 (a INT)  ENGINE=InnoDB;
+INSERT INTO t2 VALUES (61),(64),(65);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+a
+64
+65
+EXPLAIN SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t2); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` semi join (`test`.`t1`) where (`test`.`t2`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t2.a = t1.a)  (rows=3)
+    -> Table scan on t2  (rows=3)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+a
+@
+A
+A
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t2`) where (`test`.`t1`.`a` = `test`.`t2`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t2.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t2  (rows=3)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+a
+@
+A
+A
+B
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t1`) where (`test`.`t1`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t1.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a BIT(7)) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (64),(65),(65),(NULL),(66);
+CREATE TABLE t2 (a INT)  ENGINE=MyISAM;
+INSERT INTO t2 VALUES (61),(64),(65);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+a
+64
+65
+EXPLAIN SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t2); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` semi join (`test`.`t1`) where (`test`.`t2`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t2.a = t1.a)  (rows=3)
+    -> Table scan on t2  (rows=3)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+a
+@
+A
+A
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t2`) where (`test`.`t1`.`a` = `test`.`t2`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t2.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t2  (rows=3)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+a
+@
+A
+A
+B
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t1`) where (`test`.`t1`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t1.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a BIT(7)) ENGINE=HEAP;
+INSERT INTO t1 VALUES (64),(65),(65),(NULL),(66);
+CREATE TABLE t2 (a INT)  ENGINE=HEAP;
+INSERT INTO t2 VALUES (61),(64),(65);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	note	The storage engine for the table doesn't support analyze
+test.t2	analyze	note	The storage engine for the table doesn't support analyze
+SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+a
+64
+65
+EXPLAIN SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t2); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` semi join (`test`.`t1`) where (`test`.`t2`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t2.a = t1.a)  (rows=3)
+    -> Table scan on t2  (rows=3)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+a
+@
+A
+A
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t2`) where (`test`.`t1`.`a` = `test`.`t2`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t2.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t2  (rows=3)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+a
+@
+A
+A
+B
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t1`) where (`test`.`t1`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t1.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+DROP TABLE t1, t2;
+SET internal_tmp_mem_storage_engine='TempTable';
+CREATE TABLE t1 (a BIT(7)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES (64),(65),(65),(NULL),(66);
+CREATE TABLE t2 (a INT)  ENGINE=InnoDB;
+INSERT INTO t2 VALUES (61),(64),(65);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+a
+64
+65
+EXPLAIN SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t2); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` semi join (`test`.`t1`) where (`test`.`t2`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t2.a = t1.a)  (rows=3)
+    -> Table scan on t2  (rows=3)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+a
+@
+A
+A
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t2`) where (`test`.`t1`.`a` = `test`.`t2`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t2.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t2  (rows=3)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+a
+@
+A
+A
+B
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t1`) where (`test`.`t1`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t1.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a BIT(7)) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (64),(65),(65),(NULL),(66);
+CREATE TABLE t2 (a INT)  ENGINE=MyISAM;
+INSERT INTO t2 VALUES (61),(64),(65);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+a
+64
+65
+EXPLAIN SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t2); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` semi join (`test`.`t1`) where (`test`.`t2`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t2.a = t1.a)  (rows=3)
+    -> Table scan on t2  (rows=3)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+a
+@
+A
+A
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t2`) where (`test`.`t1`.`a` = `test`.`t2`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t2.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t2  (rows=3)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+a
+@
+A
+A
+B
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t1`) where (`test`.`t1`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t1.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a BIT(7)) ENGINE=HEAP;
+INSERT INTO t1 VALUES (64),(65),(65),(NULL),(66);
+CREATE TABLE t2 (a INT)  ENGINE=HEAP;
+INSERT INTO t2 VALUES (61),(64),(65);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	note	The storage engine for the table doesn't support analyze
+test.t2	analyze	note	The storage engine for the table doesn't support analyze
+SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+a
+64
+65
+EXPLAIN SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t2); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` semi join (`test`.`t1`) where (`test`.`t2`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t2.a = t1.a)  (rows=3)
+    -> Table scan on t2  (rows=3)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+a
+@
+A
+A
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t2`) where (`test`.`t1`.`a` = `test`.`t2`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t2.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t2  (rows=3)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+a
+@
+A
+A
+B
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t1`) where (`test`.`t1`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t1.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+DROP TABLE t1, t2;
+SET internal_tmp_mem_storage_engine=default;
+SET SESSION big_tables=true;
+CREATE TABLE t1 (a BIT(7)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES (64),(65),(65),(NULL),(66);
+CREATE TABLE t2 (a INT)  ENGINE=InnoDB;
+INSERT INTO t2 VALUES (61),(64),(65);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+a
+64
+65
+EXPLAIN SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t2); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` semi join (`test`.`t1`) where (`test`.`t2`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t2.a = t1.a)  (rows=3)
+    -> Table scan on t2  (rows=3)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+a
+@
+A
+A
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t2`) where (`test`.`t1`.`a` = `test`.`t2`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t2.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t2  (rows=3)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+a
+@
+A
+A
+B
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t1`) where (`test`.`t1`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t1.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a BIT(7)) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (64),(65),(65),(NULL),(66);
+CREATE TABLE t2 (a INT)  ENGINE=MyISAM;
+INSERT INTO t2 VALUES (61),(64),(65);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+a
+64
+65
+EXPLAIN SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t2); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` semi join (`test`.`t1`) where (`test`.`t2`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t2.a = t1.a)  (rows=3)
+    -> Table scan on t2  (rows=3)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+a
+@
+A
+A
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t2`) where (`test`.`t1`.`a` = `test`.`t2`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t2.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t2  (rows=3)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+a
+@
+A
+A
+B
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t1`) where (`test`.`t1`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t1.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a BIT(7)) ENGINE=HEAP;
+INSERT INTO t1 VALUES (64),(65),(65),(NULL),(66);
+CREATE TABLE t2 (a INT)  ENGINE=HEAP;
+INSERT INTO t2 VALUES (61),(64),(65);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	note	The storage engine for the table doesn't support analyze
+test.t2	analyze	note	The storage engine for the table doesn't support analyze
+SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+a
+64
+65
+EXPLAIN SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t2); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` semi join (`test`.`t1`) where (`test`.`t2`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t2 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t2.a = t1.a)  (rows=3)
+    -> Table scan on t2  (rows=3)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+a
+@
+A
+A
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t2`) where (`test`.`t1`.`a` = `test`.`t2`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t2);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t2.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t2  (rows=3)
+
+SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+a
+@
+A
+A
+B
+EXPLAIN SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	20.00	Using where; FirstMatch(t1); Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` semi join (`test`.`t1`) where (`test`.`t1`.`a` = `test`.`t1`.`a`)
+EXPLAIN format=tree SELECT * FROM t1 WHERE a IN (SELECT a FROM t1);
+EXPLAIN
+-> Hash semijoin (FirstMatch) (t1.a = t1.a)  (rows=5)
+    -> Table scan on t1  (rows=5)
+    -> Hash
+        -> Table scan on t1  (rows=5)
+
+DROP TABLE t1, t2;
+SET SESSION big_tables=default;
 create table t1 (a int);
 insert into t1 values (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
 create table t2 as select * from t1;
@@ -4526,6 +5247,9 @@ Warnings:
 Note	1003	/* select#1 */ select straight_join `test`.`x`.`a` AS `a`,`test`.`y`.`a` AS `a` from `test`.`t2` `x` join `test`.`t2` `y` where <in_optimizer>(`test`.`x`.`a`,<exists>(/* select#2 */ select straight_join `test`.`a`.`a` from `test`.`t1` `a` join `test`.`t1` `b` where (<cache>(`test`.`x`.`a`) = `test`.`a`.`a`)))
 create table t0 (a int, b int);
 insert into t0 values(1,1);
+ANALYZE TABLE t0;
+Table	Op	Msg_type	Msg_text
+test.t0	analyze	status	OK
 explain select * from t0, t3 where t3.a in (select a from t2) and (t3.a < 10 or t3.a >30);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t0	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	NULL
@@ -4547,6 +5271,11 @@ insert into t0 values (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
 create table t1 (a int, b int, filler char(100), key(a,b));
 insert into t1 select A.a, B.a, 'filler' from t0 A, t0 B;
 create table t2 as select * from t1;
+ANALYZE TABLE t0, t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t0	analyze	status	OK
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 explain select * from t2 where a in (select b from t1 where a=3);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	100	100.00	Using where
@@ -4564,6 +5293,10 @@ create table t1 (a int, b int);
 insert into t1 select a,a from t0;
 create table t2 (a int, b int);
 insert into t2 select A.a + 10*B.a, A.a + 10*B.a from t0 A, t0 B;
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 explain select * from t1 where (a,b) in (select a,b from t2);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	10	100.00	NULL
@@ -4655,6 +5388,11 @@ insert into t0 values (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
 create table t1 as select a as a, a as b, a as c from t0 where a < 3;
 create table t2 as select a as a, a as b from t0 where a < 3;
 insert into t2 select * from t2;
+ANALYZE TABLE t0, t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t0	analyze	status	OK
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 explain select * from t1 where (a,b,c) in (select x.a, y.a, z.a from t2 x, t2 y, t2 z where x.b=33);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
@@ -6417,9 +7155,9 @@ test.t0	analyze	status	OK
 EXPLAIN SELECT vkey FROM t0 WHERE pk IN
 (SELECT t1.pk FROM t0 t1 JOIN t0 t2 ON t2.vkey = t1.vnokey);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t0	NULL	index	PRIMARY	vkey	7	NULL	5	100.00	Using index
-1	SIMPLE	t1	NULL	eq_ref	PRIMARY	PRIMARY	4	test.t0.pk	1	100.00	Using where
-1	SIMPLE	t2	NULL	ref	vkey	vkey	7	test.t1.vnokey	1	100.00	Using index; FirstMatch(t1)
+1	SIMPLE	t0	NULL	index	PRIMARY	vkey	7	NULL	#	100.00	Using index
+1	SIMPLE	t1	NULL	eq_ref	PRIMARY	PRIMARY	4	test.t0.pk	#	100.00	Using where
+1	SIMPLE	t2	NULL	ref	vkey	vkey	7	test.t1.vnokey	#	100.00	Using index; FirstMatch(t1)
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t0`.`vkey` AS `vkey` from `test`.`t0` `t1` join `test`.`t0` semi join (`test`.`t0` `t2`) where ((`test`.`t2`.`vkey` = `test`.`t1`.`vnokey`) and (`test`.`t1`.`pk` = `test`.`t0`.`pk`))
 SELECT vkey FROM t0 WHERE pk IN 
@@ -6859,6 +7597,11 @@ CREATE VIEW v3 AS SELECT * FROM t3;
 INSERT INTO t1 VALUES(1),(2);
 INSERT INTO t2 VALUES(1),(2);
 INSERT INTO t3 VALUES(1),(2);
+ANALYZE TABLE t1, t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 PREPARE stmt FROM
 "
 SELECT t1field
@@ -7062,6 +7805,9 @@ SELECT t1field AS v1field
 FROM t1 a
 WHERE a.t1field IN (SELECT t1field FROM t1);
 INSERT INTO t1 VALUES(1),(2);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 SELECT t1field
 FROM t1
 WHERE t1field IN (SELECT v1field FROM v1);
@@ -7663,6 +8409,11 @@ id INTEGER
 INSERT INTO t1 VALUES(10),(20);
 create table t2 select * from t1;
 create table t3 select * from t1;
+ANALYZE TABLE t1, t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 SELECT *
 FROM t1
 WHERE 1 IN(SELECT 1
@@ -7690,6 +8441,12 @@ INSERT INTO t1 VALUES(30),(40),(50),(60),(70),(80),(90);
 insert into t2 select * from t1;
 insert into t3 select * from t1;
 create table t4 select * from t1;
+ANALYZE tABLE t1, t2, t3, t4;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
+test.t4	analyze	status	OK
 SELECT *
 FROM t1
 WHERE 1 IN(SELECT 1
@@ -7811,6 +8568,10 @@ PRIMARY KEY (pk)
 INSERT INTO t1 VALUES (1,'o','ffff','ffff','ffoo'),(2,'f','ffff','ffff','ffff');
 CREATE TABLE t2 LIKE t1;
 INSERT INTO t2 VALUES (1,'i','iiii','iiii','iiii'),(2,'f','ffff','ffff','ffff');
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 EXPLAIN SELECT pk FROM t1 WHERE (a) IN (SELECT a FROM t2 WHERE pk > 0);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
@@ -7831,6 +8592,10 @@ INSERT INTO t1 (f1, f2) VALUES (10, 1.668);
 CREATE TABLE t2 LIKE t1;
 INSERT INTO t2 VALUES (1, 1.789);
 INSERT INTO t2 VALUES (13, 1.454);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 EXPLAIN SELECT COUNT(*) FROM t1 WHERE (f1,f2) IN (SELECT f1,f2 FROM t2);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
@@ -8374,6 +9139,10 @@ PRIMARY KEY (pk)
 INSERT INTO t1 VALUES (1,'o','ffff','ffff','ffoo','ffff','ffff','ffff','ffff','ffff','ffff',ST_GeomFromText('POLYGON((0 0, 0 2, 2 2, 2 0, 0 0))')), (2,'f','ffff','ffff','ffff', 'ffff','ffff','ffff','ffff','ffff','ffff',ST_GeomFromText('POLYGON((0 0, 0 2, 2 2, 2 0, 0 0))'));
 CREATE TABLE t2 LIKE t1;
 INSERT INTO t2 VALUES (1,'i','iiii','iiii','iiii','iiii','ffff','ffff','ffff','ffff','ffff',ST_GeomFromText('POLYGON((0 0, 0 2, 2 2, 2 0, 0 0))')), (2,'f','ffff','ffff','ffff','ffff','ffff','ffff','ffff','ffff','ffff',ST_GeomFromText('POLYGON((0 0, 0 2, 2 2, 2 0, 0 0))'));
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 EXPLAIN SELECT pk FROM t1 WHERE (a, b) IN (SELECT a, b FROM t2 WHERE pk > 0);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
@@ -8667,6 +9436,11 @@ CREATE TABLE t3 (i INTEGER);
 INSERT INTO t1 VALUES (1), (2);
 INSERT INTO t2 VALUES (6);
 INSERT INTO t3 VALUES (1), (2);
+ANALYZE TABLE t1, t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 explain SELECT * FROM t1 WHERE (t1.i) IN 
 (SELECT t3.i FROM t3 LEFT JOIN t2 ON t2.i=t3.i);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -10454,6 +11228,10 @@ w
 y
 ALTER TABLE t1 ENGINE=INNODB;
 ALTER TABLE t2 ENGINE=INNODB;
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 explain SELECT col_varchar_nokey
 FROM t2 AS ot
 WHERE col_varchar_nokey IN (
@@ -10488,6 +11266,10 @@ w
 y
 ALTER TABLE t1 ENGINE=Memory;
 ALTER TABLE t2 ENGINE=Memory;
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	note	The storage engine for the table doesn't support analyze
+test.t2	analyze	note	The storage engine for the table doesn't support analyze
 explain SELECT col_varchar_nokey
 FROM t2 AS ot
 WHERE col_varchar_nokey IN (
@@ -11640,6 +12422,11 @@ PRIMARY KEY (pk)
 CREATE TABLE t3 (
 i INT
 );
+ANALYZE TABLE t1, t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 SET @optimizer_switch_saved= @@optimizer_switch;
 SET @@optimizer_switch="derived_merge=off";
 explain SELECT table1.pk AS field1
@@ -11885,6 +12672,9 @@ CREATE TABLE t1 (
 col_int INT
 );
 INSERT INTO t1 VALUES (0), (1);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 CREATE VIEW view_t1 AS SELECT * FROM t1;
 explain SELECT alias1.col_int
 FROM t1 AS alias1
@@ -13241,6 +14031,10 @@ DROP TABLE t1,t2;
 # Bug#21139722: Assertion failed: !(used_tables() & ((table_map) 1) ...
 CREATE TABLE t1(a INTEGER) engine=innodb;
 CREATE TABLE t2(b INTEGER) engine=innodb;
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 explain SELECT 1
 FROM (SELECT 1 IN (SELECT 1
 FROM t1
@@ -13270,6 +14064,9 @@ FROM t2
 1
 DROP TABLE t1, t2;
 CREATE TABLE t1(a INTEGER) engine=innodb;
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 explain SELECT (SELECT a FROM t1 AS t2
 WHERE a IN (SELECT t1.a+t2.a FROM t1 AS t3))
 FROM t1 AS t1;
@@ -13295,6 +14092,10 @@ SET DEFAULT_STORAGE_ENGINE=INNODB;
 #
 CREATE TABLE t1 (a INT, b INT, PRIMARY KEY(a));
 CREATE TABLE t2 (c INT PRIMARY KEY);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 EXPLAIN SELECT 1 FROM t1
 WHERE 1 IN
 (SELECT (c IS NULL) IN (SELECT a FROM t1 WHERE b)  FROM t2);
@@ -13386,15 +14187,15 @@ test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE EXISTS ( SELECT alias1.f2 FROM t2 LEFT JOIN t1 ON 1 LEFT JOIN t1 AS alias1 ON 1 );
 EXPLAIN
--> Inner hash join (FirstMatch)  (cost=5.4 rows=3)
-    -> Table scan on t1  (cost=0.55 rows=3)
+-> Inner hash join (FirstMatch)  (rows=3)
+    -> Table scan on t1  (rows=3)
     -> Hash
-        -> Limit: 1 row(s)  (cost=4.85 rows=1)
-            -> Nested loop left join  (cost=4.85 rows=18)
-                -> Nested loop left join  (cost=1.55 rows=6)
-                    -> Table scan on t2  (cost=0.45 rows=2)
-                    -> Table scan on t1  (cost=0.4 rows=3)
-                -> Table scan on alias1  (cost=5.4 rows=3)
+        -> Limit: 1 row(s)  (rows=1)
+            -> Nested loop left join  (rows=18)
+                -> Nested loop left join  (rows=6)
+                    -> Table scan on t2  (rows=2)
+                    -> Table scan on t1  (rows=3)
+                -> Table scan on alias1  (rows=3)
 
 SELECT * FROM t1 WHERE EXISTS ( SELECT alias1.f2 FROM t2 LEFT JOIN t1 ON 1 LEFT JOIN t1 AS alias1 ON 1 );
 f1	f2

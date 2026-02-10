@@ -1,4 +1,4 @@
-/*  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2.0,
@@ -104,7 +104,7 @@ class Replacement {
   */
   int number_parameters;
 
-  bool load(MYSQL_THD thd, const std::string replacement);
+  bool load(MYSQL_THD thd, const std::string &replacement);
 
   /**
     If any errors were raised during parsing, the first one is available here.

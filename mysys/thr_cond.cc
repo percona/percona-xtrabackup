@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,8 +37,11 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/types.h>
 
+#include "my_thread.h"
 #include "my_thread_local.h"
+#include "thr_mutex.h"
 
 int safe_cond_wait(native_cond_t *cond, safe_mutex_t *mp, const char *file,
                    uint line) {

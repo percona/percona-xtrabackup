@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@
 
 #include "sql/sql_digest.h"
 
-#include <assert.h>
+#include <cassert>
 #include "lex_string.h"
 
 #include "my_inttypes.h"
@@ -46,6 +46,9 @@
 #include "sql/lex_token.h"
 
 #define SIZE_OF_A_TOKEN 2
+
+/* int stored using 4 bytes */
+#define SIZE_OF_BY_NUMERIC_COLUMN_VALUE 4
 
 ulong max_digest_length = 0;
 ulong get_max_digest_length() { return max_digest_length; }
@@ -151,6 +154,84 @@ inline void store_token_identifier(sql_digest_storage *digest_storage,
     if (id_length > 0) {
       memcpy((char *)(dest + 4), id_name, id_length);
     }
+    digest_storage->m_byte_count += bytes_needed;
+  } else {
+    digest_storage->m_full = true;
+  }
+}
+
+/**
+  Read a numeric column value from token array.
+*/
+inline uint read_by_numeric_column_value(
+    const sql_digest_storage *digest_storage, uint index, ulonglong *value) {
+  uint new_index;
+  const uint safe_byte_count = digest_storage->m_byte_count;
+
+  /* READ: never assert on data, reading can be racy when used concurrently
+   * (pfs). */
+
+  /*
+    token + value are written in an atomic way,
+    so we do always expect a value here
+  */
+
+  uint bytes_needed = SIZE_OF_BY_NUMERIC_COLUMN_VALUE;
+  /* If we can read token and identifier length */
+  if ((safe_byte_count <= digest_storage->m_token_array_length) &&
+      (index + bytes_needed) <= safe_byte_count) {
+    const unsigned char *src = &digest_storage->m_token_array[index];
+    /* If we can read entire value from token array */
+    if ((index + bytes_needed) <= safe_byte_count) {
+      ulonglong val;
+
+      val = src[3];
+      val <<= 8;
+      val += src[2];
+      val <<= 8;
+      val += src[1];
+      val <<= 8;
+      val += src[0];
+
+      *value = val;
+
+      new_index = index + bytes_needed;
+      return new_index;
+    }
+  }
+
+  /* The input byte stream is exhausted. */
+  *value = 0;
+  return MAX_DIGEST_STORAGE_SIZE + 1;
+}
+
+/**
+  Store an TOK_BY_NUMERIC_COLUMN in token array.
+*/
+void store_by_numeric_column_token(sql_digest_storage *digest_storage,
+                                   ulonglong value) {
+  /* WRITE: ok to assert, storing a token is race free. */
+  assert(digest_storage->m_byte_count <= digest_storage->m_token_array_length);
+
+  const size_t bytes_needed = SIZE_OF_A_TOKEN + SIZE_OF_BY_NUMERIC_COLUMN_VALUE;
+  if (digest_storage->m_byte_count + bytes_needed <=
+      (unsigned int)digest_storage->m_token_array_length) {
+    unsigned char *dest =
+        &digest_storage->m_token_array[digest_storage->m_byte_count];
+    /* Write the token */
+    const uint token = TOK_BY_NUMERIC_COLUMN;
+    dest[0] = token & 0xff;
+    dest[1] = (token >> 8) & 0xff;
+    /* Write the token value (4 bytes) */
+    ulonglong val = value;
+    dest[2] = val & 0xff;
+    val >>= 8;
+    dest[3] = val & 0xff;
+    val >>= 8;
+    dest[4] = val & 0xff;
+    val >>= 8;
+    dest[5] = val & 0xff;
+    /* Adjust the length used. */
     digest_storage->m_byte_count += bytes_needed;
   } else {
     digest_storage->m_full = true;
@@ -284,6 +365,28 @@ void compute_digest_text(const sql_digest_storage *digest_storage,
         }
       } break;
 
+      /* All numeric column values are printed with their value. */
+      case TOK_BY_NUMERIC_COLUMN: {
+        ulonglong value = 0;
+        /* Get the next value from the storage buffer. */
+        current_byte =
+            read_by_numeric_column_value(digest_storage, current_byte, &value);
+        if (current_byte > max_digest_length) {
+          /* Truncation */
+          return;
+        }
+
+        if (add_space) {
+          digest_output->append(" ", 1);
+        }
+
+        char buffer[12];
+        snprintf(buffer, sizeof(buffer), "%llu", value);
+        digest_output->append(buffer, strlen(buffer));
+        add_space = true;
+        break;
+      }
+
       /* Everything else is printed as is. */
       default:
         if (add_space) {
@@ -291,7 +394,7 @@ void compute_digest_text(const sql_digest_storage *digest_storage,
           add_space = false;
         }
 
-        int tok_length = tok_data->m_token_length;
+        int const tok_length = tok_data->m_token_length;
 
         digest_output->append(tok_data->m_token_string, tok_length);
         if (tok_data->m_append_space) {
@@ -385,11 +488,18 @@ sql_digest_state *digest_add_token(sql_digest_state *state, uint token,
   digest_storage = &state->m_digest_storage;
 
   /*
-    Stop collecting further tokens if digest storage is full or
-    if END token is received.
+    Stop collecting further tokens if digest storage is full.
   */
-  if (digest_storage->m_full || token == END_OF_INPUT) {
+  if (digest_storage->m_full) {
     return nullptr;
+  }
+
+  /*
+    If END token is received,
+    keep the state live for further reduces.
+  */
+  if (token == END_OF_INPUT) {
+    return state;
   }
 
   /*
@@ -410,7 +520,7 @@ sql_digest_state *digest_add_token(sql_digest_state *state, uint token,
       bool found_unary;
       do {
         found_unary = false;
-        peek_last_two_tokens(digest_storage, state->m_last_id_index,
+        peek_last_two_tokens(digest_storage, state->m_last_peekable_index,
                              &last_token, &last_token2);
 
         if ((last_token == '-') || (last_token == '+')) {
@@ -467,8 +577,8 @@ sql_digest_state *digest_add_token(sql_digest_state *state, uint token,
       */
       token = TOK_GENERIC_VALUE;
 
-      peek_last_two_tokens(digest_storage, state->m_last_id_index, &last_token,
-                           &last_token2);
+      peek_last_two_tokens(digest_storage, state->m_last_peekable_index,
+                           &last_token, &last_token2);
 
       if ((last_token2 == TOK_GENERIC_VALUE ||
            last_token2 == TOK_GENERIC_VALUE_LIST) &&
@@ -492,8 +602,8 @@ sql_digest_state *digest_add_token(sql_digest_state *state, uint token,
       break;
     }
     case ')': {
-      peek_last_two_tokens(digest_storage, state->m_last_id_index, &last_token,
-                           &last_token2);
+      peek_last_two_tokens(digest_storage, state->m_last_peekable_index,
+                           &last_token, &last_token2);
 
       if (last_token == TOK_GENERIC_VALUE && last_token2 == '(') {
         /*
@@ -505,7 +615,7 @@ sql_digest_state *digest_add_token(sql_digest_state *state, uint token,
         token = TOK_ROW_SINGLE_VALUE;
 
         /* Read last two tokens again */
-        peek_last_two_tokens(digest_storage, state->m_last_id_index,
+        peek_last_two_tokens(digest_storage, state->m_last_peekable_index,
                              &last_token, &last_token2);
 
         if ((last_token2 == TOK_ROW_SINGLE_VALUE ||
@@ -541,7 +651,7 @@ sql_digest_state *digest_add_token(sql_digest_state *state, uint token,
         token = TOK_ROW_MULTIPLE_VALUE;
 
         /* Read last two tokens again */
-        peek_last_two_tokens(digest_storage, state->m_last_id_index,
+        peek_last_two_tokens(digest_storage, state->m_last_peekable_index,
                              &last_token, &last_token2);
 
         if ((last_token2 == TOK_ROW_MULTIPLE_VALUE ||
@@ -596,7 +706,7 @@ sql_digest_state *digest_add_token(sql_digest_state *state, uint token,
       store_token_identifier(digest_storage, token, yylen, yytext);
 
       /* Update the index of last identifier found. */
-      state->m_last_id_index = digest_storage->m_byte_count;
+      state->m_last_peekable_index = digest_storage->m_byte_count;
       break;
     }
     case 0: {
@@ -639,8 +749,8 @@ sql_digest_state *digest_reduce_token(sql_digest_state *state, uint token_left,
   uint last_token3;
   uint token_to_push = TOK_UNUSED;
 
-  peek_last_two_tokens(digest_storage, state->m_last_id_index, &last_token,
-                       &last_token2);
+  peek_last_two_tokens(digest_storage, state->m_last_peekable_index,
+                       &last_token, &last_token2);
 
   /*
     There is only one caller of digest_reduce_token(),
@@ -675,8 +785,8 @@ sql_digest_state *digest_reduce_token(sql_digest_state *state, uint token_left,
     token_to_push = last_token;
   }
 
-  peek_last_three_tokens(digest_storage, state->m_last_id_index, &last_token,
-                         &last_token2, &last_token3);
+  peek_last_three_tokens(digest_storage, state->m_last_peekable_index,
+                         &last_token, &last_token2, &last_token3);
 
   if ((last_token3 == TOK_GENERIC_VALUE ||
        last_token3 == TOK_GENERIC_VALUE_LIST) &&
@@ -702,4 +812,241 @@ sql_digest_state *digest_reduce_token(sql_digest_state *state, uint token_left,
   }
 
   return state;
+}
+
+sql_digest_state *digest_adjust_by_numeric_column_token(sql_digest_state *state,
+                                                        ulonglong value) {
+  sql_digest_storage *digest_storage = nullptr;
+
+  digest_storage = &state->m_digest_storage;
+
+  /*
+    Stop collecting further tokens if digest storage is full.
+  */
+  if (digest_storage->m_full) {
+    return nullptr;
+  }
+
+  if ((value == 0) || (value > UINT_MAX32)) {
+    /*
+     * Not a valid column number.
+     * Actual limit on number of column is much less,
+     * here the limitation is to store value using 4 bytes.
+     */
+    return state;
+  }
+
+  uint last_token;
+  uint last_token2;
+  uint last_token3;
+
+  peek_last_three_tokens(digest_storage, state->m_last_peekable_index,
+                         &last_token, &last_token2, &last_token3);
+
+  /*
+    The callers of this code are:
+    - sql/sql_yacc.yy, rule "grouping_expr := expr",
+    - sql/sql_yacc.yy, rule "order_expr := expr opt_ordering_direction",
+    Fix digest for GROUP BY and ORDER BY expressions
+    when the expression is a single literal numeric value.
+  */
+
+  /* First attempt, without an extra token already in the stream. */
+
+  if (last_token == TOK_GENERIC_VALUE) {
+    /*
+     * All the tokens that can precede:
+     *  - a "grouping_expr" non terminal.
+     *  - a "order_expr" non terminal.
+     */
+    if ((last_token2 == BY) || (last_token2 == '(') || (last_token2 == ',')) {
+      /*
+        REPLACE:
+          TOKEN_X GROUP_SYM BY TOK_GENERIC_VALUE .
+          TOKEN_X GROUP_SYM BY ROLLUP_SYM '(' TOK_GENERIC_VALUE .
+          TOKEN_X GROUP_SYM BY CUBE_SYM '(' TOK_GENERIC_VALUE .
+          TOKEN_X PARTITION_SYM BY TOK_GENERIC_VALUE .
+          TOKEN_X ORDER_SYM BY TOK_GENERIC_VALUE .
+          TOKEN_X ',' TOK_GENERIC_VALUE .
+        WITH respectively:
+          TOKEN_X GROUP_SYM BY TOK_BY_NUMERIC_COLUMN value .
+          TOKEN_X GROUP_SYM BY ROLLUP_SYM '(' TOK_BY_NUMERIC_COLUMN value .
+          TOKEN_X GROUP_SYM BY CUBE_SYM '(' TOK_BY_NUMERIC_COLUMN value .
+          TOKEN_X PARTITION_SYM BY TOK_BY_NUMERIC_COLUMN value .
+          TOKEN_X ORDER_SYM BY TOK_BY_NUMERIC_COLUMN value .
+          TOKEN_X ',' TOK_BY_NUMERIC_COLUMN value .
+      */
+
+      /* Remove TOK_GENERIC_VALUE */
+      digest_storage->m_byte_count -= SIZE_OF_A_TOKEN;
+      /* Add TOK_BY_NUMERIC_COLUMN value */
+      store_by_numeric_column_token(digest_storage, value);
+      /* Update the index of last variable length token found. */
+      state->m_last_peekable_index = digest_storage->m_byte_count;
+
+      return state;
+    }
+  }
+
+  /* Second attempt, with a tailing TOKEN_Y already in the stream. */
+
+  if (last_token2 == TOK_GENERIC_VALUE) {
+    /*
+     * All the tokens that can precede:
+     *  - a "grouping_expr" non terminal.
+     *  - a "order_expr" non terminal.
+     */
+    if ((last_token3 == BY) || (last_token3 == '(') || (last_token3 == ',')) {
+      /* clang-format off */
+      /*
+        REPLACE:
+          TOKEN_X GROUP_SYM BY
+            TOK_GENERIC_VALUE TOKEN_Y .
+          TOKEN_X GROUP_SYM BY ROLLUP_SYM '('
+            TOK_GENERIC_VALUE TOKEN_Y .
+          TOKEN_X GROUP_SYM BY CUBE_SYM '('
+            TOK_GENERIC_VALUE TOKEN_Y .
+          TOKEN_X PARTITION_SYM BY
+            TOK_GENERIC_VALUE TOKEN_Y .
+          TOKEN_X ORDER_SYM BY
+            TOK_GENERIC_VALUE TOKEN_Y .
+          TOKEN_X ','
+            TOK_GENERIC_VALUE TOKEN_Y .
+        WITH respectively:
+          TOKEN_X GROUP_SYM BY
+            TOK_BY_NUMERIC_COLUMN value TOKEN_Y .
+          TOKEN_X GROUP_SYM BY ROLLUP_SYM '('
+            TOK_BY_NUMERIC_COLUMN value TOKEN_Y .
+          TOKEN_X GROUP_SYM BY CUBE_SYM '('
+            TOK_BY_NUMERIC_COLUMN value TOKEN_Y .
+          TOKEN_X PARTITION_SYM BY
+            TOK_BY_NUMERIC_COLUMN value TOKEN_Y .
+          TOKEN_X ORDER_SYM BY
+            TOK_BY_NUMERIC_COLUMN value TOKEN_Y .
+          TOKEN_X ','
+            TOK_BY_NUMERIC_COLUMN value TOKEN_Y .
+      */
+      /* clang-format on */
+
+      /* Pop TOKEN_Y */
+      digest_storage->m_byte_count -= SIZE_OF_A_TOKEN;
+      /* Remove TOK_GENERIC_VALUE */
+      digest_storage->m_byte_count -= SIZE_OF_A_TOKEN;
+      /* Add TOK_BY_NUMERIC_COLUMN value */
+      store_by_numeric_column_token(digest_storage, value);
+      /* Update the index of last variable length token found. */
+      state->m_last_peekable_index = digest_storage->m_byte_count;
+      /* Push TOKEN_Y */
+      store_token(digest_storage, last_token);
+
+      return state;
+    }
+  }
+
+  /* Third attempt, CUBE / ROLLUP special case. */
+
+  /*
+   * '(' TOK_GENERIC_VALUE ')' can be reduced to TOK_ROW_SINGLE_VALUE,
+   * so we need to backtrack even more to restore the correct digest.
+   */
+
+  if (last_token == TOK_ROW_SINGLE_VALUE) {
+    /*
+     * All the tokens that can precede:
+     *  - "(group_list)".
+     */
+    if ((last_token2 == ROLLUP_SYM) || (last_token2 == CUBE_SYM)) {
+      /*
+        REPLACE:
+          TOKEN_X GROUP_SYM BY ROLLUP_SYM
+            TOK_ROW_SINGLE_VALUE .
+          TOKEN_X GROUP_SYM BY CUBE_SYM
+            TOK_ROW_SINGLE_VALUE .
+        WITH respectively:
+          TOKEN_X GROUP_SYM BY ROLLUP_SYM
+            '(' TOK_BY_NUMERIC_COLUMN value ')' .
+          TOKEN_X GROUP_SYM BY CUBE_SYM
+            '(' TOK_BY_NUMERIC_COLUMN value ')' .
+      */
+
+      /* Remove TOK_GENERIC_VALUE_LIST */
+      digest_storage->m_byte_count -= SIZE_OF_A_TOKEN;
+      /* Restore the '(' eaten by TOK_ROW_SINGLE_VALUE. */
+      store_token(digest_storage, '(');
+      /* Add TOK_BY_NUMERIC_COLUMN value */
+      store_by_numeric_column_token(digest_storage, value);
+      /* Update the index of last variable length token found. */
+      state->m_last_peekable_index = digest_storage->m_byte_count;
+      /* Restore the ')' eaten by TOK_ROW_SINGLE_VALUE. */
+      store_token(digest_storage, ')');
+
+      return state;
+    }
+  }
+
+  /* Fouth attempt, CUBE / ROLLUP special case. */
+
+  if (last_token2 == TOK_ROW_SINGLE_VALUE) {
+    /*
+     * All the tokens that can precede:
+     *  - "(group_list)".
+     */
+    if ((last_token3 == ROLLUP_SYM) || (last_token3 == CUBE_SYM)) {
+      /*
+        REPLACE:
+          TOKEN_X GROUP_SYM BY ROLLUP_SYM
+            TOK_ROW_SINGLE_VALUE TOKEN_Y .
+          TOKEN_X GROUP_SYM BY CUBE_SYM
+            TOK_ROW_SINGLE_VALUE TOKEN_Y .
+        WITH respectively:
+          TOKEN_X GROUP_SYM BY ROLLUP_SYM
+            '(' TOK_BY_NUMERIC_COLUMN value ')' TOKEN_Y .
+          TOKEN_X GROUP_SYM BY CUBE_SYM
+            '(' TOK_BY_NUMERIC_COLUMN value ')' TOKEN_Y .
+      */
+
+      /* Pop TOKEN_Y */
+      digest_storage->m_byte_count -= SIZE_OF_A_TOKEN;
+      /* Remove TOK_GENERIC_VALUE_LIST */
+      digest_storage->m_byte_count -= SIZE_OF_A_TOKEN;
+      /* Restore the '(' eaten by TOK_ROW_SINGLE_VALUE. */
+      store_token(digest_storage, '(');
+      /* Add TOK_BY_NUMERIC_COLUMN value */
+      store_by_numeric_column_token(digest_storage, value);
+      /* Update the index of last variable length token found. */
+      state->m_last_peekable_index = digest_storage->m_byte_count;
+      /* Restore the ')' eaten by TOK_ROW_SINGLE_VALUE. */
+      store_token(digest_storage, ')');
+      /* Push TOKEN_Y */
+      store_token(digest_storage, last_token);
+
+      return state;
+    }
+  }
+
+  return state;
+}
+
+void sql_digest_storage::prefix_and_copy(uint prefix_token,
+                                         const sql_digest_storage *from) {
+  reset();
+
+  if (m_token_array_length < SIZE_OF_A_TOKEN) {
+    return;
+  }
+
+  store_token(this, prefix_token);
+
+  const size_t byte_count_copy =
+      m_token_array_length - SIZE_OF_A_TOKEN < from->m_byte_count
+          ? m_token_array_length - SIZE_OF_A_TOKEN
+          : from->m_byte_count;
+
+  if (byte_count_copy > 0) {
+    m_byte_count += byte_count_copy;
+    m_charset_number = from->m_charset_number;
+    memcpy(m_token_array + SIZE_OF_A_TOKEN, from->m_token_array,
+           byte_count_copy);
+    compute_digest_hash(this, m_hash);
+  }
 }

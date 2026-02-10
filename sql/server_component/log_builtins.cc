@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -30,9 +30,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #define LOG_SUBSYSTEM_TAG "Server"
 
+#include <atomic>
+
 #include "log_builtins_filter_imp.h"
 #include "log_builtins_imp.h"  // internal structs
                                // connection_events_loop_aborted()
+#include "sql/server_component/mysql_timestamp_imp.h"  //make_iso8601_timestamp
 
 #include "log_sink_buffer.h"
 #include "log_sink_perfschema.h"
@@ -46,7 +49,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "my_time.h"  // str_to_datetime()
 
 #include "sql/current_thd.h"  // current_thd
-#include "sql/log.h"          // make_iso8601_timestamp, log_write_errstream,
+#include "sql/log.h"          // log_write_errstream,
                               // log_get_thread_id, mysql_errno_to_symbol,
                               // mysql_symbol_to_errno, log_vmessage,
                               // error_message_for_error_log
@@ -1046,6 +1049,21 @@ enum loglevel log_prio_from_label(const char *label) {
   @retval false success
 */
 bool log_line_error_stack_run(log_line *ll) {
+  /*
+    If we have enabled the diagnostic log, then the diagnostic messages
+    are treated separately without running through the service stack. If we
+    have not enabled the diagnostic log, then diagnostic messages are ignored.
+  */
+  if (ll->seen & LOG_ITEM_LOG_TYPE) {
+    const int n = log_line_index_by_type(ll, LOG_ITEM_LOG_TYPE);
+    const enum enum_log_type log_type =
+        (enum enum_log_type)ll->item[n].data.data_integer;
+    if (log_type == LOG_TYPE_DIAG) {
+      if (log_diagnostic_enable) log_sink_trad(nullptr, ll);
+      return false;
+    }
+  }
+
   // Get S-lock.
   mysql_rwlock_rdlock(&THR_LOCK_log_stack);
 
@@ -1153,7 +1171,7 @@ void log_line_set_flag(log_line *ll, log_line_flags_mask mask,
 */
 int log_line_submit(log_line *ll) {
   log_item_iter iter_save;
-  static ulonglong previous_microtime = 0;
+  static std::atomic_uint64_t previous_microtime = 0;
 
   DBUG_TRACE;
 
@@ -1210,8 +1228,8 @@ int log_line_submit(log_line *ll) {
       else
         previous_microtime = now;
 
-      make_iso8601_timestamp(local_time_buff, now,
-                             iso8601_sysvar_logtimestamps);
+      Mysql_timestamp_imp::make_iso8601_timestamp(local_time_buff, now,
+                                                  iso8601_sysvar_logtimestamps);
 
       d = log_line_item_set(ll, LOG_ITEM_LOG_TIMESTAMP);
       d->data_string.str = local_time_buff;
@@ -1221,7 +1239,7 @@ int log_line_submit(log_line *ll) {
     /* auto-add a ts item if needed */
     if (!(ll->seen & LOG_ITEM_LOG_TS) && !log_line_full(ll)) {
       log_item_data *d;
-      ulonglong now = my_milli_time();
+      ulonglong now = my_micro_time() / 1000ULL;  // milliseconds
 
       DBUG_EXECUTE_IF("log_error_normalize", { now = 0; });
 
@@ -1431,76 +1449,6 @@ int log_line_submit(log_line *ll) {
   ll->iter = iter_save;
 
   return ll->count;
-}
-
-/**
-  Make and return an ISO 8601 / RFC 3339 compliant timestamp.
-  Accepts the log_timestamps global variable in its third parameter.
-
-  @param buf       A buffer of at least iso8601_size bytes to store
-                   the timestamp in. The timestamp will be \0 terminated.
-  @param utime     Microseconds since the epoch
-  @param mode      if 0, use UTC; if 1, use local time
-
-  @retval          length of timestamp (excluding \0)
-*/
-int make_iso8601_timestamp(char *buf, ulonglong utime,
-                           enum enum_iso8601_tzmode mode) {
-  struct tm my_tm;
-  char tzinfo[8] = "Z";  // max 6 chars plus \0
-  size_t len;
-  time_t seconds;
-
-  seconds = utime / 1000000;
-  utime = utime % 1000000;
-
-  if (mode == iso8601_sysvar_logtimestamps)
-    mode = (opt_log_timestamps == 0) ? iso8601_utc : iso8601_system_time;
-
-  if (mode == iso8601_utc)
-    gmtime_r(&seconds, &my_tm);
-  else if (mode == iso8601_system_time) {
-    localtime_r(&seconds, &my_tm);
-
-#ifdef HAVE_TM_GMTOFF
-    /*
-      The field tm_gmtoff is the offset (in seconds) of the time represented
-      from UTC, with positive values indicating east of the Prime Meridian.
-      Originally a BSDism, this is also supported in glibc, so this should
-      cover the majority of our platforms.
-    */
-    long tim = -my_tm.tm_gmtoff;
-#else
-    /*
-      Work this out "manually".
-    */
-    struct tm my_gm;
-    long tim, gm;
-    gmtime_r(&seconds, &my_gm);
-    gm = (my_gm.tm_sec + 60 * (my_gm.tm_min + 60 * my_gm.tm_hour));
-    tim = (my_tm.tm_sec + 60 * (my_tm.tm_min + 60 * my_tm.tm_hour));
-    tim = gm - tim;
-#endif
-    char dir = '-';
-
-    if (tim < 0) {
-      dir = '+';
-      tim = -tim;
-    }
-    snprintf(tzinfo, sizeof(tzinfo), "%c%02u:%02u", dir,
-             (unsigned int)((tim / (60 * 60)) % 100),
-             (unsigned int)((tim / 60) % 60));
-  } else {
-    assert(false);
-  }
-
-  // length depends on whether timezone is "Z" or "+12:34" style
-  len = snprintf(buf, iso8601_size, "%04d-%02d-%02dT%02d:%02d:%02d.%06lu%s",
-                 my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday,
-                 my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec,
-                 (unsigned long)utime, tzinfo);
-
-  return std::min<int>((int)len, iso8601_size - 1);
 }
 
 /**
@@ -3218,7 +3166,7 @@ DEFINE_METHOD(log_service_error, log_builtins_imp::write_errstream,
   log_errstream *les = static_cast<log_errstream *>(my_errstream);
 
   if ((les == nullptr) || (les->file == nullptr))
-    log_write_errstream(buffer, length);
+    log_write_errstream(buffer, length, LOG_TYPE_ERROR);
   else {
     mysql_mutex_lock(&les->LOCK_errstream);
     fprintf(les->file, "%.*s\n", (int)length, buffer);

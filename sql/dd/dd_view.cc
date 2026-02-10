@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -211,6 +211,49 @@ static dd::View::enum_security_type dd_get_new_view_security_type(
 }
 
 /**
+ * @brief Helper function to get type in string format for a view type.
+ *        View type in string format is used store "view_type='<type>'"
+ *        option in options column of DD table.
+ *
+ * @param type       View type.
+ *
+ * @returns View type in string form.
+ */
+static String_type get_dd_view_type(enum_view_type type) {
+  switch (type) {
+    case enum_view_type::SQL_VIEW:
+      return String_type("SQL");
+
+    case enum_view_type::JSON_DUALITY_VIEW:
+      return String_type("JSON_DUALITY");
+
+    case enum_view_type::UNDEFINED:
+    default:
+      break;
+  }
+
+  /* purecov: begin deadcode */
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, "view type.");
+  assert(false);
+
+  return String_type("SQL");
+  /* purecov: end */
+}
+
+enum_view_type get_sql_view_type(String_type dd_view_type) {
+  if (dd_view_type == "SQL") return enum_view_type::SQL_VIEW;
+
+  if (dd_view_type == "JSON_DUALITY") return enum_view_type::JSON_DUALITY_VIEW;
+
+  /* purecov: begin deadcode */
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, "view type.");
+  assert(false);
+
+  return enum_view_type::SQL_VIEW;
+  /* purecov: end */
+}
+
+/**
   Method to fill view columns from the first Query_block of view query.
 
   @param  thd       Thread Handle.
@@ -316,9 +359,9 @@ static bool fill_dd_view_columns(THD *thd, View *view_obj,
       }
     } else {
       Field *from_field, *default_field;
-      tmp_field = create_tmp_field(thd, &table, item, item->type(), nullptr,
-                                   &from_field, &default_field, false, false,
-                                   false, false);
+      tmp_field =
+          create_tmp_field(thd, &table, item, item->type(), nullptr,
+                           &from_field, &default_field, false, false, false);
     }
     if (!tmp_field) {
       my_error(ER_OUT_OF_RESOURCES, MYF(ME_FATALERROR));
@@ -495,6 +538,15 @@ static bool fill_dd_view_definition(THD *thd, View *view_obj, Table_ref *view) {
   // Set updatable.
   view_obj->set_updatable(view->updatable_view);
 
+  // Set materialization_engine.
+  dd::Properties *options = &view_obj->options();
+  if (view->is_mv_se_materialized()) {
+    options->set("materialization_engine",
+                 make_string_type(view->get_mv_se_name()));
+  } else {
+    options->remove("materialization_engine");
+  }
+
   // Set check option.
   view_obj->set_check_option(dd_get_new_view_check_type(view->with_check));
 
@@ -549,6 +601,8 @@ static bool fill_dd_view_definition(THD *thd, View *view_obj, Table_ref *view) {
   view_options->set("timestamp",
                     String_type(view->timestamp.str, view->timestamp.length));
   view_options->set("view_valid", true);
+
+  view_options->set("view_type", get_dd_view_type(view->view_type));
 
   /*
     Fill view columns information in View object.
@@ -631,6 +685,15 @@ bool read_view(Table_ref *view, const dd::View &view_obj, MEM_ROOT *mem_root) {
   // Get updatable.
   view->updatable_view = view_obj.is_updatable();
 
+  // Get is_materialized.
+  const dd::Properties *options = &view_obj.options();
+  view->set_mv_se_materialized(options->exists("materialization_engine"));
+  if (view->is_mv_se_materialized()) {
+    LEX_CSTRING engine_name{};
+    options->get("materialization_engine", &engine_name, mem_root);
+    view->set_mv_se_name(engine_name);
+  }
+
   // Get check option.
   view->with_check = dd_get_old_view_check_type(view_obj.check_option());
 
@@ -642,6 +705,15 @@ bool read_view(Table_ref *view, const dd::View &view_obj, MEM_ROOT *mem_root) {
 
   // Mark true, if we are reading a system view.
   view->is_system_view = (view_obj.type() == dd::enum_table_type::SYSTEM_VIEW);
+
+  // Get view type.
+  const dd::Properties *view_options = &view_obj.options();
+  String_type view_type = "SQL";
+  if (view_options->exists("view_type") &&
+      view_options->get("view_type", &view_type)) {
+    return true;
+  }
+  view->view_type = get_sql_view_type(view_type);
 
   // Get definition.
   String_type view_definition = view_obj.definition();

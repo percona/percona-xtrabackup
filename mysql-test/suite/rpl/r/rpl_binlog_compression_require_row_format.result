@@ -37,25 +37,25 @@ master-bin.000002	#	Query	#	#	use `test`; CREATE TABLE t1 (c1 INT UNSIGNED PRIMA
 master-bin.000002	#	Transaction_payload	#	#	compression='ZSTD', decompressed_size=## bytes
 master-bin.000002	#	Query	#	#	BEGIN
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Xid	#	#	COMMIT /* XID */
 [connection slave]
 include/rpl/start_receiver.inc
@@ -73,25 +73,25 @@ slave-relay-bin.000006	#	Query	#	#	use `test`; CREATE TABLE t1 (c1 INT UNSIGNED 
 slave-relay-bin.000006	#	Transaction_payload	#	#	compression='ZSTD', decompressed_size=## bytes
 slave-relay-bin.000006	#	Query	#	#	BEGIN
 slave-relay-bin.000006	#	Table_map	#	#	table_id: # (test.t1)
-slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-relay-bin.000006	#	Table_map	#	#	table_id: # (test.t1)
-slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-relay-bin.000006	#	Table_map	#	#	table_id: # (test.t1)
-slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-relay-bin.000006	#	Table_map	#	#	table_id: # (test.t1)
-slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-relay-bin.000006	#	Table_map	#	#	table_id: # (test.t1)
-slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-relay-bin.000006	#	Table_map	#	#	table_id: # (test.t1)
-slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-relay-bin.000006	#	Table_map	#	#	table_id: # (test.t1)
-slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-relay-bin.000006	#	Table_map	#	#	table_id: # (test.t1)
-slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-relay-bin.000006	#	Table_map	#	#	table_id: # (test.t1)
-slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-relay-bin.000006	#	Table_map	#	#	table_id: # (test.t1)
-slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-relay-bin.000006	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-relay-bin.000006	#	Xid	#	#	COMMIT /* XID */
 include/rpl/start_applier.inc
 Warnings:
@@ -106,25 +106,25 @@ slave-bin.000002	#	Query	#	#	use `test`; CREATE TABLE t1 (c1 INT UNSIGNED PRIMAR
 slave-bin.000002	#	Transaction_payload	#	#	compression='ZSTD', decompressed_size=## bytes
 slave-bin.000002	#	Query	#	#	BEGIN
 slave-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+slave-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 slave-bin.000002	#	Xid	#	#	COMMIT /* XID */
 [connection master]
 DROP TABLE t1;

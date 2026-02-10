@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,7 @@
 #include "sql/dd/impl/types/routine_impl.h"
 
 #include <new>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -51,6 +52,8 @@ using dd::tables::Routines;
 
 namespace dd {
 
+static const std::set<String_type> default_valid_option_keys = {"libraries"};
+
 ///////////////////////////////////////////////////////////////////////////
 // Routine_impl implementation.
 ///////////////////////////////////////////////////////////////////////////
@@ -63,6 +66,7 @@ Routine_impl::Routine_impl()
       m_sql_mode(0),
       m_created(0),
       m_last_altered(0),
+      m_options(default_valid_option_keys),
       m_parameters(),
       m_schema_id(INVALID_OBJECT_ID),
       m_client_collation_id(INVALID_OBJECT_ID),
@@ -142,6 +146,7 @@ bool Routine_impl::restore_attributes(const Raw_record &r) {
   m_parameter_str = r.read_str(Routines::FIELD_PARAMETER_STR);
   m_comment = r.read_str(Routines::FIELD_COMMENT);
   m_external_language = r.read_str(Routines::FIELD_EXTERNAL_LANGUAGE);
+  set_options(r.read_str(Routines::FIELD_OPTIONS, ""));
 
   // Read definer user/host
   {
@@ -189,7 +194,8 @@ bool Routine_impl::store_attributes(Raw_record *r) {
          r->store(Routines::FIELD_SCHEMA_COLLATION_ID, m_schema_collation_id) ||
          r->store(Routines::FIELD_CREATED, m_created) ||
          r->store(Routines::FIELD_LAST_ALTERED, m_last_altered) ||
-         r->store(Routines::FIELD_COMMENT, m_comment, m_comment.empty());
+         r->store(Routines::FIELD_COMMENT, m_comment, m_comment.empty()) ||
+         r->store(Routines::FIELD_OPTIONS, m_options);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -223,6 +229,7 @@ void Routine_impl::debug_print(String_type &outb) const {
      << "m_client_collation_id: " << m_client_collation_id << "; "
      << "m_connection_collation_id: " << m_connection_collation_id << "; "
      << "m_schema_collation_id: " << m_schema_collation_id << "; "
+     << "m_options: " << m_options.size() << "; "
      << "m_parameters: " << m_parameters.size() << " [ ";
 
   for (const Parameter *f : parameters()) {
@@ -277,6 +284,7 @@ Routine_impl::Routine_impl(const Routine_impl &src)
       m_definer_host(src.m_definer_host),
       m_comment(src.m_comment),
       m_external_language(src.m_external_language),
+      m_options{src.m_options},
       m_parameters(),
       m_schema_id(src.m_schema_id),
       m_client_collation_id(src.m_client_collation_id),
@@ -309,9 +317,22 @@ void Routine::create_mdl_key(enum_routine_type type,
   size_t len = normalize_string(DD_table::name_collation(), name,
                                 normalized_name, sizeof(normalized_name));
 
-  mdl_key->mdl_key_init(
-      type == RT_FUNCTION ? MDL_key::FUNCTION : MDL_key::PROCEDURE,
-      schema_name.c_str(), normalized_name, len, name.c_str());
+  auto mdl_namespace = MDL_key::PROCEDURE;
+  switch (type) {
+    case RT_FUNCTION:
+      mdl_namespace = MDL_key::FUNCTION;
+      break;
+    case RT_PROCEDURE:
+      mdl_namespace = MDL_key::PROCEDURE;
+      break;
+    case RT_LIBRARY:
+      mdl_namespace = MDL_key::LIBRARY;
+      break;
+    default:
+      assert(false);
+  }
+  mdl_key->mdl_key_init(mdl_namespace, schema_name.c_str(), normalized_name,
+                        len, name.c_str());
 }
 
 ///////////////////////////////////////////////////////////////////////////

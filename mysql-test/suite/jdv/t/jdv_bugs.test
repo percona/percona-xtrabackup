@@ -1,0 +1,41 @@
+
+
+--echo #
+--echo # Bug#38175557 - Json Duality View: derived_merge=off optimizer hint not working
+--echo #
+
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT);
+INSERT INTO t1 VALUES (3, 8), (1, 7), (5, 5), (7, 5);
+ANALYZE TABLE t1;
+
+CREATE OR REPLACE JSON DUALITY VIEW dv1 AS SELECT
+   JSON_DUALITY_OBJECT(WITH (INSERT, UPDATE, DELETE)
+                       "_id" : f1,
+                       "f2"  : f2) FROM t1;
+
+SET @optimizer_switch_saved= @@optimizer_switch;
+
+SET optimizer_switch="derived_merge=on";
+EXPLAIN SELECT * FROM dv1 WHERE json_value(data, '$._id') = 1;
+SELECT * FROM dv1 WHERE json_value(data, '$._id') = 1;
+
+EXPLAIN SELECT * FROM dv1 WHERE json_value(data, '$.f2') = 5;
+SELECT * FROM dv1 WHERE json_value(data, '$.f2') = 5;
+
+SET optimizer_switch="derived_merge=off";
+--echo # Without fix, deriver_merge=off does not have any effect.
+--echo # Optimizer does attempts to merge derived tables. As a result,
+--echo # following explain dumps same information as EXPLAIN with
+--echo # derived_merge=on.
+--echo # With fix, optimizer does not attempts to merge derived tables
+--echo # when "derived_merge=off" for SELECTs.
+EXPLAIN SELECT * FROM dv1 WHERE json_value(data, '$._id') = 1;
+SELECT * FROM dv1 WHERE json_value(data, '$._id') = 1;
+
+EXPLAIN SELECT * FROM dv1 WHERE json_value(data, '$.f2') = 5;
+SELECT * FROM dv1 WHERE json_value(data, '$.f2') = 5;
+
+SET @@optimizer_switch= @optimizer_switch_saved;
+
+DROP VIEW dv1;
+DROP TABLE t1;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -149,16 +149,18 @@ constexpr double kSortOneRowCost = 0.15 / kUnitCostInMicroseconds;
 /// is clear that it would be worth taking this into account in the cost model.
 constexpr double kSortComparisonCost = 0.014 / kUnitCostInMicroseconds;
 
-/// Hash join constants.
-constexpr double kHashBuildOneRowCost = 0.65 / kUnitCostInMicroseconds;
-constexpr double kHashProbeOneRowCost = 0.09 / kUnitCostInMicroseconds;
-constexpr double kHashReturnOneRowCost = 0.06 / kUnitCostInMicroseconds;
-
 /// In need of calibration.
-constexpr double kAggregateOneRowCost = 0.1 / kUnitCostInMicroseconds;
-constexpr double kStreamOneRowCost = 0.01 / kUnitCostInMicroseconds;
-constexpr double kMaterializeOneRowCost = 0.1 / kUnitCostInMicroseconds;
+constexpr double kDedupOneRowCost = 0.1 / kUnitCostInMicroseconds;
 constexpr double kWindowOneRowCost = 0.1 / kUnitCostInMicroseconds;
-constexpr double kTempTableAggLookupCost = 0.1 / kUnitCostInMicroseconds;
+
+/// The new Hypergraph cost model no longer uses these constants.
+constexpr double kAggregateOneRowCostOldModel = 0.1 / kUnitCostInMicroseconds;
+constexpr double kMaterializeOneRowCostOldModel = 0.1 / kUnitCostInMicroseconds;
+
+/// For WL16117, all calibration was done on a particular machine where the
+/// cost of reading a row was found to be a bit different than
+/// kUnitCostInMicroseconds. Hence a separate cost constant for these particular
+/// Access paths included in the worklog.
+constexpr double kUnitCostInMicrosecondsWL16117 = 0.492;
 
 #endif  // SQL_JOIN_OPTIMIZER_COST_CONSTANTS_H_

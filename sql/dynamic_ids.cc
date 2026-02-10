@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,8 @@
 
 #include "sql/dynamic_ids.h"
 
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cstdlib>
 
 #include "m_string.h"  // my_strtok_r
 #include "my_dbug.h"
@@ -50,12 +50,9 @@ bool Server_ids::unpack_dynamic_ids(char *param_dynamic_ids) {
   num_items = atoi(token);
   for (uint i = 0; i < num_items; i++) {
     token = my_strtok_r(nullptr, " ", &last);
-    if (token == nullptr)
-      return true;
-    else {
-      const ulong val = atol(token);
-      dynamic_ids.insert_unique(val);
-    }
+    if (token == nullptr) return true;
+    const ulong val = atol(token);
+    dynamic_ids.insert_unique(val);
   }
   return false;
 }
@@ -65,8 +62,7 @@ bool Server_ids::pack_dynamic_ids(String *buffer) {
 
   if (buffer->set_int(dynamic_ids.size(), false, &my_charset_bin)) return true;
 
-  for (ulong i = 0; i < dynamic_ids.size(); i++) {
-    ulong s_id = dynamic_ids[i];
+  for (const unsigned long s_id : dynamic_ids) {
     if (buffer->append(" ") || buffer->append_ulonglong(s_id)) return true;
   }
 

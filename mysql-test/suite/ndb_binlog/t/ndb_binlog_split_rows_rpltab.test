@@ -1,0 +1,522 @@
+--source include/have_ndb.inc
+--source include/have_binlog_format_mixed_or_row.inc
+
+# Establish connections
+--connect(mysqld1,127.0.0.1,root,,test,$MASTER_MYPORT,)
+--connect(mysqld2,127.0.0.1,root,,test,$MASTER_MYPORT1,)
+--connect(mysqld3,127.0.0.1,root,,test,$MASTER_MYPORT2,)
+--connect(mysqld4,127.0.0.1,root,,test,$MASTER_MYPORT3,)
+
+# Supressors
+--connection mysqld1
+--disable_query_log ONCE
+call mtr.add_suppression("mysqld startup An incident event has been written");
+--connection mysqld2
+--disable_query_log ONCE
+call mtr.add_suppression("mysqld startup An incident event has been written");
+--connection mysqld3
+--disable_query_log ONCE
+call mtr.add_suppression("mysqld startup An incident event has been written");
+--connection mysqld4
+--disable_query_log ONCE
+call mtr.add_suppression("mysqld startup An incident event has been written");
+
+
+
+--echo #########################################################################
+--echo # WL#15413 Subscriber row hash filter - NDB Replication Table
+--echo #########################################################################
+--echo # General Tests
+--echo #########################################################################
+
+--echo # Allow ndb_replication table upgrade.
+
+--connection mysqld1
+--let $server1_id=`SELECT @@server_id`
+CREATE TABLE mysql.ndb_replication (
+    db VARBINARY(63),
+    table_name VARBINARY(63),
+    server_id INT UNSIGNED,
+    binlog_type INT UNSIGNED,
+    conflict_fn VARBINARY(128),
+    PRIMARY KEY USING HASH (db, table_name, server_id)
+) ENGINE=NDB PARTITION BY KEY(db,table_name);
+
+eval INSERT INTO mysql.ndb_replication VALUES
+    ("test", "t1", $server1_id, 1, NULL),
+    ("test", "t2", $server1_id, 1, NULL),
+    ("test", "t3", $server1_id, 1, NULL);
+
+--connection mysqld2
+--let $server2_id=`SELECT @@server_id`
+eval INSERT INTO mysql.ndb_replication VALUES
+    ("test", "t1", $server2_id, 1, NULL),
+    ("test", "t2", $server2_id, 1, NULL),
+    ("test", "t3", $server2_id, 1, NULL);
+
+--connection mysqld3
+--let $server3_id=`SELECT @@server_id`
+eval INSERT INTO mysql.ndb_replication VALUES
+    ("test", "t1", $server3_id, 1, NULL),
+    ("test", "t2", $server3_id, 1, NULL),
+    ("test", "t3", $server3_id, 1, NULL);
+
+--connection mysqld4
+--let $server4_id=`SELECT @@server_id`
+eval INSERT INTO mysql.ndb_replication VALUES
+    ("test", "t1", $server4_id, 1, NULL),
+    ("test", "t2", $server4_id, 1, NULL),
+    ("test", "t3", $server4_id, 1, NULL);
+
+ALTER TABLE mysql.ndb_replication ADD COLUMN binlog_row_slice_count INT UNSIGNED AFTER binlog_type;
+ALTER TABLE mysql.ndb_replication ADD COLUMN binlog_row_slice_id INT UNSIGNED AFTER binlog_type;
+DESCRIBE mysql.ndb_replication;
+
+--echo # Table t1 should have NULL binlog_row_slice parameters
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+SELECT * FROM mysql.ndb_replication WHERE table_name = "t1";
+DROP TABLE t1;
+--echo # If toggling binlog_row_slice parameters, the last action must prevail
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 1
+     WHERE table_name = "t1" AND server_id = $server4_id;
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+DROP TABLE t1;
+# Reason: If there is incorrect NULL assignment and bogus data exist,
+# set_filter function will fail Ndb binlog setup
+--echo ## Using a BLOB column to assess that it must not fail table creation
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = NULL, binlog_row_slice_id = NULL
+     WHERE table_name = "t1" AND server_id = $server4_id;
+CREATE TABLE t1 (k INT PRIMARY KEY, b BLOB) ENGINE = NDB;
+DROP TABLE t1;
+
+--echo # If values are over maximum allowed, schema check and table creation fail
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 257, binlog_row_slice_id = 0
+     WHERE table_name = "t1" AND server_id = $server4_id;
+--error ER_CANT_CREATE_TABLE
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+SHOW WARNINGS;
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 256, binlog_row_slice_id = 256
+     WHERE table_name = "t1" AND server_id = $server4_id;
+--error ER_CANT_CREATE_TABLE
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+SHOW WARNINGS;
+
+--echo # If one of the binlog_row_slice parameters isn't set, schema check fails
+--echo # and table creation fails
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = NULL
+     WHERE table_name = "t1" AND server_id = $server4_id;
+--error ER_CANT_CREATE_TABLE
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+SHOW WARNINGS;
+
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = NULL, binlog_row_slice_id = 0
+     WHERE table_name = "t1" AND server_id = $server4_id;
+--error ER_CANT_CREATE_TABLE
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+SHOW WARNINGS;
+
+--echo # #######################################################################
+--echo # First scenario:
+--echo #
+--echo # In this test, there are two split groups of binlogged rows: group 0
+--echo # logged by mysqld.1 and mysqld.2, and group 1 logged by mysqld.3 and
+--echo # mysqld.4. (mysqld.1 == mysqld.3 && mysqld.2 == mysqld.4)
+--echo # In the end, the binlogged rows must match what has been written.
+--echo
+
+--connection mysqld1
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 0
+     WHERE table_name = "t1" AND server_id = $server1_id;
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 1
+     WHERE table_name = "t1" AND server_id = $server2_id;
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 0
+     WHERE table_name = "t1" AND server_id = $server3_id;
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 1
+     WHERE table_name = "t1" AND server_id = $server4_id;
+
+SELECT * FROM mysql.ndb_replication WHERE table_name = 't1'; # comment out to debug
+
+CREATE TABLE t1 (k INT PRIMARY KEY, a VARCHAR(128), b VARBINARY(128)) ENGINE = NDB;
+--save_master_pos
+
+# Only need to save for 2 servers, as the other pair is doing the same
+# Mysqld.1 - Save binlog file and positions after table created
+--let $binlog_file1= query_get_value("SHOW BINARY LOG STATUS", File, 1)
+--let $binlog_pos1= query_get_value("SHOW BINARY LOG STATUS", Position, 1)
+
+# Mysqld.2 - Save binlog file and positions after table created
+--connection mysqld2
+--let $binlog_file2= query_get_value("SHOW BINARY LOG STATUS", File, 1)
+--let $binlog_pos2= query_get_value("SHOW BINARY LOG STATUS", Position, 1)
+
+INSERT INTO t1 VALUES (1, 'first', x'6F6464'),
+                      (2, 'second', x'6576656E'),
+                      (3, 'third', x'6F6464'),
+                      (4, 'fourth', x'6576656E'),
+                      (5, 'fifth', x'6F6464'),
+                      (6, 'sixth', x'6576656E'),
+                      (7, 'seventh', x'6F6464'),
+                      (8, 'eighth', x'6576656E'),
+                      (9, 'ninth', x'6F6464'),
+                      (10, 'tenth', x'6576656E'),
+                      (11, 'eleventh', x'6F6464'),
+                      (12, 'twelfth', x'6576656E');
+--save_master_pos
+
+# Disable log-bin on all servers
+--connection mysqld1
+SET sql_log_bin = 'OFF';
+--connection mysqld2
+SET sql_log_bin = 'OFF';
+--connection mysqld3
+SET sql_log_bin = 'OFF';
+--connection mysqld4
+SET sql_log_bin = 'OFF';
+
+# Mysqld.4 - Save the count of data to assert later the distribution
+--let $data_volume=`SELECT COUNT(*) FROM t1`
+
+# Mysqld.4 - Now delete all data
+DELETE FROM t1;
+SELECT COUNT(*) FROM t1;
+
+# Back to Mysqld.1
+--connection mysqld1
+
+--let $MYSQLD_DATADIR= `select @@datadir;`
+# Import one at a time verifying that binlogged data is split
+--let $binlog_fullpath= $MYSQLD_DATADIR/$binlog_file1
+--let $binlog_position= $binlog_pos1
+--let $mysqlbinlog_pipe= > $MYSQLTEST_VARDIR/tmp/mysql1_binlog.sql
+--source include/rpl/mysqlbinlog.inc
+--exec $MYSQL -uroot < $MYSQLTEST_VARDIR/tmp/mysql1_binlog.sql
+
+--echo # Should be close to $data_volume/2
+--eval SET @data_volume = $data_volume/2
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t1;
+
+--connection mysqld2
+--let $MYSQLD_DATADIR= `select @@datadir;`
+--let $binlog_fullpath= $MYSQLD_DATADIR/$binlog_file2
+--let $binlog_position= $binlog_pos2
+--let $mysqlbinlog_pipe= > $MYSQLTEST_VARDIR/tmp/mysql2_binlog.sql
+--source include/rpl/mysqlbinlog.inc
+--exec $MYSQL -uroot < $MYSQLTEST_VARDIR/tmp/mysql2_binlog.sql
+
+--echo # Must be equal to 12
+SELECT COUNT(*) FROM t1;
+
+# Re-enable log-bin on all servers
+--connection mysqld1
+SET sql_log_bin = 'ON';
+--connection mysqld2
+SET sql_log_bin = 'ON';
+--connection mysqld3
+SET sql_log_bin = 'ON';
+--connection mysqld4
+SET sql_log_bin = 'ON';
+
+--echo # #######################################################################
+--echo # Second scenario:
+--echo #
+--echo # In this test, there are four split groups of binlogged rows: group 0
+--echo # logged by mysqld.1, group 1 logged by mysqld.2, group 2 logged by
+--echo # mysqld.3 and group 3 logged by mysqld.4.
+--echo # (mysqld.1 != mysqld.2 != mysqld.3 != mysqld.4)
+--echo # In the end, the binlogged rows must match what has been written.
+--echo
+
+--connection mysqld1
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 4, binlog_row_slice_id = 0
+     WHERE table_name = "t2" AND server_id = $server1_id;
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 4, binlog_row_slice_id = 1
+     WHERE table_name = "t2" AND server_id = $server2_id;
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 4, binlog_row_slice_id = 2
+     WHERE table_name = "t2" AND server_id = $server3_id;
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 4, binlog_row_slice_id = 3
+     WHERE table_name = "t2" AND server_id = $server4_id;
+
+SELECT * FROM mysql.ndb_replication WHERE table_name = 't2'; # comment out to debug
+
+CREATE TABLE t2 (k INT PRIMARY KEY, a VARCHAR(1024), b VARBINARY(2048)) ENGINE = NDB;
+--save_master_pos
+
+# Mysqld.1 - Save binlog file and positions after table created
+--let $binlog_file1= query_get_value("SHOW BINARY LOG STATUS", File, 1)
+--let $binlog_pos1= query_get_value("SHOW BINARY LOG STATUS", Position, 1)
+
+# Mysqld.2 - Save binlog file and positions after table created
+--connection mysqld2
+--let $binlog_file2= query_get_value("SHOW BINARY LOG STATUS", File, 1)
+--let $binlog_pos2= query_get_value("SHOW BINARY LOG STATUS", Position, 1)
+
+# Mysqld.3 - Save binlog file and positions after table created
+--connection mysqld3
+--let $binlog_file3= query_get_value("SHOW BINARY LOG STATUS", File, 1)
+--let $binlog_pos3= query_get_value("SHOW BINARY LOG STATUS", Position, 1)
+
+# Mysqld.4 - Save binlog file and positions after table created
+--connection mysqld4
+--let $binlog_file4= query_get_value("SHOW BINARY LOG STATUS", File, 1)
+--let $binlog_pos4= query_get_value("SHOW BINARY LOG STATUS", Position, 1)
+
+INSERT INTO t2 VALUES (1, 'first', x'6F6464'),
+                      (2, 'second', x'6576656E'),
+                      (3, 'first', x'6F6464'),
+                      (4, 'second', x'6576656E'),
+                      (5, 'first', x'6F6464'),
+                      (6, 'second', x'6576656E'),
+                      (7, 'first', x'6F6464'),
+                      (8, 'second', x'6576656E'),
+                      (9, 'first', x'6F6464'),
+                      (10, 'second', x'6576656E'),
+                      (11, 'first', x'6F6464'),
+                      (12, 'second', x'6576656E');
+--save_master_pos
+
+# Disable log-bin on all servers
+--connection mysqld1
+SET sql_log_bin = 'OFF';
+--connection mysqld2
+SET sql_log_bin = 'OFF';
+--connection mysqld3
+SET sql_log_bin = 'OFF';
+--connection mysqld4
+SET sql_log_bin = 'OFF';
+
+# Mysqld.4 - Save the count of data to assert later the distribution
+--let $data_volume=`SELECT COUNT(*) FROM t2`
+
+# Mysqld.4 - Now delete all data
+DELETE FROM t2;
+SELECT COUNT(*) FROM t2;
+
+# Back to Mysqld.1
+--connection mysqld1
+
+--let $MYSQLD_DATADIR= `select @@datadir;`
+# Import one at a time verifying that binlogged data is split
+--let $binlog_fullpath= $MYSQLD_DATADIR/$binlog_file1
+--let $binlog_position= $binlog_pos1
+--let $mysqlbinlog_pipe= > $MYSQLTEST_VARDIR/tmp/mysql1_binlog.sql
+--source include/rpl/mysqlbinlog.inc
+--exec $MYSQL -uroot < $MYSQLTEST_VARDIR/tmp/mysql1_binlog.sql
+
+--echo # Should be close to $data_volume/4
+--eval SET @data_volume = $data_volume/4
+SELECT IF(COUNT(*)-@data_volume BETWEEN -2 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t2;
+
+--connection mysqld2
+--let $MYSQLD_DATADIR= `select @@datadir;`
+--let $binlog_fullpath= $MYSQLD_DATADIR/$binlog_file2
+--let $binlog_position= $binlog_pos2
+--let $mysqlbinlog_pipe= > $MYSQLTEST_VARDIR/tmp/mysql2_binlog.sql
+--source include/rpl/mysqlbinlog.inc
+--exec $MYSQL -uroot < $MYSQLTEST_VARDIR/tmp/mysql2_binlog.sql
+
+--echo # Should be close to 2*($data_volume/4)
+--eval SET @data_volume = 2*($data_volume/4)
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t2;
+
+--connection mysqld3
+--let $MYSQLD_DATADIR= `select @@datadir;`
+--let $binlog_fullpath= $MYSQLD_DATADIR/$binlog_file3
+--let $binlog_position= $binlog_pos3
+--let $mysqlbinlog_pipe= > $MYSQLTEST_VARDIR/tmp/mysql3_binlog.sql
+--source include/rpl/mysqlbinlog.inc
+--exec $MYSQL -uroot < $MYSQLTEST_VARDIR/tmp/mysql3_binlog.sql
+
+--echo # Should be close to 3*($data_volume/4)
+--eval SET @data_volume = 3*($data_volume/4)
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +2, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t2;
+
+--connection mysqld4
+--let $MYSQLD_DATADIR= `select @@datadir;`
+--let $binlog_fullpath= $MYSQLD_DATADIR/$binlog_file4
+--let $binlog_position= $binlog_pos4
+--let $mysqlbinlog_pipe= > $MYSQLTEST_VARDIR/tmp/mysql4_binlog.sql
+--source include/rpl/mysqlbinlog.inc
+--exec $MYSQL -uroot < $MYSQLTEST_VARDIR/tmp/mysql4_binlog.sql
+
+--echo # Should be equal to 12
+SELECT COUNT(*) FROM t2;
+
+# Re-enable log-bin on all servers
+--connection mysqld1
+SET sql_log_bin = 'ON';
+--connection mysqld2
+SET sql_log_bin = 'ON';
+--connection mysqld3
+SET sql_log_bin = 'ON';
+--connection mysqld4
+SET sql_log_bin = 'ON';
+
+--echo # #######################################################################
+--echo # Third scenario:
+--echo #
+--echo # This test follows the same distribution as the first scenario
+--echo # (mysqld.1 == mysqld.3 && mysqld.2 == mysqld.4),
+--echo # but shows that ndb_replication table takes precendence over MySQL Server
+--echo # row-group parameters.
+--echo
+
+# Restart servers setting up the new options
+--connection mysqld1
+--let $restart_parameters= restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=0
+--let $mysqld_name= mysqld.1.1
+--source include/restart_mysqld.inc
+
+--connection mysqld2
+--let $restart_parameters= restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=1
+--let $mysqld_name= mysqld.2.1
+--source include/restart_mysqld.inc
+
+--connection mysqld3
+--let $restart_parameters= restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=2
+--let $mysqld_name= mysqld.3.1
+--source include/restart_mysqld.inc
+
+--connection mysqld4
+--let $restart_parameters= restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=3
+--let $mysqld_name= mysqld.4.1
+--source include/restart_mysqld.inc
+
+--connection mysqld1
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 0
+     WHERE table_name = "t3" AND server_id = $server1_id;
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 1
+     WHERE table_name = "t3" AND server_id = $server2_id;
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 0
+     WHERE table_name = "t3" AND server_id = $server3_id;
+eval UPDATE mysql.ndb_replication
+     SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 1
+     WHERE table_name = "t3" AND server_id = $server4_id;
+
+SELECT * FROM mysql.ndb_replication WHERE table_name = 't3'; # comment out to debug
+
+CREATE TABLE t3 (k INT PRIMARY KEY, a VARCHAR(1024), b VARBINARY(2048)) ENGINE = NDB;
+--save_master_pos
+
+# Only need to save for 2 servers, as the other pair is doing the same
+# Mysqld.1 - Save binlog file and positions after table created
+--let $binlog_file1= query_get_value("SHOW BINARY LOG STATUS", File, 1)
+--let $binlog_pos1= query_get_value("SHOW BINARY LOG STATUS", Position, 1)
+
+# Mysqld.2 - Save binlog file and positions after table created
+--connection mysqld2
+--let $binlog_file2= query_get_value("SHOW BINARY LOG STATUS", File, 1)
+--let $binlog_pos2= query_get_value("SHOW BINARY LOG STATUS", Position, 1)
+
+INSERT INTO t3 VALUES (1, 'first', x'6F6464'),
+                      (2, 'second', x'6576656E'),
+                      (3, 'first', x'6F6464'),
+                      (4, 'second', x'6576656E'),
+                      (5, 'first', x'6F6464'),
+                      (6, 'second', x'6576656E'),
+                      (7, 'first', x'6F6464'),
+                      (8, 'second', x'6576656E'),
+                      (9, 'first', x'6F6464'),
+                      (10, 'second', x'6576656E'),
+                      (11, 'first', x'6F6464'),
+                      (12, 'second', x'6576656E');
+--save_master_pos
+
+# Disable log-bin on all servers
+--connection mysqld1
+SET sql_log_bin = 'OFF';
+--connection mysqld2
+SET sql_log_bin = 'OFF';
+--connection mysqld3
+SET sql_log_bin = 'OFF';
+--connection mysqld4
+SET sql_log_bin = 'OFF';
+
+# Mysqld.4 - Save the count of data to assert later the distribution
+--let $data_volume=`SELECT COUNT(*) FROM t3`
+
+# Mysqld.4 - Now delete all data
+DELETE FROM t3;
+SELECT COUNT(*) FROM t3;
+
+# Back to Mysqld.1
+--connection mysqld1
+
+--let $MYSQLD_DATADIR= `select @@datadir;`
+# Import one at a time verifying that binlogged data is split
+--let $binlog_fullpath= $MYSQLD_DATADIR/$binlog_file1
+--let $binlog_position= $binlog_pos1
+--let $mysqlbinlog_pipe= > $MYSQLTEST_VARDIR/tmp/mysql1_binlog.sql
+--source include/rpl/mysqlbinlog.inc
+--exec $MYSQL -uroot < $MYSQLTEST_VARDIR/tmp/mysql1_binlog.sql
+
+--echo # Should be close to $data_volume/2
+--eval SET @data_volume = $data_volume/2
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t3;
+
+--connection mysqld2
+--let $MYSQLD_DATADIR= `select @@datadir;`
+--let $binlog_fullpath= $MYSQLD_DATADIR/$binlog_file2
+--let $binlog_position= $binlog_pos2
+--let $mysqlbinlog_pipe= > $MYSQLTEST_VARDIR/tmp/mysql2_binlog.sql
+--source include/rpl/mysqlbinlog.inc
+--exec $MYSQL -uroot < $MYSQLTEST_VARDIR/tmp/mysql2_binlog.sql
+
+--echo # Must be equal to 12
+SELECT COUNT(*) FROM t3;
+
+# Re-enable log-bin on all servers
+--connection mysqld1
+SET sql_log_bin = 'ON';
+--connection mysqld2
+SET sql_log_bin = 'ON';
+--connection mysqld3
+SET sql_log_bin = 'ON';
+--connection mysqld4
+SET sql_log_bin = 'ON';
+
+--echo # Cleanup
+--remove_file $MYSQLTEST_VARDIR/tmp/mysql1_binlog.sql
+--remove_file $MYSQLTEST_VARDIR/tmp/mysql2_binlog.sql
+--remove_file $MYSQLTEST_VARDIR/tmp/mysql3_binlog.sql
+--remove_file $MYSQLTEST_VARDIR/tmp/mysql4_binlog.sql
+
+--connection mysqld1
+DROP TABLE mysql.ndb_replication;
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t3;
+--let $restart_parameters= restart:
+--let $mysqld_name= mysqld.1.1
+--source include/restart_mysqld.inc
+
+--connection mysqld2
+--let $restart_parameters= restart:
+--let $mysqld_name= mysqld.2.1
+--source include/restart_mysqld.inc
+
+--connection mysqld3
+--let $restart_parameters= restart:
+--let $mysqld_name= mysqld.3.1
+--source include/restart_mysqld.inc
+
+--connection mysqld4
+--let $restart_parameters= restart:
+--let $mysqld_name= mysqld.4.1
+--source include/restart_mysqld.inc

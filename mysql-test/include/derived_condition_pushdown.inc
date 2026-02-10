@@ -255,7 +255,7 @@ eval $query;
 # We can push past window function as we partition on f2. But cannot push past
 # group by. So pushed condition stays in the HAVING clause of the derived
 let query = SELECT *
-            FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f2)
+            FROM (SELECT SQL_SMALL_RESULT f1, f2, SUM(f3) OVER(PARTITION BY f2)
                   FROM t1 GROUP BY f1) as dt WHERE f2 > 30;
 --replace_regex $elide_costs
 eval EXPLAIN FORMAT=tree $query;
@@ -264,7 +264,7 @@ eval $query;
 # We can pushdown only a part of the condition to the derived table. "f2" is
 # not part of the partition clause of window function
 let query = SELECT *
-            FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f1)
+            FROM (SELECT SQL_SMALL_RESULT f1, f2, SUM(f3) OVER(PARTITION BY f1)
                   FROM t1 GROUP BY f1) as dt
             WHERE f1 > 2 and f2 > 30 and (f1+f2) > 40;
 --replace_regex $elide_costs
@@ -273,7 +273,8 @@ eval $query;
 
 # We can push past window function partially and past group by partially here.
 let query = SELECT *
-            FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f1,f2)
+            FROM (SELECT SQL_SMALL_RESULT f1, f2,
+                  SUM(f3) OVER(PARTITION BY f1,f2)
                   FROM t1 GROUP BY f1) as dt
             WHERE f1 > 2 and f2 > 30 and (f1+f2) > 40;
 --replace_regex $elide_costs
@@ -284,7 +285,8 @@ eval $query;
 # other two conditions will stay in HAVING clause (Testing with expressions
 # having fields from partition clause)
 let query = SELECT *
-            FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f1,f2),
+            FROM (SELECT SQL_SMALL_RESULT f1, f2,
+                  SUM(f3) OVER(PARTITION BY f1,f2),
                   AVG(f3) OVER (PARTITION BY f1)
                   FROM t1 GROUP BY f1) as dt
             WHERE f1 > 2 and f2 > 30 and (f1+f2) > 40;
@@ -1553,3 +1555,65 @@ WHERE (SELECT 1
              GROUP BY field1) dt2
        WHERE dt2.field1 = 1);
 DROP TABLE t1;
+
+--echo #
+--echo # Bug#37111452: Error selecting from a view where the view and
+--echo #               the connection charset differs
+--echo #
+
+CREATE TABLE t1 (c1 CHAR(10)) DEFAULT CHARSET=latin1 COLLATE=latin1_spanish_ci;
+CREATE TABLE t2 (c1 char(10)) DEFAULT CHARSET=latin1 COLLATE=latin1_spanish_ci;
+
+INSERT INTO t1 VALUES (1);
+INSERT INTO t2 VALUES (1);
+
+SET @create_view_utf8 =
+"CREATE VIEW v1 AS
+ SELECT '0000000001þ' COLLATE latin1_spanish_ci AS tipos FROM t1
+ UNION
+ SELECT '0000000001þ' COLLATE latin1_spanish_ci AS tipos from t2";
+
+SELECT CAST(@create_view_utf8 AS CHAR CHARACTER SET latin1)
+INTO @create_view_latin1;
+
+SET @select_utf8 = "SELECT * FROM v1 WHERE tipos IN ('0000000001þ')";
+
+SELECT CAST(@select_utf8 AS CHAR CHARACTER SET latin1) INTO @select_latin1;
+
+SET character_set_client = latin1;
+SET character_set_connection = latin1;
+
+prepare ps FROM @create_view_latin1;
+execute ps;
+
+prepare ps_select_latin1_on FROM @select_latin1;
+execute ps_select_latin1_on;
+
+SET optimizer_switch="derived_condition_pushdown=off";
+
+prepare ps_select_latin1_off FROM @select_latin1;
+execute ps_select_latin1_off;
+
+SET character_set_client = DEFAULT;
+SET character_set_connection = DEFAULT;
+
+SET optimizer_switch="derived_condition_pushdown=on";
+
+prepare ps_select_utf8_on FROM @select_utf8;
+execute ps_select_utf8_on;
+
+SET optimizer_switch="derived_condition_pushdown=off";
+
+prepare ps_select_utf8_off FROM @select_utf8;
+execute ps_select_utf8_off;
+
+SET optimizer_switch="derived_condition_pushdown=on";
+
+DEALLOCATE PREPARE ps;
+DEALLOCATE PREPARE ps_select_utf8_on;
+DEALLOCATE PREPARE ps_select_utf8_off;
+DEALLOCATE PREPARE ps_select_latin1_on;
+DEALLOCATE PREPARE ps_select_latin1_off;
+
+DROP VIEW v1;
+DROP TABLE t1, t2;

@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -79,10 +79,8 @@ ADD_STATIC_LIBRARY(gunit_large
   gunit_test_main_server.cc
   test_utils.cc
   thread_utils.cc
-  LINK_LIBRARIES ext::icu ext::zlib
+  LINK_LIBRARIES ext::icu ext::zlib extra::unordered_dense
 )
-TARGET_INCLUDE_DIRECTORIES(gunit_large SYSTEM PRIVATE 
-  ${CMAKE_SOURCE_DIR}/extra/unordered_dense/unordered_dense-4.4.0/include)
 
 # Add a library for enable_win_jemalloc.cc
 # and link it with both gunit_small and gunit_large below.
@@ -134,6 +132,7 @@ SET(TESTS
   mutex_lock
   my_alloc
   my_bitmap
+  my_char_traits
   my_error
   my_fileutils
   my_gcvt
@@ -180,13 +179,11 @@ SET(TESTS
   thread_utils
   timespec
   unhex
+  utf8alias
   val_int_compare
   )
 
-SET(ALL_SMALL_TESTS)
-FOREACH(test ${TESTS})
-  LIST(APPEND ALL_SMALL_TESTS ${test}-t.cc)
-ENDFOREACH()
+LIST(TRANSFORM TESTS APPEND "-t.cc" OUTPUT_VARIABLE ALL_SMALL_TESTS)
 
 # Add tests (link them with gunit/gmock libraries and the server libraries)
 SET(SERVER_TESTS
@@ -235,6 +232,7 @@ SET(SERVER_TESTS
   graph_simplification
   gtid_specification_parsing
   handler
+  hash
   hash_join
   histograms
   histogram_selectivity
@@ -250,6 +248,7 @@ SET(SERVER_TESTS
   item_func_regexp
   item_json_func
   item_like
+  item_param
   item_timefunc
   join_syntax
   join_tab_sort
@@ -288,6 +287,7 @@ SET(SERVER_TESTS
   tc_log_mmap
   temptable_allocator
   temptable_storage
+  temporal
   thd_manager
   union_syntax
   unique
@@ -307,6 +307,13 @@ IF(LINUX_ALPINE)
   LIST(REMOVE_ITEM SERVER_TESTS segfault)
 ENDIF()
 
+# Warnings from googlemock
+IF(MY_COMPILER_IS_GNU AND FPROFILE_USE)
+  IF(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14)
+    STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-error=maybe-uninitialized")
+  ENDIF()
+ENDIF()
+
 IF(MY_COMPILER_IS_GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12)
   ADD_COMPILE_FLAGS(regexp_engine-t.cc COMPILE_FLAGS "-Wno-restrict")
 ENDIF()
@@ -324,15 +331,11 @@ ENDIF()
 # Warnings about missing PGO profile data are not useful for unit tests.
 DISABLE_MISSING_PROFILE_WARNING()
 
-SET(ALL_LARGE_TESTS)
-FOREACH(test ${SERVER_TESTS})
-  LIST(APPEND ALL_LARGE_TESTS ${test}-t.cc)
-ENDFOREACH()
+LIST(TRANSFORM SERVER_TESTS APPEND "-t.cc" OUTPUT_VARIABLE ALL_LARGE_TESTS)
 
 SET(SQL_GUNIT_LIB_SOURCE
   ${CMAKE_SOURCE_DIR}/sql/filesort_utils.cc
   ${CMAKE_SOURCE_DIR}/sql/mdl.cc
-  ${CMAKE_SOURCE_DIR}/sql/stream_cipher.cc
   ${CMAKE_SOURCE_DIR}/sql/sql_list.cc
   ${CMAKE_SOURCE_DIR}/sql/stateless_allocator.cc
   ${CMAKE_SOURCE_DIR}/sql-common/sql_string.cc
@@ -353,24 +356,27 @@ MYSQL_ADD_EXECUTABLE(merge_small_tests-t ${ALL_SMALL_TESTS}
   ADD_TEST merge_small_tests
   COMPILE_DEFINITIONS ${DISABLE_PSI_DEFINITIONS}
   ENABLE_EXPORTS
+  EXCLUDE_FROM_GCOV
   LINK_LIBRARIES sqlgunitlib gunit_small extra::rapidjson extra::boost
   )
-DOWNGRADE_STRINGOP_WARNINGS(merge_small_tests-t)
+IF(TARGET merge_small_tests-t)
+  DOWNGRADE_STRINGOP_WARNINGS(merge_small_tests-t)
+ENDIF()
 
 LIST(APPEND ALL_LARGE_TESTS ../../storage/example/ha_example.cc)
 
 MYSQL_ADD_EXECUTABLE(merge_large_tests-t ${ALL_LARGE_TESTS}
   ADD_TEST merge_large_tests
   ENABLE_EXPORTS
+  EXCLUDE_FROM_GCOV
   LINK_LIBRARIES gunit_large server_unittest_library
-  )
-IF(MY_COMPILER_IS_GNU)
-  TARGET_LINK_OPTIONS(merge_large_tests-t PRIVATE -Wno-alloc-size-larger-than)
+)
+IF(TARGET merge_large_tests-t)
+  IF(MY_COMPILER_IS_GNU)
+    TARGET_LINK_OPTIONS(merge_large_tests-t PRIVATE -Wno-alloc-size-larger-than)
+  ENDIF()
+  DOWNGRADE_STRINGOP_WARNINGS(merge_large_tests-t)
 ENDIF()
-
-TARGET_INCLUDE_DIRECTORIES(merge_large_tests-t SYSTEM PRIVATE
-  ${CMAKE_SOURCE_DIR}/extra/unordered_dense/unordered_dense-4.4.0/include)
-
 
 FOREACH(test ${TESTS})
   MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc
@@ -379,8 +385,20 @@ FOREACH(test ${TESTS})
     EXCLUDE_FROM_ALL
     LINK_LIBRARIES sqlgunitlib gunit_small extra::boost
     SKIP_INSTALL
-    )
+    ADD_GCOV_TEST ${test}
+  )
 ENDFOREACH()
+
+# Disable by default, since it dumps a stack trace.
+# We don't want ppl to think there was a segfault or something.
+# See also the mtr test main.print_stacktrace
+MYSQL_ADD_EXECUTABLE(mysys_stacktrace-t mysys_stacktrace-t.cc
+  COMPILE_DEFINITIONS ${DISABLE_PSI_DEFINITIONS}
+  ENABLE_EXPORTS
+  EXCLUDE_FROM_ALL
+  LINK_LIBRARIES sqlgunitlib gunit_small extra::boost
+  SKIP_INSTALL
+)
 
 # See comments about __builtin_memcmp in the source file.
 IF(HAVE_NO_BUILTIN_MEMCMP)
@@ -389,11 +407,6 @@ IF(HAVE_NO_BUILTIN_MEMCMP)
     COMPILE_FLAGS "-fno-builtin-memcmp"
     )
 ENDIF()
-
-ADD_COMPILE_FLAGS(
-  hash_join-t.cc
-  COMPILE_FLAGS -I${CMAKE_SOURCE_DIR}/extra/lz4 -I${BUNDLED_LZ4_PATH}
-  )
 
 FOREACH(test ${SERVER_TESTS})
   SET(SRC_FILES ${test}-t.cc)
@@ -405,7 +418,8 @@ FOREACH(test ${SERVER_TESTS})
     EXCLUDE_FROM_ALL
     LINK_LIBRARIES gunit_large server_unittest_library
     SKIP_INSTALL
-    )
+    ADD_GCOV_TEST ${test}
+  )
 ENDFOREACH()
 
 ADD_LIBRARY(rpl_channel_credentials_lib STATIC
@@ -428,6 +442,15 @@ MYSQL_ADD_EXECUTABLE(rpl_commit_order_queue-t rpl_commit_order_queue-t.cc
   LINK_LIBRARIES rpl_commit_order_queue_lib gunit_small sqlgunitlib
 )
 
+IF(MY_COMPILER_IS_GNU AND FPROFILE_USE)
+  ADD_COMPILE_FLAGS(dd_string_type-t.cc COMPILE_FLAGS
+    "-Wno-alloc-size-larger-than"
+    )
+  ADD_COMPILE_FLAGS(field-t.cc COMPILE_FLAGS
+    "-Wno-stringop-overflow"
+    )
+ENDIF()
+
 ADD_SUBDIRECTORY(ddl_rewriter)
 ADD_SUBDIRECTORY(innodb)
 ADD_SUBDIRECTORY(components/mysql_server)
@@ -442,5 +465,13 @@ ADD_SUBDIRECTORY(memory)
 ADD_SUBDIRECTORY(containers)
 ADD_SUBDIRECTORY(locks)
 ADD_SUBDIRECTORY(changestreams)
-ADD_SUBDIRECTORY(libs/utils)
+ADD_SUBDIRECTORY(libs/gtids)
+ADD_SUBDIRECTORY(libs/iterators)
+ADD_SUBDIRECTORY(libs/math)
+ADD_SUBDIRECTORY(libs/meta)
+ADD_SUBDIRECTORY(libs/ranges)
 ADD_SUBDIRECTORY(libs/serialization)
+ADD_SUBDIRECTORY(libs/sets)
+ADD_SUBDIRECTORY(libs/strconv)
+ADD_SUBDIRECTORY(libs/utils)
+ADD_SUBDIRECTORY(libs/uuids)

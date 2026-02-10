@@ -5,7 +5,7 @@ use ndbinfo;
 ##
 ## ndb$tables
 select count(*) from ndb$tables;
-count(*)	52
+count(*)	53
 explain select count(*) from ndb$tables;
 id	1
 select_type	SIMPLE
@@ -55,7 +55,7 @@ SELECT table_name, table_rows, avg_row_length
 TABLE_NAME	TABLE_ROWS	AVG_ROW_LENGTH
 blobs	10	84
 dictionary_columns	200	84
-dictionary_tables	40	176
+dictionary_tables	40	192
 events	40	48
 foreign_keys	10	124
 index_columns	20	80
@@ -63,7 +63,7 @@ ndb$acc_operations	15	64
 ndb$backup_id	1	20
 ndb$blocks	29	20
 ndb$certificates	34	44
-ndb$columns	561	44
+ndb$columns	572	44
 ndb$config_nodes	34	28
 ndb$counters	200	24
 ndb$dblqh_tcconnect_state	19	52
@@ -75,7 +75,7 @@ ndb$disk_write_speed_base	488	48
 ndb$diskpagebuffer	10	64
 ndb$diskstat	10	48
 ndb$diskstats_1sec	200	52
-ndb$error_messages	795	52
+ndb$error_messages	796	52
 ndb$frag_locks	344	96
 ndb$frag_mem_use	344	100
 ndb$frag_operations	344	192
@@ -98,7 +98,7 @@ ndb$table_fragments	344	60
 ndb$table_fragments_all	344	60
 ndb$table_replicas	344	64
 ndb$table_replicas_all	344	64
-ndb$tables	52	40
+ndb$tables	53	40
 ndb$tc_time_track_stats	384	104
 ndb$test	8000	24
 ndb$threadblock_details	124	24
@@ -106,6 +106,7 @@ ndb$threadblocks	124	16
 ndb$threads	26	40
 ndb$threadstat	22	144
 ndb$transactions	5	44
+ndb$transactions_full	5	44
 ndb$transporter_details	32	112
 ndb$transporters	32	68
 
@@ -114,7 +115,7 @@ CALL populate_sizes();
 SELECT table_name, est_rows, actual_rows from rowcounts
 WHERE table_name = "ndb$config_values";
 table_name	est_rows	actual_rows
-ndb$config_values	334	334
+ndb$config_values	340	340
 ## Note:
 ## the estimate for config_values relies on a constant in NdbinfoTables.cpp
 ## which must be manually maintained in order for the test to pass.

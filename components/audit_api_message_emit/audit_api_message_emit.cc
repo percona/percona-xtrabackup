@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -32,23 +32,23 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
   will receive this event.
 */
 
-#include <assert.h>
-#include <ctype.h>
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/my_service.h>
 #include <mysql/components/service_implementation.h>
 #include <mysql/components/services/audit_api_message_service.h>
+#include <mysql/components/services/bits/my_err_bits.h>
 #include <mysql/components/services/udf_metadata.h>
 #include <mysql/components/services/udf_registration.h>
 #include <mysql/service_plugin_registry.h>
-#include <mysql_com.h>
+#include <cassert>
+#include <cctype>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
 #include <algorithm>
 #include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <string>
@@ -265,7 +265,7 @@ static int arg_check(IError_handler &handler, unsigned int arg_count,
   /*
     At least one argument count was matched against definition.
   */
-  if (result == false) {
+  if (!result) {
     handler.error("Invalid argument count.");
     return -1;
   }
@@ -287,7 +287,7 @@ static int arg_check(IError_handler &handler, unsigned int arg_count,
         result = true;
     }
 
-    if (result == false) {
+    if (!result) {
       handler.error("Invalid argument type [%d].", i);
       return -1;
     }
@@ -301,7 +301,7 @@ static int arg_check(IError_handler &handler, unsigned int arg_count,
                                    handler, args[i], arg_lengths[i], i))))
         result = true;
 
-    if (result == false) {
+    if (!result) {
       /*
         Error has been already set by the validator.
       */
@@ -369,9 +369,7 @@ static bool arg_check(IError_handler &handler, UDF_ARGS *args) {
     arg_lengths += audit_log_extra_args_def[arg_res].count;
   };
 
-  if (set_args_charset_info(args, handler)) return true;
-
-  return false;
+  return set_args_charset_info(args, handler);
 }
 
 /**
@@ -479,8 +477,7 @@ static char *emit(UDF_INIT *initid [[maybe_unused]], UDF_ARGS *args,
 
     const std::string key(*arguments, *arg_lengths);
 
-    const std::map<std::string, mysql_event_message_key_value_t>::const_iterator
-        iter = key_values.find(key);
+    const auto iter = key_values.find(key);
     if (iter != key_values.end()) {
       handler.error("Duplicated key [%d].", args->arg_count - arg_count);
       return result;
@@ -520,7 +517,7 @@ static char *emit(UDF_INIT *initid [[maybe_unused]], UDF_ARGS *args,
     Allocate array that is used by the audit api service.
   */
   const std::unique_ptr<mysql_event_message_key_value_t[]> key_value_map(
-      key_values.size() > 0
+      !key_values.empty()
           ? new mysql_event_message_key_value_t[key_values.size()]
           : nullptr);
 
@@ -529,9 +526,7 @@ static char *emit(UDF_INIT *initid [[maybe_unused]], UDF_ARGS *args,
   /*
     Convert key value map into an array passed to the message function.
   */
-  for (std::map<std::string, mysql_event_message_key_value_t>::const_iterator
-           i = key_values.begin();
-       i != key_values.end(); ++i, ++kv) {
+  for (auto i = key_values.begin(); i != key_values.end(); ++i, ++kv) {
     *kv = i->second;
   }
 

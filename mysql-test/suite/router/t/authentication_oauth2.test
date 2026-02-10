@@ -1,0 +1,86 @@
+# Without oauth2 testing tool, MTR is covering just
+# some minor parts of OAUTH2 flows.
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Set custom configuration of OAUTH server
+--echo #
+--echo # 1. Verify redirection URL (Location) to the custom OAUTH2 server.
+--echo # 2. Verify redirection URL (Location) to the custom OAUTH2 server,
+--echo #    and ensure that query parameters are forwarded.
+--echo # 3. Verify redirection URL (Location) to the custom OAUTH2 server,
+--echo #    but confirm that query parameters such as onCompletionRedirect, onCompletionClose,
+--echo #    and sessionType are not forwarded.
+--echo #
+
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_auth_app=First
+--let $mrs_add_auth_vendor=Facebook
+--let $mrs_add_auth_services=('/svc')
+--let $mrs_add_auth_client_id=123456
+--let $mrs_add_auth_client_secret="top_secret"
+--let $mrs_add_auth_url="https://not_existing_host/not_existing_url"
+--let $mrs_add_auth_url_direct="https://not_existing_host/not_existing_url_direct"
+--source ../include/mrs/auth_app/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+# No object defined.
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/authentication/login'
+--let $mrs_client_arg_user=mrsuser
+--let $mrs_client_arg_password=S3kre7
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_expect_header=Location
+--let $mrs_client_arg_expect_header_value="https://not_existing_host/not_existing_url?response_type=code&state=first&client_id=123456&redirect_uri=https://routers_host/svc/authentication/login"
+--let $mrs_client_arg_request_header_host="routers_host"
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_arg_path='/svc/authentication/login?test_1=value_1&test_2=value_2'
+--let $mrs_client_arg_user=mrsuser
+--let $mrs_client_arg_password=S3kre7
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_expect_header=Location
+--let $mrs_client_arg_expect_header_value="https://not_existing_host/not_existing_url?response_type=code&state=first&client_id=123456&redirect_uri=https://routers_host/svc/authentication/login?test_1=value_1&test_2=value_2"
+--let $mrs_client_arg_request_header_host="routers_host"
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.3
+--let $mrs_client_arg_path='/svc/authentication/login?onCompletionRedirect=1&test_1=value_1&onCompletionClose=2&sessionType=cookie'
+--let $mrs_client_arg_user=mrsuser
+--let $mrs_client_arg_password=S3kre7
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_expect_header=Location
+--let $mrs_client_arg_expect_header_value="https://not_existing_host/not_existing_url?response_type=code&state=first&client_id=123456&redirect_uri=https://routers_host/svc/authentication/login?test_1=value_1"
+--let $mrs_client_arg_request_header_host="routers_host"
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+
+--source ../include/mrs/cleanup.inc

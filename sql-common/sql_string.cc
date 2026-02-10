@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +24,8 @@
 #include "sql_string.h"
 #include "sql/sql_const.h"
 
-#include <assert.h>
 #include <algorithm>
+#include <cassert>
 #include <limits>
 
 #include "dig_vec.h"
@@ -604,8 +604,8 @@ String String::substr(int offset, int count) const {
   }
   const size_t bytes_offset = this->charpos(offset);
 
-  return String(this->m_ptr + bytes_offset,
-                this->charpos(offset + count) - bytes_offset, this->m_charset);
+  return {this->m_ptr + bytes_offset,
+          this->charpos(offset + count) - bytes_offset, this->m_charset};
 }
 
 /*
@@ -1112,8 +1112,7 @@ size_t bin_to_hex_str(char *to, size_t to_len, const char *from,
                                 prefix for a character, i.e. the byte length
                                 of that invalid character is undefined.
 
-  @retval true if the whole input byte sequence is a valid character string.
-               The length_error output parameter is undefined.
+  @retval true if the input is invalid.
 
   @return
     if the whole input byte sequence is a valid character string
@@ -1145,13 +1144,14 @@ bool validate_string(const CHARSET_INFO *cs, const char *str, size_t length,
   */
   *length_error = false;
 
-  const uchar *from = reinterpret_cast<const uchar *>(str);
+  const auto *from = reinterpret_cast<const uchar *>(str);
   const uchar *from_end = from + length;
   my_charset_conv_mb_wc mb_wc = cs->cset->mb_wc;
 
   while (from < from_end) {
     my_wc_t wc;
-    int cnvres = (*mb_wc)(cs, &wc, pointer_cast<const uchar *>(from), from_end);
+    int const cnvres =
+        (*mb_wc)(cs, &wc, pointer_cast<const uchar *>(from), from_end);
     if (cnvres <= 0) {
       *valid_length = from - reinterpret_cast<const uchar *>(str);
       return true;

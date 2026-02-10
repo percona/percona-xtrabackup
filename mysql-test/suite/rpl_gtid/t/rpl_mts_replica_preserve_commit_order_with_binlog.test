@@ -69,10 +69,8 @@
 CALL mtr.add_suppression("You need to use --log-bin to make --binlog-format work");
 
 SET @save_replica_parallel_workers= @@global.replica_parallel_workers;
-SET @save_replica_parallel_type= @@global.replica_parallel_type;
 SET @save_replica_preserve_commit_order= @@global.replica_preserve_commit_order;
 
-SET GLOBAL replica_parallel_type = 'LOGICAL_CLOCK';
 SET GLOBAL replica_parallel_workers= 4;
 SET GLOBAL replica_preserve_commit_order= ON;
 --source include/rpl/start_replica.inc
@@ -287,7 +285,6 @@ DROP TABLE t2;
 --source include/rpl/sync_to_replica.inc
 
 --source include/rpl/stop_replica.inc
-SET GLOBAL replica_parallel_type = @save_replica_parallel_type;
 --disable_warnings
 SET GLOBAL replica_parallel_workers = @save_replica_parallel_workers;
 --enable_warnings

@@ -1,0 +1,23 @@
+!include suite/ndb_rpl/my.cnf
+
+[mysqld.1.1]
+log-bin=                cluster1-bin
+relay-log=              cluster1-relay-bin
+server-id=              1
+skip-log-replica-updates
+
+[mysqld.2.1]
+log-bin=                cluster2-bin
+relay-log=              cluster2-relay-bin
+server-id=              2
+skip-replica-start
+
+[mysqld.1.slave]
+log-bin=                cluster3-bin
+relay-log=              cluster3-relay-bin
+server-id=              3
+
+[ENV]
+SERVER_MYPORT_1=        @mysqld.1.1.port
+SERVER_MYPORT_2=        @mysqld.2.1.port
+SERVER_MYPORT_3=        @mysqld.1.slave.port

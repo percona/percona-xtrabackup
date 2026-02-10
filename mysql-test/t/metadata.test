@@ -265,3 +265,19 @@ select d as e, two as f from v;
 set optimizer_switch=default;
 drop view v;
 drop table t;
+
+--echo #
+--echo # Bug#34683569 Mysql_field returns NUM_FLAG (32768) for grouped by columns
+--echo #
+CREATE TABLE test (
+    id INT NOT NULL,
+    col VARCHAR(255) DEFAULT NULL
+);
+
+INSERT INTO test (id, col) VALUES (1, 'test1'), (2, 'test2');
+
+--echo # This used to show NUM for flags field
+--enable_metadata
+SELECT col FROM test GROUP BY col;
+--disable_metadata
+DROP TABLE test;

@@ -364,6 +364,7 @@ drop table t1;
 
 create table t1 (id integer primary key auto_increment, txt text, index txt_index (txt (20))) charset latin1;
 insert into t1 (txt) values ('Chevy'), ('Chevy '), (NULL);
+--sorted_result
 select * from t1 where txt='Chevy' or txt is NULL;
 analyze table t1;
 explain select * from t1 where txt='Chevy' or txt is NULL;
@@ -388,6 +389,7 @@ select * from t1 where txt >= 'Chevy';
 alter table t1 modify column txt blob;
 analyze table t1;
 explain select * from t1 where txt='Chevy' or txt is NULL;
+--sorted_result
 select * from t1 where txt='Chevy' or txt is NULL;
 explain select * from t1 where txt='Chevy' or txt is NULL order by txt;
 select * from t1 where txt='Chevy' or txt is NULL order by txt;

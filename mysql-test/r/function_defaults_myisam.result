@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #
 # Function defaults run 1. No microsecond precision. MyISAM.
 #
@@ -1568,3 +1569,4 @@ a	b
 2001-09-09 04:46:40	2001-09-09 04:46:40
 DROP TABLE t1;
 SET sql_mode = default;
+include/rpl/set_gtid_mode_on.inc

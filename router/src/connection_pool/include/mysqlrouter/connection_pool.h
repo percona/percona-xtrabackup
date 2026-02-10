@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -34,55 +34,43 @@
 #include <algorithm>  // find_if
 #include <concepts>
 #include <list>
+#include <memory>
+#include <mutex>
 #include <optional>
 
-#include "mysql/harness/net_ts/internet.h"
 #include "mysql/harness/net_ts/timer.h"
 #include "mysql/harness/stdx/monitor.h"
 #include "mysql/harness/tls_types.h"  // Ssl
-#include "mysqlrouter/classic_protocol_constants.h"
-#include "mysqlrouter/classic_protocol_message.h"
 #include "mysqlrouter/classic_protocol_state.h"
 #include "mysqlrouter/connection_base.h"
 
 // default max idle server connections set on bootstrap
 static constexpr uint32_t kDefaultMaxIdleServerConnectionsBootstrap{64};
 
-/**
- * pooled connection.
- */
-class CONNECTION_POOL_EXPORT PooledConnectionBase {
- public:
-  /**
-   * set a remove-callback.
-   *
-   * used when the pooled connection wants to remove itself from the
-   * connection-pool.
-   */
-  void remover(std::function<void()> remover) { remover_ = std::move(remover); }
-
-  /**
-   * calls remove-callback.
-   */
-  void remove_me();
-
-  void reset();
-
- private:
-  std::function<void()> remover_;
-};
+// A pooled connection:
+//
+// - is owned by the ConnectionPool's "pool" or "stash"
+//   as a shared_ptr<PooledConnection>
+// - owns Connection
+// - async-waits for recv() or timeout() on the Connection's socket.
+//
+// When a connection is taken from the stash/pool,
+//
+// - the async-waits are canceled
+// - the connection is released from the PooledConnection and
+// - the PooledConnection is erased from the ConnectionPool
 
 /**
  * pooled connection.
  */
 template <class T>
-class PooledConnection : public PooledConnectionBase {
+class PooledConnection {
  public:
   using Ssl = mysql_harness::Ssl;
   using connection_type = T;
 
   PooledConnection(connection_type conn)
-      : conn_{std::move(conn)}, idle_timer_(conn_.connection()->io_ctx()) {}
+      : conn_(std::move(conn)), idle_timer_(conn_.connection()->io_ctx()) {}
 
   /**
    * access to conn_.
@@ -93,11 +81,25 @@ class PooledConnection : public PooledConnectionBase {
 
   const connection_type &connection() const { return conn_; }
 
+  connection_type release() {
+    (void)idle_timer_.cancel();
+    (void)conn_.cancel();
+
+    std::lock_guard lk(mtx());
+
+    pool_remover_ = nullptr;
+
+    return std::move(connection());
+  }
+
   /**
    * prepares for reusing the connection.
    */
   void reset() {
-    PooledConnectionBase::reset();
+    {
+      std::lock_guard lk(mtx_);
+      pool_remover_ = nullptr;
+    }
 
     (void)idle_timer_.cancel();
     (void)conn_.cancel();
@@ -105,59 +107,113 @@ class PooledConnection : public PooledConnectionBase {
 
   friend class ConnectionPool;
 
+  /**
+   * set a remove-callback.
+   *
+   * used when the pooled connection wants to remove itself from the
+   * connection-pool.
+   */
+  void pool_remover(
+      std::function<void(std::shared_ptr<PooledConnection<T>>)> remover) {
+    std::lock_guard lk(mtx_);
+
+    pool_remover_ = std::move(remover);
+  }
+
+  /**
+   * calls remove-callback.
+   */
+  static void remove_from_pool(
+      std::shared_ptr<PooledConnection<T>> shared_this) {
+    decltype(pool_remover_) pool_remover;
+
+    // ensure that the remover is called at-most-once.
+    {
+      std::lock_guard lk(shared_this->mtx_);
+
+      if (shared_this->pool_remover_) {
+        pool_remover = std::exchange(shared_this->pool_remover_, nullptr);
+      }
+    }
+
+    if (pool_remover) {
+      pool_remover(shared_this);
+    }
+  }
+
+ protected:
+  std::mutex &mtx() { return mtx_; }
+
+  std::function<void(std::shared_ptr<PooledConnection<T>>)> pool_remover_;
+
  private:
+  std::mutex mtx_;
+
   /**
    * wait for idle timeout.
    */
-  void async_idle(std::chrono::milliseconds idle_timeout) {
-    auto &tmr = idle_timer_;
+  static void async_idle(std::shared_ptr<PooledConnection<T>> shared_this,
+                         std::chrono::milliseconds idle_timeout) {
+    auto &tmr = shared_this->idle_timer_;
 
     tmr.expires_after(idle_timeout);
 
     // if the idle_timer fires, close the connection and remove it from the
     // pool.
-    tmr.async_wait([this](std::error_code ec) {
-      if (ec) return;  // cancelled ...
+    tmr.async_wait([shared_this](std::error_code ec) {
+      if (ec) {
+        return;  // cancelled ...
+      }
 
-      // timed out.
-      //
-      // cancel the async_recv() and remove the connection.
-      (void)conn_.cancel();
+      {
+        std::lock_guard lk(shared_this->mtx());
 
-      this->remove_me();
+        // timed out.
+        //
+        // cancel the async_recv() and remove the connection.
+        (void)shared_this->conn_.cancel();
+      }
+
+      remove_from_pool(shared_this);
     });
 
-    async_recv_message();
+    async_recv_message(shared_this);
   }
 
   /**
    * wait for server message and shutdown.
    */
-  void async_recv_message() {
+  static void async_recv_message(
+      std::shared_ptr<PooledConnection<T>> shared_this) {
     // for classic we may receive a ERROR for shutdown. Ignore
     // it and close the connection. for xprotocol we may
     // receive a NOTICE for shutdown. Ignore it and close the
     // connection.
 
-    conn_.async_recv([this](std::error_code ec, size_t /* recved */) {
-      if (ec) {
-        if (ec == make_error_condition(net::stream_errc::eof)) {
-          // cancel the timer and let that close the connection.
-          idle_timer_.cancel();
+    shared_this->conn_.async_recv(
+        [shared_this](std::error_code ec, size_t /* recved */) {
+          if (ec) {
+            if (ec == make_error_condition(net::stream_errc::eof)) {
+              {
+                // cancel the timer and let that close the connection.
+                shared_this->idle_timer_.cancel();
 
-          (void)conn_.close();
+                std::lock_guard lk(shared_this->mtx());
 
-          this->remove_me();
-        }
-        return;
-      }
+                (void)shared_this->conn_.close();
+              }
 
-      // discard what has been received.
-      conn_.channel().recv_buffer().clear();
+              remove_from_pool(shared_this);
+            }
+            return;
+          }
 
-      // wait for the next bytes or connection-close.
-      async_recv_message();
-    });
+          // discard what has been received.
+          shared_this->conn_.channel().recv_buffer().clear();
+
+          // wait for the next bytes or connection-close.
+          async_recv_message(shared_this);
+        });
   }
 
   connection_type conn_;
@@ -256,20 +312,18 @@ class CONNECTION_POOL_EXPORT ConnectionPool {
 
           auto kv_it = std::find_if(
               key_range.first, key_range.second,
-              [pred](const auto &kv) { return pred(kv.second.connection()); });
+              [pred](const auto &kv) { return pred(kv.second->connection()); });
           if (kv_it == key_range.second) return std::nullopt;
 
           // found.
 
-          auto pooled_conn = std::move(kv_it->second);
+          auto server_conn = kv_it->second->release();
 
           pool.erase(kv_it);
 
-          pooled_conn.reset();
-
           ++reused_;
 
-          return std::move(pooled_conn.connection());
+          return server_conn;
         });
   }
 
@@ -307,11 +361,12 @@ class CONNECTION_POOL_EXPORT ConnectionPool {
    */
   struct Stashed {
     // constructor for the container's .emplace()
-    Stashed(PooledConnection<ServerSideConnection> pc, ConnectionIdentifier ci,
-            std::chrono::steady_clock::time_point tp)
+    Stashed(std::shared_ptr<PooledConnection<ServerSideConnection>> pc,
+            ConnectionIdentifier ci, std::chrono::steady_clock::time_point tp)
         : pooled_conn(std::move(pc)), conn_id(ci), after(tp) {}
 
-    PooledConnection<ServerSideConnection> pooled_conn;  //!< pooled connection.
+    std::shared_ptr<PooledConnection<ServerSideConnection>>
+        pooled_conn;               //!< pooled connection.
     ConnectionIdentifier conn_id;  //!< opaque connection identifier
     std::chrono::steady_clock::time_point after;  //!< stealable after ...
   };
@@ -335,12 +390,16 @@ class CONNECTION_POOL_EXPORT ConnectionPool {
   [[nodiscard]] uint64_t reused_connections() const { return reused_; }
 
  protected:
-  using pool_type =
-      std::unordered_multimap<std::string,
-                              PooledConnection<ServerSideConnection>>;
+  using pool_type = std::unordered_multimap<
+      std::string, std::shared_ptr<PooledConnection<ServerSideConnection>>>;
   using stash_type = std::unordered_multimap<std::string, Stashed>;
 
   void erase(pool_type::iterator it);
+  void remove_pooled_connection(
+      std::string ep, std::shared_ptr<PooledConnection<ServerSideConnection>>);
+
+  void remove_stashed_connection(
+      std::string ep, std::shared_ptr<PooledConnection<ServerSideConnection>>);
 
   const uint32_t max_pooled_connections_;
   const std::chrono::milliseconds idle_timeout_;

@@ -133,3 +133,38 @@ r
 0.620881741513388
 0.6387474552157777
 DROP TABLE t;
+#
+# Bug#35940224: Hypergraph: Semijoin with rand() gives wrong result
+#
+CREATE TABLE t(a INT);
+INSERT INTO t VALUES (0), (1), (2), (0), (1), (2), (0), (1), (2),
+(0), (1), (2), (0), (1), (2), (0), (1), (2),
+(0), (1), (2), (0), (1), (2), (0), (1), (2),
+(0), (1), (2), (0), (1), (2), (0), (1), (2);
+SELECT * FROM t WHERE a IN (SELECT FLOOR(RAND(0) * 2) FROM t);
+a
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+DROP TABLE t;

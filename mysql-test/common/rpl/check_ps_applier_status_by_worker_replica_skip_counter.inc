@@ -10,7 +10,6 @@
 # Also check that the *ing_transaction was cleared in the two (mts, three)
 # tables.
 #
-# param: $is_mts        [0,1] 1 if MTS test
 
 
 --source include/rpl/connection_replica.inc
@@ -31,13 +30,10 @@ DROP TABLE t1;
 --let $assert_cond= "$queueing_gtid" = ""
 --source include/assert.inc
 
-if ($is_mts)
-{
-  --let $processing_gtid_= query_get_value(SELECT PROCESSING_TRANSACTION FROM performance_schema.replication_applier_status_by_coordinator, PROCESSING_TRANSACTION, 1)
-  --let $assert_text= processing_gtid was cleared after the gtid skipped transactions
-  --let $assert_cond= "$processing_gtid" = ""
-  --source include/assert.inc
-}
+--let $processing_gtid_= query_get_value(SELECT PROCESSING_TRANSACTION FROM performance_schema.replication_applier_status_by_coordinator, PROCESSING_TRANSACTION, 1)
+--let $assert_text= processing_gtid was cleared after the gtid skipped transactions
+--let $assert_cond= "$processing_gtid" = ""
+--source include/assert.inc
 
 --let $applying_gtid= query_get_value(SELECT APPLYING_TRANSACTION FROM performance_schema.replication_applier_status_by_worker, APPLYING_TRANSACTION, 1)
 --let $assert_text= applying_gtid was cleared after the gtid skipped transactions
@@ -49,13 +45,10 @@ if ($is_mts)
 --let $assert_cond= "$last_gtid" != ""
 --source include/assert.inc
 
-if ( $is_mts )
-{
-  --let $last_gtid= query_get_value(SELECT LAST_PROCESSED_TRANSACTION FROM performance_schema.replication_applier_status_by_coordinator, LAST_PROCESSED_TRANSACTION, 1)
-  --let $assert_text= Assert that the coordinator last_processed gtid is clear after the slave skipped the two transactions
-  --let $assert_cond= "$last_gtid" = ""
-  --source include/assert.inc
-}
+--let $last_gtid= query_get_value(SELECT LAST_PROCESSED_TRANSACTION FROM performance_schema.replication_applier_status_by_coordinator, LAST_PROCESSED_TRANSACTION, 1)
+--let $assert_text= Assert that the coordinator last_processed gtid is clear after the slave skipped the two transactions
+--let $assert_cond= "$last_gtid" = ""
+--source include/assert.inc
 
 --let $last_gtid= query_get_value(SELECT LAST_APPLIED_TRANSACTION FROM performance_schema.replication_applier_status_by_worker, LAST_APPLIED_TRANSACTION, 1)
 --let $assert_text= Assert that the applied gtid is clear after the slave skipped the two transactions

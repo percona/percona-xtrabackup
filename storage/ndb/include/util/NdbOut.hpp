@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
 
    This program is free software; you can redistribute it and/or modify
@@ -80,7 +80,7 @@ class NdbOut {
   NdbOut &operator<<(const void *);
   NdbOut &operator<<(float);
   NdbOut &operator<<(double);
-  NdbOut &endline(void);
+  NdbOut &endline();
   NdbOut &flushline(bool force = true);
   NdbOut &setHexFormat(int _format);
   NdbOut &hexdump(const Uint32 *words, size_t count);

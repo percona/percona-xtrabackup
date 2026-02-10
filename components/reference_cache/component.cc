@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -46,13 +46,13 @@ static DEFINE_BOOL_METHOD(create, (const char *service_names[],
   try {
     service_names_set<> refs;
     for (unsigned idx = 0; service_names[idx]; idx++) {
-      Service_name_entry entry{service_names[idx], 0};
+      Service_name_entry const entry{service_names[idx], 0};
       refs.insert(entry);
     }
 
     *out_channel =
         reinterpret_cast<reference_caching_channel>(channel_imp::create(refs));
-    return *out_channel ? false : true;
+    return *out_channel == nullptr;
   } catch (...) {
     return true;
   }
@@ -193,11 +193,35 @@ static void register_instruments() {
   PSI_MEMORY_CALL(register_memory)(PSI_category, all_memory, count);
 }
 
+BEGIN_SERVICE_IMPLEMENTATION(reference_caching,
+                             dynamic_loader_services_loaded_notification)
+reference_caching::service_notification::notify_after_load
+END_SERVICE_IMPLEMENTATION();
+
+BEGIN_SERVICE_IMPLEMENTATION(reference_caching,
+                             dynamic_loader_services_unload_notification)
+reference_caching::service_notification::notify_before_unload
+END_SERVICE_IMPLEMENTATION();
+
 static mysql_service_status_t init() {
   register_instruments();
   try {
     if (channel_imp::factory_init()) return 1;
-    if (current_registry_registration->set_default(
+    if (current_registry_registration->register_service(
+            "dynamic_loader_services_loaded_notification.reference_caching",
+            reinterpret_cast<
+                my_h_service>(const_cast<
+                              mysql_service_dynamic_loader_services_loaded_notification_t
+                                  *>(
+                &imp_reference_caching_dynamic_loader_services_loaded_notification))) ||
+        current_registry_registration->register_service(
+            "dynamic_loader_services_unload_notification.reference_caching",
+            reinterpret_cast<
+                my_h_service>(const_cast<
+                              mysql_service_dynamic_loader_services_unload_notification_t
+                                  *>(
+                &imp_reference_caching_dynamic_loader_services_unload_notification))) ||
+        current_registry_registration->set_default(
             "dynamic_loader_services_loaded_notification.reference_caching") ||
         current_registry_registration->set_default(
             "dynamic_loader_services_unload_notification.reference_caching")) {
@@ -212,6 +236,12 @@ static mysql_service_status_t init() {
 
 static mysql_service_status_t deinit() {
   try {
+    if (current_registry_registration->unregister(
+            "dynamic_loader_services_loaded_notification.reference_caching") ||
+        current_registry_registration->unregister(
+            "dynamic_loader_services_unload_notification.reference_caching")) {
+      return 1;
+    }
     if (channel_imp::factory_deinit()) return 1;
     /*
       No need to change dynamic_loader default.
@@ -242,24 +272,10 @@ reference_caching::channel_ignore_list::add,
     reference_caching::channel_ignore_list::remove,
     reference_caching::channel_ignore_list::clear END_SERVICE_IMPLEMENTATION();
 
-BEGIN_SERVICE_IMPLEMENTATION(reference_caching,
-                             dynamic_loader_services_loaded_notification)
-reference_caching::service_notification::notify_after_load
-END_SERVICE_IMPLEMENTATION();
-
-BEGIN_SERVICE_IMPLEMENTATION(reference_caching,
-                             dynamic_loader_services_unload_notification)
-reference_caching::service_notification::notify_before_unload
-END_SERVICE_IMPLEMENTATION();
-
 BEGIN_COMPONENT_PROVIDES(reference_caching)
 PROVIDES_SERVICE(reference_caching, reference_caching_channel),
     PROVIDES_SERVICE(reference_caching, reference_caching_cache),
     PROVIDES_SERVICE(reference_caching, reference_caching_channel_ignore_list),
-    PROVIDES_SERVICE(reference_caching,
-                     dynamic_loader_services_loaded_notification),
-    PROVIDES_SERVICE(reference_caching,
-                     dynamic_loader_services_unload_notification),
     END_COMPONENT_PROVIDES();
 
 REQUIRES_MYSQL_RWLOCK_SERVICE_PLACEHOLDER;

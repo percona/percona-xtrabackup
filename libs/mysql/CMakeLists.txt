@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,15 @@ ADD_SUBDIRECTORY(abi_helpers)
 ADD_SUBDIRECTORY(allocators)
 ADD_SUBDIRECTORY(binlog)
 ADD_SUBDIRECTORY(containers)
+ADD_SUBDIRECTORY(debugging)
 ADD_SUBDIRECTORY(gtid)
+ADD_SUBDIRECTORY(gtids)
+ADD_SUBDIRECTORY(iterators)
 ADD_SUBDIRECTORY(math)
+ADD_SUBDIRECTORY(meta)
+ADD_SUBDIRECTORY(ranges)
 ADD_SUBDIRECTORY(serialization)
+ADD_SUBDIRECTORY(sets)
+ADD_SUBDIRECTORY(strconv)
 ADD_SUBDIRECTORY(utils)
+ADD_SUBDIRECTORY(uuids)

@@ -1,0 +1,4 @@
+--force-restart
+# to prevent:
+# Returned error: 4081 (HY000): Connection closed.
+# Global connection memory limit 25165824 bytes exceeded. Consumed 26482736 bytes.

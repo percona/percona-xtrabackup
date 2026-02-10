@@ -3,6 +3,7 @@
 SET NAMES utf8mb3;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+SET explain_json_format_version = 1;
 
 Flag unsupported aggregates as window functions
 
@@ -3357,7 +3358,7 @@ NULL	NULL
 4	2
 5	3
 SELECT id, FIRST_VALUE(id) OVER w FROM td_str WINDOW w AS (ORDER BY id RANGE 2 PRECEDING);
-ERROR HY000: Window 'w' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window 'w' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 SELECT id, FIRST_VALUE(id) OVER w FROM td_str WINDOW w AS (ORDER BY id ROWS  BETWEEN 2 PRECEDING AND 1 PRECEDING);
 id	FIRST_VALUE(id) OVER w
 NULL	NULL
@@ -3370,7 +3371,7 @@ NULL	NULL
 4	2
 5	3
 SELECT id, FIRST_VALUE(id) OVER w FROM td_str WINDOW w AS (ORDER BY id RANGE BETWEEN 2 PRECEDING AND 1 PRECEDING);
-ERROR HY000: Window 'w' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window 'w' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 SELECT id, FIRST_VALUE(id) OVER w FROM td_str WINDOW w AS (ORDER BY id ROWS  BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING);
 id	FIRST_VALUE(id) OVER w
 NULL	NULL
@@ -3405,7 +3406,7 @@ NULL	10
 4	NULL
 5	NULL
 SELECT id, FIRST_VALUE(id) OVER w FROM td_str WINDOW w AS (ORDER BY id RANGE BETWEEN 2 FOLLOWING AND 3 FOLLOWING);
-ERROR HY000: Window 'w' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window 'w' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 DROP TABLE td_str;
 CREATE TABLE t_date(id DATE);
 INSERT INTO t_date VALUES ('2002-06-09');
@@ -4210,9 +4211,9 @@ d	SUM(d) OVER w	COUNT(*) OVER w
 Illegal range ORDER BY type, cf. SQL 2011 7.11 <window clause>, SR 11.a.ii
 CREATE TABLE t4(c VARCHAR(30), i INT, j INT);
 SELECT COUNT(*) OVER (ORDER BY c RANGE 3 PRECEDING) FROM t4;
-ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 SELECT COUNT(*) OVER (ORDER BY i,j RANGE 3 PRECEDING) FROM t4;
-ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 ----------------------------------------------------------------------
 -    wf over JSON
 ----------------------------------------------------------------------
@@ -4602,7 +4603,7 @@ NULL	NULL	NULL
 4	INTEGER	10
 5	INTEGER	14
 SELECT j, JSON_TYPE(j), SUM(j) OVER (ORDER BY j RANGE 3 PRECEDING) FROM tj;
-ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 INSERT INTO tj VALUES ('3.14');
 SELECT j, JSON_TYPE(j), SUM(j) OVER (ORDER BY j ROWS 3 PRECEDING) FROM tj;
 j	JSON_TYPE(j)	SUM(j) OVER (ORDER BY j ROWS 3 PRECEDING)
@@ -6373,83 +6374,52 @@ Note	1003	/* select#1 */ select `test`.`upper`.`a` AS `a` from `test`.`t` `upper
 DROP TABLE t;
 #
 # Check window aggregate referencing columns from an outside query
-# All results checked against Postgresql which also allows this.
+#
 CREATE TABLE t1(i INT, j INT, k INT);
 INSERT INTO t1 VALUES (1,1,1),(2,2,2);
 SELECT (SELECT ROW_NUMBER() OVER (ORDER BY upper.j) FROM t1 LIMIT 1)
 FROM t1 AS upper;
-(SELECT ROW_NUMBER() OVER (ORDER BY upper.j) FROM t1 LIMIT 1)
-1
-1
+ERROR HY000: Outer reference test.upper.j in window's ORDER BY or PARTITION BY clause not allowed.
 SELECT (SELECT ROW_NUMBER() OVER (PARTITION BY upper.j) FROM t1 LIMIT 1)
 FROM t1 AS upper;
-(SELECT ROW_NUMBER() OVER (PARTITION BY upper.j) FROM t1 LIMIT 1)
-1
-1
-SELECT (SELECT ROW_NUMBER() OVER (PARTITION BY upper.j)
-FROM t1 LIMIT 1 OFFSET 1)
-FROM t1 AS upper;
-(SELECT ROW_NUMBER() OVER (PARTITION BY upper.j)
-FROM t1 LIMIT 1 OFFSET 1)
-2
-2
-SELECT (SELECT FIRST_VALUE(j) OVER (ORDER BY upper.j) FROM tAccepted LIMIT Accepted)
-FROM tAccepted AS upper;
-(SELECT FIRST_VALUE(j) OVER (ORDER BY upper.j) FROM tAccepted LIMIT Accepted)
-Accepted
-Accepted
-SELECT (SELECT FIRST_VALUE(j) OVER (ORDER BY upper.j DESC) FROM tAccepted LIMIT Accepted)
-FROM tAccepted AS upper;
-(SELECT FIRST_VALUE(j) OVER (ORDER BY upper.j DESC) FROM tAccepted LIMIT Accepted)
-Accepted
-Accepted
-SELECT (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j DESC)
+ERROR HY000: Outer reference test.upper.j in window's ORDER BY or PARTITION BY clause not allowed.
+SELECT (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.j DESC)
 FROM t1 LIMIT 1)
 FROM t1 AS upper;
-(SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j DESC)
+(SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.j DESC)
 FROM t1 LIMIT 1)
 1
 2
-SELECT (SELECT LAST_VALUE(j) OVER (ORDER BY upper.j) FROM tAccepted LIMIT Accepted)
-FROM tAccepted AS upper;
-(SELECT LAST_VALUE(j) OVER (ORDER BY upper.j) FROM tAccepted LIMIT Accepted)
-Accepted
-Accepted
-SELECT (SELECT LAST_VALUE(j) OVER (ORDER BY upper.j DESC) FROM tAccepted LIMIT Accepted)
-FROM tAccepted AS upper;
-(SELECT LAST_VALUE(j) OVER (ORDER BY upper.j DESC) FROM tAccepted LIMIT Accepted)
-Accepted
-Accepted
 SELECT * FROM t1 AS upper
-WHERE (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+WHERE (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
 FROM t1 LIMIT 1) = 1
 ;
 i	j	k
 1	1	1
 SELECT * FROM t1 AS upper
-WHERE (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+WHERE (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
 FROM t1 LIMIT 1) = 2;
 i	j	k
 2	2	2
 SELECT FIRST_VALUE(j) OVER (ORDER BY 0 +
-(SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+(SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
 FROM t1 LIMIT 1))
 FROM t1 AS upper;
 FIRST_VALUE(j) OVER (ORDER BY 0 +
-(SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+(SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
 FROM t1 LIMIT 1))
 1
 1
 SELECT LAST_VALUE(j)  OVER (ORDER BY 0 +
-(SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+(SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
 FROM t1 LIMIT 1))
 FROM t1 AS upper;
 LAST_VALUE(j)  OVER (ORDER BY 0 +
-(SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+(SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
 FROM t1 LIMIT 1))
 1
 2
-SELECT * FROM t1 AS upper ORDER BY (0 + (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+SELECT * FROM t1 AS upper ORDER BY (0 + (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
 FROM t1 LIMIT 1));
 i	j	k
 1	1	1
@@ -6922,23 +6892,23 @@ NULL	NULL	NULL
 SELECT dt, FIRST_VALUE(dt) OVER w1,
 CAST(FIRST_VALUE(ge) OVER w1 AS JSON) ge FROM test WHERE `pk` > 3 WINDOW w1 AS ();
 dt	FIRST_VALUE(dt) OVER w1	ge
-2001-01-18 00:00:00	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2009-11-24 00:00:00	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2001-11-22 21:41:15	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-NULL	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-0000-00-00 00:00:00	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2003-05-13 18:03:04	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2008-04-15 09:44:20	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2009-07-15 00:00:00	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2007-04-27 13:53:37	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-0000-00-00 00:00:00	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2000-02-02 02:15:28	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2004-06-06 00:00:00	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-NULL	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2002-06-21 00:00:00	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2007-03-23 00:00:00	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2006-10-06 00:00:00	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
-2008-07-07 00:00:00	2001-01-18 00:00:00	{"type": "Point", "coordinates": [4.0, 4.0]}
+2001-01-18 00:00:00	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2009-11-24 00:00:00	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2001-11-22 21:41:15	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+NULL	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+0000-00-00 00:00:00	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2003-05-13 18:03:04	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2008-04-15 09:44:20	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2009-07-15 00:00:00	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2007-04-27 13:53:37	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+0000-00-00 00:00:00	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2000-02-02 02:15:28	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2004-06-06 00:00:00	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+NULL	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2002-06-21 00:00:00	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2007-03-23 00:00:00	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2006-10-06 00:00:00	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
+2008-07-07 00:00:00	2001-01-18 00:00:00	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [4.0, 4.0]}
 SELECT dt, FIRST_VALUE(CAST(dt AS TIME)) OVER w1 FROM test WHERE `pk` > 3 WINDOW w1 AS ();
 dt	FIRST_VALUE(CAST(dt AS TIME)) OVER w1
 2001-01-18 00:00:00	00:00:00
@@ -8206,11 +8176,11 @@ a	b	c	SUM(a) OVER
 SELECT a, b, c, SUM(a) OVER
 (RANGE BETWEEN 2 PRECEDING AND CURRENT ROW)
 FROM t1;
-ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 SELECT a, b, c, SUM(a) OVER
 (ORDER BY b RANGE BETWEEN 2 PRECEDING AND CURRENT ROW)
 FROM t1;
-ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 SELECT a, b, c, SUM(a) OVER
 (ORDER BY a RANGE BETWEEN 2 PRECEDING AND CURRENT ROW)
 FROM t1;
@@ -9089,9 +9059,9 @@ FROM_UNIXTIME(FIRST_VALUE(@b)RESPECT NULLS OVER(),
 REPEAT('1',32))IS NOT FALSE
 1
 SELECT ((NTILE(70)OVER())<<(FROM_UNIXTIME(LEAD('',67) RESPECT NULLS
-OVER(),SHA(''))));
+OVER(),SHA2('',256))));
 ((NTILE(70)OVER())<<(FROM_UNIXTIME(LEAD('',67) RESPECT NULLS
-OVER(),SHA(''))))
+OVER(),SHA2('',256))))
 NULL
 SELECT FROM_UNIXTIME(LAG('-778:36:16.905133',246) RESPECT NULLS OVER(),
 REPLACE('%M%V   ','',''));
@@ -9201,8 +9171,8 @@ SELECT AVG(i) FROM t1 ORDER BY RANK() OVER (PARTITION BY AVG(i) ORDER BY i);
 ERROR 42000: In aggregated query without GROUP BY, expression #1 of PARTITION BY or ORDER BY clause of window '<unnamed window>' contains nonaggregated column 'test.t1.i'; this is incompatible with sql_mode=only_full_group_by
 SELECT AVG(i), RANK() OVER w FROM t1 WINDOW w AS (ORDER BY i);
 ERROR 42000: In aggregated query without GROUP BY, expression #1 of PARTITION BY or ORDER BY clause of window 'w' contains nonaggregated column 'test.t1.i'; this is incompatible with sql_mode=only_full_group_by
-SELECT (select AVG(i)+RANK() OVER (ORDER BY i)) FROM t1;
-ERROR 42000: In aggregated query without GROUP BY, expression #1 of SELECT list contains nonaggregated column 'test.t1.i'; this is incompatible with sql_mode=only_full_group_by
+SELECT (SELECT AVG(i)+RANK() OVER (ORDER BY i)) FROM t1;
+ERROR HY000: Outer reference test.t1.i in window's ORDER BY or PARTITION BY clause not allowed.
 DROP TABLE t1;
 # End of checking for errors
 #

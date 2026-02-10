@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -43,28 +43,30 @@ this program; if not, write to the Free Software Foundation, Inc.,
 using namespace zlob;
 
 void index_entry_test_00() {
-  std::unique_ptr<byte[]> ptr(new byte[300]);
+  std::unique_ptr<byte[]> const ptr(new byte[300]);
   z_index_entry_t ie(ptr.get());
   ie.init();
   std::cout << ie << std::endl;
-  std::cout << "Size of one z_index_entry_t: " << ie.SIZE << std::endl;
+  std::cout << "Size of one z_index_entry_t: " << zlob::z_index_entry_t::SIZE
+            << std::endl;
 }
 
 void frag_entry_test_00() {
-  std::unique_ptr<byte[]> ptr(new byte[300]);
+  std::unique_ptr<byte[]> const ptr(new byte[300]);
   z_frag_entry_t fe(ptr.get());
   fe.init();
   std::cout << fe << std::endl;
-  std::cout << "Size of one z_frag_entry_t: " << fe.SIZE << std::endl;
+  std::cout << "Size of one z_frag_entry_t: " << zlob::z_frag_entry_t::SIZE
+            << std::endl;
 }
 
 void z_first_page_basic_test() {
   z_first_page_t first;
-  std::cout << "Size of index entries=" << first.size_of_index_entries()
-            << std::endl;
-  std::cout << "Size of frag entries=" << first.size_of_frag_entries()
-            << std::endl;
-  std::cout << "Payload=" << first.payload() << std::endl;
+  std::cout << "Size of index entries="
+            << zlob::z_first_page_t::size_of_index_entries() << std::endl;
+  std::cout << "Size of frag entries="
+            << zlob::z_first_page_t::size_of_frag_entries() << std::endl;
+  std::cout << "Payload=" << zlob::z_first_page_t::payload() << std::endl;
   first.alloc();
 
   std::cout << first << std::endl;
@@ -74,15 +76,15 @@ void basic_insert_test(ulint size) {
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, size);
 
-  trx_id_t trxid = 28;
+  trx_id_t const trxid = 28;
 
   lob::ref_t ref;
   ref.m_id = lobid;
-  dberr_t err = zlob::z_insert(trxid, ref, lob, size);
+  dberr_t const err = zlob::z_insert(trxid, ref, lob, size);
   ASSERT_TRUE(err == DB_SUCCESS);
 
-  std::unique_ptr<byte[]> buf(new byte[size]);
-  ulint n = zlob::z_read(trxid, ref, 0, size, buf.get());
+  std::unique_ptr<byte[]> const buf(new byte[size]);
+  ulint const n = zlob::z_read(trxid, ref, 0, size, buf.get());
   ASSERT_EQ(n, size);
   ASSERT_TRUE(memcmp(lob, buf.get(), size) == 0);
 
@@ -92,18 +94,19 @@ void basic_insert_test(ulint size) {
 
 void basic_insert_test_2() {
   lobid_t lobid;
-  std::pair<byte *, ulint> result = lob_data::get_lob(&lobid, "earth215kb.jpg");
+  std::pair<byte *, ulint> const result =
+      lob_data::get_lob(&lobid, "earth215kb.jpg");
 
   byte *lob = result.first;
-  ulint size = result.second;
+  ulint const size = result.second;
 
   std::cout << "lobid=" << lobid << ", size=" << size << std::endl;
 
-  trx_id_t trxid = 30;
+  trx_id_t const trxid = 30;
 
   lob::ref_t ref;
   ref.m_id = lobid;
-  dberr_t err = zlob::z_insert(trxid, ref, lob, size);
+  dberr_t const err = zlob::z_insert(trxid, ref, lob, size);
   ut_a(err == DB_SUCCESS);
 
   zlob::z_print_info(ref, std::cout);
@@ -113,26 +116,26 @@ void basic_insert_test_2() {
 
 void basic_insert_read_test() {
   lobid_t lobid;
-  std::pair<byte *, ulint> result =
+  std::pair<byte *, ulint> const result =
       lob_data::get_lob(&lobid, "/home/innodb/x.avi");
 
   byte *lob = result.first;
-  ulint size = result.second;
+  ulint const size = result.second;
 
   std::cout << "lobid=" << lobid << ", size=" << size << std::endl;
 
-  trx_id_t trxid = 50;
+  trx_id_t const trxid = 50;
 
   lob::ref_t ref;
   ref.m_id = lobid;
-  dberr_t err = zlob::z_insert(trxid, ref, lob, size);
+  dberr_t const err = zlob::z_insert(trxid, ref, lob, size);
   ut_a(err == DB_SUCCESS);
 
   zlob::z_print_info(ref, std::cout);
 
-  std::unique_ptr<byte[]> buf(new byte[size]);
+  std::unique_ptr<byte[]> const buf(new byte[size]);
 
-  ulint n = zlob::z_read(trxid, ref, 0, size, buf.get());
+  ulint const n = zlob::z_read(trxid, ref, 0, size, buf.get());
   ut_a(n == size);
   ut_a(memcmp(lob, buf.get(), size) == 0);
   lob_data::remove_lob(lobid);
@@ -148,7 +151,7 @@ void z_replace_generic(ulint size, ulint offset, ulint replace_len) {
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
 
   /* Ensure that the requested replace length is within limits. */
-  ulint can_be_replaced = SIZE - offset;
+  ulint const can_be_replaced = SIZE - offset;
 
   /* alen is for actual replace length. */
   ulint alen = replace_len;
@@ -156,7 +159,7 @@ void z_replace_generic(ulint size, ulint offset, ulint replace_len) {
     alen = can_be_replaced;
   }
 
-  trx_id_t trx1 = 100;
+  trx_id_t const trx1 = 100;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -164,18 +167,18 @@ void z_replace_generic(ulint size, ulint offset, ulint replace_len) {
   zlob::z_insert(trx1, ref, lob, SIZE);
 
   /* Fetch the LOB that has been inserted. */
-  ulint fetch_offset = 0;
-  ulint fetch_bytes = SIZE;
-  std::unique_ptr<byte[]> buf(new byte[fetch_bytes]);
+  ulint const fetch_offset = 0;
+  ulint const fetch_bytes = SIZE;
+  std::unique_ptr<byte[]> const buf(new byte[fetch_bytes]);
   zlob::z_read(trx1, ref, fetch_offset, fetch_bytes, buf.get());
   ut_ad(memcmp(buf.get(), lob, SIZE) == 0);
 
   /* Replace */
   lobid_t lobid2;
-  trx_id_t trx2 = 300;
-  ulint replace_offset = offset;
+  trx_id_t const trx2 = 300;
+  ulint const replace_offset = offset;
   byte *replace_lob = lob_data::generate_lob(&lobid2, '|', replace_len);
-  ulint l1 =
+  ulint const l1 =
       zlob::z_replace(trx2, ref, replace_offset, replace_len, replace_lob);
 
   if (l1 != alen) {
@@ -185,8 +188,8 @@ void z_replace_generic(ulint size, ulint offset, ulint replace_len) {
   ASSERT_TRUE(l1 == alen);
 
   /* Fetch the older LOB that has been originally inserted. */
-  trx_id_t trx3 = 250;
-  std::unique_ptr<byte[]> buf2(new byte[SIZE]);
+  trx_id_t const trx3 = 250;
+  std::unique_ptr<byte[]> const buf2(new byte[SIZE]);
   zlob::z_read(trx3, ref, fetch_offset, fetch_bytes, buf2.get());
 
   if (memcmp(buf2.get(), lob, SIZE) != 0) {
@@ -207,9 +210,10 @@ void z_replace_generic(ulint size, ulint offset, ulint replace_len) {
   ut_ad(memcmp(buf2.get(), lob, SIZE) == 0);
 
   /* Fetch the newer LOB that has been replaced. */
-  trx_id_t trx4 = 350;
+  trx_id_t const trx4 = 350;
   memset(buf2.get(), '\0', SIZE);
-  ulint len = zlob::z_read(trx4, ref, fetch_offset, fetch_bytes, buf2.get());
+  ulint const len =
+      zlob::z_read(trx4, ref, fetch_offset, fetch_bytes, buf2.get());
 
   ut_ad(len == fetch_bytes);
 
@@ -220,7 +224,7 @@ void z_replace_generic(ulint size, ulint offset, ulint replace_len) {
   ut_ad(memcmp(buf2.get() + replace_offset, replace_lob, alen) == 0);
 
   // Compare the trailer
-  ulint trailer_len = SIZE - replace_offset - alen;
+  ulint const trailer_len = SIZE - replace_offset - alen;
   ut_ad(memcmp(buf2.get() + replace_offset + alen, lob + replace_offset + alen,
                trailer_len) == 0);
 
@@ -237,7 +241,7 @@ void z_insert_middle_generic(ulint size, ulint offset, ulint insert_len) {
 
   LOG("lob_size=" << size << ", offset=" << offset << ", len=" << insert_len);
 
-  trx_id_t trx1 = 100;
+  trx_id_t const trx1 = 100;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -245,33 +249,33 @@ void z_insert_middle_generic(ulint size, ulint offset, ulint insert_len) {
   zlob::z_insert(trx1, ref, lob, SIZE);
 
   /* Fetch the LOB that has been inserted. */
-  ulint fetch_offset = 0;
-  ulint fetch_bytes = SIZE;
-  std::unique_ptr<byte[]> buf(new byte[fetch_bytes]);
+  ulint const fetch_offset = 0;
+  ulint const fetch_bytes = SIZE;
+  std::unique_ptr<byte[]> const buf(new byte[fetch_bytes]);
   zlob::z_read(trx1, ref, fetch_offset, fetch_bytes, buf.get());
 
   ASSERT_TRUE(memcmp(buf.get(), lob, SIZE) == 0);
 
   /* Insert middle */
   lobid_t lobid2;
-  trx_id_t trx2 = 300;
-  ulint insert_offset = offset;
+  trx_id_t const trx2 = 300;
+  ulint const insert_offset = offset;
   byte *insert_lob = lob_data::generate_lob(&lobid2, '|', insert_len);
   zlob::z_insert_middle(trx2, ref, insert_offset, insert_lob, insert_len);
 
   /* Fetch the older LOB that has been originally inserted. */
-  trx_id_t trx3 = 250;
-  std::unique_ptr<byte[]> buf2(new byte[SIZE]);
+  trx_id_t const trx3 = 250;
+  std::unique_ptr<byte[]> const buf2(new byte[SIZE]);
   zlob::z_read(trx3, ref, fetch_offset, fetch_bytes, buf2.get());
 
   ASSERT_TRUE(memcmp(buf2.get(), lob, SIZE) == 0);
 
   /* Fetch the newer LOB that has been enlarged. */
-  trx_id_t trx4 = 350;
-  ulint new_size = SIZE + insert_len;
-  std::unique_ptr<byte[]> buf3(new byte[new_size]);
+  trx_id_t const trx4 = 350;
+  ulint const new_size = SIZE + insert_len;
+  std::unique_ptr<byte[]> const buf3(new byte[new_size]);
   memset(buf3.get(), '\0', new_size);
-  ulint len = zlob::z_read(trx4, ref, 0, new_size, buf3.get());
+  ulint const len = zlob::z_read(trx4, ref, 0, new_size, buf3.get());
   ASSERT_TRUE(len == new_size);
 
   // Compare the initial bytes.
@@ -285,7 +289,7 @@ void z_insert_middle_generic(ulint size, ulint offset, ulint insert_len) {
   ASSERT_TRUE(memcmp(buf3.get() + offset, insert_lob, insert_len) == 0);
 
   // Compare the trailer
-  ulint trailer_len = SIZE - offset;
+  ulint const trailer_len = SIZE - offset;
   ASSERT_TRUE(
       memcmp(buf3.get() + offset + insert_len, lob + offset, trailer_len) == 0);
 
@@ -302,7 +306,7 @@ void z_remove_middle_generic(ulint size, ulint offset, ulint remove_len) {
   lobid_t lobid;
   byte *lob = lob_data::generate_lob(&lobid, SIZE);
 
-  trx_id_t trx1 = 100;
+  trx_id_t const trx1 = 100;
 
   /* Insert the LOB */
   lob::ref_t ref;
@@ -310,20 +314,20 @@ void z_remove_middle_generic(ulint size, ulint offset, ulint remove_len) {
   zlob::z_insert(trx1, ref, lob, SIZE);
 
   /* Fetch the LOB that has been inserted. */
-  ulint fetch_offset = 0;
-  ulint fetch_bytes = SIZE;
-  std::unique_ptr<byte[]> buf(new byte[fetch_bytes]);
+  ulint const fetch_offset = 0;
+  ulint const fetch_bytes = SIZE;
+  std::unique_ptr<byte[]> const buf(new byte[fetch_bytes]);
   zlob::z_read(trx1, ref, fetch_offset, fetch_bytes, buf.get());
 
   ASSERT_TRUE(memcmp(buf.get(), lob, SIZE) == 0);
 
   /* Remove middle */
-  trx_id_t trx2 = 300;
+  trx_id_t const trx2 = 300;
   zlob::z_remove_middle(trx2, ref, offset, remove_len);
 
   /* Fetch the older LOB that has been originally inserted. */
-  trx_id_t trx3 = 250;
-  std::unique_ptr<byte[]> buf2(new byte[SIZE]);
+  trx_id_t const trx3 = 250;
+  std::unique_ptr<byte[]> const buf2(new byte[SIZE]);
   zlob::z_read(trx3, ref, fetch_offset, fetch_bytes, buf2.get());
 
   if (memcmp(buf2.get(), lob, SIZE) != 0) {
@@ -333,22 +337,23 @@ void z_remove_middle_generic(ulint size, ulint offset, ulint remove_len) {
   ASSERT_TRUE(memcmp(buf2.get(), lob, SIZE) == 0);
 
   /* Fetch the newer LOB that has been shortened. */
-  trx_id_t trx4 = 350;
+  trx_id_t const trx4 = 350;
 
   /* If there is request to remove more than available data, adjust it
   properly. */
-  ulint can_delete = (SIZE - offset);
-  ulint actually_deleted = remove_len > can_delete ? can_delete : remove_len;
-  ulint new_size = SIZE - actually_deleted;
-  std::unique_ptr<byte[]> buf3(new byte[new_size]);
+  ulint const can_delete = (SIZE - offset);
+  ulint const actually_deleted =
+      remove_len > can_delete ? can_delete : remove_len;
+  ulint const new_size = SIZE - actually_deleted;
+  std::unique_ptr<byte[]> const buf3(new byte[new_size]);
   memset(buf3.get(), '\0', new_size);
-  ulint len = zlob::z_read(trx4, ref, 0, new_size, buf3.get());
+  ulint const len = zlob::z_read(trx4, ref, 0, new_size, buf3.get());
   ASSERT_EQ(len, new_size);
 
   ASSERT_TRUE(memcmp(buf3.get(), lob, offset) == 0);
 
   // Compare the trailer
-  ulint trailer_len = SIZE - offset - actually_deleted;
+  ulint const trailer_len = SIZE - offset - actually_deleted;
   if (memcmp(buf3.get() + offset, lob + offset + actually_deleted,
              trailer_len) != 0) {
     std::cout << buf3.get() << std::endl;
@@ -360,7 +365,7 @@ void z_remove_middle_generic(ulint size, ulint offset, ulint remove_len) {
 
   zlob::z_purge(300, ref);
 
-  trx_id_t trx5 = 500;
+  trx_id_t const trx5 = 500;
 
   /* Fetch the LOB that has been inserted. */
   memset(buf.get(), 0x00, SIZE);
@@ -529,8 +534,8 @@ TEST(z_replace, ReplaceBegin) {
 }
 
 TEST(z_replace, ReplaceStressKB500) {
-  ulint lob_size = KB500;
-  ulint replace_len = 1000;
+  ulint const lob_size = KB500;
+  ulint const replace_len = 1000;
 
   for (ulint offset = 0; offset <= lob_size; offset += 500) {
     z_replace_generic(lob_size, offset, replace_len);

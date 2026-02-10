@@ -1,0 +1,130 @@
+# Validate handling of procedures, configured to generate a FEED response.
+#
+# Check handling of invalid: URL parameters, methods, payloads.
+# Validate the handling of input/output parameters.
+#
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+CREATE SCHEMA `mrs`;
+DELIMITER //;
+
+CREATE PROCEDURE `mrs`.`mirror` (IN input VARCHAR(3), OUT output1 VARCHAR(3), OUT output2 VARCHAR(3))
+BEGIN
+    SELECT input INTO output1;
+    SELECT input  INTO output2;
+    SELECT input  AS output3, input  AS output4;
+    SELECT input  AS output5;
+END;//
+
+CREATE PROCEDURE `mrs`.`hello_proc` (IN name CHAR(20))
+BEGIN
+    SELECT CONCAT('Hello ',name,'!') as result;
+END;//
+
+CREATE PROCEDURE `mrs`.`proc_do_nothing` ()
+BEGIN
+END;//
+
+DELIMITER ;//
+
+--let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+--let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port --display REQUEST,BODY,RESULT
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify that mixing feed response and in/out parameters as expected in GET request
+--echo #
+--echo # 1. Use SP that transforms input parameter into feed response
+--echo # 2. Use SP that transforms input parameter into feed response and output parameters
+--echo #
+--echo ## II. Verify that mixing feed response and in/out parameters as expected in PUT request
+--echo #
+--echo # 1. Use SP that transforms input parameter into feed response
+--echo # 2. Use SP that transforms input parameter into feed response and output parameters
+--echo #
+--echo #
+
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=mrs
+--let $mrs_add_schema_path=/proc
+--let $mrs_add_schema_items_on_page=NULL
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=mirror
+--let $mrs_add_db_object_path=/mirror
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_object_name=FirstResultset
+--let $mrs_add_object_fields=output3,output4
+--let $mrs_add_object_field_types=VARCHAR(3),VARCHAR(3)
+--let $mrs_add_object_type=RESULT
+--source ../include/mrs/object/add.inc
+
+--let $mrs_add_object_name=SecondResultset
+--let $mrs_add_object_fields=output5
+--let $mrs_add_object_field_types=VARCHAR(3)
+--let $mrs_add_object_type=RESULT
+--source ../include/mrs/object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc_do_nothing
+--let $mrs_add_db_object_path=/nothing
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=hello_proc
+--let $mrs_add_db_object_path=/hello_proc
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+# Wait until MySQLRouter fetches db-object.
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing
+  --wait-until-status 60;
+
+--echo
+--echo #
+--echo # I.1
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/hello_proc?name=Andresz;
+
+--echo
+--echo #
+--echo # I.2
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/mirror?input=1;
+
+--echo
+--echo #
+--echo # II.1
+--let $mrs_client_arg_path='/svc/proc/hello_proc'
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_payload='{"name": "Andresz"}'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.2
+--let $mrs_client_arg_path='/svc/proc/mirror'
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_payload='{"input":10}'
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+DROP SCHEMA mrs;
+--source ../include/mrs/cleanup.inc

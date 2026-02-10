@@ -1,0 +1,132 @@
+########################################################
+# WL#16779 User controlled aliasing for 'utf8'         #
+# Following the requirement that on a topology that    #
+# support failovers/switchovers all servers            #
+# configuration should be the same, `sql_mode` is set  #
+# on all servers.                                      #
+# Test that has a group with 3 members, the new        #
+# feature is used on the primary, a primary switchover #
+# happens, new connections to the new primary need to  #
+# be able to use the new feature.                      #
+#                                                      #
+########################################################
+
+## This initial setup starts three servers with all the prerequisites required
+## for GR to start
+
+--source include/have_group_replication_plugin.inc
+--let $rpl_skip_group_replication_start= 1
+--let $rpl_server_count= 3
+--let $rpl_group_replication_single_primary_mode=1
+--source include/group_replication.inc
+
+--let $rpl_connection_name= server1
+--source include/connection.inc
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+--let $server1_uuid= `SELECT @@server_uuid`
+--source include/start_and_bootstrap_group_replication.inc
+
+--let $rpl_connection_name= server2
+--source include/connection.inc
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+--source include/start_group_replication.inc
+
+--let $rpl_connection_name= server3
+--source include/connection.inc
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+--source include/start_group_replication.inc
+
+# Make sure server1 is Primary
+--let $assert_text= Verify server1 is primary
+--let $assert_cond= "[SELECT MEMBER_ID FROM performance_schema.replication_group_members WHERE MEMBER_ROLE=\'PRIMARY\', MEMBER_ID, 1]" = "$server1_uuid"
+--source include/assert.inc
+
+
+--echo
+--echo # 1. Validate that UTF8 is mapped into utf8mb4.
+--let $rpl_connection_name= server1
+--source include/connection.inc
+CREATE TABLE t1(
+  a CHAR(42) CHARACTER SET UTF8 NOT NULL PRIMARY KEY,
+  b CHAR(42) CHARACTER SET UTF8
+  GENERATED ALWAYS AS (regexp_like(a, _UTF8'^[a-z0-9-]+$')) VIRTUAL
+  );
+
+SHOW CREATE TABLE t1;
+
+INSERT INTO t1(a) VALUES(_utf8 x'F09F8DA3');
+SELECT * FROM t1;
+
+--source include/rpl/sync.inc
+
+--let $rpl_connection_name= server2
+--source include/connection.inc
+SHOW CREATE TABLE t1;
+SELECT * FROM t1;
+
+--let $rpl_connection_name= server3
+--source include/connection.inc
+SHOW CREATE TABLE t1;
+SELECT * FROM t1;
+
+
+--echo
+--echo # 2. SET server2 as PRIMARY
+--echo #    Validate that UTF8 is mapped into utf8mb4.
+--let $rpl_connection_name= server2
+--source include/connection.inc
+
+--let $server2_uuid= query_get_value(SELECT @@SERVER_UUID, @@SERVER_UUID, 1)
+--replace_result $server2_uuid SERVER2_UUID
+--eval SELECT group_replication_set_as_primary("$server2_uuid")
+
+--source include/gr_assert_primary_member.inc
+
+CREATE TABLE t2(
+  a CHAR(42) CHARACTER SET UTF8 NOT NULL PRIMARY KEY,
+  b CHAR(42) CHARACTER SET UTF8
+  GENERATED ALWAYS AS (regexp_like(a, _UTF8'^[a-z0-9-]+$')) VIRTUAL
+  );
+
+SHOW CREATE TABLE t2;
+
+INSERT INTO t2(a) VALUES(_utf8 x'F09F8DA3');
+SELECT * FROM t2;
+
+--source include/rpl/sync.inc
+
+--let $rpl_connection_name= server1
+--source include/connection.inc
+SHOW CREATE TABLE t2;
+SELECT * FROM t2;
+
+--let $rpl_connection_name= server3
+--source include/connection.inc
+SHOW CREATE TABLE t2;
+SELECT * FROM t2;
+
+
+--echo
+--echo # 3. Cleanup.
+--let $rpl_connection_name= server2
+--source include/connection.inc
+DROP TABLE t1;
+DROP TABLE t2;
+--source include/rpl/sync.inc
+
+--let $rpl_connection_name= server1
+--source include/connection.inc
+--source include/stop_group_replication.inc
+SET @@sql_mode=default;
+
+--let $rpl_connection_name= server3
+--source include/connection.inc
+--source include/stop_group_replication.inc
+SET @@sql_mode=default;
+
+--let $rpl_connection_name= server2
+--source include/connection.inc
+--source include/stop_group_replication.inc
+SET @@sql_mode=default;
+
+--source include/group_replication_end.inc

@@ -1,5 +1,5 @@
 /* Copyright (C) 2007 Google Inc.
-   Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -389,7 +389,7 @@ class ActiveTranx : public Trace {
 
 /**
    AckInfo is a POD. It defines a structure including information related to an
-   ack: server_id   - which slave the ack comes from. binlog_name - the binlog
+   ack: server_id   - which replica the ack comes from. binlog_name - the binlog
    file name included in the ack. binlog_pos  - the binlog file position
    included in the ack.
 */
@@ -449,7 +449,7 @@ class AckContainer : public Trace {
   }
 
   /**
-     Adjust capacity for the container and report the ack to semisync master,
+     Adjust capacity for the container and report the ack to semisync source,
      if it is full.
 
      @param[in] size size of the container.
@@ -461,13 +461,13 @@ class AckContainer : public Trace {
 
   /**
      Insert an ack's information into the container and report the minimum
-     ack to semisync master if it is full.
+     ack to semisync source if it is full.
 
-     @param[in] server_id  slave server_id of the ack
+     @param[in] server_id  replica server_id of the ack
      @param[in] log_file_name  binlog file name of the ack
      @param[in] log_file_pos   binlog file position of the ack
 
-     @return Pointer of an ack if the ack should be reported to semisync master.
+     @return Pointer of an ack if the ack should be reported to semisync source.
              Otherwise, NULL is returned.
   */
   const AckInfo *insert(int server_id, const char *log_file_name,
@@ -477,7 +477,7 @@ class AckContainer : public Trace {
   }
 
  private:
-  /* The greatest ack of the acks already reported to semisync master. */
+  /* The greatest ack of the acks already reported to semisync source. */
   AckInfo m_greatest_ack;
 
   AckInfo *m_ack_array;
@@ -510,8 +510,8 @@ class AckContainer : public Trace {
   }
 
   /**
-     Update a slave's ack into the container if another ack of the
-     slave is already in it.
+     Update a replica's ack into the container if another ack of the
+     replica is already in it.
 
      @param[in] server_id      server_id of the ack
      @param[in] log_file_name  binlog file name of the ack
@@ -562,9 +562,9 @@ class AckContainer : public Trace {
 };
 
 /**
-   The extension class for the master of semi-synchronous replication
+   The extension class for the source of semi-synchronous replication
 */
-class ReplSemiSyncMaster : public ReplSemiSyncBase {
+class ReplSemiSyncSource : public ReplSemiSyncBase {
  private:
   ActiveTranx *active_tranxs_ = nullptr;
   /* active transaction list: the list will
@@ -583,23 +583,24 @@ class ReplSemiSyncMaster : public ReplSemiSyncBase {
   /* This is set to true when reply_file_name_ contains meaningful data. */
   bool reply_file_name_inited_ = false;
 
-  /* The binlog name up to which we have received replies from any slaves. */
+  /* The binlog name up to which we have received replies from any replicas. */
   char reply_file_name_[FN_REFLEN];
 
-  /* The position in that file up to which we have the reply from any slaves. */
+  /* The position in that file up to which we have the reply from any replicas.
+   */
   my_off_t reply_file_pos_ = 0;
 
   /* This is set to true when we know the 'smallest' wait position. */
   bool wait_file_name_inited_ = false;
 
   /* NULL, or the 'smallest' filename that a transaction is waiting for
-   * slave replies.
+   * replica replies.
    */
   char wait_file_name_[FN_REFLEN];
 
   /* The smallest position in that file that a trx is waiting for: the trx
-   * can proceed and send an 'ok' to the client when the master has got the
-   * reply from the slave indicating that it already got the binlog events.
+   * can proceed and send an 'ok' to the client when the source has got the
+   * reply from the replica indicating that it already got the binlog events.
    */
   my_off_t wait_file_pos_ = 0;
 
@@ -608,7 +609,7 @@ class ReplSemiSyncMaster : public ReplSemiSyncBase {
    * We always maintain the position no matter whether semi-sync is switched
    * on switched off.  When a transaction wait timeout occurs, semi-sync will
    * switch off.  Binlog-dump thread can use the three fields to detect when
-   * slaves catch up on replication so that semi-sync can switch on again.
+   * replicas catch up on replication so that semi-sync can switch on again.
    */
   bool commit_file_name_inited_ = false;
 
@@ -619,8 +620,8 @@ class ReplSemiSyncMaster : public ReplSemiSyncBase {
   my_off_t commit_file_pos_ = 0;
 
   /* All global variables which can be set by parameters. */
-  volatile bool master_enabled_ =
-      false;                       /* semi-sync is enabled on the master */
+  volatile bool source_enabled_ =
+      false;                       /* semi-sync is enabled on the source */
   unsigned long wait_timeout_ = 0; /* timeout period(ms) during tranx wait */
 
   bool state_ = false; /* whether semi-sync is switched */
@@ -633,28 +634,28 @@ class ReplSemiSyncMaster : public ReplSemiSyncBase {
   /* Is semi-sync replication on? */
   bool is_on() { return (state_); }
 
-  void set_master_enabled(bool enabled) { master_enabled_ = enabled; }
+  void set_source_enabled(bool enabled) { source_enabled_ = enabled; }
 
   /* Switch semi-sync off because of timeout in transaction waiting. */
   int switch_off();
 
   void force_switch_on();
 
-  /* Switch semi-sync on when slaves catch up. */
+  /* Switch semi-sync on when replicas catch up. */
   int try_switch_on(const char *log_file_name, my_off_t log_file_pos);
 
  public:
-  ReplSemiSyncMaster();
-  ~ReplSemiSyncMaster();
+  ReplSemiSyncSource();
+  ~ReplSemiSyncSource();
 
-  bool getMasterEnabled() { return master_enabled_; }
+  bool getSourceEnabled() { return source_enabled_; }
   void setTraceLevel(unsigned long trace_level) {
     trace_level_ = trace_level;
     ack_container_.trace_level_ = trace_level;
     if (active_tranxs_) active_tranxs_->trace_level_ = trace_level;
   }
 
-  /* Set if the master has to wait for an ack from the salve or not. */
+  /* Set if the source has to wait for an ack from the salve or not. */
   void set_wait_no_replica(const void *val);
 
   /* Set the transaction wait timeout period, in milliseconds. */
@@ -667,33 +668,33 @@ class ReplSemiSyncMaster : public ReplSemiSyncBase {
    */
   int initObject();
 
-  /* Enable the object to enable semi-sync replication inside the master. */
-  int enableMaster();
+  /* Enable the object to enable semi-sync replication inside the source. */
+  int enableSource();
 
-  /* Enable the object to enable semi-sync replication inside the master. */
-  int disableMaster();
+  /* Enable the object to enable semi-sync replication inside the source. */
+  int disableSource();
 
-  /* Add a semi-sync replication slave */
-  void add_slave();
+  /* Add a semi-sync replication replica */
+  void add_replica();
 
-  /* Remove a semi-sync replication slave */
-  void remove_slave();
+  /* Remove a semi-sync replication replica */
+  void remove_replica();
 
-  /* Is the slave servered by the thread requested semi-sync */
-  bool is_semi_sync_slave();
+  /* Is the replica servered by the thread requested semi-sync */
+  bool is_semi_sync_replica();
 
   /* It parses a reply packet and call reportReplyBinlog to handle it. */
   int reportReplyPacket(uint32 server_id, const uchar *packet,
                         ulong packet_len);
 
   /* In semi-sync replication, reports up to which binlog position we have
-   * received replies from the slave indicating that it already get the events
-   * or that was skipped in the master.
+   * received replies from the replica indicating that it already get the events
+   * or that was skipped in the source.
    *
    * Input:
    *  log_file_name - (IN)  binlog file name
    *  end_offset    - (IN)  the offset in the binlog file up to which we have
-   *                        the replies from the slave or that was skipped
+   *                        the replies from the replica or that was skipped
    */
   void reportReplyBinlog(const char *log_file_name, my_off_t end_offset);
 
@@ -715,8 +716,8 @@ class ReplSemiSyncMaster : public ReplSemiSyncBase {
   int commitTrx(const char *trx_wait_binlog_name, my_off_t trx_wait_binlog_pos);
 
   /* Reserve space in the replication event packet header:
-   *  . slave semi-sync off: 1 byte - (0)
-   *  . slave semi-sync on:  3 byte - (0, 0xef, 0/1}
+   *  . replica semi-sync off: 1 byte - (0)
+   *  . replica semi-sync on:  3 byte - (0, 0xef, 0/1}
    *
    * Input:
    *  header   - (IN)  the header buffer
@@ -727,15 +728,15 @@ class ReplSemiSyncMaster : public ReplSemiSyncBase {
    */
   int reserveSyncHeader(unsigned char *header, unsigned long size);
 
-  /* Update the sync bit in the packet header to indicate to the slave whether
-   * the master will wait for the reply of the event.  If semi-sync is switched
-   * off and we detect that the slave is catching up, we switch semi-sync on.
+  /* Update the sync bit in the packet header to indicate to the replica whether
+   * the source will wait for the reply of the event.  If semi-sync is switched
+   * off and we detect that the replica is catching up, we switch semi-sync on.
    *
    * Input:
    *  packet        - (IN)  the packet containing the replication event
    *  log_file_name - (IN)  the event ending position's file name
    *  log_file_pos  - (IN)  the event ending position's file offset
-   *  server_id     - (IN)  master server id number
+   *  server_id     - (IN)  source server id number
    *
    * Return:
    *  0: success;  non-zero: error
@@ -757,41 +758,41 @@ class ReplSemiSyncMaster : public ReplSemiSyncBase {
    */
   int writeTranxInBinlog(const char *log_file_name, my_off_t log_file_pos);
 
-  /* Read the slave's reply so that we know how much progress the slave makes
-   * on receive replication events.
+  /* Read the replica's reply so that we know how much progress the replica
+   * makes on receive replication events.
    *
    * Input:
-   *  net          - (IN)  the connection to master
+   *  net          - (IN)  the connection to source
    *  event_buf    - (IN)  pointer to the event packet
    *
    * Return:
    *  0: success;  non-zero: error
    */
-  int readSlaveReply(NET *net, const char *event_buf);
+  int readReplicaReply(NET *net, const char *event_buf);
 
   /* In semi-sync replication, this method simulates the reception of
    * an reply and executes reportReplyBinlog directly when a transaction
-   * is skipped in the master.
+   * is skipped in the source.
    *
    * Input:
    *  event_buf     - (IN)  pointer to the event packet
-   *  server_id     - (IN)  master server id numbe
+   *  server_id     - (IN)  source server id numbe
    *  log_file_name - (IN)  the event ending position's file name
    *  log_file_pos  - (IN)  the event ending position's file offset
    *
    * Return:
    *  0: success;  non-zero: error
    */
-  int skipSlaveReply(const char *event_buf, uint32 server_id,
-                     const char *log_file_name, my_off_t log_file_pos);
+  int skipReplicaReply(const char *event_buf, uint32 server_id,
+                       const char *log_file_name, my_off_t log_file_pos);
 
   /* Export internal statistics for semi-sync replication. */
   void setExportStats();
 
-  /* 'reset master' command is issued from the user and semi-sync need to
+  /* 'reset source' command is issued from the user and semi-sync need to
    * go off for that.
    */
-  int resetMaster();
+  int resetSource();
 
   /*
     'SET rpl_semi_sync_source_wait_for_replica_count' command is issued from
@@ -803,16 +804,16 @@ class ReplSemiSyncMaster : public ReplSemiSyncBase {
 
     @return It returns 0 if succeeds, otherwise 1 is returned.
    */
-  int setWaitSlaveCount(unsigned int new_value);
+  int setWaitReplicaCount(unsigned int new_value);
 
   /*
     Update ack_array after receiving an ack from a dump connection. If any
     binlog pos is already replied by rpl_semi_sync_source_wait_for_replica_count
-    slaves, it will call reportReplyBinlog to increase received binlog
+    replicas, it will call reportReplyBinlog to increase received binlog
     position and wake up waiting transactions. It acquires LOCK_binlog_
     to protect the operation.
 
-    @param[in] server_id  slave server_id of the ack
+    @param[in] server_id  replica server_id of the ack
     @param[in] log_file_name  binlog file name of the ack
     @param[in] log_file_pos   binlog file position of the ack
   */
@@ -832,7 +833,7 @@ class ReplSemiSyncMaster : public ReplSemiSyncBase {
   }
 };
 
-/* System and status variables for the master component */
+/* System and status variables for the source component */
 extern bool rpl_semi_sync_source_enabled;
 extern char rpl_semi_sync_source_status;
 extern unsigned long rpl_semi_sync_source_clients;
@@ -843,7 +844,6 @@ extern unsigned long rpl_semi_sync_source_no_transactions;
 extern unsigned long rpl_semi_sync_source_off_times;
 extern unsigned long rpl_semi_sync_source_wait_timeouts;
 extern unsigned long rpl_semi_sync_source_timefunc_fails;
-extern unsigned long rpl_semi_sync_source_num_timeouts;
 extern unsigned long rpl_semi_sync_source_wait_sessions;
 extern unsigned long rpl_semi_sync_source_wait_pos_backtraverse;
 extern unsigned long rpl_semi_sync_source_avg_trx_wait_time;
@@ -854,10 +854,11 @@ extern unsigned long long rpl_semi_sync_source_net_wait_time;
 extern unsigned long long rpl_semi_sync_source_trx_wait_time;
 
 /*
-  This indicates whether we should keep waiting if no semi-sync slave
+  This indicates whether we should keep waiting if no semi-sync replica
   is available.
-     0           : stop waiting if detected no available semi-sync slave.
-     1 (default) : keep waiting until timeout even no available semi-sync slave.
+     0           : stop waiting if detected no available semi-sync replica.
+     1 (default) : keep waiting until timeout even no available semi-sync
+                   replica.
 */
 extern bool rpl_semi_sync_source_wait_no_replica;
 #endif /* SEMISYNC_SOURCE_H */

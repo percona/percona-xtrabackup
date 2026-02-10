@@ -25,15 +25,15 @@ GRANT SELECT ON *.* TO qa_test_3_dest;
 REVOKE SELECT ON db1.* FROM qa_test_3_dest;
 GRANT PROXY ON qa_test_3_dest TO qa_test_3_user;
 
---echo exec MYSQL PLUGIN_AUTH_OPT -h localhost -P MASTER_MYPORT -u qa_test_3_user --password=qa_test_3_dest -e "SELECT current_user(),user(),@@local.proxy_user,@@local.external_user\G" 2>&1
---exec $MYSQL $PLUGIN_AUTH_OPT -h localhost -P $MASTER_MYPORT -u qa_test_3_user --password=qa_test_3_dest -e "SELECT current_user(),user(),@@local.proxy_user,@@local.external_user\G" 2>&1
+--echo exec MYSQL PLUGIN_AUTH_OPT -h localhost -P MASTER_MYPORT -u qa_test_3_user --password=qa_test_3_dest --commands -e "SELECT current_user(),user(),@@local.proxy_user,@@local.external_user\G" 2>&1
+--exec $MYSQL $PLUGIN_AUTH_OPT -h localhost -P $MASTER_MYPORT -u qa_test_3_user --password=qa_test_3_dest --commands -e "SELECT current_user(),user(),@@local.proxy_user,@@local.external_user\G" 2>&1
 
 # Following should throw error because effective user does not have sufficient
 # privileges and connecting user's privileges are not considered in case of a
 # proxy grant.
---echo exec MYSQL PLUGIN_AUTH_OPT -h localhost -P MASTER_MYPORT -u qa_test_3_user --password=qa_test_3_dest -e "SELECT COUNT(*) FROM db1.t1\G" 2>&1
+--echo exec MYSQL PLUGIN_AUTH_OPT -h localhost -P MASTER_MYPORT -u qa_test_3_user --password=qa_test_3_dest --commands -e "SELECT COUNT(*) FROM db1.t1\G" 2>&1
 --error 1
---exec $MYSQL $PLUGIN_AUTH_OPT -h localhost -P $MASTER_MYPORT -u qa_test_3_user --password=qa_test_3_dest -e "SELECT COUNT(*) FROM db1.t1\G" 2>&1
+--exec $MYSQL $PLUGIN_AUTH_OPT -h localhost -P $MASTER_MYPORT -u qa_test_3_user --password=qa_test_3_dest --commands -e "SELECT COUNT(*) FROM db1.t1\G" 2>&1
 
 DROP USER qa_test_3_dest, qa_test_3_user;
 
@@ -49,8 +49,8 @@ CREATE USER qa_test_4_dest IDENTIFIED BY 'dest_passwd';
 GRANT SELECT ON *.* TO qa_test_4_dest;
 GRANT PROXY ON qa_test_4_dest TO qa_test_4_user;
 
---echo exec MYSQL PLUGIN_AUTH_OPT -h localhost -P MASTER_MYPORT -u qa_test_4_user --password=qa_test_4_dest -e "SELECT current_user(),user(),@@local.proxy_user,@@local.external_user\G" 2>&1
---exec $MYSQL $PLUGIN_AUTH_OPT -h localhost -P $MASTER_MYPORT -u qa_test_4_user --password=qa_test_4_dest -e "SELECT current_user(),user(),@@local.proxy_user,@@local.external_user\G" 2>&1
+--echo exec MYSQL PLUGIN_AUTH_OPT -h localhost -P MASTER_MYPORT -u qa_test_4_user --password=qa_test_4_dest --commands -e "SELECT current_user(),user(),@@local.proxy_user,@@local.external_user\G" 2>&1
+--exec $MYSQL $PLUGIN_AUTH_OPT -h localhost -P $MASTER_MYPORT -u qa_test_4_user --password=qa_test_4_dest --commands -e "SELECT current_user(),user(),@@local.proxy_user,@@local.external_user\G" 2>&1
 
 # Following should work because effective user has sufficient privileges and
 # connecting user's privileges are not considered in case of a proxy grant

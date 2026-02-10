@@ -21,7 +21,11 @@
 #
 # Should be tested against "binlog disabled" server
 --source include/not_log_bin.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 --source common/binlog/gtid_next_single_stmt_trx_rollback_with_non-trans_table.test
 --source common/binlog/gtid_next_single_stmt_trx_rollback_with_trans_table.test
 
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

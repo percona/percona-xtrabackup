@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -157,7 +157,7 @@ DEFINE_BOOL_METHOD(dynamic_privilege_services_impl::unregister_privilege,
                                           Acl_cache_lock_mode::WRITE_MODE);
       DBUG_EXECUTE_IF("bug34594035_simulate_lock_failure",
                       DBUG_SET("+d,bug34594035_fail_acl_cache_lock"););
-      acl_cache_lock.lock();
+      if (!acl_cache_lock.lock()) return true;
       /* do a best effort erase from the deprecations too */
       get_dynamic_privilege_deprecations()->erase(priv);
 
@@ -270,6 +270,9 @@ bool dynamic_privilege_init(void) {
   my_service<SERVICE_TYPE(dynamic_privilege_register)> service(
       "dynamic_privilege_register.mysql_server", srv_registry);
   assert(service.is_valid());
+  my_service<SERVICE_TYPE(dynamic_privilege_deprecation)> deprecation_svc(
+      "dynamic_privilege_deprecation.mysql_server", srv_registry);
+  assert(deprecation_svc.is_valid());
   ret += service->register_privilege(STRING_WITH_LEN("ROLE_ADMIN"));
   ret += service->register_privilege(STRING_WITH_LEN("SYSTEM_VARIABLES_ADMIN"));
   ret += service->register_privilege(STRING_WITH_LEN("BINLOG_ADMIN"));
@@ -300,12 +303,15 @@ bool dynamic_privilege_init(void) {
   ret += service->register_privilege(STRING_WITH_LEN("TELEMETRY_LOG_ADMIN"));
   ret += service->register_privilege(STRING_WITH_LEN("REPLICATION_APPLIER"));
   ret += service->register_privilege(STRING_WITH_LEN("SHOW_ROUTINE"));
+  ret += service->register_privilege(
+      STRING_WITH_LEN("CREATE_SPATIAL_REFERENCE_SYSTEM"));
   ret += service->register_privilege(STRING_WITH_LEN("INNODB_REDO_LOG_ENABLE"));
   ret += service->register_privilege(STRING_WITH_LEN("FLUSH_OPTIMIZER_COSTS"));
   ret += service->register_privilege(STRING_WITH_LEN("FLUSH_STATUS"));
   ret += service->register_privilege(STRING_WITH_LEN("FLUSH_USER_RESOURCES"));
   ret += service->register_privilege(STRING_WITH_LEN("FLUSH_TABLES"));
   ret += service->register_privilege(STRING_WITH_LEN("FLUSH_PRIVILEGES"));
+  ret += deprecation_svc->add(STRING_WITH_LEN("FLUSH_PRIVILEGES"));
   ret +=
       service->register_privilege(STRING_WITH_LEN("GROUP_REPLICATION_STREAM"));
   ret += service->register_privilege(

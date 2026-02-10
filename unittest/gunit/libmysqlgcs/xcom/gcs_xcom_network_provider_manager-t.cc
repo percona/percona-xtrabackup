@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -96,15 +96,15 @@ class mock_network_provider : public Network_provider {
 
 class XComNetworkProviderManagerTest : public GcsBaseTest {
  protected:
-  XComNetworkProviderManagerTest() {}
+  XComNetworkProviderManagerTest() = default;
 
-  virtual void SetUp() {}
+  void SetUp() override {}
 
-  virtual void TearDown() {}
+  void TearDown() override {}
 };
 
 TEST_F(XComNetworkProviderManagerTest, BasicManagerTest) {
-  std::shared_ptr<mock_network_provider> mock_provider =
+  std::shared_ptr<mock_network_provider> const mock_provider =
       std::make_shared<mock_network_provider>();
   EXPECT_CALL(*mock_provider, get_communication_stack())
       .WillRepeatedly(testing::Return(XCOM_PROTOCOL));
@@ -127,7 +127,7 @@ TEST_F(XComNetworkProviderManagerTest, BasicManagerTest) {
 }
 
 TEST_F(XComNetworkProviderManagerTest, ManagerShortcutMethodsTest) {
-  std::shared_ptr<mock_network_provider> mock_provider =
+  std::shared_ptr<mock_network_provider> const mock_provider =
       std::make_shared<mock_network_provider>();
   EXPECT_CALL(*mock_provider, get_communication_stack())
       .WillRepeatedly(testing::Return(XCOM_PROTOCOL));
@@ -149,7 +149,7 @@ TEST_F(XComNetworkProviderManagerTest, ManagerShortcutMethodsTest) {
 }
 
 TEST_F(XComNetworkProviderManagerTest, DoubleAddManagerTest) {
-  std::shared_ptr<mock_network_provider> mock_provider =
+  std::shared_ptr<mock_network_provider> const mock_provider =
       std::make_shared<mock_network_provider>();
   EXPECT_CALL(*mock_provider, get_communication_stack())
       .WillRepeatedly(testing::Return(XCOM_PROTOCOL));
@@ -174,7 +174,7 @@ TEST_F(XComNetworkProviderManagerTest, DoubleAddManagerTest) {
 
 TEST_F(XComNetworkProviderManagerTest,
        RemoveAndStartAndStopProviderManagerTest) {
-  std::shared_ptr<mock_network_provider> mock_provider =
+  std::shared_ptr<mock_network_provider> const mock_provider =
       std::make_shared<mock_network_provider>();
   EXPECT_CALL(*mock_provider, get_communication_stack())
       .WillRepeatedly(testing::Return(XCOM_PROTOCOL));
@@ -192,7 +192,7 @@ TEST_F(XComNetworkProviderManagerTest,
 
 TEST_F(XComNetworkProviderManagerTest,
        RemoveAllAndStartAndStopProviderManagerTest) {
-  std::shared_ptr<mock_network_provider> mock_provider =
+  std::shared_ptr<mock_network_provider> const mock_provider =
       std::make_shared<mock_network_provider>();
   EXPECT_CALL(*mock_provider, get_communication_stack())
       .WillRepeatedly(testing::Return(XCOM_PROTOCOL));
@@ -208,7 +208,7 @@ TEST_F(XComNetworkProviderManagerTest,
 }
 
 TEST_F(XComNetworkProviderManagerTest, BasicManagerActiveProviderTest) {
-  std::shared_ptr<mock_network_provider> mock_provider =
+  std::shared_ptr<mock_network_provider> const mock_provider =
       std::make_shared<mock_network_provider>();
   EXPECT_CALL(*mock_provider, get_communication_stack())
       .WillRepeatedly(testing::Return(XCOM_PROTOCOL));
@@ -234,7 +234,7 @@ TEST_F(XComNetworkProviderManagerTest, BasicManagerActiveProviderTest) {
 }
 
 TEST_F(XComNetworkProviderManagerTest, BasicManagerActiveProviderWithSSLTest) {
-  std::shared_ptr<mock_network_provider> mock_provider =
+  std::shared_ptr<mock_network_provider> const mock_provider =
       std::make_shared<mock_network_provider>();
   EXPECT_CALL(*mock_provider, get_communication_stack())
       .WillRepeatedly(testing::Return(XCOM_PROTOCOL));
@@ -266,7 +266,7 @@ TEST_F(XComNetworkProviderManagerTest, BasicManagerActiveProviderWithSSLTest) {
 }
 
 TEST_F(XComNetworkProviderManagerTest, BasicManagerActiveFailProviderTest) {
-  std::shared_ptr<mock_network_provider> mock_provider =
+  std::shared_ptr<mock_network_provider> const mock_provider =
       std::make_shared<mock_network_provider>();
   EXPECT_CALL(*mock_provider, get_communication_stack())
       .WillRepeatedly(testing::Return(MYSQL_PROTOCOL));
@@ -286,7 +286,7 @@ TEST_F(XComNetworkProviderManagerTest,
        BasicManagerActiveProviderInterfaceTest) {
   constexpr int fd_number = 42;
 
-  std::shared_ptr<mock_network_provider> mock_provider =
+  std::shared_ptr<mock_network_provider> const mock_provider =
       std::make_shared<mock_network_provider>();
   EXPECT_CALL(*mock_provider, get_communication_stack())
       .WillRepeatedly(testing::Return(XCOM_PROTOCOL));
@@ -311,7 +311,7 @@ TEST_F(XComNetworkProviderManagerTest,
   ASSERT_FALSE(
       Network_provider_manager::getInstance().start_active_network_provider());
 
-  auto connection_to =
+  auto *connection_to =
       Network_provider_manager::getInstance().open_xcom_connection("", 12345,
                                                                    false);
   ASSERT_NE(connection_to, nullptr);

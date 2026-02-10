@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -71,6 +71,29 @@ static inline void format_key(char *buf, size_t buf_size, const char *db_name,
                        ndb_name_is_temp(table_name) ? FN_IS_TMP : 0);
 }
 
+static void check_unused_thr_lock(THR_LOCK *thr_lock) {
+  /**
+   * Check thr_lock is not involved in any locking before deleting.
+   * SQL code uses thr_lock structures to hold tables while operations
+   * are taking place. If there are still threads holding the
+   * NDB_SHARE, then it must not be destroyed, or else the lock_data
+   * is left in a dangling state and a future acquiree might deadlock
+   * indefinitely.
+   */
+  if (unlikely((thr_lock->read_wait.data != nullptr) ||
+               (thr_lock->read.data != nullptr) ||
+               (thr_lock->write_wait.data != nullptr) ||
+               (thr_lock->write.data != nullptr))) {
+    ndb_log_error(
+        "Fatal! NDB_SHARE is being destroyed while locked via SQL thr_lock. "
+        "Lock data:\n"
+        "  read_wait: %p, read: %p, write_wait: %p, write: %p",
+        thr_lock->read_wait.data, thr_lock->read.data,
+        thr_lock->write_wait.data, thr_lock->write.data);
+    abort();
+  }
+}
+
 NDB_SHARE::NDB_SHARE(const char *key_arg) {
   /* Allocates enough space for key, db, and table_name */
   key = NDB_SHARE::create_key(key_arg);
@@ -108,6 +131,8 @@ NDB_SHARE *NDB_SHARE::create(const char *key) {
 }
 
 NDB_SHARE::~NDB_SHARE() {
+  check_unused_thr_lock(&lock);
+
   thr_lock_delete(&lock);
   mysql_mutex_destroy(&mutex);
 
@@ -807,6 +832,16 @@ void NDB_SHARE::dbg_check_shares_update() {
   for (const NDB_SHARE *share : dropped_shares) {
     assert(strcmp(share->db, "mysql") == 0);
   }
+}
+
+void NDB_SHARE::dbg_print_locks(const NDB_SHARE *share) {
+  DBUG_PRINT(
+      "NDB_SHARE",
+      ("{\n  table: %s.%s,\n  lock: %p,\n  mutex: %p,\n  write: %p,\n  "
+       "write_wait: %p,\n  read: %p,  read_wait: %p\n}",
+       share->db, share->table_name, &(share->lock), &(share->lock.mutex),
+       share->lock.write.data, share->lock.write_wait.data,
+       share->lock.read.data, share->lock.read_wait.data));
 }
 #endif
 

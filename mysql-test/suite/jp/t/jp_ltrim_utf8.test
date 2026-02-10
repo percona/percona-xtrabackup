@@ -101,18 +101,27 @@ INSERT INTO `Ｔ９` VALUES ('　　龔龖龗龞龡');
 INSERT INTO `Ｔ９` VALUES ('　　　龔龖龗龞龡');
 
 #InnoDB
+--sorted_result
 SELECT LTRIM(`Ｃ１`) from `Ｔ１`;
+--sorted_result
 SELECT LTRIM(`Ｃ１`) from `Ｔ２`;
+--sorted_result
 SELECT LTRIM(`Ｃ１`) from `Ｔ３`;
 
 #MyISAM
+--sorted_result
 SELECT LTRIM(`Ｃ１`) from `Ｔ４`;
+--sorted_result
 SELECT LTRIM(`Ｃ１`) from `Ｔ５`;
+--sorted_result
 SELECT LTRIM(`Ｃ１`) from `Ｔ６`;
 
 #MEMORY
+--sorted_result
 SELECT LTRIM(`Ｃ１`) from `Ｔ７`;
+--sorted_result
 SELECT LTRIM(`Ｃ１`) from `Ｔ８`;
+--sorted_result
 SELECT LTRIM(`Ｃ１`) from `Ｔ９`;
 
 DROP TABLE `Ｔ１`;

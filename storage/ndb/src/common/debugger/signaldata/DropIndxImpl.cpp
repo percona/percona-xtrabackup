@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,7 @@ bool printDROP_INDX_IMPL_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const DropIndxImplReq *sig = (const DropIndxImplReq *)theData;
+  const auto *sig = (const DropIndxImplReq *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, " requestType: %u", sig->requestType);
@@ -51,7 +51,7 @@ bool printDROP_INDX_IMPL_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const DropIndxImplConf *sig = (const DropIndxImplConf *)theData;
+  const auto *sig = (const DropIndxImplConf *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");
@@ -65,7 +65,7 @@ bool printDROP_INDX_IMPL_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const DropIndxImplRef *sig = (const DropIndxImplRef *)theData;
+  const auto *sig = (const DropIndxImplRef *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");

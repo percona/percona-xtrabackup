@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,7 @@
 #include <memory>
 #include <new>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -73,7 +74,8 @@
 #include "mysql_time.h"
 #include "mysqld_error.h"
 #include "nulls.h"
-#include "scope_guard.h"         // Scope_guard
+#include "scope_guard.h"  // Scope_guard
+#include "sql-common/json_dom.h"
 #include "sql/auth/auth_acls.h"  // DB_ACLS
 #include "sql/auth/auth_common.h"
 #include "sql/auth/sql_security_ctx.h"
@@ -94,7 +96,8 @@
 #include "sql/enum_query_type.h"
 #include "sql/error_handler.h"  // Internal_error_handler
 #include "sql/events.h"         // Events
-#include "sql/field.h"          // Field
+#include "sql/external_table_const.h"
+#include "sql/field.h"  // Field
 #include "sql/handler.h"
 #include "sql/item.h"  // Item_empty_string
 #include "sql/key.h"
@@ -130,7 +133,8 @@
 #include "sql/sql_partition.h"  // HA_USE_AUTO_PARTITION
 #include "sql/sql_plugin.h"     // PLUGIN_IS_DELETED, LOCK_plugin
 #include "sql/sql_plugin_ref.h"
-#include "sql/sql_profile.h"    // query_profile_statistics_info
+#include "sql/sql_profile.h"  // query_profile_statistics_info
+#include "sql/sql_rewrite.h"
 #include "sql/sql_table.h"      // primary_key_name
 #include "sql/sql_tmp_table.h"  // create_ondisk_from_heap
 #include "sql/sql_trigger.h"    // acquire_shared_mdl_for_trigger
@@ -344,6 +348,12 @@ bool Sql_cmd_show_create_function::check_privileges(THD *) { return false; }
 
 bool Sql_cmd_show_create_function::execute_inner(THD *thd) {
   return sp_show_create_routine(thd, enum_sp_type::FUNCTION, lex->spname);
+}
+
+bool Sql_cmd_show_create_library::check_privileges(THD *) { return false; }
+
+bool Sql_cmd_show_create_library::execute_inner(THD *thd) {
+  return sp_show_create_routine(thd, enum_sp_type::LIBRARY, lex->spname);
 }
 
 bool Sql_cmd_show_create_procedure::check_privileges(THD *) { return false; }
@@ -1267,7 +1277,7 @@ bool mysqld_show_create_db(THD *thd, char *dbname,
   char buff[2048], orig_dbname[NAME_LEN];
   String buffer(buff, sizeof(buff), system_charset_info);
   Security_context *sctx = thd->security_context();
-  uint db_access;
+  Access_bitmask db_access;
   HA_CREATE_INFO create;
   bool schema_read_only{false};
   const uint create_options = create_info ? create_info->options : 0;
@@ -1459,7 +1469,8 @@ static const char *require_quotes(const char *name, size_t name_length) {
   @param length                length of the appending identifier
 */
 
-void append_identifier(String *packet, const char *name, size_t length) {
+void append_identifier_with_backtick(String *packet, const char *name,
+                                     size_t length) {
   const char *name_end;
   const char quote_char = '`';
 
@@ -1497,6 +1508,8 @@ void append_identifier(String *packet, const char *name, size_t length) {
 /**
   Convert and quote the given identifier if needed and append it to the
   target string. If the given identifier is empty, it will be quoted.
+  This function use the backtick or double quotes as escape char based on
+  sql_mode.
 
   @param thd                   thread handler
   @param packet                target string
@@ -1509,6 +1522,8 @@ void append_identifier(String *packet, const char *name, size_t length) {
 void append_identifier(const THD *thd, String *packet, const char *name,
                        size_t length, const CHARSET_INFO *from_cs,
                        const CHARSET_INFO *to_cs) {
+  if (thd == nullptr)
+    return append_identifier_with_backtick(packet, name, length);
   const char *name_end;
   char quote_char;
   int q;
@@ -1532,8 +1547,7 @@ void append_identifier(const THD *thd, String *packet, const char *name,
     cs_info = to_cs;
   }
 
-  q = thd != nullptr ? get_quote_char_for_identifier(thd, to_name, to_length)
-                     : '`';
+  q = get_quote_char_for_identifier(thd, to_name, to_length);
 
   if (q == EOF) {
     packet->append(to_name, to_length, packet->charset());
@@ -1563,7 +1577,9 @@ void append_identifier(const THD *thd, String *packet, const char *name,
     if (!to_length) to_length = 1;
     if (to_length == 1 && chr == static_cast<uchar>(quote_char))
       packet->append(&quote_char, 1, system_charset_info);
-    packet->append(to_name, to_length, system_charset_info);
+    packet->append(to_name,
+                   std::min(to_length, static_cast<size_t>(name_end - to_name)),
+                   system_charset_info);
   }
   packet->append(&quote_char, 1, system_charset_info);
 }
@@ -1598,14 +1614,6 @@ int get_quote_char_for_identifier(const THD *thd, const char *name,
     return EOF;
   if (thd->variables.sql_mode & MODE_ANSI_QUOTES) return '"';
   return '`';
-}
-
-void append_identifier(const THD *thd, String *packet, const char *name,
-                       size_t length) {
-  if (thd == nullptr)
-    append_identifier(packet, name, length);
-  else
-    append_identifier(thd, packet, name, length, nullptr, nullptr);
 }
 
 /* Append directory name (if exists) to CREATE INFO */
@@ -1657,6 +1665,7 @@ static bool print_on_update_clause(Field *field, String *val, bool lcase) {
 /**
   Print "DEFAULT" clause of a field into a string.
 
+
   @param thd               The THD to create the DEFAULT clause for.
   @param field             The field to generate the DEFAULT clause for.
   @param def_value         String to write the DEFAULT clause to to.
@@ -1664,122 +1673,149 @@ static bool print_on_update_clause(Field *field, String *val, bool lcase) {
                            false for not needed (value will became its
                            own field (with its own charset) in a table);
                            true for quote (as part of a SHOW CREATE statement).
+  @param[out] as_a_comment if not null, the function will set it to true when
+                           the default value is invalid, to signal that we
+                           should show it as a comment.
+                           Caller should initialize the value to 'false'.
   @return                  true if field has a DEFAULT value, false otherwise.
 */
 static bool print_default_clause(THD *thd, Field *field, String *def_value,
-                                 bool quoted) {
+                                 bool quoted, bool *as_a_comment) {
   const enum enum_field_types field_type = field->type();
   const bool has_default = (!field->is_flag_set(NO_DEFAULT_VALUE_FLAG) &&
                             !(field->auto_flags & Field::NEXT_NUMBER));
 
-  if (field->gcol_info) return false;
+  if (field->gcol_info || !has_default) return false;
 
   def_value->length(0);
-  if (has_default) {
-    if (field->has_insert_default_general_value_expression()) {
-      def_value->append("(");
-      char buffer[128];
-      String s(buffer, sizeof(buffer), system_charset_info);
-      field->m_default_val_expr->print_expr(thd, &s);
-      def_value->append(s);
-      def_value->append(")");
-    } else if (field->has_insert_default_datetime_value_expression()) {
-      /*
-        We are using CURRENT_TIMESTAMP instead of NOW because it is the SQL
-        standard.
-      */
-      def_value->append(STRING_WITH_LEN("CURRENT_TIMESTAMP"));
-      if (field->decimals() > 0)
-        def_value->append_parenthesized(field->decimals());
-      // Not null by default and not a BLOB
-    } else if (!field->is_null() && field_type != FIELD_TYPE_BLOB) {
-      char tmp[MAX_FIELD_WIDTH];
-      String type(tmp, sizeof(tmp), field->charset());
-      // Wrap bit values in b'...'
-      if (field_type == MYSQL_TYPE_BIT) {
-        const longlong dec = field->val_int();
-        char *ptr = longlong2str(dec, tmp + 2, 2);
-        const uint32 length = (uint32)(ptr - tmp);
-        tmp[0] = 'b';
-        tmp[1] = '\'';
-        tmp[length] = '\'';
-        type.length(length + 1);
-        quoted = false;
-      } else
-        field->val_str(&type);
 
-      if (type.length()) {
-        /*
-          value_only will contain only the default value itself,
-          while def_value will contain that, any quotation, escaping,
-          character-set designation, and so on.
-        */
-        String value_only;
+  if (field->has_insert_default_general_value_expression()) {
+    def_value->append("(");
+    char buffer[128];
+    String s(buffer, sizeof(buffer), system_charset_info);
+    field->m_default_val_expr->print_expr(thd, &s);
+    def_value->append(s);
+    def_value->append(")");
 
-        /* Try to convert to system_charset_info (UTF-8). */
-        /* Counter-intuitively, we do not receive an error if we can not
-           create valid UTF-8 with copy(), so we'll have to talk to the
-           lower level functions. */
-
-        const char *well_formed_error_pos;
-        const char *cannot_convert_error_pos;
-        const char *from_end_pos;
-        size_t to_len; /* destination size in bytes (not characters) */
-        size_t bytes_copied;
-
-        to_len = type.length() * system_charset_info->mbmaxlen;
-
-        value_only.reserve(to_len);
-
-        bytes_copied = well_formed_copy_nchars(
-            /* to    */ system_charset_info, value_only.ptr(), to_len,
-            /* from  */ field->charset(), type.ptr(), type.length(),
-            /* chars */ type.length(), &well_formed_error_pos,
-            &cannot_convert_error_pos, &from_end_pos);
-
-        // If conversion failed, hexify string.
-        if ((well_formed_error_pos != nullptr) ||
-            (cannot_convert_error_pos != nullptr)) {
-          unsigned char *p;
-          size_t l = type.length();
-          char
-              hex[3];  // 2 characters as we have 2 nibbles per byte, plus '\0'.
-
-          /*
-            Result length:
-            - 2 characters (for 2 nibbles) for each byte we hexify
-            - plus "0x"
-            - plus '\0'
-          */
-          def_value->reserve(l * 2 + 3);
-          def_value->append("0x");
-          p = (unsigned char *)type.ptr();
-          while (l--) {
-            snprintf(hex, sizeof(hex), "%02X", (int)(*(p++) & 0xff));
-            def_value->append(hex);
-          }
-        }
-
-        /*
-          Charset conversation succeeded or wasn't necessary.
-        */
-        else {
-          value_only.length(bytes_copied);
-
-          if (quoted)
-            append_unescaped(def_value, value_only.ptr(), value_only.length());
-          else
-            def_value->append(value_only.ptr(), value_only.length());
-        }
-
-      } else if (quoted)  // !type.length()
-        def_value->append(STRING_WITH_LEN("''"));
-    } else if (field->is_nullable() && quoted && field_type != FIELD_TYPE_BLOB)
-      def_value->append(STRING_WITH_LEN("NULL"));  // Null as default
-    else
-      return false;
+    return true;
   }
-  return has_default;
+  // BLOB-based columns cannot have a DEFAULT
+  if (field_type == MYSQL_TYPE_BLOB) return false;
+
+  if (field->has_insert_default_datetime_value_expression()) {
+    /*
+      We are using CURRENT_TIMESTAMP instead of NOW because it is the SQL
+      standard.
+    */
+    def_value->append(STRING_WITH_LEN("CURRENT_TIMESTAMP"));
+    if (field->decimals() > 0) {
+      def_value->append_parenthesized(field->decimals());
+    }
+    return true;
+  }
+
+  if (!field->is_null()) {
+    // Print the empty DEFAULT commented out to give the user a chance to fix
+    // it. JSON was  not supposed to have  any non-NULL DEFAULT in the first
+    // place. This check as well as the parameter as_a_comment should be
+    // removed when an error is raised  during CREATE TABLE.
+    if (field_type == MYSQL_TYPE_JSON) {
+      push_warning_printf(
+          thd, Sql_condition::SL_WARNING, ER_BLOB_CANT_HAVE_DEFAULT,
+          ER_THD(thd, ER_BLOB_CANT_HAVE_DEFAULT), field->field_name);
+      if (as_a_comment != nullptr) *as_a_comment = true;
+    }
+    char tmp[MAX_FIELD_WIDTH];
+    String type(tmp, sizeof(tmp), field->charset());
+    // Wrap bit values in b'...'
+    if (field_type == MYSQL_TYPE_BIT) {
+      const longlong dec = field->val_int();
+      char *ptr = longlong2str(dec, tmp + 2, 2);
+      const uint32 length = (uint32)(ptr - tmp);
+      tmp[0] = 'b';
+      tmp[1] = '\'';
+      tmp[length] = '\'';
+      type.length(length + 1);
+      quoted = false;
+    } else {
+      field->val_str(&type);
+    }
+
+    if (type.length()) {
+      /*
+        value_only will contain only the default value itself,
+        while def_value will contain that, any quotation, escaping,
+        character-set designation, and so on.
+      */
+      String value_only;
+
+      /* Try to convert to system_charset_info (UTF-8). */
+      /* Counter-intuitively, we do not receive an error if we can not
+         create valid UTF-8 with copy(), so we'll have to talk to the
+         lower level functions. */
+
+      const char *well_formed_error_pos;
+      const char *cannot_convert_error_pos;
+      const char *from_end_pos;
+      size_t to_len; /* destination size in bytes (not characters) */
+      size_t bytes_copied;
+
+      to_len = type.length() * system_charset_info->mbmaxlen;
+
+      value_only.reserve(to_len);
+
+      bytes_copied = well_formed_copy_nchars(
+          /* to    */ system_charset_info, value_only.ptr(), to_len,
+          /* from  */ field->charset(), type.ptr(), type.length(),
+          /* chars */ type.length(), &well_formed_error_pos,
+          &cannot_convert_error_pos, &from_end_pos);
+
+      // If conversion failed, hexify string.
+      if ((well_formed_error_pos != nullptr) ||
+          (cannot_convert_error_pos != nullptr)) {
+        unsigned char *p;
+        size_t l = type.length();
+        char hex[3];  // 2 characters as we have 2 nibbles per byte, plus '\0'.
+
+        /*
+          Result length:
+          - 2 characters (for 2 nibbles) for each byte we hexify
+          - plus "0x"
+          - plus '\0'
+        */
+        def_value->reserve(l * 2 + 3);
+        def_value->append("0x");
+        p = (unsigned char *)type.ptr();
+        while (l--) {
+          snprintf(hex, sizeof(hex), "%02X", (int)(*(p++) & 0xff));
+          def_value->append(hex);
+        }
+      }
+
+      /*
+        Charset conversation succeeded or wasn't necessary.
+      */
+      else {
+        value_only.length(bytes_copied);
+
+        if (quoted)
+          append_unescaped(def_value, value_only.ptr(), value_only.length());
+        else
+          def_value->append(value_only.ptr(), value_only.length());
+      }
+
+    } else if (quoted) {  // !type.length()
+      def_value->append(STRING_WITH_LEN("''"));
+    }
+    return true;
+  }
+
+  if (field->is_nullable() && quoted) {
+    def_value->append(STRING_WITH_LEN("NULL"));  // Null as default
+    return true;
+  }
+
+  return false;
 }
 
 /*
@@ -1919,6 +1955,389 @@ static void print_foreign_key_info(THD *thd, const LEX_CSTRING *db,
 }
 
 /**
+  Helper function to lookup a specific key in a JSON object and add
+  its numeric value, preceded by the specified prefix, and succeeded
+  by the specified suffix, to the statement string.
+
+  @param packet   Pointer to a string where statement will be written.
+  @param json_obj The JSON object to look for the key.
+  @param prefix   The string to precede the numeric value.
+  @param suffix   The string to succeed the numeric value.
+  @param key_name The name of the key.
+
+  @returns true if error, false otherwise.
+*/
+static bool append_number_option(String *packet, const Json_wrapper &json_obj,
+                                 const char *prefix, const char *suffix,
+                                 std::string_view key_name) {
+  Json_wrapper value = json_obj.lookup(key_name);
+  if (!value.empty()) {
+    packet->append(prefix);
+    packet->append(STRING_WITH_LEN(" "));
+    if (value.to_string(packet, true, "append_number_option()",
+                        JsonDepthErrorHandler)) {
+      return true;
+    }
+    packet->append(STRING_WITH_LEN(" "));
+    packet->append(suffix);
+    packet->append(STRING_WITH_LEN(" "));
+  }
+  return false;
+}
+
+/**
+  Helper function to lookup a specific key in a JSON object and add its
+  boolean value, preceded by the specified SQL keyword, to the statement string.
+
+  @param packet   Pointer to a string where statement will be written.
+  @param json_obj The JSON object to look for the key.
+  @param sql_name The SQL keyword to use.
+  @param key_name The name of the key.
+  @param onoff    Whether the boolean value should be printed as ON/OFF or 1/0.
+*/
+static void append_bool_option(String *packet, const Json_wrapper &json_obj,
+                               const char *sql_name,
+                               const std::string_view key_name,
+                               bool onoff = false) {
+  Json_wrapper bool_value = json_obj.lookup(key_name);
+  if (!bool_value.empty()) {
+    packet->append(sql_name);
+    packet->append(STRING_WITH_LEN(" "));
+    if (bool_value.get_boolean()) {
+      if (onoff) {
+        packet->append(STRING_WITH_LEN("ON"));
+      } else {
+        packet->append(STRING_WITH_LEN("1"));
+      }
+    } else {
+      if (onoff) {
+        packet->append(STRING_WITH_LEN("OFF"));
+      } else {
+        packet->append(STRING_WITH_LEN("0"));
+      }
+    }
+    packet->append(STRING_WITH_LEN(" "));
+  }
+}
+
+/**
+  Helper function to lookup a specific key in a JSON object and add its
+  string value, preceded by the specified SQL keyword, to the statement string.
+
+  @param packet   Pointer to a string where statement will be written.
+  @param json_obj The JSON object to look for the key.
+  @param sql_name The SQL keyword to use.
+  @param key_name The name of the key.
+  @param quotes   Whether the string should be enclosed in quotes.
+*/
+static void append_string_option(String *packet, const Json_wrapper &json_obj,
+                                 const char *sql_name,
+                                 std::string_view key_name,
+                                 bool quotes = true) {
+  Json_wrapper str_value = json_obj.lookup(key_name);
+  if (!str_value.empty()) {
+    packet->append(sql_name);
+    packet->append(STRING_WITH_LEN(" "));
+    if (quotes) {
+      append_unescaped(packet, str_value.get_data(),
+                       str_value.get_data_length());
+    } else {
+      packet->append(str_value.get_data(), str_value.get_data_length());
+    }
+    packet->append(STRING_WITH_LEN(" "));
+  }
+}
+
+/**
+  Generate the FILE_FORMAT table option from the content of ENGINE_ATTRIBUTE
+
+  @param packet          Pointer to a string where statement will be written.
+  @param file_format_obj The dialect object in the ENGINE_ATTRIBUTE.
+
+  @returns true if error, false otherwise.
+*/
+static bool generate_sql_from_file_format_object(
+    String *packet, const Json_wrapper &file_format_obj) {
+  packet->append(STRING_WITH_LEN("FILE_FORMAT = ( "));
+
+  append_string_option(packet, file_format_obj, "FORMAT",
+                       external_table::kFormatParam, false);
+  append_string_option(packet, file_format_obj, "COMPRESSION",
+                       external_table::kCompressionParam);
+  append_string_option(packet, file_format_obj, "CHARACTER SET",
+                       external_table::kEncodingParam);
+  append_bool_option(packet, file_format_obj, "HEADER",
+                     external_table::kHasHeaderParam, true);
+
+  // Check if there is any field options
+  if (file_format_obj.lookup(external_table::kDateFormatParam).type() !=
+          enum_json_type::J_ERROR ||
+      file_format_obj.lookup(external_table::kTimeFormatParam).type() !=
+          enum_json_type::J_ERROR ||
+      file_format_obj.lookup(external_table::kTimestampFormatParam).type() !=
+          enum_json_type::J_ERROR ||
+      file_format_obj.lookup(external_table::kDatetimeFormatParam).type() !=
+          enum_json_type::J_ERROR ||
+      file_format_obj.lookup(external_table::kNullValueParam).type() !=
+          enum_json_type::J_ERROR ||
+      file_format_obj.lookup(external_table::kEmptyValueParam).type() !=
+          enum_json_type::J_ERROR ||
+      file_format_obj.lookup(external_table::kFieldDelimiterParam).type() !=
+          enum_json_type::J_ERROR ||
+      file_format_obj.lookup(external_table::kQuotationMarksParam).type() !=
+          enum_json_type::J_ERROR ||
+      file_format_obj.lookup(external_table::kEscapeCharacterParam).type() !=
+          enum_json_type::J_ERROR) {
+    packet->append(STRING_WITH_LEN("FIELDS "));
+    append_string_option(packet, file_format_obj, "TERMINATED BY",
+                         external_table::kFieldDelimiterParam);
+    append_string_option(packet, file_format_obj, "OPTIONALLY ENCLOSED BY",
+                         external_table::kQuotationMarksParam);
+    append_string_option(packet, file_format_obj, "ESCAPED BY",
+                         external_table::kEscapeCharacterParam);
+    append_string_option(packet, file_format_obj, "DATE FORMAT",
+                         external_table::kDateFormatParam);
+    append_string_option(packet, file_format_obj, "TIME FORMAT",
+                         external_table::kTimeFormatParam);
+    if (!file_format_obj.lookup(external_table::kDatetimeFormatParam).empty()) {
+      append_string_option(packet, file_format_obj, "DATETIME FORMAT",
+                           external_table::kDatetimeFormatParam);
+    } else {
+      append_string_option(packet, file_format_obj, "DATETIME FORMAT",
+                           external_table::kTimestampFormatParam);
+    }
+    append_string_option(packet, file_format_obj, "NULL AS",
+                         external_table::kNullValueParam);
+    append_string_option(packet, file_format_obj, "EMPTY VALUE",
+                         external_table::kEmptyValueParam);
+  }
+  append_string_option(packet, file_format_obj, "LINES TERMINATED BY",
+                       external_table::kRecordDelimiterParam);
+  if (append_number_option(packet, file_format_obj, "IGNORE", "LINES",
+                           external_table::kSkipRowsParam)) {
+    return true;
+  }
+
+  packet->append(STRING_WITH_LEN(") "));
+  return false;
+}
+
+/**
+  Check if all parts of the engine attribute object can be expressed
+  with SQL syntax.
+
+  Iterates through all JSON keys of the engine attribute and checks whether
+  there is a key that does not have a mapping to SQL syntax.
+
+  @param engine_attr_obj The json_object that represents the parsed
+                         engine attribute string.
+  @returns false if an unsupported JSON key is found, true, otherwise.
+ */
+static bool can_use_sql_for_engine_attribute(Json_object *engine_attr_obj) {
+  using namespace external_table;
+
+  const std::set<std::string_view> supported_top_level_params = {
+      kFileParam, kDialectParam, "auto_refresh"sv,
+      "auto_refresh_event_source"sv};
+  for (const auto &iter : *engine_attr_obj) {
+    if (!supported_top_level_params.contains(iter.first)) {
+      return false;
+    }
+  }
+
+  const std::set<std::string_view> supported_file_params = {
+      kUriParam,     kParParam,          kNameParam,        kPrefixParam,
+      kPatternParam, kIsStrictModeParam, kAllowMissingParam};
+  auto *files_dom = engine_attr_obj->get(kFileParam);
+  if (files_dom != nullptr) {
+    if (files_dom->json_type() != enum_json_type::J_ARRAY) {
+      return false;
+    }
+
+    Json_wrapper files_array(files_dom, true);
+    for (size_t i = 0; i < files_array.length(); ++i) {
+      Json_wrapper file_object(files_array[i]);
+      if (file_object.type() != enum_json_type::J_OBJECT) {
+        return false;
+      }
+
+      Json_object_wrapper object_wrapper(file_object);
+      for (const auto &iter : object_wrapper) {
+        if (!supported_file_params.contains(iter.first)) {
+          return false;
+        }
+      }
+    }
+  }
+
+  const std::set<std::string_view> supported_dialect_params = {
+      kFormatParam,          kQuotationMarksParam,  kEscapeCharacterParam,
+      kSkipRowsParam,        kRecordDelimiterParam, kFieldDelimiterParam,
+      kEncodingParam,        kDateFormatParam,      kTimeFormatParam,
+      kTimestampFormatParam, kIsStrictModeParam,    kConstraintCheckParam,
+      kHasHeaderParam,       kAllowMissingParam,    kNullValueParam,
+      kEmptyValueParam,      kCompressionParam,     kDatetimeFormatParam};
+  auto *file_format_dom = engine_attr_obj->get(kDialectParam);
+  if (file_format_dom != nullptr) {
+    if (file_format_dom->json_type() != enum_json_type::J_OBJECT) {
+      return false;
+    }
+    Json_wrapper file_format_obj(file_format_dom, true);
+    Json_object_wrapper object_wrapper(file_format_obj);
+    for (const auto &iter : object_wrapper) {
+      if (!supported_dialect_params.contains(iter.first)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+/**
+  Generate SQL clauses that match the content of ENGINE_ATTRIBUTE
+
+  @param thd             The thread.
+  @param packet          Pointer to a string where statement will be written.
+  @param engine_attr_obj JSON object for the parsed ENGINE_ATTRIBUTE.
+  @param table_name      The name of the table.
+  @param redact_par      Whether URLs for external files should be redacted
+
+  @returns true if error, false otherwise.
+*/
+static bool generate_sql_from_engine_attribute(THD *thd, String *packet,
+                                               Json_object *engine_attr_obj,
+                                               LEX_CSTRING table_name,
+                                               bool redact_par) {
+  auto *file_format_dom = engine_attr_obj->get(external_table::kDialectParam);
+  if (file_format_dom != nullptr &&
+      file_format_dom->json_type() == enum_json_type::J_OBJECT) {
+    Json_wrapper file_format_obj(file_format_dom, true);
+    packet->append(STRING_WITH_LEN(" /*!90400 "));
+
+    bool contains_file_format_options = false;
+    Json_object_wrapper object_wrapper(file_format_obj);
+    for (auto iter = object_wrapper.cbegin(); iter != object_wrapper.cend();
+         ++iter) {
+      if (iter->first != external_table::kIsStrictModeParam &&
+          iter->first != external_table::kConstraintCheckParam &&
+          iter->first != external_table::kAllowMissingParam) {
+        contains_file_format_options = true;
+        break;
+      }
+    }
+    if (contains_file_format_options &&
+        generate_sql_from_file_format_object(packet, file_format_obj)) {
+      return true;
+    }
+
+    append_bool_option(packet, file_format_obj, "STRICT_LOAD",
+                       external_table::kIsStrictModeParam);
+    append_bool_option(packet, file_format_obj, "VERIFY_KEY_CONSTRAINTS",
+                       external_table::kConstraintCheckParam);
+    append_bool_option(packet, file_format_obj, "ALLOW_MISSING_FILES",
+                       external_table::kAllowMissingParam);
+
+    packet->append(STRING_WITH_LEN(" */"));
+
+    // Remove dialect object from ENGINE_ATTRIBUTE unless it is requested to
+    // show the original version
+    if (DBUG_EVALUATE_IF("print_engine_attribute", false, true)) {
+      engine_attr_obj->remove(external_table::kDialectParam);
+    }
+  }
+
+  auto *files_dom = engine_attr_obj->get(external_table::kFileParam);
+  if (files_dom != nullptr &&
+      files_dom->json_type() == enum_json_type::J_ARRAY) {
+    Json_wrapper files_array(files_dom, true);
+
+    packet->append(STRING_WITH_LEN(" /*!90400 FILES = ( "));
+
+    bool warning_pushed = false;
+    for (size_t i = 0; i < files_array.length(); ++i) {
+      if (i > 0) {
+        packet->append(", ");
+      }
+      if (redact_par) {
+        Json_wrapper url = files_array[i].lookup(external_table::kParParam);
+        if (url.empty()) {
+          // A PAR added with SQL syntax will not be stored as "uri",
+          // but an explicit ENGINE_ATTRIBUTE may contain a PAR in "uri"
+          url = files_array[i].lookup(external_table::kUriParam);
+        }
+        if (!url.empty()) {
+          packet->append(STRING_WITH_LEN("URL = "));
+          String original_url(url.get_data(), url.get_data_length(),
+                              system_charset_info);
+          String rlb;
+          redact_external_metadata(original_url, rlb);
+          append_unescaped(packet, rlb.ptr(), rlb.length());
+          packet->append(STRING_WITH_LEN(" "));
+          if (!warning_pushed) {
+            push_warning_printf(
+                thd, Sql_condition::SL_WARNING, ER_WARN_REDACTED_PRIVILEGES,
+                ER_THD(thd, ER_WARN_REDACTED_PRIVILEGES), table_name.str);
+            warning_pushed = true;
+          }
+        }
+      } else {
+        append_string_option(packet, files_array[i], "URL",
+                             external_table::kParParam);
+        append_string_option(packet, files_array[i], "URI",
+                             external_table::kUriParam);
+      }
+      append_string_option(packet, files_array[i], "FILE_NAME",
+                           external_table::kNameParam);
+      append_string_option(packet, files_array[i], "FILE_PATTERN",
+                           external_table::kPatternParam);
+      append_string_option(packet, files_array[i], "FILE_PREFIX",
+                           external_table::kPrefixParam);
+
+      append_bool_option(packet, files_array[i], "STRICT_LOAD",
+                         external_table::kIsStrictModeParam);
+      append_bool_option(packet, files_array[i], "ALLOW_MISSING_FILES",
+                         external_table::kAllowMissingParam);
+    }
+    packet->append(STRING_WITH_LEN(") */"));
+
+    // Remove file array from ENGINE_ATTRIBUTE unless it is requested to
+    // show the original version
+    if (DBUG_EVALUATE_IF("print_engine_attribute", false, true)) {
+      engine_attr_obj->remove(external_table::kFileParam);
+    }
+  }
+
+  auto *auto_refresh_dom = engine_attr_obj->get("auto_refresh");
+  if (auto_refresh_dom != nullptr &&
+      auto_refresh_dom->json_type() == enum_json_type::J_BOOLEAN) {
+    Json_wrapper engine_attr(engine_attr_obj, true);
+    packet->append(STRING_WITH_LEN(" /*!90400 "));
+    append_bool_option(packet, engine_attr, "AUTO_REFRESH", "auto_refresh");
+    packet->append(STRING_WITH_LEN(" */"));
+    if (DBUG_EVALUATE_IF("print_engine_attribute", false, true)) {
+      engine_attr_obj->remove("auto_refresh");
+    }
+  }
+
+  auto *auto_refresh_source_dom =
+      engine_attr_obj->get("auto_refresh_event_source");
+  if (auto_refresh_source_dom != nullptr &&
+      auto_refresh_source_dom->json_type() == enum_json_type::J_STRING) {
+    Json_wrapper engine_attr(engine_attr_obj, true);
+    packet->append(STRING_WITH_LEN(" /*!90400 "));
+    append_string_option(packet, engine_attr, "AUTO_REFRESH_SOURCE",
+                         "auto_refresh_event_source");
+    packet->append(STRING_WITH_LEN(" */"));
+    if (DBUG_EVALUATE_IF("print_engine_attribute", false, true)) {
+      engine_attr_obj->remove("auto_refresh_event_source");
+    }
+  }
+
+  return false;
+}
+
+/**
   Build a CREATE TABLE statement for a table.
 
   @param thd              The thread
@@ -1967,6 +2386,8 @@ bool store_create_info(THD *thd, Table_ref *table_list, String *packet,
 
   if (share->tmp_table)
     packet->append(STRING_WITH_LEN("CREATE TEMPORARY TABLE "));
+  else if (share->db_create_options & HA_OPTION_CREATE_EXTERNAL_TABLE)
+    packet->append(STRING_WITH_LEN("CREATE EXTERNAL TABLE "));
   else
     packet->append(STRING_WITH_LEN("CREATE TABLE "));
   if (create_info_arg &&
@@ -2156,9 +2577,12 @@ bool store_create_info(THD *thd, Table_ref *table_list, String *packet,
         break;
     }
 
-    if (print_default_clause(thd, field, &def_value, true)) {
+    bool as_a_comment{false};
+    if (print_default_clause(thd, field, &def_value, true, &as_a_comment)) {
+      if (as_a_comment) packet->append(STRING_WITH_LEN(" /* "));
       packet->append(STRING_WITH_LEN(" DEFAULT "));
       packet->append(def_value.ptr(), def_value.length(), system_charset_info);
+      if (as_a_comment) packet->append(STRING_WITH_LEN(" */ "));
     }
 
     if (print_on_update_clause(field, &def_value, false)) {
@@ -2179,12 +2603,59 @@ bool store_create_info(THD *thd, Table_ref *table_list, String *packet,
     }
 
     // Storage engine specific json attributes
-    if (field->m_engine_attribute.length) {
-      packet->append(STRING_WITH_LEN(" /*!80021 ENGINE_ATTRIBUTE "));
-      // append escaped JSON
-      append_unescaped(packet, field->m_engine_attribute.str,
-                       field->m_engine_attribute.length);
-      packet->append(STRING_WITH_LEN(" */"));
+    if (field->m_engine_attribute.length > 0) {
+      // If content of ENGINE_ATTRIBUTE is not according to the expectations,
+      // we do not try to generate SQL for it, but show the recorded
+      // ENGINE_ATTRIBUTE, instead.
+      bool engine_attribute_error = false;
+      auto engine_attr = Json_dom::parse(
+          field->m_engine_attribute.str, field->m_engine_attribute.length,
+          [](const char *, size_t) {}, JsonDepthErrorHandler);
+      if (engine_attr != nullptr &&
+          engine_attr->json_type() == enum_json_type::J_OBJECT) {
+        auto *engine_attr_obj = down_cast<Json_object *>(engine_attr.get());
+        Json_dom *format_dom = nullptr;
+        switch (field->type()) {
+          case MYSQL_TYPE_DATE:
+            format_dom = engine_attr_obj->get(external_table::kDateFormatParam);
+            break;
+          case MYSQL_TYPE_TIME:
+            format_dom = engine_attr_obj->get(external_table::kTimeFormatParam);
+            break;
+          case MYSQL_TYPE_TIMESTAMP:
+          case MYSQL_TYPE_DATETIME:
+            // kDatetimeFormatParam has a higher precedence over
+            // kTimestampFormatParam.
+            format_dom =
+                engine_attr_obj->get(external_table::kDatetimeFormatParam);
+            if (format_dom == nullptr) {
+              format_dom =
+                  engine_attr_obj->get(external_table::kTimestampFormatParam);
+            }
+            break;
+          default:
+            engine_attribute_error = true;
+        }
+
+        if (!engine_attribute_error && format_dom != nullptr &&
+            format_dom->json_type() == enum_json_type::J_STRING) {
+          auto *format = down_cast<Json_string *>(format_dom);
+          packet->append(STRING_WITH_LEN(" /*!90300 EXTERNAL_FORMAT "));
+          append_unescaped(packet, format->value().data(), format->size());
+          packet->append(STRING_WITH_LEN(" */"));
+        } else if (!engine_attribute_error) {
+          engine_attribute_error = true;
+        }
+      } else {
+        engine_attribute_error = true;
+      }
+      if (engine_attribute_error ||
+          DBUG_EVALUATE_IF("print_engine_attribute", true, false)) {
+        packet->append(STRING_WITH_LEN(" /*!80021 ENGINE_ATTRIBUTE "));
+        append_unescaped(packet, field->m_engine_attribute.str,
+                         field->m_engine_attribute.length);
+        packet->append(STRING_WITH_LEN(" */"));
+      }
     }
     if (field->m_secondary_engine_attribute.length) {
       packet->append(STRING_WITH_LEN(" /*!80021 SECONDARY_ENGINE_ATTRIBUTE "));
@@ -2308,11 +2779,24 @@ bool store_create_info(THD *thd, Table_ref *table_list, String *packet,
   packet->append(STRING_WITH_LEN("\n)"));
 
   /**
-    Append START TRANSACTION for CREATE SELECT on SE supporting atomic DDL.
-    This is done only while binlogging CREATE TABLE AS SELECT.
+    Append START TRANSACTION clause for:
+    a. CREATE TABLE AS SELECT if the SE supports atomic DDL.
+    b. CREATE TABLE ... START TRANSACTION
+      - HA_CREATE_INFO::m_transactional_ddl indicates if the table should be
+        created and not committed at the end of the statement. This flag is
+        set for CREATE TABLE ... START TRANSACTION statement only.
+
+    These checks also ensure we do not append 'START TRANSACTION' clause for
+    'SHOW CREATE TABLE' query or the normal 'CREATE TABLE' query without the
+    'START TRANSACTION' clause where the query needs to be rewritten (for eg:
+    adding GIPK information on a table without primary key when
+    sql_generate_invisible_primary_key is enabled).
   */
-  if (!thd->lex->query_block->field_list_is_empty() &&
-      (create_info_arg->db_type->flags & HTON_SUPPORTS_ATOMIC_DDL)) {
+  if ((!thd->lex->query_block->field_list_is_empty()  // contains SELECT clause
+       &&
+       (create_info_arg->db_type->flags & HTON_SUPPORTS_ATOMIC_DDL))  // case a
+      || (create_info_arg && create_info_arg->m_transactional_ddl)    // case b
+  ) {
     packet->append(STRING_WITH_LEN(" START TRANSACTION"));
   }
 
@@ -2540,17 +3024,83 @@ bool store_create_info(THD *thd, Table_ref *table_list, String *packet,
                        share->connect_string.length);
     }
     if (share->has_secondary_engine() &&
-        !thd->variables.show_create_table_skip_secondary_engine) {
+        !thd->variables.show_create_table_skip_secondary_engine &&
+        share->tmp_table == NO_TMP_TABLE) {
       packet->append(" SECONDARY_ENGINE=");
       packet->append(share->secondary_engine.str,
                      share->secondary_engine.length);
     }
 
-    if (share->engine_attribute.length) {
-      packet->append(STRING_WITH_LEN(" /*!80021 ENGINE_ATTRIBUTE="));
-      append_unescaped(packet, share->engine_attribute.str,
-                       share->engine_attribute.length);
-      packet->append(STRING_WITH_LEN(" */"));
+    if (share->engine_attribute.length > 0) {
+      // Set to true if we need to hide parts of the par url
+      bool redact_par = false;
+      // If only parts of the engine attribute was converted to SQL syntax,
+      // this object will contain what remains to be printed
+      Json_object *engine_attr_obj = nullptr;
+      // Declared here to avoid that the result of the parsing is
+      // deallocated too early.
+      Json_dom_ptr parsed_engine_attr;
+
+      if (for_show_create_stmt) {
+        redact_par =
+            check_table_access(thd, CREATE_ACL, table_list, false, 1, true) &&
+            check_table_access(thd, ALTER_ACL, table_list, false, 1, true);
+
+        parsed_engine_attr = Json_dom::parse(
+            share->engine_attribute.str, share->engine_attribute.length,
+            [](const char *, size_t) {}, JsonDepthErrorHandler);
+        if (parsed_engine_attr != nullptr &&
+            parsed_engine_attr->json_type() == enum_json_type::J_OBJECT) {
+          engine_attr_obj = down_cast<Json_object *>(parsed_engine_attr.get());
+          if (can_use_sql_for_engine_attribute(engine_attr_obj)) {
+            if (generate_sql_from_engine_attribute(thd, packet, engine_attr_obj,
+                                                   share->table_name,
+                                                   redact_par)) {
+              return true;
+            }
+          }
+        }
+      }
+      String original_engine_attribute(share->engine_attribute.str,
+                                       share->engine_attribute.length,
+                                       system_charset_info);
+      String *engine_attribute = &original_engine_attribute;
+      String json_buffer;
+      // If we have a JSON object from above, use that instead
+      if (engine_attr_obj != nullptr) {
+        if (engine_attr_obj->cardinality() > 0) {
+          Json_wrapper remaining_attributes(engine_attr_obj, true);
+          if (remaining_attributes.to_string(&json_buffer, true,
+                                             "store_create_info()",
+                                             JsonDepthErrorHandler)) {
+            return true;
+          }
+          engine_attribute = &json_buffer;
+        } else {
+          engine_attribute = nullptr;
+        }
+      }
+      if (engine_attribute != nullptr) {
+        packet->append(STRING_WITH_LEN(" /*!80021 ENGINE_ATTRIBUTE="));
+
+        if (redact_par) {
+          String rlb;
+          redact_external_metadata(*engine_attribute, rlb);
+
+          append_unescaped(packet, rlb.ptr(), rlb.length());
+          // inform users without privileges that the result of SHOW CREATE
+          // TABLE is redacted. Useful for the case of redacted mysqldump
+          // result.
+          push_warning_printf(
+              thd, Sql_condition::SL_WARNING, ER_WARN_REDACTED_PRIVILEGES,
+              ER_THD(thd, ER_WARN_REDACTED_PRIVILEGES), share->table_name.str);
+
+        } else {
+          append_unescaped(packet, engine_attribute->ptr(),
+                           engine_attribute->length());
+        }
+        packet->append(STRING_WITH_LEN(" */"));
+      }
     }
     if (share->secondary_engine_attribute.length) {
       packet->append(STRING_WITH_LEN(" /*!80021 SECONDARY_ENGINE_ATTRIBUTE="));
@@ -2649,6 +3199,12 @@ static void store_key_options(THD *thd, String *packet, TABLE *table,
 
 void view_store_options(const THD *thd, Table_ref *table, String *buff) {
   append_algorithm(table, buff);
+  if (table->is_mv_se_materialized()) {
+    buff->append(STRING_WITH_LEN("MATERIALIZED /*(BY ENGINE="));
+    const auto mv_engine = table->get_mv_se_name();
+    buff->append(mv_engine.str, mv_engine.length);
+    buff->append(STRING_WITH_LEN(")*/ "));
+  }
   append_definer(thd, buff, table->definer.user, table->definer.host);
   if (table->view_suid)
     buff->append(STRING_WITH_LEN("SQL SECURITY DEFINER "));
@@ -2711,13 +3267,18 @@ static void view_store_create_info(const THD *thd, Table_ref *table,
   if (!foreign_db_mode) {
     view_store_options(thd, table, buff);
   }
+  if (table->is_json_duality_view()) {
+    buff->append("JSON RELATIONAL DUALITY ");
+  }
   buff->append(STRING_WITH_LEN("VIEW "));
   if (!compact_view_name) {
     append_identifier(thd, buff, table->db, table->db_length);
     buff->append('.');
   }
   append_identifier(thd, buff, table->table_name, table->table_name_length);
-  print_derived_column_names(thd, buff, table->derived_column_names());
+
+  if (!table->is_json_duality_view())
+    print_derived_column_names(thd, buff, table->derived_column_names());
 
   buff->append(STRING_WITH_LEN(" AS "));
 
@@ -2774,8 +3335,8 @@ class thread_info_compare {
 
 static const char *thread_state_info(THD *invoking_thd, THD *inspected_thd) {
   DBUG_TRACE;
-  if (inspected_thd->get_protocol()->get_rw_status()) {
-    if (inspected_thd->get_protocol()->get_rw_status() == 2)
+  if (inspected_thd->get_protocol_rw_status()) {
+    if (inspected_thd->get_protocol_rw_status() == 2)
       return "Sending to client";
     if (inspected_thd->get_command() == COM_SLEEP) return "";
     return "Receiving from client";
@@ -4088,7 +4649,7 @@ static int get_schema_tmp_table_columns_record(THD *thd, Table_ref *tables,
         (const char *)pos, strlen((const char *)pos), cs);
 
     // COLUMN_DEFAULT
-    if (print_default_clause(thd, field, &type, false)) {
+    if (print_default_clause(thd, field, &type, false, nullptr)) {
       table->field[TMP_TABLE_COLUMNS_COLUMN_DEFAULT]->store(type.ptr(),
                                                             type.length(), cs);
       table->field[TMP_TABLE_COLUMNS_COLUMN_DEFAULT]->set_notnull();
@@ -4122,7 +4683,7 @@ static int get_schema_tmp_table_columns_record(THD *thd, Table_ref *tables,
       table->field[TMP_TABLE_COLUMNS_EXTRA]->store(STRING_WITH_LEN("NULL"), cs);
 
     // PRIVILEGES
-    uint col_access;
+    Access_bitmask col_access;
     check_access(thd, SELECT_ACL, db_name.str, &tables->grant.privilege,
                  nullptr, false, tables->schema_table != nullptr);
     col_access = get_column_grant(thd, &tables->grant, db_name.str,
@@ -4566,7 +5127,6 @@ ST_SCHEMA_TABLE *get_schema_table(enum enum_schema_tables schema_table_idx) {
 
 static TABLE *create_schema_table(THD *thd, Table_ref *table_list) {
   int field_count = 0;
-  Item *item;
   TABLE *table;
   mem_root_deque<Item *> fields(thd->mem_root);
   ST_SCHEMA_TABLE *schema_table = table_list->schema_table;
@@ -4575,6 +5135,7 @@ static TABLE *create_schema_table(THD *thd, Table_ref *table_list) {
   DBUG_TRACE;
 
   for (; fields_info->field_name; fields_info++) {
+    Item *item = nullptr;
     switch (fields_info->field_type) {
       case MYSQL_TYPE_TINY:
       case MYSQL_TYPE_LONG:
@@ -4588,8 +5149,10 @@ static TABLE *create_schema_table(THD *thd, Table_ref *table_list) {
         }
         item->unsigned_flag = (fields_info->field_flags & MY_I_S_UNSIGNED);
         break;
-      case MYSQL_TYPE_DATE:
       case MYSQL_TYPE_TIME:
+        assert(false);
+        return nullptr;
+      case MYSQL_TYPE_DATE:
       case MYSQL_TYPE_TIMESTAMP:
       case MYSQL_TYPE_DATETIME: {
         const Name_string field_name(fields_info->field_name,
@@ -4944,11 +5507,6 @@ bool do_fill_information_schema_table(THD *thd, Table_ref *table_list,
 
   return res;
 }
-
-struct run_hton_fill_schema_table_args {
-  Table_ref *tables;
-  Item *cond;
-};
 
 ST_FIELD_INFO engines_fields_info[] = {
     {"ENGINE", 64, MYSQL_TYPE_STRING, 0, 0, "Engine", 0},

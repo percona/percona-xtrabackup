@@ -7,7 +7,7 @@ user
 userX
 # Case 1 : Execute CREATE USER for existing user
 CREATE USER userY, userZ, userX;
-ERROR HY000: Operation CREATE USER failed for 'userX'@'%'
+ERROR HY000: Operation CREATE USER failed for 'userX'@'%' (User account already exists)
 # Must not show entries for userY and userZ
 SELECT user FROM mysql.user WHERE user LIKE 'user%';
 user
@@ -70,7 +70,7 @@ include/rpl/save_binlog_file_position.inc
 # because we will encounter duplicate key error while inserting entry
 # in mysql.user table for userW.
 CREATE USER userW IDENTIFIED BY 'abcd', userV IDENTIFIED BY 'haha';
-ERROR HY000: Operation CREATE USER failed for 'userW'@'%'
+ERROR HY000: Operation CREATE USER failed for 'userW'@'%' (User account already exists)
 # Must not show userV
 SELECT user FROM mysql.user WHERE user LIKE 'user%';
 user
@@ -81,6 +81,8 @@ userZ
 # This event sequence pattern MUST NOT be present in binlog: !Q(CREATE USER.*)
 include/rpl/assert_binlog_events.inc
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 DROP USER userW, userX, userY, userZ;
 include/rpl/save_binlog_file_position.inc
 # End : Tests for CREATE USER
@@ -171,7 +173,7 @@ user
 userX
 # Case 1 : Execute CREATE USER for existing user
 CREATE USER userY, userZ, userX DEFAULT ROLE 'roleX';
-ERROR HY000: Operation CREATE USER failed for 'userX'@'%'
+ERROR HY000: Operation CREATE USER failed for 'userX'@'%' (User account already exists)
 # Must not show entries for userY and userZ
 SELECT user FROM mysql.user WHERE user LIKE 'user%';
 user

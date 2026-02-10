@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2.0,
@@ -58,12 +58,12 @@ std::unique_ptr<Geometry> Line_interpolate_point::eval(
 std::unique_ptr<Geometry> Line_interpolate_point::eval(
     const Cartesian_linestring &g) const {
   if (m_return_multiple_points) {
-    Cartesian_multipoint *mpt = new Cartesian_multipoint();
+    auto *mpt = new Cartesian_multipoint();
     std::unique_ptr<Geometry> result(mpt);
     bg::line_interpolate(g, m_distance, *mpt);
     return result;
   }
-  Cartesian_point *pt = new Cartesian_point();
+  auto *pt = new Cartesian_point();
   std::unique_ptr<Geometry> result(pt);
   bg::line_interpolate(g, m_distance, *pt);
   return result;
@@ -72,12 +72,12 @@ std::unique_ptr<Geometry> Line_interpolate_point::eval(
 std::unique_ptr<Geometry> Line_interpolate_point::eval(
     const Geographic_linestring &g) const {
   if (m_return_multiple_points) {
-    Geographic_multipoint *mpt = new Geographic_multipoint();
+    auto *mpt = new Geographic_multipoint();
     std::unique_ptr<Geometry> result(mpt);
     bg::line_interpolate(g, m_distance, *mpt);
     return result;
   }
-  Geographic_point *pt = new Geographic_point();
+  auto *pt = new Geographic_point();
   std::unique_ptr<Geometry> result(pt);
   bg::line_interpolate(g, m_distance, *pt);
   return result;

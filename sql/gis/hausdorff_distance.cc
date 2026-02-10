@@ -1,4 +1,4 @@
-// Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -146,8 +146,8 @@ bool hausdorff_distance(const dd::Spatial_reference_system *srs,
 
     if ((*is_null = (g1->is_empty() || g2->is_empty()))) return false;
 
-    Hausdorff_distance hd(srs ? srs->semi_major_axis() : 0.0,
-                          srs ? srs->semi_minor_axis() : 0.0);
+    Hausdorff_distance const hd(srs ? srs->semi_major_axis() : 0.0,
+                                srs ? srs->semi_minor_axis() : 0.0);
     *hausdorff_distance = hd(g1, g2);
   } catch (...) {
     handle_gis_exception(func_name);

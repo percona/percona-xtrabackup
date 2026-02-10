@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -63,7 +63,7 @@ int mi_create(const char *name, uint keys, MI_KEYDEF *keydefs, uint columns,
       key_length, info_length, key_segs, options, min_key_length_skip, base_pos,
       long_varchar_count, varchar_length, max_key_block_length,
       unique_key_parts, fulltext_keys, offset;
-  uint aligned_key_start, block_length;
+  uint aligned_key_start;
   uint internal_table = flags & HA_CREATE_INTERNAL_TABLE;
   ulong reclength, real_reclength, min_pack_length;
   char filename[FN_REFLEN], linkname[FN_REFLEN], *linkname_ptr;
@@ -400,10 +400,10 @@ int mi_create(const char *name, uint keys, MI_KEYDEF *keydefs, uint columns,
       share.state.rec_per_key_part[key_segs - 1] = 1L;
     length += key_length;
     /* Get block length for key, if defined by user */
-    block_length = keydef->block_length ? std::bit_ceil(keydef->block_length)
-                                        : myisam_block_size;
-    block_length = std::max(block_length, MI_MIN_KEY_BLOCK_LENGTH);
-    block_length = std::min(block_length, MI_MAX_KEY_BLOCK_LENGTH);
+    uint block_length =
+        keydef->block_length != 0 ? keydef->block_length : myisam_block_size;
+    block_length = std::clamp(std::bit_ceil(block_length),
+                              MI_MIN_KEY_BLOCK_LENGTH, MI_MAX_KEY_BLOCK_LENGTH);
 
     keydef->block_length = (uint16)MI_BLOCK_SIZE(
         length - real_length_diff, pointer, MI_MAX_KEYPTR_SIZE, block_length);

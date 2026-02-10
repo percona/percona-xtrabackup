@@ -1,0 +1,131 @@
+RESET BINARY LOGS AND GTIDS;
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+# Registred DB_OBJECT at path: /svc/basic/t2
+
+
+## I. Verify basic access handling for READ and UPDATE when
+##    db_object created with GET/READ permissions only.
+#
+# 1. Show that REST-GET/READ access is working
+# 2. Show that REST-POST/CREATE access doesn't work
+#
+## II. Verify basic access handling for POST/CREATE when
+##     db_object has been extended wtih POST/CREATE permissions.
+#
+# 1. Show that full-document, send in REST-POST/CREATE is returned with same data
+#
+## III. Verify error-cases for REST-POST/CREATE access
+# 1. Set "allow_sorting" for field "id", and verify that MRS plugin displays
+#    the column in GET and POST request.
+#    Test case for a bug.
+# 2. POST document with non-registred field in `object_filed`, verfify returned error 400.
+
+#
+# I.1
+GET /svc/basic/t2/1
+{
+    "id": 1,
+    "date": "1977-01-21 00:00:00.000000",
+    "name": "First row",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/1"
+        }
+    ],
+    "comments": "First comment",
+    "_metadata": {
+        "etag": "77004781476882B937CFE9FFC837CC8FC1D13F717B87F6ABCE20142D1C4140D6"
+    }
+}
+OK
+
+#
+# I.2
+POST /svc/basic/t2 (payload-size:34)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+
+#
+# II.1
+POST /svc/basic/t2/ (payload-size:85)
+{
+    "id": 11,
+    "date": "2017-01-01 00:00:00.000000",
+    "name": "entry-with-all-fields",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/11"
+        }
+    ],
+    "comments": "something-new",
+    "_metadata": {
+        "etag": "625F2B0C107AE737E6608EE8AC15DBC84B56888E681418392C3F40C9DC350449",
+        "gtid": "GTID"
+    }
+}
+OK
+
+#
+# III.1
+UPDATE mysql_rest_service_metadata.object_field
+SET allow_sorting=1 WHERE name = "id";
+GET /svc/basic/t2/1
+{
+    "id": 1,
+    "date": "1977-01-21 00:00:00.000000",
+    "name": "First row",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/1"
+        }
+    ],
+    "comments": "First comment",
+    "_metadata": {
+        "etag": "77004781476882B937CFE9FFC837CC8FC1D13F717B87F6ABCE20142D1C4140D6"
+    }
+}
+OK
+POST /svc/basic/t2 (payload-size:73)
+{
+    "id": 21,
+    "date": "2022-02-02 00:00:00.000000",
+    "name": "entry-after-allow-sort",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t2/21"
+        }
+    ],
+    "comments": "",
+    "_metadata": {
+        "etag": "6700B0D3D16088C1C968E64F7EF51ADAB8EB9CE66F956F526B8C4A8B422204E5",
+        "gtid": "GTID"
+    }
+}
+OK
+
+#
+# III.2
+POST /svc/basic/t2 (payload-size:98)
+{
+    "message": "Invalid input JSON document: Invalid field \"non-existing-filed\" in table `table2` in JSON input",
+    "status": 400
+}
+OK
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

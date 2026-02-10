@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,6 @@
 #include "mock_metadata_factory.h"
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/metadata_cache.h"
-#include "tcp_address.h"
 #include "test/helpers.h"
 
 /**
@@ -55,9 +54,9 @@ const std::chrono::milliseconds kDefaultAuthCacheRefreshInterval =
     std::chrono::milliseconds(-1);
 const std::string kDefaultClusterName = "cluster_name_1";
 
-const mysql_harness::TCPAddress bootstrap_server(kDefaultMetadataHost,
-                                                 kDefaultMetadataPort);
-const std::vector<mysql_harness::TCPAddress> metadata_server_vector = {
+const mysql_harness::TcpDestination bootstrap_server(kDefaultMetadataHost,
+                                                     kDefaultMetadataPort);
+const std::vector<mysql_harness::TcpDestination> metadata_server_vector = {
     bootstrap_server};
 
 using metadata_cache::ManagedInstance;

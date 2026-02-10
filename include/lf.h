@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,7 @@
 
 #include <atomic>
 
-#include "my_inttypes.h"
+#include "lf_types.h"
 #include "my_macros.h"
 #include "mysql/psi/mysql_statement.h"
 #include "mysql/service_mysql_alloc.h"
@@ -129,11 +129,6 @@ LF_PINS *lf_pinbox_get_pins(LF_PINBOX *pinbox);
 void lf_pinbox_put_pins(LF_PINS *pins);
 void lf_pinbox_free(LF_PINS *pins, void *addr);
 
-/*
-  memory allocator, lf_alloc-pin.c
-*/
-typedef void lf_allocator_func(uchar *);
-
 struct LF_ALLOCATOR {
   LF_PINBOX pinbox;
   std::atomic<uchar *> top;
@@ -163,26 +158,9 @@ struct LF_HASH;
 typedef uint lf_hash_func(const LF_HASH *, const uchar *, size_t);
 typedef int lf_cmp_func(const uchar *key1, size_t key1_length,
                         const uchar *key2, size_t key2_length);
-typedef void lf_hash_init_func(uchar *dst, const uchar *src);
-
-#define LF_HASH_UNIQUE 1
-#define MY_LF_ERRPTR ((void *)(intptr)1)
 
 /* lf_hash overhead per element (that is, sizeof(LF_SLIST) */
 extern MYSQL_PLUGIN_IMPORT const int LF_HASH_OVERHEAD;
-
-/**
-  Callback for extracting key and key length from user data in a LF_HASH.
-
-  @param      arg    Pointer to user data.
-  @param[out] length Store key length here.
-  @return            Pointer to key to be hashed.
-
-  @note Was my_hash_get_key, with lots of C-style casting when calling
-        my_hash_init. Renamed to force build error (since signature changed)
-        in case someone keeps following that coding style.
- */
-typedef const uchar *(*hash_get_key_function)(const uchar *arg, size_t *length);
 
 struct LF_HASH {
   LF_DYNARRAY array;             /* hash itself */
@@ -237,7 +215,6 @@ static inline void lf_hash_put_pins(LF_PINS *pins) { lf_pinbox_put_pins(pins); }
 
 static inline void lf_hash_search_unpin(LF_PINS *pins) { lf_unpin(pins, 2); }
 
-typedef int lf_hash_match_func(const uchar *el, void *arg);
 void *lf_hash_random_match(LF_HASH *hash, LF_PINS *pins,
                            lf_hash_match_func *match, uint rand_val,
                            void *match_arg);

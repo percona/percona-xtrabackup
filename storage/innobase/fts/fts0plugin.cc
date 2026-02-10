@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -105,7 +105,7 @@ static int fts_query_add_word_for_parser(
     int word_len,                      /*!< in: token length */
     MYSQL_FTPARSER_BOOLEAN_INFO *info) /*!< in: token info */
 {
-  fts_ast_state_t *state = static_cast<fts_ast_state_t *>(param->mysql_ftparam);
+  auto *state = static_cast<fts_ast_state_t *>(param->mysql_ftparam);
   fts_ast_node_t *cur_node = state->cur_node;
   fts_ast_node_t *oper_node = nullptr;
   fts_ast_node_t *term_node = nullptr;
@@ -219,8 +219,8 @@ static int fts_parse_query_internal(
 {
   MYSQL_FTPARSER_BOOLEAN_INFO info;
   const CHARSET_INFO *cs = param->cs;
-  uchar **start = reinterpret_cast<uchar **>(&query);
-  uchar *end = reinterpret_cast<uchar *>(query + len);
+  auto **start = reinterpret_cast<uchar **>(&query);
+  auto *end = reinterpret_cast<uchar *>(query + len);
   FT_WORD w = {nullptr, 0, 0};
 
   info.prev = ' ';

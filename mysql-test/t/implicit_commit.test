@@ -280,6 +280,14 @@ let $statement=
 source include/implicit_commit_helper.inc;
 
 --echo #
+--echo # SQLCOM_SHOW_STATUS_LIBRARY
+--echo #
+
+let $statement=
+  show library status where (1) in (select * from t1);
+source include/implicit_commit_helper.inc;
+
+--echo #
 --echo # SQLCOM_SHOW_STATUS_PROC
 --echo #
 

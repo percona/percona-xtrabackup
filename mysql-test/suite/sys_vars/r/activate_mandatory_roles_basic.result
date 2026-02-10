@@ -1,0 +1,31 @@
+#
+# WL#16597: Remove the deprecated host wildcard match behavior of schema and object level grants
+#
+SET @saved_activate_mandatory_roles = @@global.activate_mandatory_roles;
+SET GLOBAL activate_mandatory_roles = DEFAULT;
+test: FR1.1 and FR1.2: 1 Expected
+SELECT @@GLOBAL.activate_mandatory_roles;
+@@GLOBAL.activate_mandatory_roles
+1
+test: FR1.4: should work
+SET @@GLOBAL.activate_mandatory_roles=1;
+test: 1 Expected
+SELECT @@GLOBAL.activate_mandatory_roles;
+@@GLOBAL.activate_mandatory_roles
+1
+test: 1 Expected
+SELECT @@activate_mandatory_roles = @@GLOBAL.activate_mandatory_roles;
+@@activate_mandatory_roles = @@GLOBAL.activate_mandatory_roles
+1
+test: FR1.3: Expected error 'Variable is a GLOBAL variable'
+SELECT @@local.activate_mandatory_roles;
+ERROR HY000: Variable 'activate_mandatory_roles' is a GLOBAL variable
+Test: Expected error 'Variable is a GLOBAL variable'
+SELECT @@SESSION.activate_mandatory_roles;
+ERROR HY000: Variable 'activate_mandatory_roles' is a GLOBAL variable
+SET @@GLOBAL.activate_mandatory_roles = DEFAULT;
+Test: 1 Expected
+SELECT @@GLOBAL.activate_mandatory_roles;
+@@GLOBAL.activate_mandatory_roles
+1
+SET GLOBAL activate_mandatory_roles = @saved_activate_mandatory_roles;

@@ -13,6 +13,8 @@ let $disk_temptable_row_cost= 0.5;
 let $memory_block_read_cost= 0.25;
 let $io_block_read_cost= 1.0;
 
+SET GLOBAL explain_json_format_version = 1;
+
 --echo #
 --echo # Bug#20443863 USE OF WORST_SEEKS IN FIND_BEST_REF() CAN LEAD TO
 --echo #              WRONG QUERY PLAN
@@ -267,3 +269,5 @@ SET cost_value=DEFAULT;
 FLUSH OPTIMIZER_COSTS;
 
 DROP TABLE t1, t2;
+
+SET GLOBAL explain_json_format_version = DEFAULT;

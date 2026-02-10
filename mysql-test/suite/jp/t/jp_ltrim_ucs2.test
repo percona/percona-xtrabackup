@@ -103,18 +103,27 @@ INSERT INTO `£Τ£Ή` VALUES ('΅΅΅΅νάνένήνίνΰ');
 INSERT INTO `£Τ£Ή` VALUES ('΅΅΅΅΅΅νάνένήνίνΰ');
 
 #InnoDB
+--sorted_result
 SELECT LTRIM(`£Γ£±`) from `£Τ£±`;
+--sorted_result
 SELECT LTRIM(`£Γ£±`) from `£Τ£²`;
+--sorted_result
 SELECT LTRIM(`£Γ£±`) from `£Τ£³`;
 
 #MyISAM
+--sorted_result
 SELECT LTRIM(`£Γ£±`) from `£Τ£΄`;
+--sorted_result
 SELECT LTRIM(`£Γ£±`) from `£Τ£µ`;
+--sorted_result
 SELECT LTRIM(`£Γ£±`) from `£Τ£¶`;
 
 #MEMORY
+--sorted_result
 SELECT LTRIM(`£Γ£±`) from `£Τ£·`;
+--sorted_result
 SELECT LTRIM(`£Γ£±`) from `£Τ£Έ`;
+--sorted_result
 SELECT LTRIM(`£Γ£±`) from `£Τ£Ή`;
 
 DROP TABLE `£Τ£±`;

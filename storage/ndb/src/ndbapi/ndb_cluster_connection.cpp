@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,6 +22,8 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
+
+#include <ctime>
 
 #include <ndb_global.h>
 #include "util/require.h"
@@ -148,7 +150,7 @@ const char *Ndb_cluster_connection::get_connectstring(char *buf,
 }
 
 extern "C" void *run_ndb_cluster_connection_connect_thread(void *me) {
-  Ndb_cluster_connection_impl *connection = (Ndb_cluster_connection_impl *)me;
+  auto *connection = (Ndb_cluster_connection_impl *)me;
   connection->m_run_connect_thread = 1;
   connection->connect_thread();
   return me;
@@ -192,7 +194,6 @@ void Ndb_cluster_connection_impl::init_get_next_node(
   iter.init_pos = iter.cur_pos;
   iter.scan_state = 0;
   //  fprintf(stderr,"[init %d]",iter.init_pos);
-  return;
 }
 
 Uint32 Ndb_cluster_connection_impl::get_next_node(
@@ -354,7 +355,7 @@ int Ndb_cluster_connection::wait_until_ready(int timeout,
       secondsCounter++;
       milliCounter = 0;
     }  // if
-  } while (1);
+  } while (true);
 }
 
 unsigned Ndb_cluster_connection::get_connect_count() const {
@@ -408,7 +409,7 @@ class NdbApiInternalLogHandler : public LogHandler {
     if (g_api_internal_log_handler == nullptr) {
       /* None defined, create it and add to the g_eventLogger*/
       LogHandler *clh = new ConsoleLogHandler();
-      NdbApiInternalLogHandler *nilh = new NdbApiInternalLogHandler(clh);
+      auto *nilh = new NdbApiInternalLogHandler(clh);
       g_eventLogger->addHandler(nilh);
       g_api_internal_log_handler = nilh;
     }
@@ -421,8 +422,8 @@ class NdbApiInternalLogHandler : public LogHandler {
       : m_defaultHandler(defaultHandler), m_userConsumer(nullptr) {
     m_consumer_mutex = NdbMutex_Create();
     m_handler_mutex = NdbMutex_Create();
-    Logger::LoggerTest::setHandlerPointerAdress(*g_eventLogger,
-                                                &m_defaultHandler);
+    Logger::LoggerTest::setHandlerPointerAddress(*g_eventLogger,
+                                                 &m_defaultHandler);
   }
 
  public:
@@ -434,8 +435,8 @@ class NdbApiInternalLogHandler : public LogHandler {
     g_api_internal_log_handler = nullptr;
   }
 
-  virtual void append(const char *pCategory, Logger::LoggerLevel level,
-                      const char *pMsg, time_t now) override {
+  void append(const char *pCategory, Logger::LoggerLevel level,
+              const char *pMsg, const std::timespec *now) override {
     {
       if (m_userConsumer) {
         Guard g(m_consumer_mutex);
@@ -469,11 +470,10 @@ class NdbApiInternalLogHandler : public LogHandler {
     return true;
   }
   bool checkParams() override { return true; }
-  void writeHeader(const char *, Logger::LoggerLevel, time_t) override {
-    return;
-  }
-  void writeMessage(const char *) override { return; }
-  void writeFooter() override { return; }
+  void writeHeader(const char *, Logger::LoggerLevel,
+                   const std::timespec *) override {}
+  void writeMessage(const char *) override {}
+  void writeFooter() override {}
   void setRepeatFrequency(unsigned val) override {
     m_defaultHandler->setRepeatFrequency(val);
   }
@@ -506,6 +506,13 @@ Ndb_cluster_connection_impl::Ndb_cluster_connection_impl(
 
   NdbMutex_Lock(g_ndb_connection_mutex);
   if (g_ndb_connection_count++ == 0) {
+    if (g_eventLogger == nullptr) {
+      [[maybe_unused]] int ret = fprintf(stderr,
+                                         "ERROR: g_eventLogger object is "
+                                         "null. ndb_init() not called?\n");
+      require(g_eventLogger != nullptr);
+    }
+
     NdbColumnImpl::create_pseudo_columns();
     /* Setup singleton InternalLogHandler if needed */
     NdbApiInternalLogHandler::getLogHandlerInstance();
@@ -586,9 +593,9 @@ Ndb_cluster_connection_impl::~Ndb_cluster_connection_impl() {
   if (m_transporter_facade != nullptr) {
     m_transporter_facade->stop_instance();
   }
-  if (m_globalDictCache) {
-    delete m_globalDictCache;
-  }
+
+  delete m_globalDictCache;
+
   if (m_connect_thread) {
     void *status;
     m_run_connect_thread = 0;
@@ -613,7 +620,14 @@ Ndb_cluster_connection_impl::~Ndb_cluster_connection_impl() {
     NdbMutex_Destroy(ndb_print_state_mutex);
     ndb_print_state_mutex = nullptr;
 #endif
-    g_eventLogger->stopAsync();
+    if (g_eventLogger != nullptr) {
+      g_eventLogger->stopAsync();
+    } else {
+      [[maybe_unused]] int ret =
+          fprintf(stderr,
+                  "WARNING: g_eventLogger object is "
+                  "deleted. ndb_end() called too soon?\n");
+    }
   }
   NdbMutex_Unlock(g_ndb_connection_mutex);
 
@@ -634,7 +648,7 @@ Ndb_cluster_connection_impl::~Ndb_cluster_connection_impl() {
   if (m_new_delete_ndb_cond) NdbCondition_Destroy(m_new_delete_ndb_cond);
   m_new_delete_ndb_cond = nullptr;
 
-  if (m_multi_wait_group) delete m_multi_wait_group;
+  delete m_multi_wait_group;
   m_multi_wait_group = nullptr;
 
   m_uri_scheme.clear();
@@ -1254,7 +1268,7 @@ int Ndb_cluster_connection_impl::configure(
 void Ndb_cluster_connection_impl::do_test() {
   Ndb_cluster_connection_node_iter iter;
   int n = no_db_nodes() + 5;
-  Uint32 *nodes = new Uint32[n + 1];
+  auto *nodes = new Uint32[n + 1];
 
   for (int g = 0; g < n; g++) {
     for (int h = 0; h < n; h++) {
@@ -1390,7 +1404,7 @@ int Ndb_cluster_connection_impl::connect(int no_retries,
     m_latest_error_msg.assign("");
     DBUG_PRINT("exit", ("connect ok, ret: 0"));
     DBUG_RETURN(0);
-  } while (0);
+  } while (false);
 
   const char *erString = m_config_retriever->getErrorString();
   if (erString == nullptr) {
@@ -1506,9 +1520,8 @@ NdbWaitGroup *Ndb_cluster_connection::create_ndb_wait_group(int size) {
   if (m_impl.m_multi_wait_group == nullptr) {
     m_impl.m_multi_wait_group = new NdbWaitGroup(this, size);
     return m_impl.m_multi_wait_group;
-  } else {
-    return nullptr;  // NdbWaitGroup already exists
   }
+  return nullptr;  // NdbWaitGroup already exists
 }
 
 bool Ndb_cluster_connection::release_ndb_wait_group(NdbWaitGroup *group) {
@@ -1516,9 +1529,8 @@ bool Ndb_cluster_connection::release_ndb_wait_group(NdbWaitGroup *group) {
     delete m_impl.m_multi_wait_group;
     m_impl.m_multi_wait_group = nullptr;
     return true;
-  } else {
-    return false;
   }
+  return false;
 }
 
 Uint32 Ndb_cluster_connection_impl::select_any(NdbImpl *impl_ndb) {
@@ -1538,11 +1550,11 @@ Uint32 Ndb_cluster_connection_impl::select_any(NdbImpl *impl_ndb) {
   }
   if (num_prospective_nodes == 0) {
     return 0;
-  } else if (num_prospective_nodes == 1) {
-    return prospective_node_ids[0];
-  } else {
-    return select_node(impl_ndb, prospective_node_ids, num_prospective_nodes);
   }
+  if (num_prospective_nodes == 1) {
+    return prospective_node_ids[0];
+  }
+  return select_node(impl_ndb, prospective_node_ids, num_prospective_nodes);
 }
 
 /**
@@ -1571,11 +1583,11 @@ Uint32 Ndb_cluster_connection_impl::select_location_based(NdbImpl *impl_ndb,
   }
   if (num_prospective_nodes == 0) {
     return nodes[0];
-  } else if (num_prospective_nodes == 1) {
-    return prospective_node_ids[0];
-  } else {
-    return select_node(impl_ndb, prospective_node_ids, num_prospective_nodes);
   }
+  if (num_prospective_nodes == 1) {
+    return prospective_node_ids[0];
+  }
+  return select_node(impl_ndb, prospective_node_ids, num_prospective_nodes);
 }
 
 Uint32 Ndb_cluster_connection_impl::select_node(NdbImpl *impl_ndb,
@@ -1583,7 +1595,8 @@ Uint32 Ndb_cluster_connection_impl::select_node(NdbImpl *impl_ndb,
                                                 Uint32 cnt) {
   if (cnt == 1) {
     return nodes[0];
-  } else if (cnt == 0) {
+  }
+  if (cnt == 0) {
     return 0;
   }
 
@@ -1592,7 +1605,7 @@ Uint32 Ndb_cluster_connection_impl::select_node(NdbImpl *impl_ndb,
   const Uint32 nodes_arr_cnt = m_nodes_proximity.size();
 
   Uint32 best_node = nodes[0];
-  Uint32 best_idx = Uint32(~0);
+  auto best_idx = Uint32(~0);
   Uint32 best_usage = 0;
   Int32 best_score = MAX_PROXIMITY_GROUP;  // Lower is better
 

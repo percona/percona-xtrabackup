@@ -14,3 +14,13 @@ ALTER TABLE test.t1 ADD COLUMN col1 CHAR;
 SET SESSION debug= "-d, enable_stack_overrun_post_alter_commit";
 DROP TABLE test.t1;
 
+--echo #
+--echo # Bug#38625494: Incorrect error handling in open_table_uncached()
+--echo #
+
+CREATE TABLE t(x INT);
+SET debug = '+d,bug38625494';
+--error ER_UNKNOWN_ERROR
+ALTER TABLE t ADD COLUMN y INT;
+SET debug = '-d,bug38625494';
+DROP TABLE t;

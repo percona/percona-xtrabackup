@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS t1;
 set names utf8mb3;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
-set collation_connection=utf8_unicode_ci;
+set collation_connection=utf8mb3_unicode_ci;
 Warnings:
 Warning	3778	'utf8mb3_unicode_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 select 'a' = 'a', 'a' = 'a ', 'a ' = 'a';
@@ -6761,7 +6761,7 @@ Warning	1287	'ucs2' is deprecated and will be removed in a future release. Pleas
 Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 DROP TABLE t1;
 SET @test_character_set= 'utf8mb3';
-SET @test_collation= 'utf8_swedish_ci';
+SET @test_collation= 'utf8mb3_swedish_ci';
 SET @safe_character_set_server= @@character_set_server;
 SET @safe_collation_server= @@collation_server;
 SET @safe_character_set_client= @@character_set_client;
@@ -6879,7 +6879,7 @@ c	0
 Warnings:
 Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 drop table t1;
-SET collation_connection='utf8_unicode_ci';
+SET collation_connection='utf8mb3_unicode_ci';
 Warnings:
 Warning	3778	'utf8mb3_unicode_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 create table t1 select repeat('a',4000) a;
@@ -7233,7 +7233,7 @@ End of 5.1 tests
 #
 # Start of 5.5 tests
 #
-SET collation_connection=utf8_czech_ci;
+SET collation_connection=utf8mb3_czech_ci;
 Warnings:
 Warning	3778	'utf8mb3_czech_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 SELECT @@collation_connection;
@@ -7488,7 +7488,7 @@ hex(weight_string(cast(_latin1 0x808080 as char), 5, 4, 0xC0))
 select hex(weight_string(cast(_latin1 0x808080 as char),25, 4, 0xC0));
 hex(weight_string(cast(_latin1 0x808080 as char),25, 4, 0xC0))
 0E230E230E2302090209020902090209020902090209020902
-set @@collation_connection=utf8_unicode_ci;
+set @@collation_connection=utf8mb3_unicode_ci;
 Warnings:
 Warning	3778	'utf8mb3_unicode_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 select @@collation_connection;
@@ -7638,7 +7638,7 @@ hex(weight_string(cast(_latin1 0x808080 as char), 5, 4, 0xC0))
 select hex(weight_string(cast(_latin1 0x808080 as char),25, 4, 0xC0));
 hex(weight_string(cast(_latin1 0x808080 as char),25, 4, 0xC0))
 0E230E230E2302090209020902090209020902090209020902
-set @@collation_connection=utf8_czech_ci;
+set @@collation_connection=utf8mb3_czech_ci;
 Warnings:
 Warning	3778	'utf8mb3_czech_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 select @@collation_connection;
@@ -7960,7 +7960,7 @@ DROP TABLE t1;
 #
 # WL#4013 Unicode german2 collation
 #
-SET collation_connection=utf8_german2_ci;
+SET collation_connection=utf8mb3_german2_ci;
 Warnings:
 Warning	3778	'utf8mb3_german2_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 "BEGIN ctype_german.inc"

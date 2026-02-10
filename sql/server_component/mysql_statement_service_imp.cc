@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -89,7 +89,8 @@ DEFINE_BOOL_METHOD(mysql_stmt_metadata_imp::param_count,
   return MYSQL_SUCCESS;
 }
 
-auto enum_field_type_to_int(enum_field_types field_type) -> uint64_t {
+auto enum_field_type_to_int(enum_field_types field_type, uint flags)
+    -> uint64_t {
   switch (field_type) {
     case MYSQL_TYPE_DECIMAL:
       return MYSQL_SP_ARG_TYPE_DECIMAL;
@@ -156,7 +157,12 @@ auto enum_field_type_to_int(enum_field_types field_type) -> uint64_t {
     case MYSQL_TYPE_VAR_STRING:
       return MYSQL_SP_ARG_TYPE_VAR_STRING;
     case MYSQL_TYPE_STRING:
-      return MYSQL_SP_ARG_TYPE_STRING;
+      if (flags & SET_FLAG)
+        return MYSQL_SP_ARG_TYPE_SET;
+      else if (flags & ENUM_FLAG)
+        return MYSQL_SP_ARG_TYPE_ENUM;
+      else
+        return MYSQL_SP_ARG_TYPE_STRING;
     case MYSQL_TYPE_GEOMETRY:
       return MYSQL_SP_ARG_TYPE_GEOMETRY;
     case MYSQL_TYPE_VECTOR:
@@ -182,7 +188,8 @@ DEFINE_BOOL_METHOD(mysql_stmt_metadata_imp::param_metadata,
     *static_cast<bool *>(data) = param->null_value;
     return MYSQL_SUCCESS;
   } else if (strcmp(metadata, "type") == 0) {
-    *static_cast<uint64_t *>(data) = enum_field_type_to_int(param->data_type());
+    *static_cast<uint64_t *>(data) =
+        enum_field_type_to_int(param->data_type(), 0);
     return MYSQL_SUCCESS;
   } else if (strcmp(metadata, "is_unsigned") == 0) {
     *static_cast<bool *>(data) = param->unsigned_flag;
@@ -626,7 +633,7 @@ DEFINE_BOOL_METHOD(mysql_stmt_resultset_metadata_imp::field_info,
   } else if (strcmp(name, "col_name") == 0) {
     *reinterpret_cast<char const **>(value) = column->column_name;
   } else if (strcmp(name, "type") == 0) {
-    auto enum_type = enum_field_type_to_int(column->type);
+    auto enum_type = enum_field_type_to_int(column->type, column->flags);
     if (enum_type == MYSQL_SP_ARG_TYPE_INVALID) return MYSQL_FAILURE;
     *reinterpret_cast<uint64_t *>(value) = enum_type;
   } else {
@@ -857,10 +864,19 @@ DEFINE_BOOL_METHOD(mysql_stmt_get_string_imp::get,
   if (row == nullptr) return MYSQL_FAILURE;
   auto *column = row->get_column(column_index);
   if (column == nullptr) return MYSQL_FAILURE;
-
-  auto *value = std::get_if<LEX_CSTRING>(column);
-  if (value != nullptr) {
-    *data = {value->str, value->length};
+  if (std::holds_alternative<LEX_CSTRING>(*column)) {
+    auto &value = std::get<LEX_CSTRING>(*column);
+    *data = {value.str, value.length};
+    *is_null = false;
+  } else if (std::holds_alternative<decimal *>(*column)) {
+    auto value = std::get<decimal *>(*column);
+    THD *thd = current_thd;
+    char *buf = static_cast<char *>(thd->alloc(DECIMAL_MAX_STR_LENGTH));
+    String *str = new (thd->mem_root)
+        String(buf, DECIMAL_MAX_STR_LENGTH, &my_charset_numeric);
+    auto rc = my_decimal2string(E_DEC_FATAL_ERROR, &value->decimal, str);
+    if (rc) return MYSQL_FAILURE;
+    *data = {str->ptr(), str->length()};
     *is_null = false;
   } else {
     *is_null = true;

@@ -1,1 +1,2 @@
 --table_open_cache_instances=1
+--gtid-mode=off --enforce-gtid-consistency=off

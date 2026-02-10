@@ -1,0 +1,58 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+create database test_schema;
+create table test_schema.tab(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+insert into test_schema.tab values(1, "Andresh");
+
+--let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+--let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port --response-type RAW  --display REQUEST,STATUS
+
+
+--source ../include/mrs/start_object_definition.inc
+
+# Create a service
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+# Add our test schema to the service
+--let $mrs_add_schema=test_schema
+--let $mrs_add_schema_path=/test_schema
+--source ../include/mrs/db_schema/add.inc
+
+# Expose the table object
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=tab
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--echo # Wait until MySQLRouter fetches db-object.
+exec $MRS_CLIENT_ARGS
+  --path /svc/test_schema/tab
+  --wait-until-status 60;
+
+--echo # Set the server to super_read_only, wait for the REST service to return 404
+SET GLOBAL super_read_only = 1;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/test_schema/tab
+  --expected-status NotFound
+  --wait-until-status 60;
+
+--echo # Clear the super_read_only, wait for the REST service to become available again
+SET GLOBAL super_read_only = 0;
+SET GLOBAL read_only = 0;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/test_schema/tab
+  --expected-status 200
+  --wait-until-status 60;
+
+# Cleanup
+DROP SCHEMA test_schema;
+--source ../include/mrs/cleanup.inc

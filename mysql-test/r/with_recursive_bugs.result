@@ -247,3 +247,94 @@ SELECT 2 FROM cte1 WHERE FALSE
 SELECT * FROM cte1;
 1
 DROP TABLE t1;
+#
+# Bug#37074489 stored procedure is producing different results in different attempts
+#              The error also reproduces with prepared statement in 2..n executions
+PREPARE p FROM "WITH RECURSIVE
+tran(batch_uid, guid, type, trantime, refguid) AS (
+SELECT 549285, 'W5PT9A5F3D2WF57', 13, '2023-04-07 09:19:04', NULL
+UNION ALL
+SELECT 549286, 'W5PTVYU84715VJ7', 13, '2023-04-07 09:31:20', 'W5PT9A5F3D2WF57'
+        )
+,t(init_dataset, batch_uid, guid, type, trantime) AS (
+SELECT TRUE AS init_dataset,
+batch_uid,
+guid,
+type,
+trantime
+FROM tran
+WHERE batch_uid = 549285
+UNION ALL
+SELECT FALSE,
+wt.batch_uid,
+wt.guid,
+wt.type,
+wt.trantime
+FROM tran wt
+JOIN
+t ts
+ON wt.refguid = ts.guid
+WHERE wt.batch_uid != 549285 AND init_dataset
+)
+SELECT t2.count
+FROM t
+LEFT JOIN
+( SELECT type,
+COUNT(*) AS count
+FROM t /* t2 */
+WHERE batch_uid = 549285
+GROUP BY type
+) t2 ON t2.type = t.type
+";
+EXECUTE p;
+count
+1
+1
+# This used to yield two NULL rows
+EXECUTE p;
+count
+1
+1
+DROP PREPARE p;
+# Original repro
+CREATE PROCEDURE cte_bug() BEGIN WITH RECURSIVE
+tran(batch_uid, guid, type, trantime, refguid) AS (
+SELECT 549285, 'W5PT9A5F3D2WF57', 13, '2023-04-07 09:19:04', NULL
+UNION ALL
+SELECT 549286, 'W5PTVYU84715VJ7', 13, '2023-04-07 09:31:20', 'W5PT9A5F3D2WF57'
+        )
+,t(init_dataset, batch_uid, guid, type, trantime) AS (
+SELECT TRUE AS init_dataset,
+batch_uid,
+guid,
+type,
+trantime
+FROM tran
+WHERE batch_uid = 549285
+UNION ALL
+SELECT FALSE,
+wt.batch_uid,
+wt.guid,
+wt.type,
+wt.trantime
+FROM tran wt
+JOIN
+t ts
+ON wt.refguid = ts.guid
+WHERE wt.batch_uid != 549285 AND init_dataset
+)
+SELECT t2.count
+FROM t
+LEFT JOIN
+( SELECT type,
+COUNT(*) AS count
+FROM t /* t2 */
+WHERE batch_uid = 549285
+GROUP BY type
+) t2 ON t2.type = t.type
+; END $$
+CALL cte_bug();
+count
+1
+1
+DROP PROCEDURE cte_bug;

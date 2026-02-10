@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -54,6 +54,7 @@
 
 #include <atomic>  // error_handler_hook
 #include <cstring>
+#include <string>
 
 #include "my_compiler.h"
 #include "my_compress.h"
@@ -64,7 +65,9 @@
 #include "my_psi_config.h" /* IWYU pragma: keep */
 
 #include "my_sharedlib.h"
+// IWYU pragma: begin_exports
 #include "mysql/components/services/bits/my_io_bits.h"
+#include "mysql/components/services/bits/my_syslog_bits.h"
 #include "mysql/components/services/bits/mysql_cond_bits.h"
 #include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "mysql/components/services/bits/psi_bits.h"
@@ -73,7 +76,7 @@
 #include "mysql/components/services/bits/psi_metric_bits.h"
 #include "mysql/components/services/bits/psi_stage_bits.h"
 #include "mysql/components/services/bits/server_telemetry_logs_client_bits.h"
-#include "sql/stream_cipher.h"
+// IWYU pragma: end_exports
 #include "string_with_len.h"
 
 class MY_CHARSET_LOADER;
@@ -149,9 +152,10 @@ struct MEM_ROOT;
 
 #define MYF_RW MYF(MY_WME + MY_NABP) /* For my_read & my_write */
 
-#define MY_CHECK_ERROR 1    /* Params to my_end; Check open-close */
-#define MY_GIVE_INFO 2      /* Give time info about process*/
-#define MY_DONT_FREE_DBUG 4 /* Do not call DBUG_END() in my_end() */
+#define MY_CHECK_ERROR 1        /* Params to my_end; Check open-close */
+#define MY_GIVE_INFO 2          /* Give time info about process*/
+#define MY_DONT_FREE_DBUG 4     /* Do not call DBUG_END() in my_end() */
+#define MY_END_PROXY_MAIN_THD 8 /* Free resources for main thread */
 
 /* Flags for my_error() */
 #define ME_BELL 4          /* DEPRECATED: Ring bell then printing message */
@@ -330,6 +334,7 @@ struct IO_CACHE_SHARE {
   int error;           /* Last error. */
 };
 
+class Stream_cipher;
 struct IO_CACHE /* Used when caching files */
 {
   /* Offset in file corresponding to the first byte of uchar* buffer. */
@@ -614,9 +619,6 @@ void memset_s(void *dest, size_t dest_max, int c, size_t n);
 
 // Maximum size of message  that will be logged.
 #define MAX_SYSLOG_MESSAGE_SIZE 1024
-
-/* Platform-independent SysLog support */
-enum my_syslog_options { MY_SYSLOG_PIDS = 1 };
 
 extern int my_openlog(const char *eventSourceName, int option, int facility);
 extern int my_closelog();
@@ -957,12 +959,9 @@ extern MYSQL_PLUGIN_IMPORT PSI_tls_channel_bootstrap *psi_tls_channel_hook;
 extern void set_psi_tls_channel_service(void *psi);
 #endif /* HAVE_PSI_INTERFACE */
 
-/* Total physical memory available */
-[[nodiscard]] extern unsigned long long my_physical_memory();
-
 /* Compares versions and determine if clone is allowed */
-[[nodiscard]] extern bool are_versions_clone_compatible(std::string ver1,
-                                                        std::string ver2);
+[[nodiscard]] extern bool are_versions_clone_compatible(
+    const std::string &ver1, const std::string &ver2);
 
 /**
   @} (end of group MYSYS)

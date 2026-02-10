@@ -1,7 +1,7 @@
 #ifndef JSON_DOM_INCLUDED
 #define JSON_DOM_INCLUDED
 
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,10 +33,12 @@
 #include <string>
 #include <string_view>
 #include <type_traits>  // is_base_of
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "field_types.h"  // enum_field_types
+#include "my_byteorder.h"
 #include "my_inttypes.h"
 #include "my_time.h"                 // my_time_flags_t
 #include "mysql_time.h"              // MYSQL_TIME
@@ -54,6 +56,7 @@ class Json_object;
 class Json_path;
 class Json_seekable_path;
 class Json_wrapper;
+class Json_wrapper_hasher;
 class String;
 
 struct CHARSET_INFO;
@@ -64,6 +67,7 @@ typedef Prealloced_array<Json_dom *, 16> Json_dom_vector;
 using Json_dom_ptr = std::unique_ptr<Json_dom>;
 using Json_array_ptr = std::unique_ptr<Json_array>;
 using Json_object_ptr = std::unique_ptr<Json_object>;
+using ha_checksum = std::uint32_t;
 
 /**
   @file
@@ -159,7 +163,9 @@ inline std::unique_ptr<T> create_dom_ptr(Args &&...args) {
            Json_double
          Json_boolean
          Json_null
-         Json_datetime
+         Json_temporal
+           Json_time
+           Json_datetime
          Json_opaque
        Json_container (abstract)
          Json_object
@@ -917,49 +923,111 @@ class Json_null final : public Json_scalar {
 };
 
 /**
-  Represents a MySQL date/time value (DATE, TIME, DATETIME or
-  TIMESTAMP) - an extension to the ECMA set of JSON scalar types, types
-  J_DATE, J_TIME, J_DATETIME and J_TIMESTAMP respectively. The method
-  field_type identifies which of the four it is.
+  Represents a MySQL temporal value (DATE, TIME, DATETIME or TIMESTAMP) -
+  an extension to the ECMA set of JSON scalar types, types J_DATE, J_TIME,
+  J_DATETIME and J_TIMESTAMP respectively. The method field_type identifies
+  which of the four it is. Currently, this is an abstract class with two
+  child classes: Json_datetime and Json_time.
 */
-class Json_datetime final : public Json_scalar {
- private:
-  MYSQL_TIME m_t;                 //!< holds the date/time value
-  enum_field_types m_field_type;  //!< identifies which type of date/time
+class Json_temporal : public Json_scalar {
+ public:
+  Json_temporal() : Json_scalar() {}
 
+  /**
+    @returns One of MYSQL_TYPE_TIME, MYSQL_TYPE_DATE, MYSQL_TYPE_DATETIME
+             or MYSQL_TYPE_TIMESTAMP.
+  */
+  virtual enum_field_types field_type() const = 0;
+
+  /// Datetimes are packed in eight bytes.
+  static const size_t PACKED_SIZE = 8;
+};
+
+/// MySQL TIME value
+class Json_time final : public Json_temporal {
+ public:
+  /**
+    Constructs a object to hold a MySQL time value.
+
+    @param time   the time value
+  */
+  explicit Json_time(const Time_val time) : Json_temporal(), m_time(time) {}
+
+  enum_json_type json_type() const override { return enum_json_type::J_TIME; }
+
+  Json_dom_ptr clone() const override;
+
+  /// @returns the time value.
+  Time_val value() const { return m_time; }
+
+  /**
+    Return what kind of temporal value this object holds.
+    @return One of MYSQL_TYPE_TIME, MYSQL_TYPE_DATE, MYSQL_TYPE_DATETIME
+            or MYSQL_TYPE_TIMESTAMP.
+  */
+  enum_field_types field_type() const override { return MYSQL_TYPE_TIME; }
+
+  /**
+    Convert the TIME value to the packed format used for storage.
+    @param dest the destination buffer to write the packed time value to
+    (must at least have size PACKED_SIZE)
+  */
+  void to_packed(char *dest) const;
+
+  /**
+    Convert a packed time back to a time value.
+    @param from the buffer to read from (must have at least PACKED_SIZE bytes)
+    @param to   the time field to write the value to
+  */
+  static void from_packed(const char *from, Time_val *to);
+
+#ifdef MYSQL_SERVER
+  /**
+    Convert a packed time value to key string for indexing by SE
+    @param from the buffer to read from
+    @param to   the destination buffer
+    @param dec  value's decimals
+  */
+  static void from_packed_to_key(const char *from, uchar *to, uint8 dec);
+#endif
+
+ private:
+  /// Holds the time value
+  Time_val m_time;
+};
+
+/**
+  MySQL temporal value that is represented by a MYSQL_TIME struct, ie.
+  a DATETIME, TIMESTAMP or DATE value.
+*/
+class Json_datetime final : public Json_temporal {
  public:
   /**
     Constructs a object to hold a MySQL date/time value.
 
-    @param[in] t   the time/value
-    @param[in] ft  the field type: must be one of MYSQL_TYPE_TIME,
-                   MYSQL_TYPE_DATE, MYSQL_TYPE_DATETIME or
-                   MYSQL_TYPE_TIMESTAMP.
+    @param[in] t   the date/time value
+    @param[in] ft  the field type: must be one of MYSQL_TYPE_DATE,
+                   MYSQL_TYPE_DATETIME or MYSQL_TYPE_TIMESTAMP.
   */
-  Json_datetime(const MYSQL_TIME &t, enum_field_types ft)
-      : Json_scalar(), m_t(t), m_field_type(ft) {}
+  Json_datetime(const Datetime_val &t, enum_field_types ft)
+      : Json_temporal(), m_t(t), m_field_type(ft) {
+    assert(ft != MYSQL_TYPE_TIME);
+  }
 
   enum_json_type json_type() const override;
 
   Json_dom_ptr clone() const override;
 
   /**
-    Return a pointer the date/time value. Ownership is _not_ transferred.
+    @returns a pointer to the date/time value. Ownership is _not_ transferred.
     To identify which time time the value represents, use @c field_type.
-    @return the pointer
   */
-  const MYSQL_TIME *value() const { return &m_t; }
+  const Datetime_val *value() const { return &m_t; }
+
+  enum_field_types field_type() const override { return m_field_type; }
 
   /**
-    Return what kind of date/time value this object holds.
-    @return One of MYSQL_TYPE_TIME, MYSQL_TYPE_DATE, MYSQL_TYPE_DATETIME
-            or MYSQL_TYPE_TIMESTAMP.
-  */
-  enum_field_types field_type() const { return m_field_type; }
-
-  /**
-    Convert the datetime to the packed format used when storing
-    datetime values.
+    Convert the datetime to the packed format used for storage.
     @param dest the destination buffer to write the packed datetime to
     (must at least have size PACKED_SIZE)
   */
@@ -986,8 +1054,9 @@ class Json_datetime final : public Json_scalar {
                                  uchar *to, uint8 dec);
 #endif
 
-  /** Datetimes are packed in eight bytes. */
-  static const size_t PACKED_SIZE = 8;
+ private:
+  Datetime_val m_t;               //!< holds the date/time value
+  enum_field_types m_field_type;  //!< identifies which type of date/time
 };
 
 /**
@@ -1134,6 +1203,12 @@ bool double_quote(const char *cptr, size_t length, String *buf);
 */
 Json_dom_ptr merge_doms(Json_dom_ptr left, Json_dom_ptr right);
 
+constexpr uchar JSON_KEY_NULL = '\x00';
+constexpr uchar JSON_KEY_OBJECT = '\x05';
+constexpr uchar JSON_KEY_ARRAY = '\x06';
+constexpr uchar JSON_KEY_FALSE = '\x07';
+constexpr uchar JSON_KEY_TRUE = '\x08';
+
 /**
   Abstraction for accessing JSON values irrespective of whether they
   are (started out as) binary JSON values or JSON DOM values. The
@@ -1174,6 +1249,8 @@ class Json_wrapper {
     datetime (may or may not be the same as buffer)
   */
   const char *get_datetime_packed(char *buffer) const;
+
+  const char *get_time_packed(char *buffer) const;
 
   /**
     Create an empty wrapper. Cf #empty().
@@ -1383,7 +1460,7 @@ class Json_wrapper {
 
   /**
     Return the MYSQL type of the opaque value, see #type(). Valid for
-    J_OPAQUE.  Calling this method if the type is not J_OPAQUE will give
+    J_OPAQUE. Calling this method if the type is not J_OPAQUE will give
     undefined results.
 
     @return the type
@@ -1470,13 +1547,21 @@ class Json_wrapper {
   ulonglong get_uint() const;
 
   /**
-    Get the value of a JSON date/time value.  Valid for J_TIME,
-    J_DATETIME, J_DATE and J_TIMESTAMP.  Calling this method if the type
-    is not one of those will give undefined results.
+    Get the value of a JSON date/time value.  Valid for J_DATETIME, J_DATE
+    and J_TIMESTAMP. Calling this method if the type is not one of those
+    will give undefined results.
 
     @param[out] t  the date/time value
   */
   void get_datetime(MYSQL_TIME *t) const;
+
+  /**
+    Get the value of a JSON time value. Valid for J_TIME.
+    Calling this method if the type is not J_TIME will give undefined results.
+
+    @param[out] t  the date/time value
+  */
+  void get_time(Time_val *t) const;
 
   /**
     Get a boolean value (a JSON true or false literal).
@@ -1629,13 +1714,13 @@ class Json_wrapper {
     @param[in]  error_handler function to be called on conversion errors
     @param[in]  deprecation_checker function to be called to check for
                                     deprecated datetime format in ltime
-    @param[in,out] ltime a value buffer
-    @param[in] date_flags_arg Flags to use for string -> date conversion
+    @param[in,out] date a value buffer
+    @param[in] flags Flags to use for string -> date conversion
     @returns json value coerced to date
    */
   bool coerce_date(const JsonCoercionHandler &error_handler,
                    const JsonCoercionDeprecatedHandler &deprecation_checker,
-                   MYSQL_TIME *ltime, my_time_flags_t date_flags_arg = 0) const;
+                   Date_val *date, my_time_flags_t flags = 0) const;
 
   /**
     Extract a time value from the JSON if possible, coercing if need be.
@@ -1643,13 +1728,27 @@ class Json_wrapper {
     @param[in]  error_handler function to be called on conversion errors
     @param[in]  deprecation_checker function to be called to check for
                                     deprecated datetime format in ltime
-    @param[in,out] ltime a value buffer
+    @param[in,out] time a value buffer
 
     @returns json value coerced to time
   */
   bool coerce_time(const JsonCoercionHandler &error_handler,
                    const JsonCoercionDeprecatedHandler &deprecation_checker,
-                   MYSQL_TIME *ltime) const;
+                   Time_val *time) const;
+
+  /**
+    Extract a datetime from the JSON if possible, coercing if need be.
+
+    @param[in]  error_handler function to be called on conversion errors
+    @param[in]  deprecation_checker function to be called to check for
+                                    deprecated datetime format in ltime
+    @param[in,out] dt a value buffer
+    @param[in] flags Flags to use for string -> date conversion
+    @returns json value coerced to date
+   */
+  bool coerce_datetime(const JsonCoercionHandler &error_handler,
+                       const JsonCoercionDeprecatedHandler &deprecation_checker,
+                       Datetime_val *dt, my_time_flags_t flags = 0) const;
 
   /**
     Make a sort key that can be used by filesort to order JSON values.
@@ -1683,6 +1782,8 @@ class Json_wrapper {
     @param[in]  hash_val  An initial hash value.
   */
   ulonglong make_hash_key(ulonglong hash_val) const;
+
+  void make_hash_key_common(Json_wrapper_hasher &hash_key) const;
 
   /**
     Calculate the amount of unused space inside a JSON binary value.
@@ -1890,6 +1991,7 @@ class Json_scalar_holder {
     Json_double m_double;
     Json_boolean m_boolean;
     Json_null m_null;
+    Json_time m_time;
     Json_datetime m_datetime;
     Json_opaque m_opaque;
     /// Constructor which initializes the union to hold a Json_null value.

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -35,12 +35,14 @@ Data dictionary interface */
 #include <sql_backup_lock.h>
 #include <sql_class.h>
 #include <sql_thd_internal_api.h>
+
 #include "item.h"
 #else /* !UNIV_HOTBACKUP */
 #include <my_base.h>
 #endif /* !UNIV_HOTBACKUP */
 
 #include <dd/properties.h>
+
 #include "dict0crea.h"
 #include "dict0dd.h"
 #include "dict0dict.h"
@@ -52,7 +54,6 @@ Data dictionary interface */
 #include "dict0stats.h"
 #endif /* !UNIV_HOTBACKUP */
 #include "data0type.h"
-#include "dict0dict.h"
 #include "fil0fil.h"
 #include "mach0data.h"
 #include "rem0rec.h"
@@ -1558,7 +1559,6 @@ int dd_table_open_on_dd_obj(THD *thd, dd::cache::Dictionary_client *client,
 
   TABLE_SHARE ts;
   TABLE table_def;
-  dd::Schema *schema;
 
   error =
       acquire_uncached_table(thd, client, &dd_table, tbl_name, &ts, &table_def);
@@ -1566,31 +1566,39 @@ int dd_table_open_on_dd_obj(THD *thd, dd::cache::Dictionary_client *client,
     return (error);
   }
 
-  char tmp_name[MAX_FULL_NAME_LEN + 1];
-  const char *tab_namep;
-  if (tbl_name) {
-    tab_namep = tbl_name;
-  } else {
-    char tmp_schema[MAX_DATABASE_NAME_LEN + 1];
-    char tmp_tablename[MAX_TABLE_NAME_LEN + 1];
+  const char *table_name = tbl_name;
+  char tmp_name[FN_REFLEN + 1];
+  if (!tbl_name) {
+    dd::Schema *schema;
     error = client->acquire_uncached<dd::Schema>(dd_table.schema_id(), &schema);
     if (error != 0) {
       return error;
     }
-    tablename_to_filename(schema->name().c_str(), tmp_schema,
-                          MAX_DATABASE_NAME_LEN + 1);
-    tablename_to_filename(dd_table.name().c_str(), tmp_tablename,
-                          MAX_TABLE_NAME_LEN + 1);
-    snprintf(tmp_name, sizeof tmp_name, "%s/%s", tmp_schema, tmp_tablename);
-    tab_namep = tmp_name;
+
+    bool truncated;
+    build_table_filename(tmp_name, sizeof(tmp_name) - 1, schema->name().c_str(),
+                         dd_table.name().c_str(), nullptr, 0, &truncated);
+
+    if (truncated) {
+      ut_d(ut_error);
+      ut_o(return DB_TOO_LONG_PATH);
+    }
+    table_name = tmp_name;
   }
+
+  char norm_name[FN_REFLEN];
+  if (!normalize_table_name(norm_name, table_name)) {
+    ut_d(ut_error);
+    ut_o(return DB_TOO_LONG_PATH);
+  }
+
   if (dd_part == nullptr) {
-    table = dd_open_table(client, &table_def, tab_namep, &dd_table, thd);
+    table = dd_open_table(client, &table_def, norm_name, &dd_table, thd);
     if (table == nullptr) {
       error = HA_ERR_GENERIC;
     }
   } else {
-    table = dd_open_table(client, &table_def, tab_namep, dd_part, thd);
+    table = dd_open_table(client, &table_def, norm_name, dd_part, thd);
   }
   release_uncached_table(&ts, &table_def);
   return error;
@@ -1672,6 +1680,7 @@ static dict_table_t *dd_table_open_on_id_low(THD *thd, MDL_ticket **mdl,
 
       if (dc->acquire(schema, tablename, &dd_table) || dd_table == nullptr) {
         if (mdl != nullptr) {
+          // This should be ok on the error path
           dd_mdl_release(thd, mdl);
         }
         return nullptr;
@@ -1716,6 +1725,14 @@ static dict_table_t *dd_table_open_on_id_low(THD *thd, MDL_ticket **mdl,
       /* facts do not match, retry */
       if (!same_name) {
         if (mdl != nullptr) {
+          // We have acquired and locked the wrong name.
+          // Need to relase acquired dd object before releasing locks.
+          // If we had used an Auto_releaser in the loop scope, we would
+          // have needed a way to disable it when breaking out of the loop
+          // below, to ensure that the acquired dd objects are still valid also
+          // after the loop.
+          releaser.~Auto_releaser();
+          new (&releaser) dd::cache::Dictionary_client::Auto_releaser{dc};
           dd_mdl_release(thd, mdl);
         }
         continue;
@@ -1747,11 +1764,7 @@ static dict_table_t *dd_table_open_on_id_low(THD *thd, MDL_ticket **mdl,
 @retval 0 on success (DD_SUVCCESS) */
 [[nodiscard]] static int dd_check_corrupted(dict_table_t *&table) {
   if (table->is_corrupted()) {
-    if (dict_table_is_sdi(table->id)
-#ifndef UNIV_HOTBACKUP
-        || dict_table_is_system(table->id)
-#endif /* !UNIV_HOTBACKUP */
-    ) {
+    if (dict_table_is_sdi(table->id)) {
 #ifndef UNIV_HOTBACKUP
       my_error(ER_TABLE_CORRUPT, MYF(0), "", table->name.m_name);
 #else  /* !UNIV_HOTBACKUP */
@@ -2353,69 +2366,41 @@ dberr_t dd_update_table_and_partitions_after_dir_change(dd::Object_id object_id,
     ut_o(return DB_ERROR);
   }
 
-  ut_ad(dd_table != nullptr);
   std::string dd_table_name{dd_table->table().name()};
   Fil_path fpath{path};
 
-  std::string part_name = (!table_info.subpartition.empty())
-                              ? table_info.subpartition
-                              : table_info.partition;
-  to_lower(part_name);
-
-  /* This function may be hit by those tables which are marked as
-  Fil_state::MOVED_PREV_OR_HAS_DATADIR which includes tables that are moved
-  before 8.0.38/8.4.1/9.0.0 and tables that are created using data directory
-  clause. We want to set the flag for tables moved before 8.0.38/8.4.1/9.0.0
-  only and ignore those tables which are created using data directory clause
-  as the dd_table data dir flag is already set for them. Additionally, we
-  explicitly remove the flag if moved from external to default data dir. We
-  do this because dd_table data dir flag should not exist if the ibd file is
-  located in default dir */
-  if (part_name.empty()) {
-    /* The table is non-partitioned table */
-    bool dd_flag = dd_table->se_private_data().exists(
-        dd_table_key_strings[DD_TABLE_DATA_DIRECTORY]);
-    bool set_true = !(MySQL_datadir_path.is_same_as(fpath) ||
-                      MySQL_datadir_path.is_ancestor(fpath)) &&
-                    !dd_flag;
-    bool set_false = MySQL_datadir_path.is_same_as(fpath) ||
-                     MySQL_datadir_path.is_ancestor(fpath);
+  bool set_true = !MySQL_datadir_path.is_ancestor(fpath);
+  if (!dd_table_is_partitioned(*dd_table)) {
+    /* Set the DATA DIRECTORY FLAG to true for dd table if ibd file is moved to
+    directory other than default data dir. Remove the flag if moved from
+    external to default data dir.*/
     if (set_true) {
       dd_table->se_private_data().set(
           dd_table_key_strings[DD_TABLE_DATA_DIRECTORY], set_true);
-    }
-    if (set_false) {
+    } else {
       dd_table->se_private_data().remove(
           dd_table_key_strings[DD_TABLE_DATA_DIRECTORY]);
     }
   } else {
-    /* The table is partitioned table */
-    for (dd::Partition *part_obj : *dd_table->leaf_partitions()) {
-      std::string part_obj_name{part_obj->name()};
-      to_lower(part_obj_name);
-      if (part_obj_name == part_name) {
-        dd::Properties &part_options = part_obj->options();
-        bool dd_flag = part_obj->se_private_data().exists(
-            dd_table_key_strings[DD_TABLE_DATA_DIRECTORY]);
-        bool set_true = !(MySQL_datadir_path.is_same_as(fpath) ||
-                          MySQL_datadir_path.is_ancestor(fpath)) &&
-                        !dd_flag;
-        bool set_false = MySQL_datadir_path.is_same_as(fpath) ||
-                         MySQL_datadir_path.is_ancestor(fpath);
-        if (set_true) {
-          part_obj->se_private_data().set(
-              dd_table_key_strings[DD_TABLE_DATA_DIRECTORY], set_true);
-          /* Update data_file_name for dd::partition as we do not set data
-          directory for whole partitioned table. We acquire dd::partition later
-          and read from it*/
-          part_options.set(data_file_name_key, table_info.directory.c_str());
-        }
-        if (set_false) {
-          part_obj->se_private_data().remove(
-              dd_table_key_strings[DD_TABLE_DATA_DIRECTORY]);
-          part_options.remove(data_file_name_key);
-        }
-      }
+    dd::Partition *part_obj = dd_table->get_leaf_partition(
+        (!table_info.subpartition.empty()) ? table_info.subpartition
+                                           : table_info.partition);
+    if (!part_obj) {
+      ut_d(ut_error);
+      ut_o(return DB_ERROR);
+    }
+    dd::Properties &part_options = part_obj->options();
+    if (set_true) {
+      part_obj->se_private_data().set(
+          dd_table_key_strings[DD_TABLE_DATA_DIRECTORY], true);
+      /* Update data_file_name for dd::partition as we do not set data
+      directory for whole partitioned table. We acquire dd::partition later
+      and read from it*/
+      part_options.set(data_file_name_key, table_info.directory.c_str());
+    } else {
+      part_obj->se_private_data().remove(
+          dd_table_key_strings[DD_TABLE_DATA_DIRECTORY]);
+      part_options.remove(data_file_name_key);
     }
   }
 
@@ -4484,7 +4469,8 @@ inline int dd_fill_dict_index(const dd::Table &dd_table, const TABLE *m_form,
     ut_ad(!m_table->is_temporary() ||
           !dict_table_page_size(m_table).is_compressed());
     if (!m_table->is_temporary()) {
-      dict_table_stats_latch_create(m_table, true);
+      dict_table_stats_latch_create_lazy(m_table, true);
+      dict_table_stats_compute_mutex_create_lazy(m_table, true);
     }
   } else {
   dd_error:
@@ -8565,27 +8551,6 @@ void table_to_file(std::string &name) {
   name.assign(conv_name);
 }
 
-/** Get partition and sub-partition separator strings.
-@param[in]      is_57           true, if 5.7 style separator is needed
-@param[out]     part_sep        partition separator
-@param[out]     sub_part_sep    sub-partition separator */
-static void get_partition_separators(bool is_57, std::string &part_sep,
-                                     std::string &sub_part_sep) {
-  if (!is_57) {
-    part_sep.assign(PART_SEPARATOR);
-    sub_part_sep.assign(SUB_PART_SEPARATOR);
-    return;
-  }
-  /* 5.7 style partition separators. */
-#ifdef _WIN32
-  part_sep.assign(PART_SEPARATOR);
-  sub_part_sep.assign(SUB_PART_SEPARATOR);
-#else
-  part_sep.assign(ALT_PART_SEPARATOR);
-  sub_part_sep.assign(ALT_SUB_PART_SEPARATOR);
-#endif /* _WIN32 */
-}
-
 /** Check for partition and sub partition.
 @param[in]      dict_name       name from innodb dictionary
 @param[in]      sub_part        true, if checking sub partition
@@ -8593,26 +8558,8 @@ static void get_partition_separators(bool is_57, std::string &part_sep,
 @return true, iff partition/sub-partition exists. */
 static bool check_partition(const std::string &dict_name, bool sub_part,
                             size_t &position) {
-  std::string part_sep = sub_part ? SUB_PART_SEPARATOR : PART_SEPARATOR;
-
-  /* Check for partition separator string. */
-  position = dict_name.find(part_sep);
-
-  if (position != std::string::npos) {
-    return true;
-  }
-
-  std::string alt_sep = sub_part ? ALT_SUB_PART_SEPARATOR : ALT_PART_SEPARATOR;
-
-  /* Check for alternative partition separator. It is safe check for
-  release build server and for upgrade. */
-  position = dict_name.find(alt_sep);
-
-  if (position != std::string::npos) {
-    return true;
-  }
-
-  return false;
+  position = dict_name.find(sub_part ? SUB_PART_SEPARATOR : PART_SEPARATOR);
+  return position != std::string::npos;
 }
 
 /** Check for TMP extension name.
@@ -8781,7 +8728,7 @@ std::optional<table_name_components> parse_tablespace_path(std::string path) {
   if (has_partitions) {
     // Extract partition name
     size_t part_start =
-        temp_table.find(PART_SEPARATOR) + std::string(PART_SEPARATOR).length();
+        temp_table.find(PART_SEPARATOR) + strlen(PART_SEPARATOR);
     size_t part_end = has_subpartitions ? temp_table.find(SUB_PART_SEPARATOR)
                                         : temp_table.find('.');
 
@@ -8794,8 +8741,8 @@ std::optional<table_name_components> parse_tablespace_path(std::string path) {
 
   if (has_subpartitions) {
     // Extract subpartition name
-    size_t sub_part_start = temp_table.find(SUB_PART_SEPARATOR) +
-                            std::string(SUB_PART_SEPARATOR).length();
+    size_t sub_part_start =
+        temp_table.find(SUB_PART_SEPARATOR) + strlen(SUB_PART_SEPARATOR);
     size_t sub_part_end = temp_table.find('.');
     ut_ad(sub_part_end != std::string::npos);
     std::string temp_subpartition =
@@ -8885,11 +8832,10 @@ void build_table(const std::string &schema, const std::string &table,
 @param[in]      part            partition name
 @param[in]      sub_part        sub-partition name
 @param[in]      conv            callback to convert partition/sub-partition name
-@param[in]      is_57           if 5.7 style partition name is needed
 @param[out]     partition       partition string for dictionary table name */
 static void build_partition_low(const std::string part,
                                 const std::string sub_part, Convert_Func conv,
-                                bool is_57, std::string &partition) {
+                                std::string &partition) {
   partition.clear();
   std::string conv_str;
 
@@ -8898,14 +8844,8 @@ static void build_partition_low(const std::string part,
     ut_o(return);
   }
 
-  /* Get partition separator strings */
-  std::string part_sep;
-  std::string sub_part_sep;
-
-  get_partition_separators(is_57, part_sep, sub_part_sep);
-
   /* Append separator and partition. */
-  partition.append(part_sep);
+  partition.append(PART_SEPARATOR);
 
   conv_str.assign(part);
   if (conv) {
@@ -8918,7 +8858,7 @@ static void build_partition_low(const std::string part,
   }
 
   /* Append separator and sub-partition. */
-  partition.append(sub_part_sep);
+  partition.append(SUB_PART_SEPARATOR);
 
   conv_str.assign(sub_part);
   if (conv) {
@@ -8927,13 +8867,12 @@ static void build_partition_low(const std::string part,
   partition.append(conv_str);
 }
 
-/** Get partition and sub-partition name from DD. We convert the names to
-lower case.
+/** Get partition and sub-partition name from DD. We convert the names to lower
+case before fetching it from DD.
 @param[in]      dd_part         partition object from DD
-@param[in]      lower_case      convert to lower case name
 @param[out]     part_name       partition name
 @param[out]     sub_name        sub-partition name */
-static void get_part_from_dd(const dd::Partition *dd_part, bool lower_case,
+static void get_part_from_dd(const dd::Partition *dd_part,
                              std::string &part_name, std::string &sub_name) {
   /* Assume sub-partition and get the parent partition. */
   auto sub_part = dd_part;
@@ -8947,21 +8886,16 @@ static void get_part_from_dd(const dd::Partition *dd_part, bool lower_case,
 
   ut_ad(part->name().length() < FN_REFLEN);
 
-  part_name.assign(part->name().c_str());
+  part_name = part->name();
   /* Convert partition name to lower case. */
-  if (lower_case) {
-    to_lower(part_name);
-  }
+  to_lower(part_name);
 
   sub_name.clear();
   if (sub_part != nullptr) {
     ut_ad(sub_part->name().length() < FN_REFLEN);
-
-    sub_name.assign(sub_part->name().c_str());
+    sub_name = sub_part->name();
     /* Convert sub-partition name to lower case. */
-    if (lower_case) {
-      to_lower(sub_name);
-    }
+    to_lower(sub_name);
   }
 }
 
@@ -8970,29 +8904,10 @@ void build_partition(const dd::Partition *dd_part, std::string &partition) {
   std::string sub_name;
 
   /* Extract partition and sub-partition name from DD. */
-  get_part_from_dd(dd_part, true, part_name, sub_name);
+  get_part_from_dd(dd_part, part_name, sub_name);
 
   /* Build partition string after converting names. */
-  build_partition_low(part_name, sub_name, table_to_file, false, partition);
-}
-
-void build_57_partition(const dd::Partition *dd_part, std::string &partition) {
-  std::string part_name;
-  std::string sub_name;
-
-  /* Extract partition and sub-partition name from DD. In 5.7, partition and
-  sub-partition names are kept in same letter case as given by user. */
-  bool lower_case = false;
-
-  /* On windows, 5.7 partition sub-partition names are in lower case always. */
-#ifdef _WIN32
-  lower_case = true;
-#endif /* _WIN32 */
-
-  get_part_from_dd(dd_part, lower_case, part_name, sub_name);
-
-  /* Build partition string after converting names. */
-  build_partition_low(part_name, sub_name, table_to_file, true, partition);
+  build_partition_low(part_name, sub_name, table_to_file, partition);
 }
 
 bool match_partition(const std::string &dict_name,
@@ -9047,6 +8962,7 @@ static void get_table_parts(const std::string &dict_name, std::string &schema,
     /* Extract partition details converting to system cs. */
     get_partition(partition, true, part, sub_part);
 
+<<<<<<< HEAD
     /* During upgrade from 5.7 it is possible to have upper case
     names from SYS tables. */
     if (srv_is_upgrade_mode) {
@@ -9054,10 +8970,40 @@ static void get_table_parts(const std::string &dict_name, std::string &schema,
       to_lower(sub_part);
     }
 
+||||||| 61a3a1d8ef1
+    /* During upgrade from 5.7 it is possible to have upper case
+    names from SYS tables. */
+    if (srv_is_upgrade_mode) {
+      to_lower(part);
+      to_lower(sub_part);
+    }
+
+#ifdef UNIV_DEBUG
+    /* Validate that the names are in lower case. */
+    std::string save_part(part);
+    to_lower(part);
+    ut_ad(save_part.compare(part) == 0);
+
+    std::string save_sub_part(sub_part);
+    to_lower(sub_part);
+    ut_ad(save_sub_part.compare(sub_part) == 0);
+#endif  // UNIV_DEBUG
+=======
+#ifdef UNIV_DEBUG
+    /* Validate that the names are in lower case. */
+    std::string save_part(part);
+    to_lower(part);
+    ut_ad(save_part.compare(part) == 0);
+
+    std::string save_sub_part(sub_part);
+    to_lower(sub_part);
+    ut_ad(save_sub_part.compare(sub_part) == 0);
+#endif  // UNIV_DEBUG
+>>>>>>> tags/mysql-9.6.0
 
     /* Build partition string. No conversion required. */
     partition.clear();
-    build_partition_low(part, sub_part, nullptr, false, partition);
+    build_partition_low(part, sub_part, nullptr, partition);
   }
 }
 
@@ -9142,7 +9088,7 @@ void rebuild(std::string &dict_name) {
 
     /* Build partition string converting to file cs. */
     partition.clear();
-    build_partition_low(part, sub_part, table_to_file, false, partition);
+    build_partition_low(part, sub_part, table_to_file, partition);
   }
 
   /* Re-build the table name. No cs conversion required. */

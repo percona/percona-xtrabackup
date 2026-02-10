@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 set global innodb_monitor_disable = All;
 select name, status from information_schema.innodb_metrics;
 name	status
@@ -692,3 +693,4 @@ set global innodb_monitor_reset =0xe9;
 ERROR 42000: Variable 'innodb_monitor_reset' can't be set to the value of '\xE9'
 set global innodb_monitor_disable =0xed;
 ERROR 42000: Variable 'innodb_monitor_disable' can't be set to the value of '\xED'
+include/rpl/set_gtid_mode_on.inc

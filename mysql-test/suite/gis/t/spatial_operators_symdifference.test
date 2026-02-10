@@ -621,9 +621,6 @@ SELECT ST_ASTEXT(ST_SYMDIFFERENCE(ST_GEOMFROMTEXT(@star_of_elems),));
 --error ER_PARSE_ERROR
 SELECT ST_ASTEXT(ST_SYMDIFFERENCE(,ST_GEOMFROMTEXT(@star_top)));
 
---echo # Invalid geometry in input
-SELECT ST_ASTEXT(ST_SYMDIFFERENCE(ST_GEOMFROMTEXT(@star_elem_vertical),ST_GEOMFROMTEXT(@star_of_elems)));
-
 SELECT ST_ASTEXT(ST_SYMDIFFERENCE(ST_GEOMFROMTEXT(@star_elem_vertical),ST_GEOMFROMTEXT(@star_collection_elems)));
 
 SELECT ST_ASTEXT(ST_SYMDIFFERENCE(g,ST_GEOMFROMTEXT(@star_collection_elems))) FROM gis_geometrycollection WHERE fid=100;

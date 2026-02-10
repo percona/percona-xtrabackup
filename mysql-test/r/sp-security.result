@@ -1,6 +1,8 @@
 create table mysql.db_copy as select * from mysql.db;
 delete from mysql.db where host='%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 set @orig_sql_mode_session= @@SESSION.sql_mode;
 set @orig_sql_mode_global= @@GLOBAL.sql_mode;
 set @orig_partial_revokes = @@global.partial_revokes;
@@ -12,6 +14,8 @@ create user user1;
 delete from mysql.db;
 insert into mysql.db select * from mysql.db_copy;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop table if exists t1;
 drop database if exists db1_secret;
 create database db1_secret;
@@ -119,6 +123,8 @@ grant usage on db2.* to user2@localhost;
 grant select,insert,update,delete,create routine on db2.* to user2@localhost;
 grant create routine on db2.* to user1@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 use db2;
 create procedure p () insert into t2 values (1);
 call p();
@@ -171,6 +177,8 @@ delete from mysql.procs_priv where user='user1' or user='user2';
 delete from mysql.procs_priv where user='' and host='%';
 delete from mysql.db where user='user1' or user='user2';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create user usera@localhost;
 create user userb@localhost;
 create user userc@localhost;
@@ -233,6 +241,8 @@ delete from mysql.user where user='usera' or user='userb' or user='userc';
 delete from mysql.procs_priv where user='usera' or user='userb' or user='userc';
 delete from mysql.tables_priv where user='usera';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop table t1;
 create user user1@localhost;
 drop function if exists bug_9503;
@@ -493,6 +503,8 @@ DELETE FROM mysql.db WHERE user LIKE 'mysqltest\_%';
 DELETE FROM mysql.tables_priv WHERE user LIKE 'mysqltest\_%';
 DELETE FROM mysql.columns_priv WHERE user LIKE 'mysqltest\_%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE TABLE t1 (i INT);
 CREATE FUNCTION f_suid(i INT) RETURNS INT SQL SECURITY DEFINER RETURN 0;
 CREATE PROCEDURE p_suid(IN i INT) SQL SECURITY DEFINER SET @c:= 0;
@@ -1219,6 +1231,8 @@ DROP SCHEMA testdb;
 delete from mysql.db;
 insert into mysql.db select * from mysql.db_copy;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop table mysql.db_copy;
 SET GLOBAL sql_mode= @orig_sql_mode_global;
 SET SESSION sql_mode= @orig_sql_mode_session;

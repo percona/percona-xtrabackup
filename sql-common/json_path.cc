@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,9 +33,9 @@
 
 #include "my_rapidjson_size_t.h"  // IWYU pragma: keep
 
-#include <assert.h>
-#include <stddef.h>
 #include <algorithm>  // any_of
+#include <cassert>
+#include <cstddef>
 #include <string>
 #include <string_view>
 
@@ -295,11 +295,7 @@ static bool parse_path(Stream *stream, Json_path *path) {
   }
 
   // a path may not end with an ellipsis
-  if (path->leg_count() > 0 && path->last_leg()->get_type() == jpl_ellipsis) {
-    return true;
-  }
-
-  return false;
+  return path->leg_count() > 0 && path->last_leg()->get_type() == jpl_ellipsis;
 }
 
 /**
@@ -752,18 +748,17 @@ static bool is_ecmascript_identifier(const std::string_view &name) {
 
     if (first_codepoint) {
       return false;
-    } else {
-      // unicode combining mark
-      if (unicode_combining_mark(codepoint)) continue;
-
-      // a unicode digit
-      if (is_digit(codepoint)) continue;
-      if (is_connector_punctuation(codepoint)) continue;
-      // <ZWNJ>
-      if (codepoint == 0x200C) continue;
-      // <ZWJ>
-      if (codepoint == 0x200D) continue;
     }
+    // unicode combining mark
+    if (unicode_combining_mark(codepoint)) continue;
+
+    // a unicode digit
+    if (is_digit(codepoint)) continue;
+    if (is_connector_punctuation(codepoint)) continue;
+    // <ZWNJ>
+    if (codepoint == 0x200C) continue;
+    // <ZWJ>
+    if (codepoint == 0x200D) continue;
 
     // nope
     return false;

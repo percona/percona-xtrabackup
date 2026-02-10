@@ -17,7 +17,7 @@ SET GLOBAL DEBUG = '+d,log_force_consumption';
 SET GLOBAL DEBUG = '+d,syncpoint_log_before_waiting_for_next_file';
 
 --echo # Freeze log files consumer.
-let err_msg=Redo log writer is waiting for a new redo log file;
+let err_msg=Redo log writer is waiting for a new redo log file. Consider increasing innodb_redo_log_capacity. The current log capacity is;
 --eval CALL mtr.add_suppression("$err_msg.*");
 
 SET GLOBAL DEBUG = '+d,syncpoint_log_before_file_consume';

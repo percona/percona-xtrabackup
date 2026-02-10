@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -21,11 +21,10 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
+#include <cassert>
 #include <cstdarg>
+#include <cstdio>
+#include <cstring>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -126,7 +125,7 @@ bool test_set_system_variable_string_init(UDF_INIT *, UDF_ARGS *args,
 long long test_set_system_variable_string(UDF_INIT * /*initd*/, UDF_ARGS *args,
                                           unsigned char * /*is_null*/,
                                           unsigned char *error) {
-  bool make_new_thread = *((long long *)args->args[0]) > 0;
+  bool const make_new_thread = *((long long *)args->args[0]) > 0;
 
   MYSQL_THD thd = nullptr;
 
@@ -200,7 +199,7 @@ long long test_set_system_variable_signed_integer(UDF_INIT * /*initd*/,
                                                   UDF_ARGS *args,
                                                   unsigned char * /*is_null*/,
                                                   unsigned char *error) {
-  bool make_new_thread = *((long long *)args->args[0]) > 0;
+  bool const make_new_thread = *((long long *)args->args[0]) > 0;
 
   MYSQL_THD thd = nullptr;
 
@@ -225,7 +224,7 @@ long long test_set_system_variable_signed_integer(UDF_INIT * /*initd*/,
     *error = 1;
     return 0;
   }
-  long long value = *((long long *)args->args[3]);
+  long long const value = *((long long *)args->args[3]);
   const char *type = args->args[4];
 
   if (mysql_service_mysql_system_variable_update_integer->set_signed(
@@ -271,7 +270,7 @@ long long test_set_system_variable_unsigned_integer(UDF_INIT * /*initd*/,
                                                     UDF_ARGS *args,
                                                     unsigned char * /*is_null*/,
                                                     unsigned char *error) {
-  bool make_new_thread = *((long long *)args->args[0]) > 0;
+  bool const make_new_thread = *((long long *)args->args[0]) > 0;
 
   MYSQL_THD thd = nullptr;
 
@@ -296,7 +295,7 @@ long long test_set_system_variable_unsigned_integer(UDF_INIT * /*initd*/,
     if (name) mysql_service_mysql_string_factory->destroy(name);
     return 0;
   }
-  unsigned long long value = *((long long *)args->args[3]);
+  unsigned long long const value = *((long long *)args->args[3]);
   const char *type = args->args[4];
 
   if (mysql_service_mysql_system_variable_update_integer->set_unsigned(
@@ -340,7 +339,7 @@ bool test_set_system_variable_default_init(UDF_INIT *, UDF_ARGS *args,
 long long test_set_system_variable_default(UDF_INIT * /*initd*/, UDF_ARGS *args,
                                            unsigned char * /*is_null*/,
                                            unsigned char *error) {
-  bool make_new_thread = *((long long *)args->args[0]) > 0;
+  bool const make_new_thread = *((long long *)args->args[0]) > 0;
 
   MYSQL_THD thd = nullptr;
 
@@ -419,7 +418,7 @@ long long test_set_global_variable_attrs(UDF_INIT * /*initd*/, UDF_ARGS *args,
 
   const char *variable_base = args->args[0];
   const char *variable_name = args->args[1];
-  size_t number_of_attributes = (args->arg_count - 2) / 2;
+  size_t const number_of_attributes = (args->arg_count - 2) / 2;
 
   for (size_t i = 0; i < number_of_attributes; i++) {
     const int idx1 = 2 + i * 2;

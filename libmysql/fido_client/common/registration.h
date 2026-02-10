@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -53,9 +53,9 @@ class registration {
   virtual ~registration();
   bool make_credentials(const char *challenge);
   /* set rp id */
-  void set_rp_id(std::string rp_id);
+  void set_rp_id(const std::string &rp_id);
   /* set user name */
-  void set_user(std::string user);
+  void set_user(const std::string &user);
 
   /* get authenticator data details */
   size_t get_authdata_len();

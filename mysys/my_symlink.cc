@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2001, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,9 +32,8 @@
 
 #include "my_config.h"
 
-#include <errno.h>
-#include <limits.h>
-#include <stdlib.h>
+#include <cerrno>
+#include <cstdlib>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -47,6 +46,7 @@
 #include "my_io.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysys_err.h"
 #include "nulls.h"
 #include "strmake.h"
@@ -116,7 +116,7 @@ int my_symlink(const char *content, const char *linkname, myf MyFlags) {
 int my_is_symlink(const char *filename, ST_FILE_ID *file_id) {
 #ifndef _WIN32
   struct stat stat_buff;
-  int result = !lstat(filename, &stat_buff) && S_ISLNK(stat_buff.st_mode);
+  int const result = !lstat(filename, &stat_buff) && S_ISLNK(stat_buff.st_mode);
   if (file_id && !result) {
     file_id->st_dev = stat_buff.st_dev;
     file_id->st_ino = stat_buff.st_ino;
@@ -142,7 +142,7 @@ int my_realpath(char *to, const char *filename, myf MyFlags) {
   DBUG_TRACE;
 
   DBUG_PRINT("info", ("executing realpath"));
-  unique_ptr_free<char> ptr(realpath(filename, nullptr));
+  unique_ptr_free<char> const ptr(realpath(filename, nullptr));
   if (ptr) {
     strmake(to, ptr.get(), FN_REFLEN - 1);
   } else {

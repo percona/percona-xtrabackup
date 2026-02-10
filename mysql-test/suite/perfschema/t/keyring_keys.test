@@ -1,12 +1,17 @@
 
 --source include/have_component_keyring_file.inc
 
+# remove any stale keyring files
+--let KEYRING_FILE_PATH = `SELECT CONCAT( '$MYSQLTEST_VARDIR', '/keyring_file')`
+--source include/keyring_tests/helper/local_keyring_file_remove.inc
+
 --source ./suite/component_keyring_file/inc/setup_component.inc
 
 CREATE DATABASE WL_11543_PERF_SCHEMA_KEYRING;
 USE WL_11543_PERF_SCHEMA_KEYRING;
 
-SELECT count(*) FROM performance_schema.keyring_keys;
+--echo # Should be empty
+SELECT * FROM performance_schema.keyring_keys;
 
 CREATE TABLE t1(c1 INT, c2 char(20)) ENGINE = InnoDB ENCRYPTION="Y";
 SELECT count(*) FROM performance_schema.keyring_keys;

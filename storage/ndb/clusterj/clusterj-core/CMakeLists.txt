@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +34,9 @@ SET ( BROKEN_JAVAC
 
 SET(JAVA_SOURCES
   ${CLUSTERJ_CORE_PREFIX}/CacheManager.java
+  ${CLUSTERJ_CORE_PREFIX}/GlobalConnectionPool.java
+  ${CLUSTERJ_CORE_PREFIX}/MultiDbSessionFactory.java
+  ${CLUSTERJ_CORE_PREFIX}/PropertyReader.java
   ${CLUSTERJ_CORE_PREFIX}/SessionFactoryImpl.java
   ${CLUSTERJ_CORE_PREFIX}/SessionFactoryServiceImpl.java
   ${CLUSTERJ_CORE_PREFIX}/SessionImpl.java
@@ -84,7 +87,9 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_CORE_PREFIX}/store/ClusterConnectionService.java
   ${CLUSTERJ_CORE_PREFIX}/store/ClusterTransaction.java
   ${CLUSTERJ_CORE_PREFIX}/store/Column.java
+  ${CLUSTERJ_CORE_PREFIX}/store/ConnectionHandle.java
   ${CLUSTERJ_CORE_PREFIX}/store/Db.java
+  ${CLUSTERJ_CORE_PREFIX}/store/DbFactory.java
   ${CLUSTERJ_CORE_PREFIX}/store/Dictionary.java
   ${CLUSTERJ_CORE_PREFIX}/store/Index.java
   ${CLUSTERJ_CORE_PREFIX}/store/IndexOperation.java

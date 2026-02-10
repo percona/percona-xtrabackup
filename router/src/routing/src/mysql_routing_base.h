@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@
 #define ROUTING_MYSQL_ROUTING_BASE_INCLUDED
 
 #include "context.h"
-#include "destination.h"
+#include "mysql/harness/destination.h"
 #include "mysqlrouter/routing_component.h"  // MySQLRoutingAPI
 
 /** @class MySQLRoutingBase
@@ -52,14 +52,18 @@ class ROUTING_EXPORT MySQLRoutingBase {
 
   virtual MySQLRoutingContext &get_context() = 0;
   virtual int get_max_connections() const noexcept = 0;
-  virtual std::vector<mysql_harness::TCPAddress> get_destinations() const = 0;
+  virtual std::vector<mysql_harness::Destination> get_destination_candidates()
+      const = 0;
+  virtual DestinationManager *destination_manager() = 0;
   virtual std::vector<MySQLRoutingAPI::ConnData> get_connections() = 0;
   virtual MySQLRoutingConnectionBase *get_connection(const std::string &) = 0;
   virtual bool is_accepting_connections() const = 0;
-  virtual routing::RoutingStrategy get_routing_strategy() const = 0;
+  virtual std::optional<routing::RoutingStrategy> get_routing_strategy()
+      const = 0;
   virtual stdx::expected<void, std::string> restart_accepting_connections() = 0;
   virtual stdx::expected<void, std::string> start_accepting_connections() = 0;
-  virtual void stop_socket_acceptors() = 0;
+  virtual void stop_socket_acceptors(const bool shutting_down) = 0;
+  virtual bool is_standalone() const = 0;
 
   virtual bool is_running() const = 0;
 

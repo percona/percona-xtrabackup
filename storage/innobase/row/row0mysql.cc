@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -890,7 +890,6 @@ row_prebuilt_t *row_create_prebuilt(
   prebuilt->search_tuple = dtuple_create(heap, search_tuple_n_fields);
   prebuilt->m_stop_tuple = dtuple_create(heap, search_tuple_n_fields);
   ut_ad(!prebuilt->m_stop_tuple_found);
-  ut_ad(!prebuilt->is_reading_range());
 
   ref = dtuple_create(heap, ref_len);
 
@@ -938,10 +937,6 @@ void row_prebuilt_free(row_prebuilt_t *prebuilt, bool dict_locked) {
 
   prebuilt->magic_n = ROW_PREBUILT_FREED;
   prebuilt->magic_n2 = ROW_PREBUILT_FREED;
-
-  /* It is better to fail here on assertion, than to let the destructor of the
-  active row_is_reading_range_guard_t modify some random place in memory. */
-  ut_a(!prebuilt->is_reading_range());
 
   prebuilt->pcur->reset();
   prebuilt->clust_pcur->reset();
@@ -1867,8 +1862,6 @@ static void init_fts_doc_id_for_ref(
 {
   dict_foreign_t *foreign;
 
-  table->fk_max_recusive_level = 0;
-
   (*depth)++;
 
   /* Limit on tables involved in cascading delete/update */
@@ -1947,6 +1940,7 @@ static dberr_t row_update_inplace_for_intrinsic(const upd_node_t *node) {
       row_upd_changes_field_size_or_external(index, offsets, node->update);
 
   if (size_changes) {
+    pcur.close();
     mtr_commit(&mtr);
     return (DB_FAIL);
   }
@@ -1957,6 +1951,7 @@ static dberr_t row_update_inplace_for_intrinsic(const upd_node_t *node) {
   evicted from the buffer pool it is flushed and we don't lose
   the changes */
   mtr.set_modified();
+  pcur.close();
   mtr_commit(&mtr);
 
   return (DB_SUCCESS);
@@ -2943,6 +2938,11 @@ dberr_t row_create_index_for_mysql(
     err = dict_index_add_to_cache_w_vcol(table, index, nullptr, FIL_NULL,
                                          trx_is_strict(trx));
 
+    if (err == DB_TOO_BIG_RECORD) {
+      ib::error() << "Cannot create the table " << table->name
+                  << " because the record size will exceed the maximum allowed "
+                     "size for a record.";
+    }
     if (err != DB_SUCCESS) {
       goto error_handling;
     }

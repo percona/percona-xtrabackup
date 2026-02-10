@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_util.h"
 
-#include <errno.h>
+#include <cerrno>
 
 #include "my_systime.h"
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging_system.h"
@@ -42,7 +42,7 @@ int My_xp_socket_util_impl::disable_nagle_in_socket(int fd) {
   int ret = -1;
   if (fd != -1) {
     int optval;
-    socklen_t optval_size = static_cast<socklen_t>(sizeof(int));
+    auto optval_size = static_cast<socklen_t>(sizeof(int));
     ret =
         getsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *)&optval, &optval_size);
 

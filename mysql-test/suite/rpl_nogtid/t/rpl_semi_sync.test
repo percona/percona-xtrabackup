@@ -21,7 +21,7 @@ source include/rpl/init_source_replica.inc;
 let $engine_type= InnoDB;
 
 # Suppress warnings that might be generated during the test
-connection master;
+source include/rpl/connection_source.inc;
 disable_query_log;
 call mtr.add_suppression("Timeout waiting for reply of binlog");
 call mtr.add_suppression("Read semi-sync reply");
@@ -37,13 +37,13 @@ enable_query_log;
 # After fix of BUG#45848, semi-sync slave should not create any extra
 # connections on source, save the count of connections before start
 # semi-sync replica for comparison below.
-connection master;
-let $_connections_normal_slave= query_get_value(SHOW STATUS LIKE 'Threads_connected', Value, 1);
+source include/rpl/connection_source.inc;
+let $_connections_normal_replica= query_get_value(SHOW STATUS LIKE 'Threads_connected', Value, 1);
 
 --echo #
 --echo # Uninstall semi-sync plugins on source and replica
 --echo #
-connection slave;
+source include/rpl/connection_replica.inc;
 source include/rpl/stop_replica.inc;
 disable_warnings;
 error 0,1305;
@@ -52,7 +52,7 @@ error 0,1305;
 UNINSTALL PLUGIN rpl_semi_sync_source;
 enable_warnings;
 
-connection master;
+source include/rpl/connection_source.inc;
 disable_warnings;
 error 0,1305;
 UNINSTALL PLUGIN rpl_semi_sync_replica;
@@ -86,7 +86,7 @@ echo [ enable semi-sync on source ];
 set global rpl_semi_sync_source_enabled = 1;
 show variables like 'rpl_semi_sync_source_enabled';
 
-echo [ status of semi-sync on source should be ON even without any semi-sync slaves ];
+echo [ status of semi-sync on source should be ON even without any semi-sync replicas ];
 show status like 'Rpl_semi_sync_source_clients';
 show status like 'Rpl_semi_sync_source_status';
 show status like 'Rpl_semi_sync_source_yes_tx';
@@ -185,9 +185,9 @@ show status like 'Rpl_semi_sync_source_yes_tx';
 # After fix of BUG#45848, semi-sync replica should not create any extra
 # connections on source.
 let $_connections_semisync_replica= query_get_value(SHOW STATUS LIKE 'Threads_connected', Value, 1);
-replace_result $_connections_semisync_replica CONNECTIONS_SEMISYNC_SLAVE;
-replace_result $_connections_normal_slave CONNECTIONS_NORMAL_SLAVE;
-eval select $_connections_semisync_replica - $_connections_normal_slave as 'Should be 0';
+replace_result $_connections_semisync_replica CONNECTIONS_SEMISYNC_REPLICA;
+replace_result $_connections_normal_replica CONNECTIONS_NORMAL_REPLICA;
+eval select $_connections_semisync_replica - $_connections_normal_replica as 'Should be 0';
 
 --let $yes_tx_before= query_get_value(SHOW STATUS LIKE 'Rpl_semi_sync_source_yes_tx', Value, 1)
 
@@ -236,7 +236,7 @@ SET SESSION AUTOCOMMIT= 0;
 CREATE TABLE t2(c1 INT) ENGINE=innodb;
 --source include/rpl/sync_to_replica.inc
 
-connection master;
+source include/rpl/connection_source.inc;
 BEGIN;
 --echo
 --echo # Even though it is in a transaction, this statement is binlogged into binlog
@@ -264,7 +264,7 @@ FLUSH STATUS;
 --echo # Test semi-sync source will switch OFF after one transaction
 --echo # timeout waiting for replica reply.
 --echo #
-connection slave;
+source include/rpl/connection_replica.inc;
 source include/rpl/stop_replica.inc;
 
 source include/rpl/connection_source.inc;
@@ -362,7 +362,7 @@ source include/rpl/stop_replica.inc;
 --echo #
 --echo # Flush status
 --echo #
-connection master;
+source include/rpl/connection_source.inc;
 echo [ Semi-sync source status variables before FLUSH STATUS ];
 SHOW STATUS LIKE 'Rpl_semi_sync_source_no_tx';
 SHOW STATUS LIKE 'Rpl_semi_sync_source_yes_tx';
@@ -425,7 +425,7 @@ let $status_var= Rpl_semi_sync_source_clients;
 let $status_var_value= 0;
 source include/wait_for_status_var.inc;
 
-connection slave;
+source include/rpl/connection_replica.inc;
 source include/rpl/start_replica.inc;
 
 source include/rpl/connection_source.inc;
@@ -587,9 +587,9 @@ echo [ on replica ];
 show status like 'Rpl_semi_sync_replica_status';
 
 # Uninstall semi-sync plugin on source
-connection slave;
+source include/rpl/connection_replica.inc;
 source include/rpl/stop_replica.inc;
-connection master;
+source include/rpl/connection_source.inc;
 echo [ on source ];
 --source include/rpl/stop_dump_threads.inc
 if ($rpl_test_optimize_for_static_plugin_config == 1)
@@ -614,7 +614,7 @@ SHOW STATUS LIKE 'Rpl_semi_sync_replica_status';
 --echo # Test non-semi-sync replica connect to semi-sync source
 --echo #
 
-connection master;
+source include/rpl/connection_source.inc;
 replace_result $SEMISYNC_SOURCE_PLUGIN SEMISYNC_SOURCE_PLUGIN;
 eval INSTALL PLUGIN rpl_semi_sync_source SONAME '$SEMISYNC_SOURCE_PLUGIN';
 if ($rpl_test_optimize_for_static_plugin_config == 1)
@@ -649,22 +649,22 @@ SHOW STATUS LIKE 'Rpl_semi_sync_replica_status';
 --echo #
 if ($rpl_test_optimize_for_static_plugin_config == 1)
 {
-  connection master;
+  source include/rpl/connection_source.inc;
   SET GLOBAL replication_optimize_for_static_plugin_config = 0;
 }
 --source include/rpl/uninstall_semisync.inc
 
-connection slave;
+source include/rpl/connection_replica.inc;
 --source include/rpl/stop_replica.inc
 --replace_column 2 ####
 CHANGE REPLICATION SOURCE to SOURCE_USER='root',SOURCE_PASSWORD='', GET_SOURCE_PUBLIC_KEY=0;
 source include/rpl/start_replica.inc;
 
-connection master;
+source include/rpl/connection_source.inc;
 drop table t1;
 --source include/rpl/sync_to_replica.inc
 
-connection master;
+source include/rpl/connection_source.inc;
 drop user rpl@127.0.0.1;
 flush privileges;
 --source include/rpl/deinit.inc

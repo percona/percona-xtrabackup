@@ -1,0 +1,51 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"sqlQuery":{"timeout":1000}}');
+create table basic_schema.sig (a int, b int);
+insert into basic_schema.sig values (1,0), (2,0);
+create procedure basic_schema.freeze() sql security invoker
+begin
+set @stop1 = 0;
+while @stop1 = 0 do
+select b into @stop1 from basic_schema.sig where a=1;
+end while;
+end$$
+create function basic_schema.freezef() returns int sql security invoker READS SQL DATA
+begin
+set @stop2 = 0;
+while @stop2 = 0 do
+select b into @stop2 from basic_schema.sig where a=2;
+end while;
+return 0;
+end$$
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+# Registred DB_OBJECT at path: /svc/basic/t1
+# Registred DB_OBJECT at path: /svc/basic/freeze
+# Registred DB_OBJECT at path: /svc/basic/freezef
+GET /svc/basic/freeze
+{"message":"Database request timed out","status":504}
+OK
+update basic_schema.sig set b=1 where a=1;
+GET /svc/basic/freezef
+{"message":"Database request timed out","status":504}
+OK
+update basic_schema.sig set b=1 where a=2;
+LOCK TABLE basic_schema.table1 WRITE;
+GET /svc/basic/t1
+{"message":"Database request timed out","status":504}
+OK
+UNLOCK TABLES;
+LOCK TABLE basic_schema.table1 WRITE;
+GET /svc/basic/t1/1
+{"message":"Database request timed out","status":504}
+OK
+UNLOCK TABLES;
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

@@ -33,7 +33,7 @@ CREATE USER u1@h;
 SET SESSION debug="+d,simulate_err_on_write_gtid_into_table";
 SET SESSION GTID_NEXT='MASTER_UUID:4';
 DROP USER u1@h, u2@h;
-ERROR HY000: Operation DROP USER failed for 'u2'@'h'
+ERROR HY000: Operation DROP USER failed for 'u2'@'h' (User account does not exist)
 SET SESSION debug="-d,simulate_err_on_write_gtid_into_table";
 #
 # When binlog is disabled, verify that the partially failed

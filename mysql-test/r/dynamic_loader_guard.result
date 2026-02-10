@@ -1,0 +1,13 @@
+#
+# This tests checks dynamic loader rollback
+# for case when component's init() fails.
+#
+
+# load the component with init() which allways fails
+INSTALL COMPONENT "file://component_test_component_init_fail";
+ERROR HY000: Initialization method provided by component 'mysql:test_component_init_fail' failed.
+
+# check the component is not installed
+SELECT COUNT(component_urn) FROM mysql.component WHERE component_urn='file://component_test_component_init_fail';
+COUNT(component_urn)
+0

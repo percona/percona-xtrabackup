@@ -11,7 +11,7 @@ CREATE TABLE t1 (
   latin1_f CHAR(32) NOT NULL
 ) charset latin1;
 
---error 1253
+--error ER_COLLATION_CHARSET_MISMATCH
 CREATE TABLE t2 (
   latin1_f CHAR(32) CHARACTER SET latin1 COLLATE koi8r_general_ci NOT NULL
 );
@@ -70,7 +70,7 @@ SELECT latin1_f FROM t1 ORDER BY latin1_f COLLATE latin1_swedish_ci, hex(latin1_
 SELECT latin1_f FROM t1 ORDER BY latin1_f COLLATE latin1_german2_ci, hex(latin1_f);
 SELECT latin1_f FROM t1 ORDER BY latin1_f COLLATE latin1_general_ci, hex(latin1_f);
 SELECT latin1_f FROM t1 ORDER BY latin1_f COLLATE latin1_bin;
---error 1253
+--error ER_COLLATION_CHARSET_MISMATCH
 SELECT latin1_f FROM t1 ORDER BY latin1_f COLLATE koi8r_general_ci;
 
 # SELECT latin1_f COLLATE koi8r FROM t1 ;
@@ -80,7 +80,7 @@ SELECT latin1_f COLLATE latin1_swedish_ci AS latin1_f_as FROM t1 ORDER BY latin1
 SELECT latin1_f COLLATE latin1_german2_ci AS latin1_f_as FROM t1 ORDER BY latin1_f_as, hex(latin1_f_as);
 SELECT latin1_f COLLATE latin1_general_ci AS latin1_f_as FROM t1 ORDER BY latin1_f_as, hex(latin1_f_as);
 SELECT latin1_f COLLATE latin1_bin        AS latin1_f_as FROM t1 ORDER BY latin1_f_as;
---error 1253
+--error ER_COLLATION_CHARSET_MISMATCH
 SELECT latin1_f COLLATE koi8r_general_ci  AS latin1_f_as FROM t1 ORDER BY latin1_f_as;
 
 
@@ -96,7 +96,7 @@ SELECT latin1_f,count(*) FROM t1 GROUP BY latin1_f COLLATE latin1_german2_ci ORD
 --skip_if_hypergraph  # Picks a different (but equally valid) representative for each group.
 SELECT latin1_f,count(*) FROM t1 GROUP BY latin1_f COLLATE latin1_general_ci ORDER BY latin1_f COLLATE latin1_general_ci;
 SELECT latin1_f,count(*) FROM t1 GROUP BY latin1_f COLLATE latin1_bin ORDER BY latin1_f COLLATE latin1_bin;
---error 1253
+--error ER_COLLATION_CHARSET_MISMATCH
 SELECT latin1_f,count(*) FROM t1 GROUP BY latin1_f COLLATE koi8r_general_ci;
 --source include/restore_sql_mode_after_turn_off_only_full_group_by.inc
 
@@ -384,3 +384,16 @@ SELECT * FROM t3 ORDER BY b COLLATE utf8mb3_general_ci;
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
+
+--echo #
+--echo # Bug#37412963 Use cs->m_coll_name when reporting SQL errors
+--echo #
+
+CREATE TABLE t1 (
+  mb4_f CHAR(32) NOT NULL
+) CHARSET utf8mb4;
+
+--error ER_COLLATION_CHARSET_MISMATCH
+SELECT mb4_f FROM t1 ORDER BY mb4_f COLLATE utf8mb3_bin;
+
+DROP TABLE t1;

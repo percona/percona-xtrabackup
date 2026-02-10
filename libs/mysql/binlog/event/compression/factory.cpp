@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,7 @@ std::unique_ptr<Compressor> Factory::build_compressor(
     default:
       break;
   }
-  return std::unique_ptr<Compressor>();
+  return {};
 }
 
 std::unique_ptr<Decompressor> Factory::build_decompressor(
@@ -54,7 +54,7 @@ std::unique_ptr<Decompressor> Factory::build_decompressor(
     default:
       break;
   }
-  return std::unique_ptr<Decompressor>();
+  return {};
 }
 
 }  // namespace mysql::binlog::event::compression

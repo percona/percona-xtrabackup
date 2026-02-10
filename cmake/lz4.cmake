@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -71,16 +71,7 @@ FUNCTION(MYSQL_USE_BUNDLED_LZ4)
     ${BUNDLED_LZ4_PATH})
 
   FIND_LZ4_VERSION(${BUNDLED_LZ4_PATH})
-
-  ADD_LIBRARY(lz4_lib STATIC
-    ${BUNDLED_LZ4_PATH}/lz4.c
-    ${BUNDLED_LZ4_PATH}/lz4frame.c
-    ${BUNDLED_LZ4_PATH}/lz4hc.c
-    ${BUNDLED_LZ4_PATH}/xxhash.c
-    )
-  # building lz4 in archive dir so that can be imported by other shared library
-  SET_TARGET_PROPERTIES(lz4_lib PROPERTIES
-    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/archive_output_directory)
+  ADD_SUBDIRECTORY(extra/lz4)
 ENDFUNCTION(MYSQL_USE_BUNDLED_LZ4)
 
 MACRO (MYSQL_CHECK_LZ4)

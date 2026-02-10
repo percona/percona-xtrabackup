@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -926,7 +926,7 @@ int NdbIndexStatImpl::read_stat(Ndb *ndb, Head &head) {
 
   if (read_start(con) == -1) return -1;
   if (save_start(con) == -1) return -1;
-  while (1) {
+  while (true) {
     int ret = read_next(con);
     if (ret == -1) return -1;
     if (ret != 0) break;
@@ -1134,7 +1134,7 @@ inline double NdbIndexStatImpl::Cache::get_rir1(uint pos) const {
   const Uint8 *ptr = get_valueptr(pos);
   Uint32 n;
   memcpy(&n, &ptr[0], 4);
-  double x = (double)n;
+  double x = n;
   return x;
 }
 
@@ -1158,7 +1158,7 @@ inline double NdbIndexStatImpl::Cache::get_unq1(uint pos, uint k) const {
   const Uint8 *ptr = get_valueptr(pos);
   Uint32 n;
   memcpy(&n, &ptr[4 + k * 4], 4);
-  double x = (double)n;
+  double x = n;
   return x;
 }
 
@@ -1493,8 +1493,8 @@ static NDB_DOUBLE iterative_solution(NDB_DOUBLE fragments, NDB_DOUBLE rows,
    *
    * When returning we will convert the estimated RPK to a factor instead.
    */
-  NDB_DOUBLE percent_change = (NDB_DOUBLE)0.5;
-  NDB_DOUBLE prev_est_uniques_found = (NDB_DOUBLE)0.0;
+  NDB_DOUBLE percent_change = 0.5;
+  NDB_DOUBLE prev_est_uniques_found = 0.0;
   bool prev_decreased = true;
   bool decreased;
   unsigned i = 0;
@@ -1603,12 +1603,12 @@ int NdbIndexStatImpl::cache_insert(Con &con) {
   con.m_cachePos = nextPos;
 
   Uint8 *cacheKeyPtr = &c.m_keyArray[con.m_cacheKeyOffset];
-  const Uint8 *keyPtr = (const Uint8 *)m_keyData.get_data_buf();
+  const auto *keyPtr = (const Uint8 *)m_keyData.get_data_buf();
   memcpy(cacheKeyPtr, keyPtr, keyLen);
   con.m_cacheKeyOffset = nextKeyOffset;
 
   Uint8 *cacheValuePtr = &c.m_valueArray[con.m_cacheValueOffset];
-  const Uint8 *valuePtr = (const Uint8 *)m_valueData.get_data_buf();
+  const auto *valuePtr = (const Uint8 *)m_valueData.get_data_buf();
   memcpy(cacheValuePtr, valuePtr, c.m_valueLen);
   con.m_cacheValueOffset = nextValueOffset;
 
@@ -1748,7 +1748,7 @@ void NdbIndexStatImpl::cache_hsort(Cache &c) {
 void NdbIndexStatImpl::cache_hsort_sift(Cache &c, int i, int count) {
   int parent = i;
 
-  while (1) {
+  while (true) {
     // left child if any
     int child = parent * 2 + 1;
     if (!(child < count)) break;
@@ -2184,7 +2184,7 @@ void NdbIndexStatImpl::query_interpolate(const Cache &c, const Range &range,
       stat.m_rule[0] = "r2.2";
       // skip for now
     }
-    if (true) {
+    {
       stat.m_rule[0] = "r2.3";
       const double w = 0.5;
       value.m_rir = w * c.get_rir(posL1, posH1);
@@ -2213,7 +2213,7 @@ void NdbIndexStatImpl::query_interpolate(const Cache &c, const Range &range,
       stat.m_rule[0] = "r3.2";
       // skip for now
     }
-    if (true) {
+    {
       stat.m_rule[0] = "r3.3";
       const double w = 0.5;
       value.m_rir = w * c.get_rir(posL1, posH1);
@@ -2225,7 +2225,7 @@ void NdbIndexStatImpl::query_interpolate(const Cache &c, const Range &range,
       return;
     }
   }
-  if (true) {
+  {
     stat.m_rule[0] = "r4";
     value.m_rir = value2.m_rir - value1.m_rir;
     for (uint k = 0; k < keyAttrs; k++) {
@@ -2268,7 +2268,7 @@ void NdbIndexStatImpl::query_interpolate(const Cache &c, const Bound &bound,
       }
       return;
     }
-    if (true) {
+    {
       stat.m_rule = "b1.2";
       value.m_empty = true;
       return;
@@ -2323,7 +2323,7 @@ void NdbIndexStatImpl::query_interpolate(const Cache &c, const Bound &bound,
     }
     return;
   }
-  if (true) {
+  {
     stat.m_rule = "b4";
     const double wL = 0.5;
     const double wH = 0.5;

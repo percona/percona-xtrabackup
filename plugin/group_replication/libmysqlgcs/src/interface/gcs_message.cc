@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,9 +21,9 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
 
 #include "my_compiler.h"
 
@@ -62,7 +62,7 @@ Gcs_message_data::Gcs_message_data(const uint32_t header_capacity,
       m_buffer_len(0),
       m_owner(true) {
   m_buffer_len = header_capacity + payload_capacity + get_encode_header_size();
-  size_t buf_tmp_len = sizeof(uchar) * m_buffer_len;
+  size_t const buf_tmp_len = sizeof(uchar) * m_buffer_len;
   m_buffer = static_cast<uchar *>(malloc(buf_tmp_len));
   Gcs_message_data::report_allocate_memory(buf_tmp_len);
   m_header = m_header_slider = m_buffer + get_encode_header_size();
@@ -82,7 +82,7 @@ Gcs_message_data::Gcs_message_data(const uint64_t data_len)
       m_buffer(nullptr),
       m_buffer_len(data_len),
       m_owner(true) {
-  size_t buf_tmp_len = sizeof(uchar) * m_buffer_len;
+  size_t const buf_tmp_len = sizeof(uchar) * m_buffer_len;
   m_buffer = static_cast<uchar *>(malloc(buf_tmp_len));
   Gcs_message_data::report_allocate_memory(buf_tmp_len);
 }
@@ -125,8 +125,8 @@ uint64_t Gcs_message_data::get_encode_size() const {
 }
 
 uint64_t Gcs_message_data::get_encode_payload_size() const {
-  uint32_t header_len = get_header_length();
-  uint64_t payload_len = get_payload_length();
+  uint32_t const header_len = get_header_length();
+  uint64_t const payload_len = get_payload_length();
 
   return header_len     /* header */
          + payload_len; /* payload */
@@ -179,8 +179,8 @@ bool Gcs_message_data::append_to_payload(const uchar *to_append,
 void Gcs_message_data::release_ownership() { m_owner = false; }
 
 bool Gcs_message_data::encode(uchar **buffer, uint64_t *buffer_len) const {
-  uint32_t header_len = get_header_length();
-  uint64_t payload_len = get_payload_length();
+  uint32_t const header_len = get_header_length();
+  uint64_t const payload_len = get_payload_length();
   uint32_t header_len_enc = htole32(header_len);
   uint64_t payload_len_enc = htole64(payload_len);
   unsigned char *slider = m_buffer;
@@ -212,11 +212,11 @@ bool Gcs_message_data::encode(uchar **buffer, uint64_t *buffer_len) const {
 /* purecov: end */
 
 bool Gcs_message_data::encode(uchar *buffer, uint64_t *buffer_len) const {
-  uint32_t header_len = get_header_length();
-  uint64_t payload_len = get_payload_length();
+  uint32_t const header_len = get_header_length();
+  uint64_t const payload_len = get_payload_length();
   uint32_t header_len_enc = htole32(header_len);
   uint64_t payload_len_enc = htole64(payload_len);
-  uint64_t encoded_size = get_encode_size();
+  uint64_t const encoded_size = get_encode_size();
   unsigned char *slider = buffer;
 
   if (buffer == nullptr || buffer_len == nullptr) {

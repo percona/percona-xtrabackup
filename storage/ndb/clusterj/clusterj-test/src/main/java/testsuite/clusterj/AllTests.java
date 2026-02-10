@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+ Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -25,10 +25,13 @@
 
 package testsuite.clusterj;
 
+import com.sun.management.HotSpotDiagnosticMXBean;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
+import java.lang.management.ManagementFactory;
+import java.lang.Process;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -55,7 +58,10 @@ public class AllTests {
         System.out.println("  Options: ");
         System.out.println("     --print-cases / -l   : List test cases");
         System.out.println("     --enable-debug-tests : Run extra debug-only tests");
+        System.out.println("     --gc=<n>             : Run <n> GC iterations after tests");
+        System.out.println("     --hprof              : Create heap dump at exit");
         System.out.println("     -n TestName [...]    : Run named tests");
+        System.out.println("     --stop-on-error      : Stop after first failure");
         System.exit(2);
     }
 
@@ -153,18 +159,28 @@ public class AllTests {
 
     public static void printCases() throws IOException, ClassNotFoundException {
         List<Class<?>> classes = getClasses(new File(jarFile));
+        int n = 0;
         for (Class<?> cls : classes) {
             if (isTestClass(cls)) {
+                n++;
                 String note = "";
                 for(Annotation a : cls.getDeclaredAnnotations())
                     note = note.concat(a.toString()).concat(" ");
                 String name = cls.getName();
                 String shortName = name.substring(name.lastIndexOf(".") + 1);
-                System.out.printf("  %-36s  %s\n", shortName, note);
+                System.out.printf("  %-36s %s\n", shortName, note);
             }
         }
+        System.out.println("Found " + n + " test classes.");
     }
 
+    private static void tryGc(int n) throws InterruptedException {
+        System.out.println("Awaiting GC " + n);
+        for(int i = 0 ; i < n ; i++) {
+            Thread.sleep(1000);
+            System.gc();
+        }
+    }
 
     /**
      * Usage: java -cp ... AllTests file.jar [-l] [--print-cases]
@@ -186,20 +202,28 @@ public class AllTests {
 
         boolean runNamedTests = false;
         boolean printTestList = false;
+        int doGc = 0;
+        boolean doHeapDump = false;
         HashSet<String> namedTests = new HashSet<String>();
 
         for(int i = 1 ; i < args.length ; i++) {
             if (args[i].equals("-l") || args[i].equals("--print-cases"))
-              printTestList = true;
+                printTestList = true;
 
             else if (args[i].equalsIgnoreCase("--enable-debug-tests"))
                 enableDebugTests = true;
 
+            else if (args[i].equals("--hprof"))
+                doHeapDump = true;
+
+            else if (args[i].startsWith("--gc="))
+                doGc = Integer.parseInt(args[i].substring(5));
+
             else if(runNamedTests)
-              namedTests.add(args[i]);
+                namedTests.add(args[i]);
 
             else if (args[i].equals("-n"))
-              runNamedTests = true;
+                runNamedTests = true;
 
             else
               usage("Unrecognized option");
@@ -215,11 +239,27 @@ public class AllTests {
 
         TestSuite suite = suite(namedTests);
 
+        System.out.println("Java " + System.getProperty("java.version"));
         System.out.println("Running " + (runNamedTests ? "named" : "all") +
                            " tests in '" + jarFile + "'");
         System.out.println("Found " + suite.testCount() + " test classes.");
         TestResult res = junit.textui.TestRunner.run(suite);
         System.out.println("Finished running tests in '" + jarFile + "'");
-        System.exit(res.wasSuccessful() ? 0 : 1);
+
+        int exitCode = res.wasSuccessful() ? 0 : 1;
+        if(doGc > 0) {
+            suite = null;
+            res = null;
+            tryGc(doGc);
+        }
+
+        if(doHeapDump) {
+            String pid = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
+            String file = "clusterj-test." + pid + ".hprof";
+            System.out.println("Creating heap dump: " + file);
+            ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class).dumpHeap(file, true);
+        }
+
+        System.exit(exitCode);
     }
 }

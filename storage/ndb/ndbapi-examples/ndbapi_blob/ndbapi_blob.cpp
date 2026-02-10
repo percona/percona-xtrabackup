@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,12 +37,12 @@
 #endif
 #include <mysql.h>
 #include <mysqld_error.h>
-#include <stdlib.h>
-#include <string.h>
 #include <NdbApi.hpp>
+#include <cstdlib>
+#include <cstring>
 /* Used for cout. */
-#include <ctype.h>
-#include <stdio.h>
+#include <cctype>
+#include <cstdio>
 #include <iostream>
 
 /**
@@ -156,17 +156,17 @@ void create_table(MYSQL &mysql) {
 int populate(Ndb *myNdb) {
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_blob");
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   NdbTransaction *myTrans = myNdb->startTransaction();
-  if (myTrans == NULL) APIERROR(myNdb->getNdbError());
+  if (myTrans == nullptr) APIERROR(myNdb->getNdbError());
 
   NdbOperation *myNdbOperation = myTrans->getNdbOperation(myTable);
-  if (myNdbOperation == NULL) APIERROR(myTrans->getNdbError());
+  if (myNdbOperation == nullptr) APIERROR(myTrans->getNdbError());
   myNdbOperation->insertTuple();
   myNdbOperation->equal("my_id", 1);
   NdbBlob *myBlobHandle = myNdbOperation->getBlobHandle("my_text");
-  if (myBlobHandle == NULL) APIERROR(myNdbOperation->getNdbError());
+  if (myBlobHandle == nullptr) APIERROR(myNdbOperation->getNdbError());
   myBlobHandle->setValue(text_quote, strlen(text_quote));
 
   int check = myTrans->execute(NdbTransaction::Commit);
@@ -182,17 +182,17 @@ int update_key(Ndb *myNdb) {
   */
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_blob");
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   NdbTransaction *myTrans = myNdb->startTransaction();
-  if (myTrans == NULL) APIERROR(myNdb->getNdbError());
+  if (myTrans == nullptr) APIERROR(myNdb->getNdbError());
 
   NdbOperation *myNdbOperation = myTrans->getNdbOperation(myTable);
-  if (myNdbOperation == NULL) APIERROR(myTrans->getNdbError());
+  if (myNdbOperation == nullptr) APIERROR(myTrans->getNdbError());
   myNdbOperation->updateTuple();
   myNdbOperation->equal("my_id", 1);
   NdbBlob *myBlobHandle = myNdbOperation->getBlobHandle("my_text");
-  if (myBlobHandle == NULL) APIERROR(myNdbOperation->getNdbError());
+  if (myBlobHandle == nullptr) APIERROR(myNdbOperation->getNdbError());
 
   /* Execute NoCommit to make the blob handle active. */
   if (-1 == myTrans->execute(NdbTransaction::NoCommit))
@@ -248,16 +248,16 @@ int update_scan(Ndb *myNdb) {
 
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_blob");
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   NdbTransaction *myTrans = myNdb->startTransaction();
-  if (myTrans == NULL) APIERROR(myNdb->getNdbError());
+  if (myTrans == nullptr) APIERROR(myNdb->getNdbError());
 
   NdbScanOperation *myScanOp = myTrans->getNdbScanOperation(myTable);
-  if (myScanOp == NULL) APIERROR(myTrans->getNdbError());
+  if (myScanOp == nullptr) APIERROR(myTrans->getNdbError());
   myScanOp->readTuples(NdbOperation::LM_Exclusive);
   NdbBlob *myBlobHandle = myScanOp->getBlobHandle("my_text");
-  if (myBlobHandle == NULL) APIERROR(myScanOp->getNdbError());
+  if (myBlobHandle == nullptr) APIERROR(myScanOp->getNdbError());
   if (myBlobHandle->getValue(buffer, sizeof(buffer)))
     APIERROR(myBlobHandle->getNdbError());
 
@@ -268,10 +268,8 @@ int update_scan(Ndb *myNdb) {
   int res;
   for (;;) {
     res = myScanOp->nextResult(true);
-    if (res == 1)
-      break;  // Scan done.
-    else if (res)
-      APIERROR(myScanOp->getNdbError());
+    if (res == 1) break;  // Scan done.
+    if (res) APIERROR(myScanOp->getNdbError());
 
     Uint64 length = 0;
     if (myBlobHandle->getLength(length) == -1)
@@ -281,9 +279,9 @@ int update_scan(Ndb *myNdb) {
     for (Uint64 j = 0; j < length; j++) buffer[j] = tolower(buffer[j]);
 
     NdbOperation *myUpdateOp = myScanOp->updateCurrentTuple();
-    if (myUpdateOp == NULL) APIERROR(myTrans->getNdbError());
+    if (myUpdateOp == nullptr) APIERROR(myTrans->getNdbError());
     NdbBlob *myBlobHandle2 = myUpdateOp->getBlobHandle("my_text");
-    if (myBlobHandle2 == NULL) APIERROR(myUpdateOp->getNdbError());
+    if (myBlobHandle2 == nullptr) APIERROR(myUpdateOp->getNdbError());
     if (myBlobHandle2->setValue(buffer, length))
       APIERROR(myBlobHandle2->getNdbError());
 
@@ -305,7 +303,7 @@ struct ActiveHookData {
 };
 
 int myFetchHook(NdbBlob *myBlobHandle, void *arg) {
-  ActiveHookData *ahd = (ActiveHookData *)arg;
+  auto *ahd = (ActiveHookData *)arg;
 
   ahd->readLength = sizeof(ahd->buffer) - 1;
   return myBlobHandle->readData(ahd->buffer, ahd->readLength);
@@ -317,17 +315,17 @@ int fetch_key(Ndb *myNdb) {
   */
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_blob");
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   NdbTransaction *myTrans = myNdb->startTransaction();
-  if (myTrans == NULL) APIERROR(myNdb->getNdbError());
+  if (myTrans == nullptr) APIERROR(myNdb->getNdbError());
 
   NdbOperation *myNdbOperation = myTrans->getNdbOperation(myTable);
-  if (myNdbOperation == NULL) APIERROR(myTrans->getNdbError());
+  if (myNdbOperation == nullptr) APIERROR(myTrans->getNdbError());
   myNdbOperation->readTuple();
   myNdbOperation->equal("my_id", 1);
   NdbBlob *myBlobHandle = myNdbOperation->getBlobHandle("my_text");
-  if (myBlobHandle == NULL) APIERROR(myNdbOperation->getNdbError());
+  if (myBlobHandle == nullptr) APIERROR(myNdbOperation->getNdbError());
   struct ActiveHookData ahd;
   if (myBlobHandle->setActiveHook(myFetchHook, &ahd) == -1)
     APIERROR(myBlobHandle->getNdbError());
@@ -354,17 +352,17 @@ int update2_key(Ndb *myNdb) {
   /* Simple setValue() update. */
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_blob");
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   NdbTransaction *myTrans = myNdb->startTransaction();
-  if (myTrans == NULL) APIERROR(myNdb->getNdbError());
+  if (myTrans == nullptr) APIERROR(myNdb->getNdbError());
 
   NdbOperation *myNdbOperation = myTrans->getNdbOperation(myTable);
-  if (myNdbOperation == NULL) APIERROR(myTrans->getNdbError());
+  if (myNdbOperation == nullptr) APIERROR(myTrans->getNdbError());
   myNdbOperation->updateTuple();
   myNdbOperation->equal("my_id", 1);
   NdbBlob *myBlobHandle = myNdbOperation->getBlobHandle("my_text");
-  if (myBlobHandle == NULL) APIERROR(myNdbOperation->getNdbError());
+  if (myBlobHandle == nullptr) APIERROR(myNdbOperation->getNdbError());
   memset(buffer, ' ', sizeof(buffer));
   if (myBlobHandle->setValue(buffer, sizeof(buffer)) == -1)
     APIERROR(myBlobHandle->getNdbError());
@@ -380,13 +378,13 @@ int delete_key(Ndb *myNdb) {
   /* Deletion of blob row. */
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_blob");
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   NdbTransaction *myTrans = myNdb->startTransaction();
-  if (myTrans == NULL) APIERROR(myNdb->getNdbError());
+  if (myTrans == nullptr) APIERROR(myNdb->getNdbError());
 
   NdbOperation *myNdbOperation = myTrans->getNdbOperation(myTable);
-  if (myNdbOperation == NULL) APIERROR(myTrans->getNdbError());
+  if (myNdbOperation == nullptr) APIERROR(myTrans->getNdbError());
   myNdbOperation->deleteTuple();
   myNdbOperation->equal("my_id", 1);
 

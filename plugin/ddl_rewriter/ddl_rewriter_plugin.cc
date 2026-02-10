@@ -1,4 +1,4 @@
-/*  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,11 @@
 
 #include <string>
 
-#include <ctype.h>
 #include <mysql/plugin.h>
 #include <mysql/plugin_audit.h>
 #include <mysql/psi/mysql_memory.h>
 #include <mysql/service_mysql_alloc.h>
+#include <cctype>
 
 #include "my_inttypes.h"
 #include "my_psi_config.h"
@@ -44,7 +44,7 @@ static PSI_memory_info all_rewrite_memory[] = {
 
 static int plugin_init(MYSQL_PLUGIN) {
   const char *category = "rewriter";
-  int count = static_cast<int>(array_elements(all_rewrite_memory));
+  int const count = static_cast<int>(array_elements(all_rewrite_memory));
   mysql_memory_register(category, all_rewrite_memory, count);
   return 0; /* success */
 }
@@ -56,7 +56,7 @@ static int plugin_init(MYSQL_PLUGIN) {
 static int rewrite_ddl(MYSQL_THD, mysql_event_class_t event_class,
                        const void *event) {
   /* We can exit early if this is not a pre-parse event. */
-  const struct mysql_event_parse *event_parse =
+  const auto *event_parse =
       static_cast<const struct mysql_event_parse *>(event);
   if (event_class != MYSQL_AUDIT_PARSE_CLASS ||
       event_parse->event_subclass != MYSQL_AUDIT_PARSE_PREPARSE)

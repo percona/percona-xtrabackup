@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,7 @@
 #include "m_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
+#include "scope_guard.h"
 #include "sql/current_thd.h"
 #include "sql/derror.h"  // ER_THD
 #include "sql/field.h"
@@ -247,36 +248,41 @@ bool ha_ndbinfo::get_error_message(int error, String *buf) {
   return false;
 }
 
-static void generate_sql(const NdbInfo::Table *ndb_tab, BaseString &sql) {
-  sql.appfmt("'CREATE TABLE `%s`.`%s%s` (", opt_ndbinfo_dbname,
-             opt_ndbinfo_table_prefix, ndb_tab->getName());
+static void generate_sql(const NdbInfo::Table *ndb_tab, std::string &sql) {
+  sql += "'CREATE TABLE `" + std::string(opt_ndbinfo_dbname) + "`.`" +
+         std::string(opt_ndbinfo_table_prefix) + ndb_tab->getName() + "` (";
 
   const char *separator = "";
   for (unsigned i = 0; i < ndb_tab->columns(); i++) {
     const NdbInfo::Column *col = ndb_tab->getColumn(i);
 
-    sql.appfmt("%s", separator);
+    sql += separator;
     separator = ", ";
 
-    sql.appfmt("`%s` ", col->m_name.c_str());
+    sql += "`";
+    sql += col->m_name.c_str();
+    sql += "` ";
 
     switch (col->m_type) {
       case NdbInfo::Column::Number:
-        sql.appfmt("INT UNSIGNED");
+        sql += "INT UNSIGNED";
         break;
       case NdbInfo::Column::Number64:
-        sql.appfmt("BIGINT UNSIGNED");
+        sql += "BIGINT UNSIGNED";
         break;
       case NdbInfo::Column::String:
-        sql.appfmt("VARCHAR(512)");
+        sql += "VARCHAR(512)";
+        break;
+      case NdbInfo::Column::Blob:
+        sql += "LONGBLOB";
         break;
       default:
-        sql.appfmt("UNKNOWN");
+        sql += "UNKNOWN";
         assert(false);
         break;
     }
   }
-  sql.appfmt(") ENGINE=NDBINFO'");
+  sql += ") ENGINE=NDBINFO'";
 }
 
 /*
@@ -290,7 +296,6 @@ static void warn_incompatible(const NdbInfo::Table *ndb_tab, bool fatal,
 
 static void warn_incompatible(const NdbInfo::Table *ndb_tab, bool fatal,
                               const char *format, ...) {
-  BaseString msg;
   DBUG_TRACE;
   DBUG_PRINT("enter", ("table_name: %s, fatal: %d", ndb_tab->getName(), fatal));
   assert(format != nullptr);
@@ -301,10 +306,9 @@ static void warn_incompatible(const NdbInfo::Table *ndb_tab, bool fatal,
   vsnprintf(explanation, sizeof(explanation), format, args);
   va_end(args);
 
-  msg.assfmt(
-      "Table '%s%s' is defined differently in NDB, %s. The "
-      "SQL to regenerate is: ",
-      opt_ndbinfo_table_prefix, ndb_tab->getName(), explanation);
+  std::string msg = "Table '" + std::string(opt_ndbinfo_table_prefix) +
+                    ndb_tab->getName() + "' is defined differently in NDB, " +
+                    explanation + ". The SQL to regenerate is: ";
   generate_sql(ndb_tab, msg);
 
   const Sql_condition::enum_severity_level level =
@@ -424,6 +428,10 @@ int ha_ndbinfo::open(const char *name, int mode, uint, const dd::Table *) {
         if (field->type() == MYSQL_TYPE_VARCHAR) compatible = true;
         stats.mean_rec_length += 16;
         break;
+      case NdbInfo::Column::Blob:
+        if (field->type() == MYSQL_TYPE_BLOB) compatible = true;
+        stats.mean_rec_length += 12;
+        break;
       default:
         assert(false);
         break;
@@ -441,9 +449,7 @@ int ha_ndbinfo::open(const char *name, int mode, uint, const dd::Table *) {
   }
 
   /* Increase "ref_length" to allow a whole row to be stored in "ref" */
-  ref_length = 0;
-  for (uint i = 0; i < table->s->fields; i++)
-    ref_length += table->field[i]->pack_length();
+  ref_length = table->s->rec_buff_length;
   DBUG_PRINT("info", ("ref_length: %u", ref_length));
 
   // Mark table as opened
@@ -649,7 +655,6 @@ int ha_ndbinfo::rnd_pos(uchar *buf, uchar *pos) {
 
   /* Copy the saved row into "buf" and set all fields to not null */
   memcpy(buf, pos, ref_length);
-  for (uint i = 0; i < table->s->fields; i++) table->field[i]->set_notnull();
 
   return 0;
 }
@@ -698,11 +703,13 @@ int ha_ndbinfo::unpack_record(uchar *dst_row) {
     Field *field = table->field[i];
     const NdbInfoRecAttr *record = m_impl.m_columns[i];
     if (!record || record->isNULL()) {
-      field->set_null();
+      field->set_null(dst_offset);
       continue;
     }
-    field->set_notnull();
     field->move_field_offset(dst_offset);
+    auto restore_offset_on_return =
+        create_scope_guard([&]() { field->move_field_offset(-dst_offset); });
+    field->set_notnull();
     switch (field->type()) {
       case (MYSQL_TYPE_VARCHAR): {
         DBUG_PRINT("info", ("str: %s", record->c_str()));
@@ -755,17 +762,21 @@ int ha_ndbinfo::unpack_record(uchar *dst_row) {
         break;
       }
 
+      case MYSQL_TYPE_BLOB: {
+        memcpy(field->field_ptr(), record->ptr(), field->pack_length());
+        assert(field->pack_length() == 12);
+        break;
+      }
+
       default:
         return unpack_unexpected_field(field);
     }
-
-    field->move_field_offset(-dst_offset);
   }
   return 0;
 }
 
 ulonglong ha_ndbinfo::table_flags() const {
-  ulonglong flags = HA_NO_TRANSACTIONS | HA_NO_BLOBS | HA_NO_AUTO_INCREMENT;
+  ulonglong flags = HA_NO_TRANSACTIONS | HA_NO_AUTO_INCREMENT;
 
   // m_table could be null; sometimes table_flags() is called prior to open()
   if (m_impl.m_table != nullptr && m_impl.m_table->rowCountIsExact())

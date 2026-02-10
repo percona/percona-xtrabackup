@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -91,7 +91,7 @@ static inline bool mysql_router_thread_joinable(
 #ifndef _WIN32
   int detachstate;
 
-  int rc = pthread_attr_getdetachstate(attr, &detachstate);
+  int const rc = pthread_attr_getdetachstate(attr, &detachstate);
   if (rc) throw std::runtime_error("Failed to check if thread is joinable");
 
   return detachstate == MYSQL_ROUTER_THREAD_CREATE_JOINABLE;
@@ -181,8 +181,8 @@ int mysql_router_thread_join(mysql_router_thread_handle *thread,
 MySQLRouterThread::MySQLRouterThread(size_t thread_stack_size) {
   mysql_router_thread_attr_init(&thread_attr_);
 
-  int res = mysql_router_thread_attr_setstacksize(&thread_attr_,
-                                                  thread_stack_size << 10);
+  int const res = mysql_router_thread_attr_setstacksize(
+      &thread_attr_, thread_stack_size << 10);
   if (res)
     throw std::runtime_error("Failed to adjust stack size, result code=" +
                              std::to_string(res));
@@ -197,8 +197,8 @@ void MySQLRouterThread::run(thread_function run_thread, void *args_ptr,
     should_join_ = true;
   }
 
-  int ret = mysql_router_thread_create(&thread_handle_, &thread_attr_,
-                                       run_thread, args_ptr);
+  int const ret = mysql_router_thread_create(&thread_handle_, &thread_attr_,
+                                             run_thread, args_ptr);
   if (ret) throw std::runtime_error("Cannot create Thread");
 }
 

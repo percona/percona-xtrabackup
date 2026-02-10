@@ -4,5 +4,9 @@
 --let $PORT =`select @@port`
 --let $USER = root
 --let remote_clone = 1
+# To skip switching gtid_mode to off in local_dml.test
+--let $test_with_gtid = 1
 
 --source local_dml.test
+# reset the variable
+--let $test_with_gtid = 0

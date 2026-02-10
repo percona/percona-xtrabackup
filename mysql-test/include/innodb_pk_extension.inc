@@ -1,3 +1,4 @@
+--source include/elide_costs.inc
 
 CREATE TABLE t1
 (
@@ -55,99 +56,100 @@ ANALYZE TABLE t1;
 --echo # REF access optimization
 --echo #
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT count(*) FROM t1 WHERE pk_1 = 3 and f1 = '2000-01-03';
 FLUSH STATUS;
 SELECT count(*) FROM t1 WHERE pk_1 = 3 and f1 = '2000-01-03';
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT pk_2 FROM t1 WHERE pk_1 = 3 and f1 = '2000-01-03';
 FLUSH STATUS;
 SELECT pk_2 FROM t1 WHERE pk_1 = 3 and f1 = '2000-01-03';
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
 --echo #
 --echo # RANGE access optimization
 --echo #
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT count(*) FROM t1 WHERE pk_1 BETWEEN 3 AND 5 AND f1 = '2000-01-03';
 FLUSH STATUS;
 SELECT count(*) FROM t1 WHERE pk_1 BETWEEN 3 AND 5 AND f1 = '2000-01-03';
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT pk_1, pk_2 FROM t1 WHERE pk_1 BETWEEN 3 AND 5 AND f1 = '2000-01-03';
 FLUSH STATUS;
 SELECT pk_1, pk_2 FROM t1 WHERE pk_1 BETWEEN 3 AND 5 AND f1 = '2000-01-03';
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
 --echo #
 --echo # MAX/MIN optimization
+--echo # Not yet supported in hypergraph
 --echo #
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT MIN(pk_1) FROM t1 WHERE f1 = '2000-01-03';
 FLUSH STATUS;
 SELECT MIN(pk_1) FROM t1 WHERE f1 = '2000-01-03';
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT MIN(pk_1) FROM t1 WHERE pk_1 BETWEEN 3 AND 5 AND f1 = '2000-01-03';
 FLUSH STATUS;
 SELECT MIN(pk_1) FROM t1 WHERE pk_1 BETWEEN 3 AND 5 AND f1 = '2000-01-03';
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT MAX(pk_1) FROM t1 WHERE f1 = '2000-01-03';
 FLUSH STATUS;
 SELECT MAX(pk_1) FROM t1 WHERE f1 = '2000-01-03';
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT MAX(pk_1) FROM t1 WHERE pk_1 BETWEEN 3 AND 5 AND f1 = '2000-01-03';
 FLUSH STATUS;
 SELECT MAX(pk_1) FROM t1 WHERE pk_1 BETWEEN 3 AND 5 AND f1 = '2000-01-03';
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
 --echo #
 --echo # Loose index scan
 --echo #
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT MIN(pk_1) FROM t1 WHERE f2 BETWEEN 13 AND 14 GROUP BY f2;
 FLUSH STATUS;
 SELECT MIN(pk_1) FROM t1 WHERE f2 BETWEEN 13 AND 14 GROUP BY f2;
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT MIN(pk_1) FROM t1 WHERE f2 IN (1, 2) GROUP BY f2;
 FLUSH STATUS;
 SELECT MIN(pk_1) FROM t1 WHERE f2 IN (1, 2) GROUP BY f2;
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
 --echo #
 --echo # JOIN optimization
 --echo #
 
+--replace_regex $elide_costs
 --replace_column 10 #
-EXPLAIN SELECT count(*) FROM t1 AS t1 JOIN t1 AS t2
-ON t2.pk_1 = t1.pk_1 WHERE t1.f1 = '2000-01-03' AND t2.f1 = '2000-01-03';
+EXPLAIN SELECT count(*) FROM t1 AS t1, t1 AS t2
+WHERE t2.pk_1 = t1.f2 AND t2.f1 = '2000-01-03' AND t1.pk_1 < 3;
 FLUSH STATUS;
-SELECT count(*) FROM t1 AS t1 JOIN t1 AS t2
-ON t2.pk_1 = t1.pk_1 WHERE t1.f1 = '2000-01-03' AND t2.f1 = '2000-01-03';
---skip_if_hypergraph  # No support for these access methods yet.
+SELECT count(*) FROM t1 AS t1, t1 AS t2
+WHERE t2.pk_1 = t1.f2 AND t2.f1 = '2000-01-03' AND t1.pk_1 < 3;
 SHOW STATUS LIKE 'handler_read%';
 
 --echo #
@@ -155,25 +157,25 @@ SHOW STATUS LIKE 'handler_read%';
 --echo # Also verifies FORMAT=tree for reverse ref access.
 --echo #
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT f1, pk_1, pk_2 FROM t1 WHERE pk_1 = 3 AND f1 = '2000-01-03'
 ORDER BY pk_2 DESC LIMIT 5;
---skip_if_hypergraph  # No support for these access methods yet.
+--replace_regex $elide_metrics
 EXPLAIN FORMAT=tree SELECT f1, pk_1, pk_2 FROM t1 WHERE pk_1 = 3 AND f1 = '2000-01-03'
 ORDER BY pk_2 DESC LIMIT 5;
 FLUSH STATUS;
 SELECT f1, pk_1, pk_2 FROM t1 WHERE pk_1 = 3 AND f1 = '2000-01-03'
 ORDER BY pk_2 DESC LIMIT 5;
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT f1, pk_1, pk_2 FROM t1 WHERE pk_1 BETWEEN 3 AND 5 AND f1 = '2000-01-03'
 ORDER BY pk_2 DESC LIMIT 5;
 FLUSH STATUS;
 SELECT f1, pk_1, pk_2 FROM t1 WHERE pk_1 BETWEEN 3 AND 5 AND f1 = '2000-01-03'
 ORDER BY pk_2 DESC LIMIT 5;
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'handler_read%';
 
 DROP TABLE t1;
@@ -190,6 +192,7 @@ CREATE TABLE t1
   KEY k1 (f11, f12, f13, f14, f15, f16, f17)
 ) ENGINE = InnoDB;
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT f17 FROM t1 FORCE INDEX (k1) WHERE
 f1 = 0 AND f2 = 0 AND f3 = 0 AND f4 = 0 AND f5 = 0 AND
@@ -197,8 +200,9 @@ f6 = 0 AND f7 = 0 AND f8 = 0 AND f9 = 0 AND f10 = 0 AND
 f11 = 0 AND f12 = 0 AND f13 = 0 AND f14 = 0 AND
 f15 = 0 AND f16 = 0 AND f17 = 0;
 
+--replace_regex $elide_costs
 --replace_column 10 #
-EXPLAIN SELECT f17 FROM t1 FORCE INDEX (k1) WHERE
+EXPLAIN SELECT /*+ NO_SKIP_SCAN(t1) */ f17 FROM t1 FORCE INDEX (k1) WHERE
 f1 = 0 AND f2 = 0 AND f3 = 0 AND f4 = 0 AND f5 = 0 AND
 f6 = 0 AND f7 = 0 AND f8 = 0 AND f9 = 0 AND
 f11 = 0 AND f12 = 0 AND f13 = 0 AND f14 = 0 AND
@@ -219,16 +223,19 @@ CREATE TABLE t1
   KEY k1 (f5, f6, f7)
 ) charset latin1 ENGINE = InnoDB;
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT f5 FROM t1 FORCE INDEX (k1) WHERE
 f1 = 'a' AND f2 = 'a' AND f3 = 'a' AND f4 = 'a' AND
 f5 = 'a' AND f6 = 'a' AND f7 = 'a';
 
+--replace_regex $elide_costs
 --replace_column 10 #
-EXPLAIN SELECT f5 FROM t1 FORCE INDEX (k1) WHERE
+EXPLAIN SELECT /*+ NO_SKIP_SCAN(t1) */ f5 FROM t1 FORCE INDEX (k1) WHERE
 f1 = 'a' AND f2 = 'a' AND f3 = 'a' AND
 f5 = 'a' AND f6 = 'a' AND f7 = 'a';
 
+--replace_regex $elide_costs
 --replace_column 10 #
 EXPLAIN SELECT f5 FROM t1 FORCE INDEX (k1) WHERE
 f1 = 'a' AND f2 = 'a' AND f4 = 'a' AND
@@ -261,10 +268,10 @@ ANALYZE TABLE t1;
 
 INSERT INTO t2 VALUES (1,1), (2,2);
 
+--replace_regex $elide_costs
 EXPLAIN SELECT t2.f1 FROM t2 JOIN t1 IGNORE INDEX(primary) ON t2.f1 = t1.pk and t2.f2 = t1.f1;
 FLUSH STATUS;
 SELECT t2.f1 FROM t2 JOIN t1 IGNORE INDEX(primary) ON t2.f1 = t1.pk and t2.f2 = t1.f1;
---skip_if_hypergraph  # No support for these access methods yet.
 SHOW STATUS LIKE 'Handler_read%';
 
 DROP TABLE t1, t2;
@@ -296,6 +303,7 @@ INSERT INTO t VALUES
 ('aaa3','aaa'),('aaa1','aaa');
 ANALYZE TABLE t;
 
+--replace_regex $elide_costs
 EXPLAIN SELECT DISTINCT(i) FROM t FORCE INDEX(i) WHERE a LIKE '%aaa12345678%';
 SELECT DISTINCT(i) FROM t FORCE INDEX(i) WHERE a LIKE '%aaa12345678%';
 

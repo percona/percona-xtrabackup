@@ -1,0 +1,93 @@
+--source include/have_ndb.inc
+SET session default_storage_engine='ndbcluster';
+
+--source vector.inc
+
+--error ER_CANT_CREATE_TABLE
+CREATE TABLE ta (pk INT, embedding VECTOR(7499), PRIMARY KEY (pk));
+
+CREATE TABLE ta (pk INT, embedding VECTOR(1), PRIMARY KEY (pk));
+INSERT INTO ta VALUES
+(0, UNHEX("8679613f")),
+(1, UNHEX("71b06a3f")),
+(2, UNHEX("95afc03e")),
+(3, UNHEX("c620123d")),
+(4, UNHEX("b8d58c3d"));
+
+--error ER_TABLE_CANT_HANDLE_FT
+SELECT MATCH (embedding) AGAINST ('abc') FROM ta;
+--disable_result_log
+--sorted_result
+SELECT AES_ENCRYPT(embedding, UNHEX('F3229A0B371ED2D9441B830D21A390C3')) FROM ta;
+--enable_result_log
+--sorted_result
+SELECT COLLATION(embedding), CHARSET(embedding) FROM ta;
+
+DROP TABLE ta;
+
+--error ER_BLOB_CANT_HAVE_DEFAULT
+CREATE TABLE t(pk INT, v VECTOR(1) DEFAULT '', PRIMARY KEY(pk));
+
+CREATE TABLE t(pk INT, v VECTOR(1) DEFAULT(''), PRIMARY KEY(pk));
+--error ER_DATA_INCOMPATIBLE_WITH_VECTOR
+INSERT INTO t(pk) VALUES (1),(2);
+DROP TABLE if exists t;
+
+CREATE TABLE t(pk INT, v VECTOR(3) DEFAULT(TO_VECTOR('[1,2,3]')), PRIMARY KEY(pk));
+INSERT INTO t(pk) VALUES (1),(2);
+--sorted_result
+SELECT pk,VECTOR_TO_STRING(v) FROM t;
+--error ER_NON_SCALAR_USED_AS_KEY
+CREATE INDEX z ON t(v);
+--error ER_INCORRECT_TYPE
+CREATE INDEX z ON t((v IS NULL));
+
+DROP TABLE t;
+
+CREATE TABLE t(pk INT, v VECTOR(1) DEFAULT(UNHEX('aabbccdd')), PRIMARY KEY(pk));
+INSERT INTO t(pk) VALUES (1),(2);
+--sorted_result
+SELECT * FROM t;
+DROP TABLE t;
+
+CREATE TABLE t(pk INT, v VECTOR(1) DEFAULT(UNHEX('aabbccddee')), PRIMARY KEY(pk));
+--error ER_DATA_INCOMPATIBLE_WITH_VECTOR
+INSERT INTO t(pk) VALUES (1),(2);
+DROP TABLE t;
+
+CREATE TABLE t(pk INT, v VECTOR(1) DEFAULT(UNHEX('aabbccddaabbccdd')), PRIMARY KEY(pk));
+--error ER_DATA_TOO_LONG
+INSERT INTO t(pk) VALUES (1),(2);
+DROP TABLE t;
+
+--error ER_INCORRECT_TYPE
+CREATE TABLE t (c1 INT, c2 VECTOR, c3 VECTOR, CHECK (c2 = c3));
+
+CREATE TABLE A(
+    a1 INT primary key,
+    a2 DOUBLE,
+    a3 DATETIME,
+    a4 DECIMAL(10,5),
+    a5 VARCHAR(10),
+    a6 JSON,
+    a7 GEOMETRY
+);
+INSERT INTO A VALUES
+(1, 2.0, '2001-02-28 08:40:16', 1.2, 'abcd', '{"k":"v"}', ST_PointFromText('POINT(1 1)'));
+
+--error ER_WRONG_ARGUMENTS
+SELECT TO_VECTOR(a1) FROM A;
+--error ER_WRONG_ARGUMENTS
+SELECT TO_VECTOR(a2) FROM A;
+--error ER_TO_VECTOR_CONVERSION
+SELECT TO_VECTOR(a3) FROM A;
+--error ER_WRONG_ARGUMENTS
+SELECT TO_VECTOR(a4) FROM A;
+--error ER_TO_VECTOR_CONVERSION
+SELECT TO_VECTOR(a5) FROM A;
+--error ER_WRONG_ARGUMENTS
+SELECT TO_VECTOR(a6) FROM A;
+--error ER_WRONG_ARGUMENTS
+SELECT TO_VECTOR(a7) FROM A;
+
+DROP TABLE A;

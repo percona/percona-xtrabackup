@@ -1,0 +1,84 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+# Registred SERVICE at path: /svc1
+# Registred CONTENT_SET at path: /svc1/set
+SET @my_content_set=@content_set_id;
+# Registred CONTENT_FILE at path: /svc1/set/first.html
+# Registred CONTENT_FILE at path: /svc1/set/second.html
+
+
+## I. Verify defaultRedirects setting
+#
+# 1. Set defaultRedirects with an entry not matching an existing Content File
+# 2. Set defaultRedirects with an entry matching an existing Content File
+# 3. Empty redirect target.
+# 4. Redirect target references itself.
+# 5. Redirect with additional query.
+# 6. Redirect with additional fragment.
+# 7. Redirect with additional query and fragment.
+#
+
+#
+# I.1
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, OPTIONS
+Location  ->  second.html
+Content-Length  ->  0
+
+#
+# I.2
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, OPTIONS
+Location  ->  second.html
+Content-Length  ->  0
+
+#
+# I.3
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, OPTIONS
+Location  ->  
+Content-Length  ->  0
+
+#
+# I.4
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, OPTIONS
+Location  ->  first.html
+Content-Length  ->  0
+
+#
+# I.5
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, OPTIONS
+Location  ->  second.html?q1=a&q2=b&q3=c
+Content-Length  ->  0
+
+#
+# I.6
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, OPTIONS
+Location  ->  second.html#fragment
+Content-Length  ->  0
+
+#
+# I.7
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, OPTIONS
+Location  ->  second.html?q1=a&q2=b#fragment
+Content-Length  ->  0
+
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

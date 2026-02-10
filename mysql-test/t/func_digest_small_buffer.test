@@ -1,3 +1,6 @@
+# Test requires: sp-protocol/ps-protocol/view-protocol/cursor-protocol disabled
+--source include/no_protocol.inc
+
 --echo #
 --echo # Tests that the same token buffer size is applied in STATEMENT_DIGEST()
 --echo # as in performance_schema.

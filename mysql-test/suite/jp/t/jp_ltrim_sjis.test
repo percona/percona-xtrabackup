@@ -102,18 +102,27 @@ INSERT INTO `‚s‚X` VALUES ('@@ƒ\\•\—\\');
 INSERT INTO `‚s‚X` VALUES ('@@@ƒ\\•\—\\');
 
 #InnoDB
+--sorted_result
 SELECT LTRIM(`‚b‚P`) from `‚s‚P`;
+--sorted_result
 SELECT LTRIM(`‚b‚P`) from `‚s‚Q`;
+--sorted_result
 SELECT LTRIM(`‚b‚P`) from `‚s‚R`;
 
 #MyISAM
+--sorted_result
 SELECT LTRIM(`‚b‚P`) from `‚s‚S`;
+--sorted_result
 SELECT LTRIM(`‚b‚P`) from `‚s‚T`;
+--sorted_result
 SELECT LTRIM(`‚b‚P`) from `‚s‚U`;
 
 #MEMORY
+--sorted_result
 SELECT LTRIM(`‚b‚P`) from `‚s‚V`;
+--sorted_result
 SELECT LTRIM(`‚b‚P`) from `‚s‚W`;
+--sorted_result
 SELECT LTRIM(`‚b‚P`) from `‚s‚X`;
 
 DROP TABLE `‚s‚P`;

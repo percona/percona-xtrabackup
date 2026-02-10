@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -240,7 +240,7 @@ void find_intersect_order(Mem_root_array<ROR_SCAN_INFO *> *ror_scans,
     for (uint i : BitsSetIn((*ror_scans)[index]->covered_fields))
       fields_to_be_covered.ClearBit(i);
     needed_fields = std::move(fields_to_be_covered);
-    if (needed_fields.empty()) break;
+    if (IsEmpty(needed_fields)) break;
   }
 }
 
@@ -250,7 +250,7 @@ ROR_intersect_plan::ROR_intersect_plan(const RANGE_OPT_PARAM *param,
       m_ror_scans(param->return_mem_root, 0),
       m_out_rows(m_param->table->file->stats.records),
       m_covered_fields(
-          MutableOverflowBitset(param->temp_mem_root, num_fields)) {}
+          OverflowBitset::EmptySet(param->temp_mem_root, num_fields)) {}
 
 ROR_intersect_plan &ROR_intersect_plan::operator=(
     const ROR_intersect_plan &plan) {
@@ -643,21 +643,24 @@ AccessPath *MakeRowIdOrderedIndexScanAccessPath(ROR_SCAN_INFO *scan,
       order R by (E(#records_matched) * key_record_length).
 
       S= first(R); -- set of scans that will be used for ROR-intersection
-      R= R-first(S);
+      R= R - S;
       min_cost= cost(S);
       min_scan= make_scan(S);
       while (R is not empty)
       {
-        firstR= R - first(R);
-        if (!selectivity(S + firstR < selectivity(S)))
+        firstR= first(R);
+        if (!selectivity(S + firstR) < selectivity(S))
+        {
+          R= R - firstR;
           continue;
-
+        }
         S= S + first(R);
         if (cost(S) < min_cost)
         {
           min_cost= cost(S);
           min_scan= make_scan(S);
         }
+        R= R - firstR; --  Remove the processed scan from R
       }
       return min_scan;
     }
@@ -846,7 +849,9 @@ AccessPath *get_best_ror_intersect(THD *thd, const RANGE_OPT_PARAM *param,
     // Create AccessPaths from the ROR child scans.
     auto *children = new (param->return_mem_root)
         Mem_root_array<AccessPath *>(param->return_mem_root);
-    children->resize(num_scans);
+    if (children == nullptr || children->resize(num_scans)) {
+      return nullptr;
+    }
     for (unsigned i = 0; i < num_scans; ++i) {
       (*children)[i] = MakeRowIdOrderedIndexScanAccessPath(
           best_plan.m_ror_scans[i], table,

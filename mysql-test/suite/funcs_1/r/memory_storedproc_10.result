@@ -96,6 +96,8 @@ create user 'user_2'@'localhost';
 GRANT CREATE ROUTINE ON db_storedproc.* TO 'user_1'@'localhost';
 GRANT SELECT         ON db_storedproc.* TO 'user_2'@'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_1@localhost	db_storedproc
 CREATE PROCEDURE sp31102 () SQL SECURITY INVOKER
@@ -126,6 +128,8 @@ fn31105( 9 )
 81
 GRANT EXECUTE ON db_storedproc.* TO 'user_2'@'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_2@localhost	db_storedproc
 CALL sp31102();
@@ -140,6 +144,8 @@ USE db_storedproc;
 root@localhost	db_storedproc
 REVOKE EXECUTE ON db_storedproc.* FROM 'user_2'@'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CALL sp31102();
 f1	f2	f3	f4	f5	f6
 a`	a`	1000-01-01	-5000	a`	-5000
@@ -250,7 +256,7 @@ INSERT INTO temp VALUES  ('qwe', 'xyz', '1998-03-26', 100, 'uvw', 1000);
 INSERT INTO temp VALUES  ('qwe', 'abc', '2000-11-09', 100, 'uvw', 1000);
 INSERT INTO temp VALUES  ('qwe', 'abc', '2005-11-07', 100, 'uvw', 1000);
 END;
-SELECT COUNT( f1 ), f1 FROM temp GROUP BY f1;
+SELECT COUNT( f1 ), f1 FROM temp GROUP BY f1 ORDER BY f1;
 UPDATE temp SET temp.f1 = 'updated_2' WHERE temp.f1 ='qwe' AND temp.f2 = 'abc';
 END//
 CREATE PROCEDURE sp_del()
@@ -333,7 +339,9 @@ updated	xyz	1989-11-09	100	uvw	1000
 updated	xyz	2005-10-24	100	uvw	1000
 CALL sp_ins_upd();
 COUNT( f1 )	f1
+1	a_aaaaaaaaa
 1	a`
+1	a^aaaaaaaa
 1	aaa
 1	abaa
 1	acaaa
@@ -341,10 +349,8 @@ COUNT( f1 )	f1
 1	aeaaaaa
 1	afaaaaaa
 1	agaaaaaaa
-1	a^aaaaaaaa
-1	a_aaaaaaaaa
-4	updated
 4	qwe
+4	updated
 SELECT row_count();
 row_count()
 3

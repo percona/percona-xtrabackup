@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -43,8 +43,7 @@ const dd::system_views::Tables_extensions *s_instance =
 
 }  // namespace
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Tables_extensions &Tables_extensions::instance() { return *s_instance; }
 
@@ -80,5 +79,4 @@ Tables_extensions::Tables_extensions(const dd::String_type &n) {
 }
 
 const dd::String_type &Tables_extensions::view_name() { return s_view_name; }
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

@@ -242,8 +242,10 @@ ANALYZE TABLE t1;
 explain select * from t1 where (a = 1 and b is null and c = 'b') or (a > 2) order by a desc;
 select * from t1 where (a = 1 and b is null and c = 'b') or (a > 2) order by a desc;
 explain select * from t1 where a >= 1 and a < 3 order by a desc;
+SET explain_json_format_version = 1;
 --skip_if_hypergraph  # Depends on the query plan.
 explain format=json select * from t1 where a >= 1 and a < 3 order by a desc;
+SET explain_json_format_version = DEFAULT;
 --partially_sorted_result 1
 select * from t1 where a >= 1 and a < 3 order by a desc;
 explain select * from t1 where a = 1 order by a desc, b desc;
@@ -1958,3 +1960,31 @@ SELECT MIN(b) AS min_b FROM t1 GROUP BY a ORDER BY COALESCE(MIN(b), 'a') DESC;
 SELECT MIN(b) AS min_b FROM t1 GROUP BY a ORDER BY COALESCE(min_b, 'a') DESC;
 
 DROP TABLE t1;
+
+--echo #
+--echo # Bug#37177744: Wrong ordering of outer join results with
+--echo #               the hypergraph optimizer
+--echo #
+
+CREATE TABLE t1(a INT);
+INSERT INTO t1 VALUES (1), (2), (3);
+
+SELECT t2.a FROM t1 LEFT JOIN t1 AS t2 ON t1.a = t2.a AND t2.a = 2
+ORDER BY t2.a;
+
+CREATE TABLE t2(a INT, b INT);
+INSERT INTO t2 VALUES (2, 0);
+
+SELECT t2.b + t3.b AS expr FROM
+  t1 LEFT JOIN (t2 JOIN t2 AS t3 ON t2.a = t3.a)
+  ON t1.a = t2.a AND t1.a = t3.a AND t2.b + t3.b = 0
+ORDER BY expr;
+
+SELECT t2.b + t3.b + t4.b AS expr FROM
+  t1 LEFT JOIN
+  (t2 JOIN t2 AS t3 ON t2.a = t3.a JOIN t2 AS t4 ON t3.a = t4.a)
+  ON t1.a <=> t2.a AND t2.a <=> t3.a AND t3.a <=> t4.a AND
+     t2.b + t3.b + t4.b = 0
+ORDER BY expr;
+
+DROP TABLE t1, t2;

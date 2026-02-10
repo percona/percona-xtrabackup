@@ -14,6 +14,8 @@ Grants for mysqltest_1@localhost
 GRANT USAGE ON *.* TO `mysqltest_1`@`localhost`
 GRANT CREATE TEMPORARY TABLES, LOCK TABLES ON `mysqltest`.* TO `mysqltest_1`@`localhost`
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for mysqltest_1@localhost;
 Grants for mysqltest_1@localhost
 GRANT USAGE ON *.* TO `mysqltest_1`@`localhost`
@@ -25,6 +27,8 @@ GRANT USAGE ON *.* TO `mysqltest_1`@`localhost`
 GRANT LOCK TABLES ON `mysqltest`.* TO `mysqltest_1`@`localhost`
 grant ALL PRIVILEGES on mysqltest.* to mysqltest_1@localhost with GRANT OPTION;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW GRANTS FOR mysqltest_1@localhost;
 Grants for mysqltest_1@localhost
 GRANT USAGE ON *.* TO `mysqltest_1`@`localhost`
@@ -37,6 +41,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, REFERENCES, INDEX, CREATE TE
 revoke all privileges on mysqltest.* from mysqltest_1@localhost;
 drop user  mysqltest_1@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create user mysqltest_1@localhost;
 grant usage on test.* to mysqltest_1@localhost with grant option;
 show grants for mysqltest_1@localhost;
@@ -48,6 +54,8 @@ delete from mysql.db where user='mysqltest_1';
 delete from mysql.tables_priv where user='mysqltest_1';
 delete from mysql.columns_priv where user='mysqltest_1';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for mysqltest_1@localhost;
 ERROR 42000: There is no such grant defined for user 'mysqltest_1' on host 'localhost'
 create user mysqltest_1@localhost;
@@ -101,6 +109,8 @@ delete from mysql.db where user='mysqltest_1' or user="mysqltest_2" or user="mys
 delete from mysql.tables_priv where user='mysqltest_1' or user="mysqltest_2" or user="mysqltest_3";
 delete from mysql.columns_priv where user='mysqltest_1' or user="mysqltest_2" or user="mysqltest_3";
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop table t1;
 create user mysqltest_1@localhost;
 create table t1 (abcdefghijklmnopqrstuvwxyz int);
@@ -130,6 +140,8 @@ alter table mysql.db order by db asc;
 Warnings:
 Warning	1105	ORDER BY ignored as there is a user-defined clustered index in the table 'db'
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for test11@localhost;
 Grants for test11@localhost
 GRANT USAGE ON *.* TO `test11`@`localhost`
@@ -139,6 +151,8 @@ alter table mysql.db order by db desc;
 Warnings:
 Warning	1105	ORDER BY ignored as there is a user-defined clustered index in the table 'db'
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for test11@localhost;
 Grants for test11@localhost
 GRANT USAGE ON *.* TO `test11`@`localhost`
@@ -154,6 +168,8 @@ host	db	user	select_priv	insert_priv
 delete from mysql.user where user='test6123';
 drop database mysqltest1;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create user drop_user@localhost, drop_user2@localhost;
 create table t1 (a int);
 grant ALL PRIVILEGES on *.* to drop_user2@localhost with GRANT OPTION;
@@ -226,7 +242,7 @@ drop_user3@localhost, drop_user4@localhost;
 ERROR HY000: Can't revoke all privileges for one or more of the requested users
 drop user drop_user1@localhost, drop_user2@localhost, drop_user3@localhost,
 drop_user4@localhost;
-ERROR HY000: Operation DROP USER failed for 'drop_user1'@'localhost','drop_user2'@'localhost','drop_user3'@'localhost','drop_user4'@'localhost'
+ERROR HY000: Operation DROP USER failed for 'drop_user1'@'localhost' (User account does not exist),'drop_user2'@'localhost' (User account does not exist),'drop_user3'@'localhost' (User account does not exist),'drop_user4'@'localhost' (User account does not exist)
 drop table t1;
 create user mysqltest_1@localhost identified by "password";
 grant select, update, insert on test.* to mysqltest_1@localhost;
@@ -408,6 +424,8 @@ grant all on mysqltest_2.* to mysqltest_3@localhost;
 grant select on *.* to mysqltest_3@localhost;
 grant select on mysqltest_2.t1 to mysqltest_3@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 use mysqltest_1;
 update mysqltest_2.t1, mysqltest_2.t2 set c=500,d=600;
 update mysqltest_1.t1, mysqltest_1.t2 set a=100,b=200;
@@ -431,6 +449,8 @@ delete from mysql.tables_priv where user="mysqltest_3";
 delete from mysql.columns_priv where user="mysqltest_3";
 delete from mysql.global_grants where user="mysqltest_3";
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop database mysqltest_1;
 drop database mysqltest_2;
 SHOW PRIVILEGES;
@@ -447,6 +467,7 @@ BINLOG_ADMIN	Server Admin
 BINLOG_ENCRYPTION_ADMIN	Server Admin	
 CLONE_ADMIN	Server Admin	
 CONNECTION_ADMIN	Server Admin	
+CREATE_SPATIAL_REFERENCE_SYSTEM	Server Admin	
 Create	Databases,Tables,Indexes	To create new databases and tables
 Create role	Server Admin	To create new roles
 Create routine	Databases	To use CREATE FUNCTION/PROCEDURE
@@ -536,6 +557,8 @@ TABLE_SCHEMA	TABLE_NAME	PRIVILEGES
 mysqltest	dummytable	ALTER, CREATE, CREATE VIEW, DELETE, DROP, INDEX, INSERT, REFERENCES, SELECT, SHOW VIEW, TRIGGER, UPDATE
 mysqltest	dummyview	ALTER, CREATE, CREATE VIEW, DELETE, DROP, INDEX, INSERT, REFERENCES, SELECT, SHOW VIEW, TRIGGER, UPDATE
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW GRANTS FOR dummy@localhost;
 Grants for dummy@localhost
 GRANT ALL PRIVILEGES ON `mysqltest`.`dummytable` TO `dummy`@`localhost`
@@ -580,6 +603,8 @@ TABLE_SCHEMA	TABLE_NAME	PRIVILEGES
 mysqltest	dummytable	CREATE VIEW
 mysqltest	dummyview	CREATE VIEW
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW GRANTS FOR dummy@localhost;
 Grants for dummy@localhost
 GRANT CREATE VIEW ON `mysqltest`.`dummytable` TO `dummy`@`localhost`
@@ -614,6 +639,8 @@ TABLE_SCHEMA	TABLE_NAME	PRIVILEGES
 mysqltest	dummytable	SHOW VIEW
 mysqltest	dummyview	SHOW VIEW
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW GRANTS FOR dummy@localhost;
 Grants for dummy@localhost
 GRANT SHOW VIEW ON `mysqltest`.`dummytable` TO `dummy`@`localhost`
@@ -632,8 +659,12 @@ DROP DATABASE mysqltest;
 use mysql;
 insert into tables_priv values ('','test_db','mysqltest_1','test_table','test_grantor',CURRENT_TIMESTAMP,'Select','Select');
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 delete from tables_priv where host = '' and user = 'mysqltest_1';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 use test;
 set @user123="non-existent";
 select * from mysql.db where user=@user123;
@@ -651,6 +682,8 @@ GRANT <ALL_DYNAMIC_PRIVILEGES> ON *.* TO `root`@`localhost` WITH GRANT OPTION
 GRANT SELECT ON `бд`.* TO `root`@`localhost`
 GRANT PROXY ON ``@`` TO `root`@`localhost` WITH GRANT OPTION
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW GRANTS FOR root@localhost;
 Grants for root@localhost
 GRANT <ALL_STATIC_PRIVILEGES> ON *.* TO `root`@`localhost` WITH GRANT OPTION
@@ -691,6 +724,8 @@ delete from mysql.user where user='mysqltest1';
 delete from mysql.db where user='mysqltest1';
 delete from mysql.tables_priv where user='mysqltest1';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop database mysqltest;
 create database db27515;
 use db27515;
@@ -709,15 +744,17 @@ create table t1 (a int);
 create table t2 as select * from mysql.user where user='';
 delete from mysql.user where user='';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create user mysqltest_8@'';
 create user mysqltest_8;
 create user mysqltest_8@host8;
 create user mysqltest_8@'';
-ERROR HY000: Operation CREATE USER failed for 'mysqltest_8'@''
+ERROR HY000: Operation CREATE USER failed for 'mysqltest_8'@'' (User account already exists)
 create user mysqltest_8;
-ERROR HY000: Operation CREATE USER failed for 'mysqltest_8'@'%'
+ERROR HY000: Operation CREATE USER failed for 'mysqltest_8'@'%' (User account already exists)
 create user mysqltest_8@host8;
-ERROR HY000: Operation CREATE USER failed for 'mysqltest_8'@'host8'
+ERROR HY000: Operation CREATE USER failed for 'mysqltest_8'@'host8' (User account already exists)
 select user, QUOTE(host) from mysql.user where user="mysqltest_8";
 user	QUOTE(host)
 mysqltest_8	''
@@ -758,6 +795,8 @@ select * from  information_schema.schema_privileges
 where grantee like "'mysqltest_8'%";
 GRANTEE	TABLE_CATALOG	TABLE_SCHEMA	PRIVILEGE_TYPE	IS_GRANTABLE
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for mysqltest_8@'';
 Grants for mysqltest_8@
 GRANT USAGE ON *.* TO `mysqltest_8`@``
@@ -766,12 +805,16 @@ Grants for mysqltest_8@
 GRANT USAGE ON *.* TO `mysqltest_8`@``
 grant select on mysqltest.* to mysqltest_8@'';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for mysqltest_8@;
 Grants for mysqltest_8@
 GRANT USAGE ON *.* TO `mysqltest_8`@``
 GRANT SELECT ON `mysqltest`.* TO `mysqltest_8`@``
 revoke select on mysqltest.* from mysqltest_8@'';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 Column privileges
 grant update (a) on t1 to mysqltest_8@'';
 grant update (a) on t1 to mysqltest_8;
@@ -784,6 +827,8 @@ Grants for mysqltest_8@%
 GRANT USAGE ON *.* TO `mysqltest_8`@`%`
 GRANT UPDATE (`a`) ON `test`.`t1` TO `mysqltest_8`@`%`
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for mysqltest_8@'';
 Grants for mysqltest_8@
 GRANT USAGE ON *.* TO `mysqltest_8`@``
@@ -809,6 +854,8 @@ GRANT USAGE ON *.* TO `mysqltest_8`@`%`
 select * from  information_schema.column_privileges;
 GRANTEE	TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	PRIVILEGE_TYPE	IS_GRANTABLE
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for mysqltest_8@'';
 Grants for mysqltest_8@
 GRANT USAGE ON *.* TO `mysqltest_8`@``
@@ -827,6 +874,8 @@ Grants for mysqltest_8@%
 GRANT USAGE ON *.* TO `mysqltest_8`@`%`
 GRANT UPDATE ON `test`.`t1` TO `mysqltest_8`@`%`
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for mysqltest_8@'';
 Grants for mysqltest_8@
 GRANT USAGE ON *.* TO `mysqltest_8`@``
@@ -852,6 +901,8 @@ GRANT USAGE ON *.* TO `mysqltest_8`@`%`
 select * from  information_schema.table_privileges where table_schema NOT IN ('sys','mysql');
 GRANTEE	TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	PRIVILEGE_TYPE	IS_GRANTABLE
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for mysqltest_8@'';
 Grants for mysqltest_8@
 GRANT USAGE ON *.* TO `mysqltest_8`@``
@@ -882,6 +933,8 @@ GRANTEE	TABLE_CATALOG	PRIVILEGE_TYPE	IS_GRANTABLE
 select * from t1;
 a
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW GRANTS FOR mysqltest_8@'';
 Grants for mysqltest_8@
 GRANT USAGE ON *.* TO `mysqltest_8`@``
@@ -913,6 +966,8 @@ show grants for mysqltest_8@host8;
 ERROR 42000: There is no such grant defined for user 'mysqltest_8' on host 'host8'
 insert into mysql.user select * from t2;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop table t2;
 drop table t1;
 CREATE DATABASE mysqltest3;
@@ -1255,6 +1310,8 @@ DROP TABLE t1;
 #
 CREATE TEMPORARY TABLE mysql.user (id INT);
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 DROP TABLE mysql.user;
 drop table if exists test;
 Warnings:
@@ -1578,6 +1635,8 @@ grant         insert on mysqltest.t4 to mysqltest@localhost;
 grant create, insert on mysqltest.t5 to mysqltest@localhost;
 grant create, insert on mysqltest.t6 to mysqltest@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 insert into t2 values (1);
 create table if not exists t1 select * from t2;
 ERROR 42000: INSERT command denied to user 'mysqltest'@'localhost' for table 't1'
@@ -1623,6 +1682,8 @@ CALL mysqltest1.test();
 DROP DATABASE mysqltest1;
 RENAME TABLE mysql.procs_gone TO mysql.procs_priv;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE DATABASE dbbug33464;
 CREATE USER 'userbug33464'@'localhost';
 GRANT CREATE ROUTINE ON dbbug33464.* TO 'userbug33464'@'localhost';
@@ -1668,6 +1729,8 @@ GRANT CREATE ROUTINE ON db1.* TO 'user1'@'localhost';
 GRANT CREATE ON db1.* TO 'user2'@'%';
 GRANT CREATE ROUTINE ON db1.* TO 'user2'@'%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW GRANTS FOR 'user1'@'localhost';
 Grants for user1@localhost
 GRANT USAGE ON *.* TO `user1`@`localhost`
@@ -1771,6 +1834,8 @@ localhost	myuser
 revoke select on Foo.* from myuser@localhost;
 delete from mysql.user where User='myuser';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 #########################################################################
 #
 # Bug#38347: ALTER ROUTINE privilege allows SHOW CREATE TABLE.
@@ -1785,6 +1850,8 @@ DELETE FROM mysql.db WHERE User LIKE 'mysqltest_%';
 DELETE FROM mysql.tables_priv WHERE User LIKE 'mysqltest_%';
 DELETE FROM mysql.columns_priv WHERE User LIKE 'mysqltest_%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE DATABASE mysqltest_db1;
 CREATE TABLE mysqltest_db1.t1(a INT);
 
@@ -2498,6 +2565,8 @@ SELECT (SELECT now()-(SELECT password_last_changed from mysql.user where user='w
 1
 UPDATE mysql.user SET password_last_changed = (now() - INTERVAL 3 DAY) where user='wl7131';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Attempt to execute query should fail
 mysql: [Warning] Using a password on the command line interface can be insecure.
 Please use --connect-expired-password option or invoke mysql in interactive mode.
@@ -2525,6 +2594,8 @@ password_lifetime
 0
 UPDATE mysql.user SET password_last_changed = (now() - INTERVAL 5 DAY) where user='wl7131';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # This should pass as password is never expired.
 mysql: [Warning] Using a password on the command line interface can be insecure.
 ALTER USER 'wl7131' PASSWORD EXPIRE DEFAULT;
@@ -3374,3 +3445,73 @@ CREATE USER bug33578113;
 GRANT DROP ON performance_schema.* TO bug33578113;
 REVOKE DROP ON performance_schema.* FROM bug33578113;
 DROP USER bug33578113;
+#
+# Bug#37003502 inconsistency in whether SHOW GRANTS quotes Function or Stored Procedure's name
+#
+CREATE DATABASE test_db;
+USE test_db;
+CREATE PROCEDURE sp_test()
+BEGIN
+SELECT 'Hello, World!';
+END|
+CREATE FUNCTION fc_test()
+RETURNS VARCHAR(50)
+BEGIN
+RETURN 'Hello, World!';
+END|
+CREATE TABLE t1 (
+id INT PRIMARY KEY
+);
+CREATE USER test;
+GRANT EXECUTE ON FUNCTION fc_test TO test;
+GRANT EXECUTE ON PROCEDURE sp_test TO test;
+GRANT SELECT ON t1 TO test;
+GRANT ALL ON test_db.t1 TO test;
+GRANT EXECUTE ON test_db.* TO test;
+SET sql_mode='ANSI_QUOTES';
+CREATE DATABASE "test_.'`db";
+USE "test_.'`db";
+CREATE PROCEDURE "sp.'`_test"()
+BEGIN
+SELECT 'Hello, World!';
+END|
+CREATE FUNCTION "fc_.'`test"()
+RETURNS VARCHAR(50)
+BEGIN
+RETURN 'Hello, World!';
+END|
+CREATE TABLE "t.'`1" (
+id INT PRIMARY KEY
+);
+GRANT EXECUTE ON FUNCTION "fc_.'`test" TO test;
+GRANT EXECUTE ON PROCEDURE "sp.'`_test" TO test;
+GRANT SELECT ON "t.'`1" TO test;
+GRANT ALL ON "test_.'`db"."t.'`1" TO test;
+GRANT EXECUTE ON "test_.'`db".* TO test;
+SHOW GRANTS FOR test;
+Grants for test@%
+GRANT USAGE ON *.* TO "test"@"%"
+GRANT EXECUTE ON "test_.'`db".* TO "test"@"%"
+GRANT EXECUTE ON "test_db".* TO "test"@"%"
+GRANT ALL PRIVILEGES ON "test_.'`db"."t.'`1" TO "test"@"%"
+GRANT ALL PRIVILEGES ON "test_db"."t1" TO "test"@"%"
+GRANT EXECUTE ON PROCEDURE "test_.'`db"."sp.'`_test" TO "test"@"%"
+GRANT EXECUTE ON PROCEDURE "test_db"."sp_test" TO "test"@"%"
+GRANT EXECUTE ON FUNCTION "test_.'`db"."fc_.'`test" TO "test"@"%"
+GRANT EXECUTE ON FUNCTION "test_db"."fc_test" TO "test"@"%"
+SET sql_mode='';
+SHOW GRANTS FOR test;
+Grants for test@%
+GRANT USAGE ON *.* TO `test`@`%`
+GRANT EXECUTE ON `test_.'``db`.* TO `test`@`%`
+GRANT EXECUTE ON `test_db`.* TO `test`@`%`
+GRANT ALL PRIVILEGES ON `test_.'``db`.`t.'``1` TO `test`@`%`
+GRANT ALL PRIVILEGES ON `test_db`.`t1` TO `test`@`%`
+GRANT EXECUTE ON PROCEDURE `test_.'``db`.`sp.'``_test` TO `test`@`%`
+GRANT EXECUTE ON PROCEDURE `test_db`.`sp_test` TO `test`@`%`
+GRANT EXECUTE ON FUNCTION `test_.'``db`.`fc_.'``test` TO `test`@`%`
+GRANT EXECUTE ON FUNCTION `test_db`.`fc_test` TO `test`@`%`
+SET SQL_MODE='ANSI_QUOTES';
+DROP DATABASE "test_.'`db";
+DROP DATABASE test_db;
+DROP USER test;

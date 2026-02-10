@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,8 @@
 
 #include <gtest/gtest.h>
 
+#include <utility>
+
 #include "components/keyrings/common/data/data_extension.h"
 #include "components/keyrings/common/memstore/iterator.h"
 
@@ -38,7 +40,7 @@ class KeyringCommonIterator_test : public ::testing::Test {};
 
 class Dummy_extension {
  public:
-  Dummy_extension(std::string ext_data) : ext_data_(ext_data) {}
+  Dummy_extension(std::string ext_data) : ext_data_(std::move(ext_data)) {}
   Dummy_extension() : Dummy_extension(std::string{""}) {}
   std::string ext_data() const { return ext_data_; }
 

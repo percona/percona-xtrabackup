@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -188,8 +188,9 @@ bool Protocol_local_v2::store_date(const MYSQL_TIME &time) {
   return store_temporal(time);
 }
 
-bool Protocol_local_v2::store_time(const MYSQL_TIME &time, uint) {
-  return store_temporal(time);
+bool Protocol_local_v2::store_time(const Time_val &time, uint) {
+  MYSQL_TIME tm = MYSQL_TIME(time);
+  return store_temporal(tm);
 }
 
 bool Protocol_local_v2::store_floating_type(double value) {
@@ -295,15 +296,14 @@ void Protocol_local_v2::start_row() {
     /* Reuse row. */
     Row<value_t> *row = (*m_data_rows)[m_current_row_index];
     m_current_row = row->get_column_array();
-    memset((void *)m_current_row, 0, sizeof(value_t) * m_column_count);
-    m_current_column = m_current_row;
-
   } else {
     /* Start a new row. */
     m_current_row = static_cast<value_t *>(
         m_result_set_mem_root.Alloc(sizeof(value_t) * m_column_count));
-    m_current_column = m_current_row;
   }
+
+  memset((void *)m_current_row, 0, sizeof(value_t) * m_column_count);
+  m_current_column = m_current_row;
 
   m_current_row_index++;
 }
@@ -442,7 +442,7 @@ bool Protocol_local_v2::send_field_metadata(Send_field *field,
   if (m_current_metadata_column == nullptr) return true;
 
   // Note: since database, column and table name cannot contain \0
-  // (https://dev.mysql.com/doc/refman/8.0/en/identifiers.html), strlen can be
+  // (https://dev.mysql.com/doc/refman/en/identifiers.html), strlen can be
   // used here.
   auto database_name = convert_and_store(
       &m_result_set_mem_root, field->db_name, strlen(field->db_name),

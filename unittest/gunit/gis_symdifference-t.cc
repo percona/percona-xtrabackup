@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -187,7 +187,7 @@ struct SymDifferenceTest : Gis_test<Types> {
       const gis::Geometry &expected_result) const {
     std::unique_ptr<gis::Geometry> result;
     bool is_null = false;
-    bool error =
+    bool const error =
         gis::symdifference(this->m_srs.get(), &g1, &g2, "unittest", &result);
     EXPECT_FALSE(error);
 
@@ -205,7 +205,7 @@ struct SymDifferenceTest : Gis_test<Types> {
 
     // Verify result is correct.
     bool is_equals = false;
-    bool equals_error =
+    bool const equals_error =
         gis::equals(this->m_srs.get(), &expected_result, result.get(),
                     "unittest", &is_equals, &is_null);
     EXPECT_FALSE(equals_error);
@@ -228,10 +228,10 @@ TYPED_TEST_SUITE(SymDifferenceTest, gis_typeset::Test_both);
 // symdifference(... ,point, *, ...)
 
 TYPED_TEST(SymDifferenceTest, PointPoint) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0, 0.1};
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0, 0.1};
   typename TypeParam::Multipoint expected_result{};
-  typename TypeParam::Geometrycollection empty_result{};
+  typename TypeParam::Geometrycollection const empty_result{};
 
   expected_result.push_back(pt1);
   expected_result.push_back(pt2);
@@ -241,9 +241,9 @@ TYPED_TEST(SymDifferenceTest, PointPoint) {
 }
 
 TYPED_TEST(SymDifferenceTest, PointLinestring) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0.1, 0.1};
-  typename TypeParam::Linestring ls = simple_ls<TypeParam>();
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0.1, 0.1};
+  typename TypeParam::Linestring const ls = simple_ls<TypeParam>();
   typename TypeParam::Geometrycollection result{};
 
   this->test_valid_input(pt1, ls, ls);
@@ -254,9 +254,9 @@ TYPED_TEST(SymDifferenceTest, PointLinestring) {
 }
 
 TYPED_TEST(SymDifferenceTest, PointPolygon) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
-  typename TypeParam::Polygon py = base_py<TypeParam>();
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
   typename TypeParam::Geometrycollection result{};
 
   this->test_valid_input(pt1, py, py);
@@ -267,12 +267,12 @@ TYPED_TEST(SymDifferenceTest, PointPolygon) {
 }
 
 TYPED_TEST(SymDifferenceTest, PointMultiPoint) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0, 0.1};
-  typename TypeParam::Point pt3{0.1, 0.1};
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0, 0.1};
+  typename TypeParam::Point const pt3{0.1, 0.1};
   typename TypeParam::Multipoint mpt{};
   typename TypeParam::Multipoint expected_result{};
-  typename TypeParam::Geometrycollection empty_result{};
+  typename TypeParam::Geometrycollection const empty_result{};
 
   // intersect
   mpt.push_back(pt1);
@@ -305,11 +305,11 @@ TYPED_TEST(SymDifferenceTest, PointMultiPoint) {
 }
 
 TYPED_TEST(SymDifferenceTest, PointMultiLinestring) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0.1, 0.1};
-  typename TypeParam::Point pt3{0.05, 0.05};
-  typename TypeParam::Linestring ls1 = simple_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = simple_ls_2<TypeParam>();
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0.1, 0.1};
+  typename TypeParam::Point const pt3{0.05, 0.05};
+  typename TypeParam::Linestring const ls1 = simple_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = simple_ls_2<TypeParam>();
   typename TypeParam::Multilinestring mls;
   mls.push_back(ls1);
   mls.push_back(ls2);
@@ -324,10 +324,10 @@ TYPED_TEST(SymDifferenceTest, PointMultiLinestring) {
 }
 
 TYPED_TEST(SymDifferenceTest, PointMultiPolygon) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
-  typename TypeParam::Polygon py = base_py<TypeParam>();
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection result{};
 
   this->test_valid_input(pt1, mpy, py);
@@ -338,14 +338,14 @@ TYPED_TEST(SymDifferenceTest, PointMultiPolygon) {
 }
 
 TYPED_TEST(SymDifferenceTest, PointGeometryCollection) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
-  typename TypeParam::Point pt3{0.2, 0.0};
-  typename TypeParam::Point pt4{0.2, 0.1};
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
+  typename TypeParam::Point const pt3{0.2, 0.0};
+  typename TypeParam::Point const pt4{0.2, 0.1};
   typename TypeParam::Linestring ls1;
   ls1.push_back(pt3);
   ls1.push_back(pt4);
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection gc{};
 
   this->test_valid_input(pt1, gc, pt1);
@@ -371,12 +371,12 @@ TYPED_TEST(SymDifferenceTest, PointGeometryCollection) {
 // symdifference(... , linestring, *, ...)
 
 TYPED_TEST(SymDifferenceTest, LinestringLinestring) {
-  typename TypeParam::Linestring ls1 = simple_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = offset_simple_ls<TypeParam>();
-  typename TypeParam::Point pt1{0.0, 0.0};
-  typename TypeParam::Point pt2{0.05, 0.0};
-  typename TypeParam::Point pt3{0.1, 0.0};
-  typename TypeParam::Point pt4{0.15, 0.0};
+  typename TypeParam::Linestring const ls1 = simple_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = offset_simple_ls<TypeParam>();
+  typename TypeParam::Point const pt1{0.0, 0.0};
+  typename TypeParam::Point const pt2{0.05, 0.0};
+  typename TypeParam::Point const pt3{0.1, 0.0};
+  typename TypeParam::Point const pt4{0.15, 0.0};
   typename TypeParam::Linestring ls1_result;
   ls1_result.push_back(pt1);
   ls1_result.push_back(pt2);
@@ -387,7 +387,7 @@ TYPED_TEST(SymDifferenceTest, LinestringLinestring) {
   mls_result.push_back(ls1_result);
   mls_result.push_back(ls2_result);
 
-  typename TypeParam::Geometrycollection empty_result{};
+  typename TypeParam::Geometrycollection const empty_result{};
 
   this->test_valid_input(ls1, ls1, empty_result);
   this->test_valid_input(ls1, ls2, mls_result);
@@ -397,10 +397,10 @@ TYPED_TEST(SymDifferenceTest, LinestringPolygon) {
   // TODO: needs intersection point for geographic CS
   // for a robust test
   // typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt1{0.1, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.05};
+  typename TypeParam::Point const pt1{0.1, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.05};
   ;
-  typename TypeParam::Point pt3{0.15, 0.05};
+  typename TypeParam::Point const pt3{0.15, 0.05};
 
   typename TypeParam::Linestring ls;
   ls.push_back(pt1);
@@ -408,7 +408,7 @@ TYPED_TEST(SymDifferenceTest, LinestringPolygon) {
   typename TypeParam::Linestring ls_result;
   ls_result.push_back(pt2);
   ls_result.push_back(pt3);
-  typename TypeParam::Polygon py = base_py<TypeParam>();
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
 
   typename TypeParam::Geometrycollection result{};
   result.push_back(py);
@@ -418,10 +418,10 @@ TYPED_TEST(SymDifferenceTest, LinestringPolygon) {
 }
 
 TYPED_TEST(SymDifferenceTest, LinestringMultiPoint) {
-  typename TypeParam::Linestring ls = simple_ls<TypeParam>();
-  typename TypeParam::Point pt1{0.0, 0.0};
-  typename TypeParam::Point pt2{0.05, 0.0};
-  typename TypeParam::Point pt3{0.15, 0.05};
+  typename TypeParam::Linestring const ls = simple_ls<TypeParam>();
+  typename TypeParam::Point const pt1{0.0, 0.0};
+  typename TypeParam::Point const pt2{0.05, 0.0};
+  typename TypeParam::Point const pt3{0.15, 0.05};
   typename TypeParam::Multipoint mp;
   mp.push_back(pt1);
   mp.push_back(pt2);
@@ -435,12 +435,12 @@ TYPED_TEST(SymDifferenceTest, LinestringMultiPoint) {
 }
 
 TYPED_TEST(SymDifferenceTest, LinestringMultiLinestring) {
-  typename TypeParam::Linestring ls1 = simple_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = offset_simple_ls<TypeParam>();
-  typename TypeParam::Point pt1{0.0, 0.0};
-  typename TypeParam::Point pt2{0.05, 0.0};
-  typename TypeParam::Point pt3{0.1, 0.0};
-  typename TypeParam::Point pt4{0.15, 0.0};
+  typename TypeParam::Linestring const ls1 = simple_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = offset_simple_ls<TypeParam>();
+  typename TypeParam::Point const pt1{0.0, 0.0};
+  typename TypeParam::Point const pt2{0.05, 0.0};
+  typename TypeParam::Point const pt3{0.1, 0.0};
+  typename TypeParam::Point const pt4{0.15, 0.0};
   typename TypeParam::Linestring ls1_result;
   ls1_result.push_back(pt1);
   ls1_result.push_back(pt2);
@@ -461,16 +461,16 @@ TYPED_TEST(SymDifferenceTest, LinestringMultiPolygon) {
   // TODO: needs intersection point for geographic CS
   // for a robust test
   // typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt1{0.1, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.05};
-  typename TypeParam::Point pt3{0.15, 0.05};
+  typename TypeParam::Point const pt1{0.1, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.05};
+  typename TypeParam::Point const pt3{0.15, 0.05};
   typename TypeParam::Linestring ls;
   ls.push_back(pt1);
   ls.push_back(pt3);
   typename TypeParam::Linestring ls_result;
   ls_result.push_back(pt2);
   ls_result.push_back(pt3);
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
 
   typename TypeParam::Geometrycollection result{};
   result.push_back(mpy);
@@ -480,14 +480,14 @@ TYPED_TEST(SymDifferenceTest, LinestringMultiPolygon) {
 }
 
 TYPED_TEST(SymDifferenceTest, LinestringGeometryCollection) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
-  typename TypeParam::Point pt3{0.2, 0.0};
-  typename TypeParam::Point pt4{0.2, 0.1};
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
+  typename TypeParam::Point const pt3{0.2, 0.0};
+  typename TypeParam::Point const pt4{0.2, 0.1};
   typename TypeParam::Linestring ls1;
   ls1.push_back(pt3);
   ls1.push_back(pt4);
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection gc{};
   this->test_valid_input(ls1, gc, ls1);
   gc.push_back(pt1);
@@ -498,14 +498,14 @@ TYPED_TEST(SymDifferenceTest, LinestringGeometryCollection) {
 
   typename TypeParam::Linestring ls_intersect_py;
   ls_intersect_py.push_back(pt2);
-  typename TypeParam::Point pt5{0.1, 0.0};
+  typename TypeParam::Point const pt5{0.1, 0.0};
   ls_intersect_py.push_back(pt5);
   typename TypeParam::Geometrycollection result{};
   result.push_back(mpy);
   result.push_back(ls1);
   typename TypeParam::Linestring ls_result;
   ls_result.push_back(pt2);
-  typename TypeParam::Point pt6{0.1, 0.1};
+  typename TypeParam::Point const pt6{0.1, 0.1};
   ls_result.push_back(pt6);
   result.push_back(ls_result);
   this->test_valid_input(ls_intersect_py, gc, result);
@@ -534,12 +534,12 @@ TYPED_TEST(SymDifferenceTest, LinestringGeometryCollection) {
 // symdifference(... , polygon, *, ...)
 
 TYPED_TEST(SymDifferenceTest, PolygonPolygon) {
-  typename TypeParam::Point pt1{0.0, 0.0};
-  typename TypeParam::Point pt2{0.1, 0.0};
-  typename TypeParam::Point pt3{0.0, 0.1};
-  typename TypeParam::Point pt4{0.1, 0.1};
-  typename TypeParam::Point pt5{0.1, 0.2};
-  typename TypeParam::Polygon py1 = base_py<TypeParam>();
+  typename TypeParam::Point const pt1{0.0, 0.0};
+  typename TypeParam::Point const pt2{0.1, 0.0};
+  typename TypeParam::Point const pt3{0.0, 0.1};
+  typename TypeParam::Point const pt4{0.1, 0.1};
+  typename TypeParam::Point const pt5{0.1, 0.2};
+  typename TypeParam::Polygon const py1 = base_py<TypeParam>();
   typename TypeParam::Polygon py2;
   typename TypeParam::Linearring exterior2;
   exterior2.push_back(pt2);
@@ -565,19 +565,19 @@ TYPED_TEST(SymDifferenceTest, PolygonPolygon) {
   exterior2r.push_back(pt3);
   py2_result.push_back(exterior2r);
   mpy_result.push_back(py2_result);
-  typename TypeParam::Geometrycollection empty_result{};
+  typename TypeParam::Geometrycollection const empty_result{};
 
   this->test_valid_input(py1, py1, empty_result);
   this->test_valid_input(py1, py2, mpy_result);
 }
 
 TYPED_TEST(SymDifferenceTest, PolygonMultiPoint) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
   typename TypeParam::Multipoint mp;
   mp.push_back(pt1);
   mp.push_back(pt2);
-  typename TypeParam::Polygon py = base_py<TypeParam>();
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
   typename TypeParam::Geometrycollection result{};
   result.push_back(pt2);
   result.push_back(py);
@@ -589,15 +589,15 @@ TYPED_TEST(SymDifferenceTest, PolygonMultiLinestring) {
   // TODO: needs intersection point for geographic CS
   // for a robust test
   // typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt1{0.1, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.05};
-  typename TypeParam::Point pt3{0.15, 0.05};
+  typename TypeParam::Point const pt1{0.1, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.05};
+  typename TypeParam::Point const pt3{0.15, 0.05};
   typename TypeParam::Linestring ls;
   ls.push_back(pt1);
   ls.push_back(pt3);
   typename TypeParam::Multilinestring mls;
   mls.push_back(ls);
-  typename TypeParam::Polygon py = base_py<TypeParam>();
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
 
   typename TypeParam::Linestring ls_result;
   ls_result.push_back(pt2);
@@ -610,12 +610,12 @@ TYPED_TEST(SymDifferenceTest, PolygonMultiLinestring) {
 }
 
 TYPED_TEST(SymDifferenceTest, PolygonMultiPolygon) {
-  typename TypeParam::Point pt1{0.0, 0.0};
-  typename TypeParam::Point pt2{0.1, 0.0};
-  typename TypeParam::Point pt3{0.0, 0.1};
-  typename TypeParam::Point pt4{0.1, 0.1};
-  typename TypeParam::Point pt5{0.1, 0.2};
-  typename TypeParam::Polygon py1 = base_py<TypeParam>();
+  typename TypeParam::Point const pt1{0.0, 0.0};
+  typename TypeParam::Point const pt2{0.1, 0.0};
+  typename TypeParam::Point const pt3{0.0, 0.1};
+  typename TypeParam::Point const pt4{0.1, 0.1};
+  typename TypeParam::Point const pt5{0.1, 0.2};
+  typename TypeParam::Polygon const py1 = base_py<TypeParam>();
   typename TypeParam::Polygon py2;
   typename TypeParam::Linearring exterior2;
   exterior2.push_back(pt2);
@@ -646,21 +646,21 @@ TYPED_TEST(SymDifferenceTest, PolygonMultiPolygon) {
 
   this->test_valid_input(py1, mpy, mpy_result);
 
-  typename TypeParam::Multipolygon mpy2 = simple_mpy<TypeParam>();
-  typename TypeParam::Geometrycollection empty_result{};
+  typename TypeParam::Multipolygon const mpy2 = simple_mpy<TypeParam>();
+  typename TypeParam::Geometrycollection const empty_result{};
   this->test_valid_input(py1, mpy2, empty_result);
 }
 
 TYPED_TEST(SymDifferenceTest, PolygonGeometryCollection) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
-  typename TypeParam::Point pt3{0.2, 0.0};
-  typename TypeParam::Point pt4{0.2, 0.1};
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
+  typename TypeParam::Point const pt3{0.2, 0.0};
+  typename TypeParam::Point const pt4{0.2, 0.1};
   typename TypeParam::Linestring ls1;
   ls1.push_back(pt3);
   ls1.push_back(pt4);
   // typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
-  typename TypeParam::Polygon py = base_py<TypeParam>();
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
   typename TypeParam::Geometrycollection gc{};
   this->test_valid_input(py, gc, py);
   gc.push_back(pt3);
@@ -690,14 +690,14 @@ TYPED_TEST(SymDifferenceTest, PolygonGeometryCollection) {
 // symdifference(... , multipoint, *, ...)
 
 TYPED_TEST(SymDifferenceTest, MultiPointMultiPoint) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0, 0.1};
-  typename TypeParam::Point pt3{0.1, 0.1};
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0, 0.1};
+  typename TypeParam::Point const pt3{0.1, 0.1};
   typename TypeParam::Multipoint mpt1{};
   mpt1.push_back(pt1);
   typename TypeParam::Multipoint mpt2{};
   typename TypeParam::Multipoint expected_result{};
-  typename TypeParam::Geometrycollection empty_result{};
+  typename TypeParam::Geometrycollection const empty_result{};
 
   // intersect
   mpt2.push_back(pt1);
@@ -730,9 +730,9 @@ TYPED_TEST(SymDifferenceTest, MultiPointMultiPoint) {
 }
 
 TYPED_TEST(SymDifferenceTest, MultiPointMultiLinestring) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0.1, 0.1};
-  typename TypeParam::Point pt3{0.05, 0.05};
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0.1, 0.1};
+  typename TypeParam::Point const pt3{0.05, 0.05};
   typename TypeParam::Multipoint mpt1;
   mpt1.push_back(pt1);
   typename TypeParam::Multipoint mpt2;
@@ -742,8 +742,8 @@ TYPED_TEST(SymDifferenceTest, MultiPointMultiLinestring) {
   mpt3.push_back(pt1);
   mpt3.push_back(pt2);
   mpt3.push_back(pt3);
-  typename TypeParam::Linestring ls1 = simple_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = simple_ls_2<TypeParam>();
+  typename TypeParam::Linestring const ls1 = simple_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = simple_ls_2<TypeParam>();
   typename TypeParam::Multilinestring mls;
   mls.push_back(ls1);
   mls.push_back(ls2);
@@ -758,15 +758,15 @@ TYPED_TEST(SymDifferenceTest, MultiPointMultiLinestring) {
 }
 
 TYPED_TEST(SymDifferenceTest, MultiPointMultiPolygon) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
   typename TypeParam::Multipoint mpt1;
   mpt1.push_back(pt1);
   typename TypeParam::Multipoint mpt2;
   mpt2.push_back(pt1);
   mpt2.push_back(pt2);
-  typename TypeParam::Polygon py = base_py<TypeParam>();
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection result{};
 
   this->test_valid_input(mpt1, mpy, py);
@@ -777,16 +777,16 @@ TYPED_TEST(SymDifferenceTest, MultiPointMultiPolygon) {
 }
 
 TYPED_TEST(SymDifferenceTest, MultiPointGeometryCollection) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
-  typename TypeParam::Point pt3{0.2, 0.0};
-  typename TypeParam::Point pt4{0.2, 0.1};
-  typename TypeParam::Point pt5{0.3, 0.0};
-  typename TypeParam::Point pt6{0.3, 0.1};
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
+  typename TypeParam::Point const pt3{0.2, 0.0};
+  typename TypeParam::Point const pt4{0.2, 0.1};
+  typename TypeParam::Point const pt5{0.3, 0.0};
+  typename TypeParam::Point const pt6{0.3, 0.1};
   typename TypeParam::Linestring ls1;
   ls1.push_back(pt3);
   ls1.push_back(pt4);
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection gc{};
   gc.push_back(pt2);
   gc.push_back(pt3);
@@ -814,12 +814,12 @@ TYPED_TEST(SymDifferenceTest, MultiPointGeometryCollection) {
 // symdifference(... , multilinestring, *, ...)
 
 TYPED_TEST(SymDifferenceTest, MultiLinestringMultiLinestring) {
-  typename TypeParam::Linestring ls1 = simple_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = offset_simple_ls<TypeParam>();
-  typename TypeParam::Point pt1{0.0, 0.0};
-  typename TypeParam::Point pt2{0.05, 0.0};
-  typename TypeParam::Point pt3{0.1, 0.0};
-  typename TypeParam::Point pt4{0.15, 0.0};
+  typename TypeParam::Linestring const ls1 = simple_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = offset_simple_ls<TypeParam>();
+  typename TypeParam::Point const pt1{0.0, 0.0};
+  typename TypeParam::Point const pt2{0.05, 0.0};
+  typename TypeParam::Point const pt3{0.1, 0.0};
+  typename TypeParam::Point const pt4{0.15, 0.0};
   typename TypeParam::Multilinestring mls1;
   mls1.push_back(ls1);
   typename TypeParam::Linestring ls1_result;
@@ -842,9 +842,9 @@ TYPED_TEST(SymDifferenceTest, MultiLinestringMultiPolygon) {
   // TODO: needs intersection point for geographic CS
   // for a robust test
   // typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt1{0.1, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.05};
-  typename TypeParam::Point pt3{0.15, 0.05};
+  typename TypeParam::Point const pt1{0.1, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.05};
+  typename TypeParam::Point const pt3{0.15, 0.05};
   typename TypeParam::Linestring ls;
   ls.push_back(pt1);
   ls.push_back(pt3);
@@ -853,7 +853,7 @@ TYPED_TEST(SymDifferenceTest, MultiLinestringMultiPolygon) {
   typename TypeParam::Linestring ls_result;
   ls_result.push_back(pt2);
   ls_result.push_back(pt3);
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
 
   typename TypeParam::Geometrycollection result{};
   result.push_back(mpy);
@@ -863,14 +863,14 @@ TYPED_TEST(SymDifferenceTest, MultiLinestringMultiPolygon) {
 }
 
 TYPED_TEST(SymDifferenceTest, MultiLinestringGeometryCollection) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
-  typename TypeParam::Point pt3{0.2, 0.0};
-  typename TypeParam::Point pt4{0.2, 0.1};
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
+  typename TypeParam::Point const pt3{0.2, 0.0};
+  typename TypeParam::Point const pt4{0.2, 0.1};
   typename TypeParam::Linestring ls1;
   ls1.push_back(pt3);
   ls1.push_back(pt4);
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection gc{};
   this->test_valid_input(ls1, gc, ls1);
   gc.push_back(pt1);
@@ -883,14 +883,14 @@ TYPED_TEST(SymDifferenceTest, MultiLinestringGeometryCollection) {
 
   typename TypeParam::Linestring ls_intersect_py;
   ls_intersect_py.push_back(pt2);
-  typename TypeParam::Point pt5{0.1, 0.0};
+  typename TypeParam::Point const pt5{0.1, 0.0};
   ls_intersect_py.push_back(pt5);
   typename TypeParam::Geometrycollection result{};
   result.push_back(mpy);
   result.push_back(ls1);
   typename TypeParam::Linestring ls_result;
   ls_result.push_back(pt2);
-  typename TypeParam::Point pt6{0.1, 0.1};
+  typename TypeParam::Point const pt6{0.1, 0.1};
   ls_result.push_back(pt6);
   result.push_back(ls_result);
   mls.clear();
@@ -916,12 +916,12 @@ TYPED_TEST(SymDifferenceTest, MultiLinestringGeometryCollection) {
 // symdifference(... , multipolygon, *, ...)
 
 TYPED_TEST(SymDifferenceTest, MultiPolygonMultiPolygon) {
-  typename TypeParam::Point pt1{0.0, 0.0};
-  typename TypeParam::Point pt2{0.1, 0.0};
-  typename TypeParam::Point pt3{0.0, 0.1};
-  typename TypeParam::Point pt4{0.1, 0.1};
-  typename TypeParam::Point pt5{0.1, 0.2};
-  typename TypeParam::Multipolygon mpy1 = simple_mpy<TypeParam>();
+  typename TypeParam::Point const pt1{0.0, 0.0};
+  typename TypeParam::Point const pt2{0.1, 0.0};
+  typename TypeParam::Point const pt3{0.0, 0.1};
+  typename TypeParam::Point const pt4{0.1, 0.1};
+  typename TypeParam::Point const pt5{0.1, 0.2};
+  typename TypeParam::Multipolygon const mpy1 = simple_mpy<TypeParam>();
   typename TypeParam::Polygon py2;
   typename TypeParam::Linearring exterior2;
   exterior2.push_back(pt2);
@@ -954,15 +954,15 @@ TYPED_TEST(SymDifferenceTest, MultiPolygonMultiPolygon) {
 }
 
 TYPED_TEST(SymDifferenceTest, MultiPolygonGeometryCollection) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
-  typename TypeParam::Point pt3{0.2, 0.0};
-  typename TypeParam::Point pt4{0.2, 0.1};
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
+  typename TypeParam::Point const pt3{0.2, 0.0};
+  typename TypeParam::Point const pt4{0.2, 0.1};
   typename TypeParam::Linestring ls1;
   ls1.push_back(pt3);
   ls1.push_back(pt4);
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
-  typename TypeParam::Polygon py = base_py<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
   typename TypeParam::Geometrycollection gc{};
 
   this->test_valid_input(mpy, gc, py);
@@ -994,16 +994,16 @@ TYPED_TEST(SymDifferenceTest, MultiPolygonGeometryCollection) {
 // symdifference(... , geometrycollection, geometrycollection, ...)
 
 TYPED_TEST(SymDifferenceTest, GeometryCollectionGeometryCollection) {
-  typename TypeParam::Point pt1{0.05, 0.05};
-  typename TypeParam::Point pt2{0.1, 0.2};
-  typename TypeParam::Point pt3{0.2, 0.0};
-  typename TypeParam::Point pt4{0.2, 0.1};
+  typename TypeParam::Point const pt1{0.05, 0.05};
+  typename TypeParam::Point const pt2{0.1, 0.2};
+  typename TypeParam::Point const pt3{0.2, 0.0};
+  typename TypeParam::Point const pt4{0.2, 0.1};
   typename TypeParam::Linestring ls1;
   ls1.push_back(pt3);
   ls1.push_back(pt4);
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
-  typename TypeParam::Polygon py = base_py<TypeParam>();
-  typename TypeParam::Geometrycollection emptygc{};
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
+  typename TypeParam::Geometrycollection const emptygc{};
   typename TypeParam::Geometrycollection gc{};
   typename TypeParam::Geometrycollection gc_py{};
   gc_py.push_back(mpy);

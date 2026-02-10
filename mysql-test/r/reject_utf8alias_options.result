@@ -1,0 +1,17 @@
+# stop server
+# Server is down
+# reject utf8
+Pattern "Character set 'utf8' rejected as command line option" found
+# reject UTF8
+Pattern "Character set 'utf8' rejected as command line option" found
+# reject utf8_bin
+Pattern "Collation 'utf8_bin' rejected as command line option" found
+# reject UTF8_BIN
+Pattern "Collation 'UTF8_BIN' rejected as command line option" found
+# reject utf8 for --character-set-filesystem
+Pattern "Character set 'utf8' rejected as command line option" found
+# Log an error for unknown character set
+Pattern "Unknown character set: 'utf8nosuchname'" found
+# Log an error for unknown character set
+Pattern "Unknown character set: 'utf8nosuchname'" found
+# Restarting the server

@@ -1,0 +1,101 @@
+# Verify the $between" filtering functionality.
+#
+# The test valid/non-valid parameters passes to "$between" operator and
+# verifies the response. 
+#
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/paging_schema.sql
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify the error message when "\$between" operator has:
+--echo #
+--echo # 1. Non-array value
+--echo # 2. Empty array value
+--echo # 3. Array value with single element
+--echo # 3. Array value with three elements
+--echo #
+--echo ## II. Verify the returned object for valid "\$between" operator:
+--echo #
+--echo # 1. Basic expression, "id" field has values between 1,10
+--echo # 2. Complex expression, "id" field has values between 1,2 or
+--echo #    "comment" column is set to "ome string"
+--echo #
+--echo
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=paging_schema
+--let $mrs_add_schema_path=/test_between
+--let $mrs_add_schema_items_on_page=NULL
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=long101
+--let $mrs_add_db_object_path=/table
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+# Sync with newly created REST object
+# wait for the creation
+exec $MRS_CLIENT_ARGS
+  --path /svc/test_between/table
+  --wait-until-status 60
+  --exclude-json-pointer '*'
+  --display none;
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/test_between/table?q={"id":{"\\\$between":{}}}'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_arg_path='/svc/test_between/table?q={"id":{"\\\$between":[]}}'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.3
+--let $mrs_client_arg_path='/svc/test_between/table?q={"id":{"\\\$between":[1]}}'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.4
+--let $mrs_client_arg_path='/svc/test_between/table?q={"id":{"\\\$between":[1,2,3]}}'
+--let $mrs_client_arg_expected_status='BadRequest'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.1
+--let $mrs_client_arg_path='/svc/test_between/table?q={"id":{"\\\$between":[1,10]}}'
+--let $mrs_client_arg_json_pointer='/limit,/offset,/count,/hasMore,/items/*/id,/items/*/comment'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.2
+--let $mrs_client_arg_path='/svc/test_between/table?q={"\\\$or":[{"id":{"\\\$between":[1,2]}},{"comment":"ome string"}]}'
+--let $mrs_client_arg_json_pointer='/limit,/offset,/count,/hasMore,/items/*/id,/items/*/comment'
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

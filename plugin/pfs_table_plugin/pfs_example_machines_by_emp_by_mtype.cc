@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,7 @@ PFS_engine_table_share_proxy m_by_emp_by_mtype_st_share;
  * in performance schema is opened.
  */
 PSI_table_handle *m_by_emp_by_mtype_open_table(PSI_pos **pos) {
-  M_by_emp_by_mtype_Table_Handle *temp = new M_by_emp_by_mtype_Table_Handle();
+  auto *temp = new M_by_emp_by_mtype_Table_Handle();
   *pos = (PSI_pos *)(&temp->m_pos);
   return (PSI_table_handle *)temp;
 }
@@ -40,8 +40,7 @@ PSI_table_handle *m_by_emp_by_mtype_open_table(PSI_pos **pos) {
  * in performance schema is closed.
  */
 void m_by_emp_by_mtype_close_table(PSI_table_handle *handle) {
-  M_by_emp_by_mtype_Table_Handle *temp =
-      (M_by_emp_by_mtype_Table_Handle *)handle;
+  auto *temp = (M_by_emp_by_mtype_Table_Handle *)handle;
   delete temp;
 }
 
@@ -73,7 +72,7 @@ static void make_record(M_by_emp_by_mtype_record *record,
 
 /* Define implementation of PFS_engine_table_proxy. */
 int m_by_emp_by_mtype_rnd_next(PSI_table_handle *handle) {
-  M_by_emp_by_mtype_Table_Handle *h = (M_by_emp_by_mtype_Table_Handle *)handle;
+  auto *h = (M_by_emp_by_mtype_Table_Handle *)handle;
   enum machine_type_enum machine_type;
 
   /* Loop for employees */
@@ -89,8 +88,7 @@ int m_by_emp_by_mtype_rnd_next(PSI_table_handle *handle) {
         /* Reset the record */
         reset_record(&h->current_row);
 
-        std::vector<Machine_Record>::iterator it =
-            machine_records_vector.begin();
+        auto it = machine_records_vector.begin();
         while (it != machine_records_vector.end()) {
           Machine_Record *m_record = &(*it);
           if (m_record->employee_number.val == e_record->e_number.val &&
@@ -122,7 +120,7 @@ int m_by_emp_by_mtype_rnd_init(PSI_table_handle *h [[maybe_unused]],
 
 /* Set position of a cursor on a specific index */
 int m_by_emp_by_mtype_rnd_pos(PSI_table_handle *handle) {
-  M_by_emp_by_mtype_Table_Handle *h = (M_by_emp_by_mtype_Table_Handle *)handle;
+  auto *h = (M_by_emp_by_mtype_Table_Handle *)handle;
   Ename_Record *e_record = &ename_records_array[h->m_pos.m_index_1];
   Machine_Record *m_record = &machine_records_vector[h->m_pos.m_index_2];
 
@@ -159,16 +157,15 @@ int m_by_emp_by_mtype_index_next(PSI_table_handle *handle [[maybe_unused]]) {
 
 /* Reset cursor position */
 void m_by_emp_by_mtype_reset_position(PSI_table_handle *handle) {
-  M_by_emp_by_mtype_Table_Handle *h = (M_by_emp_by_mtype_Table_Handle *)handle;
+  auto *h = (M_by_emp_by_mtype_Table_Handle *)handle;
   h->m_pos.reset();
   h->m_next_pos.reset();
-  return;
 }
 
 /* Read current row from the current_row and display them in the table */
 int m_by_emp_by_mtype_read_column_value(PSI_table_handle *handle,
                                         PSI_field *field, uint index) {
-  M_by_emp_by_mtype_Table_Handle *h = (M_by_emp_by_mtype_Table_Handle *)handle;
+  auto *h = (M_by_emp_by_mtype_Table_Handle *)handle;
 
   switch (index) {
     case 0: /* FIRST_NAME */
@@ -193,7 +190,7 @@ int m_by_emp_by_mtype_read_column_value(PSI_table_handle *handle,
   return 0;
 }
 
-unsigned long long m_by_emp_by_mtype_get_row_count(void) { return 0; }
+unsigned long long m_by_emp_by_mtype_get_row_count() { return 0; }
 
 void init_m_by_emp_by_mtype_share(PFS_engine_table_share_proxy *share) {
   share->m_table_name = "pfs_example_machine_by_employee_by_type";

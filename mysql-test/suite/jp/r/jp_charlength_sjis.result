@@ -79,28 +79,28 @@ SELECT `ÇbÇP`, CHAR_LENGTH(`ÇbÇP`) FROM `ÇsÇU`;
 É\è\ï\ó\ç\	5
 SELECT `ÇbÇP`, CHAR_LENGTH(`ÇbÇP`) FROM `ÇsÇV`;
 ÇbÇP	CHAR_LENGTH(`ÇbÇP`)
-±≤≥¥µ	5
-±≤≥¥	4
-±≤≥	3
-±≤	2
-±	1
 	0
+±	1
+±≤	2
+±≤≥	3
+±≤≥¥	4
+±≤≥¥µ	5
 SELECT `ÇbÇP`, CHAR_LENGTH(`ÇbÇP`) FROM `ÇsÇW`;
 ÇbÇP	CHAR_LENGTH(`ÇbÇP`)
-Ç†Ç¢Ç§Ç¶Ç®	5
-Ç†Ç¢Ç§Ç¶	4
-Ç†Ç¢Ç§	3
-Ç†Ç¢	2
-Ç†	1
 	0
+Ç†	1
+Ç†Ç¢	2
+Ç†Ç¢Ç§	3
+Ç†Ç¢Ç§Ç¶	4
+Ç†Ç¢Ç§Ç¶Ç®	5
 SELECT `ÇbÇP`, CHAR_LENGTH(`ÇbÇP`) FROM `ÇsÇX`;
 ÇbÇP	CHAR_LENGTH(`ÇbÇP`)
-É\è\ï\ó\ç\	5
-É\è\ï\ó\	4
-É\è\ï\	3
-É\è\	2
-É\	1
 	0
+É\	1
+É\è\	2
+É\è\ï\	3
+É\è\ï\ó\	4
+É\è\ï\ó\ç\	5
 DROP TABLE `ÇsÇP`;
 DROP TABLE `ÇsÇQ`;
 DROP TABLE `ÇsÇR`;

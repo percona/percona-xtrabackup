@@ -1,0 +1,88 @@
+--echo ##
+--echo ## Miscellaneous test cases for performance_schema.processlist
+--echo ##
+--echo ## Test cases:
+--echo ##   1. Verify naming of foreground system threads.
+--echo ##
+--echo
+--echo ##
+--echo ## Test Case 1: Verify naming of foreground system threads.
+--echo ##
+--echo ## Foreground system threads should be named 'system user' except for
+--echo ## singleton threads such as 'event_scheduler'.
+--echo ##
+--echo ## Reference: Bug#36895513 "Wrong result in P_S.processlist on replica node"
+--echo ## NOTE: Results must be manually verified.
+--echo ##
+
+--source include/no_protocol.inc
+--echo
+--echo # Configure two servers to be source and replica.
+--source include/rpl/init_source_replica.inc
+--echo
+--echo # Wait until the replica SQL thread has been synced and all events have been copied over to the replica.
+--source include/rpl/sync_to_replica.inc
+
+--echo
+--echo # Stop replica.
+--source include/rpl/stop_replica.inc
+--echo
+--echo # Start replica.
+--source include/rpl/start_replica.inc
+
+--echo
+--echo # Verify processlist user name is 'system_user'.
+--echo
+--let $user1_count = `select count(*) from performance_schema.processlist where user = 'system user'`
+
+--echo
+--echo # Create user 'test_processlist' then restart the replica and verify that
+--echo # the processlist user name for the replica threads is 'system user'.
+--echo
+CREATE USER 'test_processlist'@'localhost';
+GRANT ALL ON *.* TO 'test_processlist'@'localhost';
+
+--echo
+--echo # Stop replica.
+--source include/rpl/stop_replica.inc
+--echo
+--echo # Connect as 'test_processlist'.
+--connect(processlist_slave, localhost, test_processlist,,, $SLAVE_MYPORT,$SLAVE_MYSOCK)
+--echo
+--echo # Start replica as user 'test_processlist'.
+--source include/rpl/start_replica.inc
+
+--echo
+--echo # Verify processlist user name is 'system_user' for the replica threads.
+--echo
+--let $user2_count = `select count(*) from performance_schema.processlist where user = 'system user'`
+
+--echo
+--echo # Compare the count of 'system user' threads. The number of threads may vary, so we compare
+--echo # the counts rather than list rows in the table.
+
+if ($user1_count == 1)
+{
+  --echo "FAIL: At least one 'system user' required"
+  --assert(0)
+}
+
+if ($user1_count == $user2_count)
+{
+  --echo "SUCCESS: User1 count == User2 count"
+}
+
+if ($user1_count != $user2_count)
+{
+  --echo "FAIL: User1 count <> User2 count"
+  --echo user1_count == $user1_count
+  --echo user2_count == $user2_count
+  --assert(0)
+}
+
+--echo
+--echo # Clean up.
+--echo
+DROP USER 'test_processlist'@'localhost';
+
+--source include/rpl/deinit.inc

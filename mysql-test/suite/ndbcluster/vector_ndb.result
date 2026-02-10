@@ -1,0 +1,202 @@
+SET session default_storage_engine='ndbcluster';
+set @@group_concat_max_len=262128;
+CREATE TABLE rand (pk int auto_increment primary key, val float) ENGINE=MEMORY;
+INSERT INTO rand() VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
+INSERT INTO rand(pk) SELECT NULL FROM rand r1, rand r2, rand r3, rand r4, rand r5 limit 16368;
+UPDATE rand SET val = RAND(17);
+SELECT CONCAT("[",GROUP_CONCAT(val),"]") FROM rand WHERE pk <= 2048 ORDER BY pk INTO @vec2048str;
+SELECT TO_VECTOR(@vec2048str) INTO @vec2048;
+SELECT HEX(@vec2048) INTO @vec2048hex;
+select TO_VECTOR(VECTOR_TO_STRING(UNHEX(@vec2048hex)))=TO_VECTOR(@vec2048str);
+TO_VECTOR(VECTOR_TO_STRING(UNHEX(@vec2048hex)))=TO_VECTOR(@vec2048str)
+1
+SELECT CONCAT("[",GROUP_CONCAT(val),"]") FROM rand WHERE pk <= 2049 ORDER BY pk INTO @vec2049str;
+SELECT TO_VECTOR(@vec2049str) INTO @vec2049;
+SELECT HEX(@vec2049) INTO @vec2049hex;
+select VECTOR_DIM(@vec2049), TO_VECTOR(VECTOR_TO_STRING(UNHEX(@vec2049hex)))=TO_VECTOR(@vec2049str);
+VECTOR_DIM(@vec2049)	TO_VECTOR(VECTOR_TO_STRING(UNHEX(@vec2049hex)))=TO_VECTOR(@vec2049str)
+2049	1
+SELECT CONCAT("[",GROUP_CONCAT(val),"]") FROM rand WHERE pk <= 7498 ORDER BY pk INTO @vec7498str;
+SELECT TO_VECTOR(@vec7498str) INTO @vec7498;
+SELECT HEX(@vec7498) INTO @vec7498hex;
+select TO_VECTOR(VECTOR_TO_STRING(UNHEX(@vec7498hex)))=TO_VECTOR(@vec7498str);
+TO_VECTOR(VECTOR_TO_STRING(UNHEX(@vec7498hex)))=TO_VECTOR(@vec7498str)
+1
+SELECT CONCAT("[",GROUP_CONCAT(val),"]") FROM rand WHERE pk <= 7504 ORDER BY pk INTO @vec7504str;
+SELECT CONCAT(@vec7498hex,"abc") INTO @BAD_vec7498hex;
+SELECT LENGTH(TO_VECTOR(VECTOR_TO_STRING(UNHEX(@BAD_vec7498_hex))))/4;
+LENGTH(TO_VECTOR(VECTOR_TO_STRING(UNHEX(@BAD_vec7498_hex))))/4
+NULL
+CREATE TABLE tb (pk INT, embedding VECTOR(7498), PRIMARY KEY (pk));
+INSERT INTO tb VALUES (0, UNHEX(@vec7498hex));
+INSERT INTO tb VALUES (1, @vec7498);
+INSERT INTO tb VALUES (2, TO_VECTOR(@vec7498str));
+INSERT INTO tb VALUES (3, TO_VECTOR("[0]"));
+INSERT INTO tb VALUES (4, NULL);
+SELECT pk,VECTOR_DIM(embedding) FROM tb ORDER BY pk;
+pk	VECTOR_DIM(embedding)
+0	7498
+1	7498
+2	7498
+3	1
+4	NULL
+CREATE index idx1 on tb (embedding);
+ERROR HY000: Non-scalar (e.g., vector) column 'embedding' cannot be used as key.
+ANALYZE TABLE tb UPDATE HISTOGRAM ON embedding WITH 10 BUCKETS;
+Table	Op	Msg_type	Msg_text
+test.tb	histogram	Error	The column 'embedding' has an unsupported data type.
+CREATE TABLE te (
+pk INT,
+dot FLOAT,
+cosine FLOAT,
+euclidian FLOAT,
+embedding VECTOR(913), primary key (embedding));
+ERROR HY000: Non-scalar (e.g., vector) column 'embedding' cannot be used as key.
+CREATE TABLE te (
+pk INT,
+dot FLOAT,
+cosine FLOAT,
+euclidian FLOAT,
+embedding VECTOR(913), foreign key (embedding) references td(embedding2));
+ERROR HY000: Non-scalar (e.g., vector) column 'embedding' cannot be used as key.
+CREATE TABLE te (
+pk INT,
+dot FLOAT,
+cosine FLOAT,
+euclidian FLOAT,
+embedding VECTOR(913), unique (embedding));
+ERROR HY000: Non-scalar (e.g., vector) column 'embedding' cannot be used as key.
+CREATE TABLE te (
+pk INT,
+dot FLOAT,
+cosine FLOAT,
+euclidian FLOAT,
+embedding VECTOR(913))
+PARTITION BY KEY(embedding);
+ERROR HY000: Field 'embedding' is of a not allowed type for this type of partitioning
+CREATE TABLE te (
+pk INT PRIMARY KEY,
+dot FLOAT,
+cosine FLOAT,
+euclidian FLOAT,
+embedding VECTOR(913))
+PARTITION BY KEY(pk);
+DROP TABLE te;
+CREATE TABLE t1(pv VECTOR(16));
+CREATE TABLE t2(fv VECTOR(16), FOREIGN KEY(fv) REFERENCES t1(pv));
+ERROR HY000: Non-scalar (e.g., vector) column 'fv' cannot be used as key.
+DROP TABLE t1;
+CREATE TABLE t1(v VECTOR(4), g INT AS (CHARACTER_LENGTH(v)));
+ERROR HY000: Incorrect type for argument v in function GENERATED COLUMN.
+CREATE TABLE t1(v VECTOR(4), g VECTOR(4) AS (TRIM(v)));
+ERROR HY000: Incorrect arguments to trim
+CREATE TABLE t1(s VARCHAR(16), v VECTOR(4), g VARCHAR(4) AS (TRIM(s)));
+CREATE TABLE t2(s VARCHAR(16), v VECTOR(4), g INT AS (CHARACTER_LENGTH(s)));
+DROP TABLE t1,t2;
+CREATE TABLE te (
+pk INT,
+embedding VECTOR,
+PRIMARY KEY (pk));
+INSERT INTO te VALUES (0, @vec2048);
+INSERT INTO te VALUES (1, UNHEX("aabbccdd"));
+INSERT INTO te VALUES (2, UNHEX("aabbccddaabbccdd"));
+INSERT INTO te VALUES (3, UNHEX("aabbcc"));
+ERROR HY000: Value of type 'string, size: 3' cannot be converted to 'vector' type.
+INSERT INTO te VALUES (4, NULL);
+INSERT INTO te VALUES (5, STRING_TO_VECTOR("[1.0, 2.0, 3.0, 4.0]"));
+INSERT INTO te VALUES (6, STRING_TO_VECTOR("1.0, 2.0, 3.0, 4.0]"));
+ERROR HY000: Data cannot be converted to a valid vector: '1.0, 2.0, 3.0, 4.0]'
+INSERT INTO te VALUES (7, STRING_TO_VECTOR("[1.0, 2.0, 3.0, 4.0"));
+ERROR HY000: Data cannot be converted to a valid vector: '[1.0, 2.0, 3.0, 4.0'
+INSERT INTO te VALUES (8, STRING_TO_VECTOR("[0.09325757622718811,0.47203192114830017,0.2149995118379593,0.15873074531555176,0.3946884870529175,0.6095508933067322,0.47906357049942017,0.8818478584289551,0.5930375456809998,0.24433256685733795,0.7862468361854553,0.49305471777915955,0.6000685691833496,0.635245680809021,0.2742052674293518,0.28572896122932434,0.7769875526428223,0.12383940815925598,0.2158813178539276,0.2254047691822052,0.3614078164100647,0.0070394473150372505,0.34949997067451477,0.7155659198760986,0.7117890119552612,0.00551528250798583,0.7022314667701721,0.3456616997718811,0.8644159436225891,0.5346803069114685,0.8690487146377563,0.7630007863044739]"));
+INSERT INTO te VALUES (9, STRING_TO_VECTOR("[0.125,0.591,0.038,0.798,0.167,0.558,0.664,0.904,0.080,0.154,0.938,0.071,0.319,0.474,0.194,0.995,0.290,0.306,0.848,0.176,0.604,0.888,0.690,0.278,0.153,0.364,0.725,0.713,0.212,0.035,0.246,0.885]"));
+INSERT INTO te VALUES (10, STRING_TO_VECTOR("[0.533,0.443,0.254,0.718]"));
+INSERT INTO te VALUES (11, STRING_TO_VECTOR(@vec2048str));
+ALTER TABLE te algorithm=inplace, change embedding embedding VECTOR(2000);
+ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Altering field definition is not supported. Try ALGORITHM=COPY.
+ALTER TABLE te change embedding embedding VECTOR(2049);
+INSERT INTO te VALUES (12, STRING_TO_VECTOR(@vec2049str));
+DELETE FROM te WHERE pk = 12;
+ALTER TABLE te change embedding embedding VECTOR(2048);
+DROP TABLE tb,te;
+DROP TABLE rand;
+CREATE TABLE ta (pk INT, embedding VECTOR(7499), PRIMARY KEY (pk));
+ERROR HY000: Can't create table 'ta' (use SHOW WARNINGS for more info).
+CREATE TABLE ta (pk INT, embedding VECTOR(1), PRIMARY KEY (pk));
+INSERT INTO ta VALUES
+(0, UNHEX("8679613f")),
+(1, UNHEX("71b06a3f")),
+(2, UNHEX("95afc03e")),
+(3, UNHEX("c620123d")),
+(4, UNHEX("b8d58c3d"));
+SELECT MATCH (embedding) AGAINST ('abc') FROM ta;
+ERROR HY000: The used table type doesn't support FULLTEXT indexes
+SELECT AES_ENCRYPT(embedding, UNHEX('F3229A0B371ED2D9441B830D21A390C3')) FROM ta;
+SELECT COLLATION(embedding), CHARSET(embedding) FROM ta;
+COLLATION(embedding)	CHARSET(embedding)
+binary	binary
+binary	binary
+binary	binary
+binary	binary
+binary	binary
+DROP TABLE ta;
+CREATE TABLE t(pk INT, v VECTOR(1) DEFAULT '', PRIMARY KEY(pk));
+ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'v' can't have a default value
+CREATE TABLE t(pk INT, v VECTOR(1) DEFAULT(''), PRIMARY KEY(pk));
+INSERT INTO t(pk) VALUES (1),(2);
+ERROR HY000: Value of type 'string, size: 0' cannot be converted to 'vector' type.
+DROP TABLE if exists t;
+CREATE TABLE t(pk INT, v VECTOR(3) DEFAULT(TO_VECTOR('[1,2,3]')), PRIMARY KEY(pk));
+INSERT INTO t(pk) VALUES (1),(2);
+SELECT pk,VECTOR_TO_STRING(v) FROM t;
+pk	VECTOR_TO_STRING(v)
+1	[1.00000e+00,2.00000e+00,3.00000e+00]
+2	[1.00000e+00,2.00000e+00,3.00000e+00]
+CREATE INDEX z ON t(v);
+ERROR HY000: Non-scalar (e.g., vector) column 'v' cannot be used as key.
+CREATE INDEX z ON t((v IS NULL));
+ERROR HY000: Incorrect type for argument v in function GENERATED COLUMN.
+DROP TABLE t;
+CREATE TABLE t(pk INT, v VECTOR(1) DEFAULT(UNHEX('aabbccdd')), PRIMARY KEY(pk));
+INSERT INTO t(pk) VALUES (1),(2);
+SELECT * FROM t;
+pk	v
+1	0xAABBCCDD
+2	0xAABBCCDD
+DROP TABLE t;
+CREATE TABLE t(pk INT, v VECTOR(1) DEFAULT(UNHEX('aabbccddee')), PRIMARY KEY(pk));
+INSERT INTO t(pk) VALUES (1),(2);
+ERROR HY000: Value of type 'string, size: 5' cannot be converted to 'vector' type.
+DROP TABLE t;
+CREATE TABLE t(pk INT, v VECTOR(1) DEFAULT(UNHEX('aabbccddaabbccdd')), PRIMARY KEY(pk));
+INSERT INTO t(pk) VALUES (1),(2);
+ERROR 22001: Data too long for column 'v' at row 1
+DROP TABLE t;
+CREATE TABLE t (c1 INT, c2 VECTOR, c3 VECTOR, CHECK (c2 = c3));
+ERROR HY000: Incorrect type for argument c2 in function CHECK CONSTRAINT.
+CREATE TABLE A(
+a1 INT primary key,
+a2 DOUBLE,
+a3 DATETIME,
+a4 DECIMAL(10,5),
+a5 VARCHAR(10),
+a6 JSON,
+a7 GEOMETRY
+);
+INSERT INTO A VALUES
+(1, 2.0, '2001-02-28 08:40:16', 1.2, 'abcd', '{"k":"v"}', ST_PointFromText('POINT(1 1)'));
+SELECT TO_VECTOR(a1) FROM A;
+ERROR HY000: Incorrect arguments to to_vector
+SELECT TO_VECTOR(a2) FROM A;
+ERROR HY000: Incorrect arguments to to_vector
+SELECT TO_VECTOR(a3) FROM A;
+ERROR HY000: Data cannot be converted to a valid vector: '2001-02-28 08:40:16'
+SELECT TO_VECTOR(a4) FROM A;
+ERROR HY000: Incorrect arguments to to_vector
+SELECT TO_VECTOR(a5) FROM A;
+ERROR HY000: Data cannot be converted to a valid vector: 'abcd'
+SELECT TO_VECTOR(a6) FROM A;
+ERROR HY000: Incorrect arguments to to_vector
+SELECT TO_VECTOR(a7) FROM A;
+ERROR HY000: Incorrect arguments to to_vector
+DROP TABLE A;

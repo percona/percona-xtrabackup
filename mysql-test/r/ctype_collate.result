@@ -856,3 +856,12 @@ a	b
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
+#
+# Bug#37412963 Use cs->m_coll_name when reporting SQL errors
+#
+CREATE TABLE t1 (
+mb4_f CHAR(32) NOT NULL
+) CHARSET utf8mb4;
+SELECT mb4_f FROM t1 ORDER BY mb4_f COLLATE utf8mb3_bin;
+ERROR 42000: COLLATION 'utf8mb3_bin' is not valid for CHARACTER SET 'utf8mb4'
+DROP TABLE t1;

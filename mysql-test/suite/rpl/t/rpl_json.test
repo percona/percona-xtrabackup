@@ -271,7 +271,8 @@ INSERT INTO json_data(jcol) SELECT JSON_ARRAYAGG(pkey) FROM data_table;
 --echo # Check whether tables were created on the slave
 
 SELECT * FROM json_data;
-SELECT JSON_OBJECTAGG(t1.pkey, t2.jcol) FROM data_table AS t1, json_data AS t2;
+SELECT JSON_OBJECTAGG(t1.pkey, t2.jcol) FROM data_table AS t1, json_data AS t2
+WHERE t2.nkey = 6;
 SELECT JSON_ARRAYAGG(jcol) FROM json_data;
 
 --let $diff_tables = master:json_data, slave:json_data
@@ -677,6 +678,7 @@ SELECT * FROM json_data4;
 
 SELECT JSON_MERGE_PATCH(t1.field1, t2.field1) FROM json_data2 as t1, json_data3 as t2;
 
+--sorted_result
 SELECT JSON_MERGE_PRESERVE(t1.field1, t2.field1) FROM json_data3 as t1, json_data4 as t2;
 
 --echo [Connection Master]

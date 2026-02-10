@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,7 +52,7 @@ typedef unsigned long long synode_cnt;
 
 #define SET_EXECUTED_MSG(x) \
   do {                      \
-    IFDBG(D_NONE, FN);      \
+    XCOM_IFDBG(D_NONE, FN); \
     set_executed_msg(x);    \
   } while (0)
 

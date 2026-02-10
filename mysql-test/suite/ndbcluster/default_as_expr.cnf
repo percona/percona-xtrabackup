@@ -1,0 +1,7 @@
+!include my.cnf
+# To be able to test with big blob values add extra DataMemory and turn off
+# redo logging which otherwise may fail.
+[cluster_config.1]
+DataMemory=100M
+[mysqld]
+ndb-table-no-logging=1

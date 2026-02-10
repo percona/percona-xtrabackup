@@ -1167,3 +1167,8 @@ do (is_ipv4_mapped(bin_to_uuid(@a:=34)))
 ERROR HY000: Incorrect string value: '34' for function bin_to_uuid
 # Bug#36400256: Assertion failed: nullptr != dynamic_cast<Target>(arg)
 DO LEAST(0x00, NAME_CONST('a', _tis620 '1'));
+#
+# Bug#38550210: Assertion failed: other_type != enum_json_type::J_ERROR
+#
+DO BENCHMARK(2, (JSON_ARRAY(UTC_TIME(3)) >= PERIOD_DIFF(32105, 2924299961)));
+ERROR HY000: Incorrect arguments to period_diff

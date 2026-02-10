@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "plugin/x/src/udf/registry.h"
 
-namespace xpl {
-namespace udf {
+namespace xpl::udf {
 
 void Registry::insert(const Record_list &list) {
   Registrator r;
@@ -36,5 +35,4 @@ void Registry::drop() {
   r.unregistration(&m_function_names);
 }
 
-}  // namespace udf
-}  // namespace xpl
+}  // namespace xpl::udf

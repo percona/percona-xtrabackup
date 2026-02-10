@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -151,7 +151,7 @@ TEST_F(WkbParserTest, Invalid) {
   std::unique_ptr<gis::Geometry> g;
   // Incorrect byte_order
   //              |bo||WKB type      ||x                             ||y |
-  std::string bo(
+  std::string const bo(
       "\x03\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0\x3f\x00\x00\x00\x00\x00"
       "\x00\x00\x40",
       21);
@@ -161,7 +161,7 @@ TEST_F(WkbParserTest, Invalid) {
   // Invalid WKB type
   //                        |bo||WKB type      ||x
   //                        ||y                             |
-  std::string invalid_type(
+  std::string const invalid_type(
       "\x01\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0\x3f\x00\x00\x00\x00\x00"
       "\x00\x00\x40",
       21);
@@ -171,7 +171,7 @@ TEST_F(WkbParserTest, Invalid) {
 
   // Too short WKB type
   //                      |bo||WKB type      |
-  std::string short_type("\x01\xff\x00\x00", 4);
+  std::string const short_type("\x01\xff\x00\x00", 4);
   g = gis::parse_wkb(nullptr, m_cartesian_srs, short_type.c_str(),
                      short_type.length());
   EXPECT_FALSE(g);
@@ -182,13 +182,13 @@ TEST_F(WkbParserTest, Point) {
 
   // Little-endian POINT(1 2)
   //              |bo||WKB type      ||x                             ||y |
-  std::string le(
+  std::string const le(
       "\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0\x3f\x00\x00\x00\x00\x00"
       "\x00\x00\x40",
       21);
   // Big-endian POINT(1 2)
   //              |bo||WKB type      ||x                             ||y |
-  std::string be(
+  std::string const be(
       "\x00\x00\x00\x00\x01\x3f\xf0\x00\x00\x00\x00\x00\x00\x40\x00\x00\x00\x00"
       "\x00\x00\x00",
       21);
@@ -250,13 +250,13 @@ TEST_F(WkbParserTest, Point) {
   // One byte shorter than it should be
   //                     |bo||WKB type      ||x                             ||y
   //                     |
-  std::string too_short(
+  std::string const too_short(
       "\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0\x3f\x00\x00\x00\x00\x00"
       "\x00\x00",
       20);
   // One byte longer than WKB data
   //                    |bo||WKB type      ||x                             ||y |
-  std::string too_long(
+  std::string const too_long(
       "\x00\x00\x00\x00\x01\x3f\xf0\x00\x00\x00\x00\x00\x00\x40\x00\x00\x00\x00"
       "\x00\x00\x00\x00",
       22);
@@ -275,7 +275,7 @@ TEST_F(WkbParserTest, Linestring) {
 
   // Linestring with no points
   //                    |bo||WKB type      ||numPoints     |
-  std::string empty_ls("\x01\x02\x00\x00\x00\x00\x00\x00\x00", 9);
+  std::string const empty_ls("\x01\x02\x00\x00\x00\x00\x00\x00\x00", 9);
   g = gis::parse_wkb(nullptr, m_cartesian_srs, empty_ls.c_str(),
                      empty_ls.length());
   EXPECT_FALSE(g);
@@ -283,7 +283,7 @@ TEST_F(WkbParserTest, Linestring) {
   // Linestring with one point
   //                  |bo||WKB type      ||numPoints     ||x
   //                  ||y                             |
-  std::string one_ls(
+  std::string const one_ls(
       "\x01\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
       "\x00\x00\x00\x00\x00\x00\x00",
       25);
@@ -294,7 +294,7 @@ TEST_F(WkbParserTest, Linestring) {
   //                  |bo||WKB type      ||numPoints     ||x
   //                  ||y                             ||x
   //                  ||y                             |
-  std::string two_ls(
+  std::string const two_ls(
       "\x01\x02\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
       "\x00\x00\x00\x00\x00",
@@ -305,13 +305,13 @@ TEST_F(WkbParserTest, Linestring) {
   EXPECT_EQ(static_cast<gis::Linestring *>(g.get())->size(), 2UL);
 
   //                    |x                             ||y |
-  std::string pt_0_0(
+  std::string const pt_0_0(
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 16);
-  std::string pt_10_0(
+  std::string const pt_10_0(
       "\x00\x00\x00\x00\x00\x00\x24\x40\x00\x00\x00\x00\x00\x00\x00\x00", 16);
-  std::string pt_10_10(
+  std::string const pt_10_10(
       "\x00\x00\x00\x00\x00\x00\x24\x40\x00\x00\x00\x00\x00\x00\x24\x40", 16);
-  std::string pt_0_10(
+  std::string const pt_0_10(
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x24\x40", 16);
   //              |bo||WKB type      ||numPoints     |
   std::string ls("\x01\x02\x00\x00\x00\x04\x00\x00\x00", 9);
@@ -331,15 +331,15 @@ TEST_F(WkbParserTest, Polygon) {
 
   // Polygon with no rings
   //                    |bo||WKB type      ||numRings      |
-  std::string empty_py("\x01\x03\x00\x00\x00\x00\x00\x00\x00", 9);
+  std::string const empty_py("\x01\x03\x00\x00\x00\x00\x00\x00\x00", 9);
   g = gis::parse_wkb(nullptr, m_cartesian_srs, empty_py.c_str(),
                      empty_py.length());
   EXPECT_FALSE(g);
 
   // Polygon with exterior ring with no points
   //                   |bo||WKB type      ||numRings      ||numPoints     |
-  std::string zero_py("\x01\x03\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00",
-                      13);
+  std::string const zero_py(
+      "\x01\x03\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00", 13);
   g = gis::parse_wkb(nullptr, m_cartesian_srs, zero_py.c_str(),
                      zero_py.length());
   EXPECT_FALSE(g);
@@ -347,7 +347,7 @@ TEST_F(WkbParserTest, Polygon) {
   // Polygon with exterior ring with one point
   //                  |bo||WKB type      ||numRings      ||numPoints     ||x
   //                  ||y                             |
-  std::string one_py(
+  std::string const one_py(
       "\x01\x03\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00"
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
       29);
@@ -358,7 +358,7 @@ TEST_F(WkbParserTest, Polygon) {
   //                  |bo||WKB type      ||numRings      ||numPoints     ||x
   //                  ||y                             ||x
   //                  ||y                             |
-  std::string two_py(
+  std::string const two_py(
       "\x01\x03\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00"
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00",
@@ -371,7 +371,7 @@ TEST_F(WkbParserTest, Polygon) {
   //                    ||y                             ||x
   //                    ||y                             ||x
   //                    ||y                             |
-  std::string three_py(
+  std::string const three_py(
       "\x01\x03\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00"
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -382,13 +382,13 @@ TEST_F(WkbParserTest, Polygon) {
   EXPECT_FALSE(g);
 
   //                    |x                             ||y |
-  std::string pt_0_0(
+  std::string const pt_0_0(
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 16);
-  std::string pt_10_0(
+  std::string const pt_10_0(
       "\x00\x00\x00\x00\x00\x00\x24\x40\x00\x00\x00\x00\x00\x00\x00\x00", 16);
-  std::string pt_10_10(
+  std::string const pt_10_10(
       "\x00\x00\x00\x00\x00\x00\x24\x40\x00\x00\x00\x00\x00\x00\x24\x40", 16);
-  std::string pt_0_10(
+  std::string const pt_0_10(
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x24\x40", 16);
   std::string exterior("\x05\x00\x00\x00", 4);
   exterior.append(pt_0_0);
@@ -397,13 +397,13 @@ TEST_F(WkbParserTest, Polygon) {
   exterior.append(pt_0_10);
   exterior.append(pt_0_0);
   //                  |x                             ||y |
-  std::string pt_2_2(
+  std::string const pt_2_2(
       "\x00\x00\x00\x00\x00\x00\x00\x40\x00\x00\x00\x00\x00\x00\x00\x40", 16);
-  std::string pt_4_2(
+  std::string const pt_4_2(
       "\x00\x00\x00\x00\x00\x00\x10\x40\x00\x00\x00\x00\x00\x00\x00\x40", 16);
-  std::string pt_4_4(
+  std::string const pt_4_4(
       "\x00\x00\x00\x00\x00\x00\x10\x40\x00\x00\x00\x00\x00\x00\x10\x40", 16);
-  std::string pt_2_4(
+  std::string const pt_2_4(
       "\x00\x00\x00\x00\x00\x00\x00\x40\x00\x00\x00\x00\x00\x00\x10\x40", 16);
   //                     |numPoints     |
   std::string interior1("\x05\x00\x00\x00", 4);
@@ -413,11 +413,11 @@ TEST_F(WkbParserTest, Polygon) {
   interior1.append(pt_4_2);
   interior1.append(pt_2_2);
   //                  |x                             ||y |
-  std::string pt_6_6(
+  std::string const pt_6_6(
       "\x00\x00\x00\x00\x00\x00\x18\x40\x00\x00\x00\x00\x00\x00\x18\x40", 16);
-  std::string pt_6_8(
+  std::string const pt_6_8(
       "\x00\x00\x00\x00\x00\x00\x18\x40\x00\x00\x00\x00\x00\x00\x20\x40", 16);
-  std::string pt_8_8(
+  std::string const pt_8_8(
       "\x00\x00\x00\x00\x00\x00\x20\x40\x00\x00\x00\x00\x00\x00\x20\x40", 16);
   //                     |numPoints     |
   std::string interior2("\x04\x00\x00\x00", 4);
@@ -445,13 +445,13 @@ TEST_F(WkbParserTest, Multipoint) {
 
   // Little-endian POINT(1 2)
   //              |bo||WKB type      ||x                             ||y |
-  std::string le(
+  std::string const le(
       "\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0\x3f\x00\x00\x00\x00\x00"
       "\x00\x00\x40",
       21);
   // Big-endian POINT(1 2)
   //              |bo||WKB type      ||x                             ||y |
-  std::string be(
+  std::string const be(
       "\x00\x00\x00\x00\x01\x3f\xf0\x00\x00\x00\x00\x00\x00\x40\x00\x00\x00\x00"
       "\x00\x00\x00",
       21);
@@ -468,7 +468,7 @@ TEST_F(WkbParserTest, Multipoint) {
 
   // Multipoint with no points
   //                     |bo||WKB type      ||numPoints     |
-  std::string empty_mpt("\x01\x04\x00\x00\x00\x00\x00\x00\x00", 9);
+  std::string const empty_mpt("\x01\x04\x00\x00\x00\x00\x00\x00\x00", 9);
   g = gis::parse_wkb(nullptr, m_cartesian_srs, empty_mpt.c_str(),
                      empty_mpt.length());
   EXPECT_FALSE(g);
@@ -478,13 +478,13 @@ TEST_F(WkbParserTest, Multilinestring) {
   std::unique_ptr<gis::Geometry> g;
 
   //                    |x                             ||y |
-  std::string pt_0_0(
+  std::string const pt_0_0(
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 16);
-  std::string pt_10_0(
+  std::string const pt_10_0(
       "\x00\x00\x00\x00\x00\x00\x24\x40\x00\x00\x00\x00\x00\x00\x00\x00", 16);
-  std::string pt_10_10(
+  std::string const pt_10_10(
       "\x00\x00\x00\x00\x00\x00\x24\x40\x00\x00\x00\x00\x00\x00\x24\x40", 16);
-  std::string pt_0_10(
+  std::string const pt_0_10(
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x24\x40", 16);
   //              |bo||WKB type      ||numPoints     |
   std::string ls("\x01\x02\x00\x00\x00\x04\x00\x00\x00", 9);
@@ -504,7 +504,7 @@ TEST_F(WkbParserTest, Multilinestring) {
 
   // Multilinestrings with no linestrings
   //                     |bo||WKB type      ||numLinestrings|
-  std::string empty_mls("\x01\x05\x00\x00\x00\x00\x00\x00\x00", 9);
+  std::string const empty_mls("\x01\x05\x00\x00\x00\x00\x00\x00\x00", 9);
   g = gis::parse_wkb(nullptr, m_cartesian_srs, empty_mls.c_str(),
                      empty_mls.length());
   EXPECT_FALSE(g);
@@ -514,13 +514,13 @@ TEST_F(WkbParserTest, Multipolygon) {
   std::unique_ptr<gis::Geometry> g;
 
   //                    |x                             ||y |
-  std::string pt_0_0(
+  std::string const pt_0_0(
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 16);
-  std::string pt_10_0(
+  std::string const pt_10_0(
       "\x00\x00\x00\x00\x00\x00\x24\x40\x00\x00\x00\x00\x00\x00\x00\x00", 16);
-  std::string pt_10_10(
+  std::string const pt_10_10(
       "\x00\x00\x00\x00\x00\x00\x24\x40\x00\x00\x00\x00\x00\x00\x24\x40", 16);
-  std::string pt_0_10(
+  std::string const pt_0_10(
       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x24\x40", 16);
   std::string exterior("\x05\x00\x00\x00", 4);
   exterior.append(pt_0_0);
@@ -529,13 +529,13 @@ TEST_F(WkbParserTest, Multipolygon) {
   exterior.append(pt_0_10);
   exterior.append(pt_0_0);
   //                  |x                             ||y |
-  std::string pt_2_2(
+  std::string const pt_2_2(
       "\x00\x00\x00\x00\x00\x00\x00\x40\x00\x00\x00\x00\x00\x00\x00\x40", 16);
-  std::string pt_4_2(
+  std::string const pt_4_2(
       "\x00\x00\x00\x00\x00\x00\x10\x40\x00\x00\x00\x00\x00\x00\x00\x40", 16);
-  std::string pt_4_4(
+  std::string const pt_4_4(
       "\x00\x00\x00\x00\x00\x00\x10\x40\x00\x00\x00\x00\x00\x00\x10\x40", 16);
-  std::string pt_2_4(
+  std::string const pt_2_4(
       "\x00\x00\x00\x00\x00\x00\x00\x40\x00\x00\x00\x00\x00\x00\x10\x40", 16);
   //                     |numPoints     |
   std::string interior1("\x05\x00\x00\x00", 4);
@@ -545,11 +545,11 @@ TEST_F(WkbParserTest, Multipolygon) {
   interior1.append(pt_4_2);
   interior1.append(pt_2_2);
   //                  |x                             ||y |
-  std::string pt_6_6(
+  std::string const pt_6_6(
       "\x00\x00\x00\x00\x00\x00\x18\x40\x00\x00\x00\x00\x00\x00\x18\x40", 16);
-  std::string pt_6_8(
+  std::string const pt_6_8(
       "\x00\x00\x00\x00\x00\x00\x18\x40\x00\x00\x00\x00\x00\x00\x20\x40", 16);
-  std::string pt_8_8(
+  std::string const pt_8_8(
       "\x00\x00\x00\x00\x00\x00\x20\x40\x00\x00\x00\x00\x00\x00\x20\x40", 16);
   //                     |numPoints     |
   std::string interior2("\x04\x00\x00\x00", 4);
@@ -575,7 +575,7 @@ TEST_F(WkbParserTest, Multipolygon) {
 
   // Multipolygon with no polygons
   //                     |bo||WKB type      ||numPolygons   |
-  std::string empty_mpy("\x01\x06\x00\x00\x00\x00\x00\x00\x00", 9);
+  std::string const empty_mpy("\x01\x06\x00\x00\x00\x00\x00\x00\x00", 9);
   g = gis::parse_wkb(nullptr, m_cartesian_srs, empty_mpy.c_str(),
                      empty_mpy.length());
   EXPECT_FALSE(g);
@@ -586,13 +586,13 @@ TEST_F(WkbParserTest, Geometrycollection) {
 
   // Little-endian POINT(1 2)
   //              |bo||WKB type      ||x                             ||y |
-  std::string le(
+  std::string const le(
       "\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0\x3f\x00\x00\x00\x00\x00"
       "\x00\x00\x40",
       21);
   // Big-endian POINT(1 2)
   //              |bo||WKB type      ||x                             ||y |
-  std::string be(
+  std::string const be(
       "\x00\x00\x00\x00\x01\x3f\xf0\x00\x00\x00\x00\x00\x00\x40\x00\x00\x00\x00"
       "\x00\x00\x00",
       21);
@@ -609,7 +609,7 @@ TEST_F(WkbParserTest, Geometrycollection) {
 
   // Empty geometrycollection
   //                    |bo||WKB type      ||numGeometries |
-  std::string empty_gc("\x01\x07\x00\x00\x00\x00\x00\x00\x00", 9);
+  std::string const empty_gc("\x01\x07\x00\x00\x00\x00\x00\x00\x00", 9);
   g = gis::parse_wkb(nullptr, m_cartesian_srs, empty_gc.c_str(),
                      empty_gc.length());
   EXPECT_TRUE(g);
@@ -617,7 +617,7 @@ TEST_F(WkbParserTest, Geometrycollection) {
   // Geometry collection with empty geometrycollection
   //                      |bo||WKB type      ||numGeometries ||bo||WKB type
   //                      ||numGeometries |
-  std::string gc_empty_gc(
+  std::string const gc_empty_gc(
       "\x01\x07\x00\x00\x00\x01\x00\x00\x00\x01\x07\x00\x00\x00\x00\x00\x00"
       "\x00",
       18);

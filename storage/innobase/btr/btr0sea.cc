@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -417,8 +417,7 @@ static void btr_search_info_update_hash(btr_cur_t *cursor) {
     return;
   }
 
-  const uint16_t n_unique =
-      static_cast<uint16_t>(dict_index_get_n_unique_in_tree(index));
+  const uint16_t n_unique = dict_index_get_n_unique_in_tree(index);
   const auto info = index->search_info;
   if (info->n_hash_potential != 0) {
     const auto prefix_info = info->prefix_info.load();

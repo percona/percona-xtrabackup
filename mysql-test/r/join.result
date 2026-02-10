@@ -1600,6 +1600,7 @@ create table parent(a int primary key, b int, c int, d int) engine=innodb;
 create table eq_child(a int, b int, c int, d int, primary key(a,b)) engine=innodb;
 insert into parent values (1,1,1,1);
 insert into eq_child select * from parent;
+SET explain_json_format_version = 1;
 explain format=json select straight_join count(*) from parent
 join eq_child as c1 on c1.a = parent.b and c1.b = parent.b
 join eq_child as c2 on c2.a = parent.b and c2.b = parent.b
@@ -1770,6 +1771,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	/* select#1 */ select straight_join count(0) AS `count(*)` from `test`.`parent` join `test`.`eq_child` `c1` join `test`.`eq_child` `c2` join `test`.`eq_child` `c3` join `test`.`eq_child` `c4` where ((`test`.`c1`.`a` = `test`.`parent`.`b`) and (`test`.`c1`.`b` = `test`.`parent`.`b`) and (`test`.`c2`.`a` = `test`.`parent`.`b`) and (`test`.`c2`.`b` = `test`.`parent`.`b`) and (`test`.`c3`.`a` = `test`.`parent`.`b`) and (`test`.`c3`.`b` = `test`.`parent`.`b`) and (`test`.`c4`.`a` = `test`.`parent`.`b`) and (`test`.`c4`.`b` = `test`.`parent`.`b`))
+SET explain_json_format_version = DEFAULT;
 drop table parent, eq_child;
 #
 # Bug #29954680: BACKWARDS REF SCAN DOES NOT PERFORM LATE NULLS FILTERING
@@ -1793,10 +1795,10 @@ Table	Op	Msg_type	Msg_text
 test.t	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT t1.i AS a, (SELECT t2.i FROM t t2 WHERE t1.j = t2.j ORDER BY j DESC, i DESC LIMIT 1) AS b FROM t t1;
 EXPLAIN
--> Covering index scan on t1 using j  (cost=412 rows=4096)
+-> Covering index scan on t1 using j  (rows=4096)
 -> Select #2 (subquery in projection; dependent)
-    -> Limit: 1 row(s)  (cost=411 rows=1)
-        -> Covering index lookup on t2 using j (j = t1.j) (reverse)  (cost=411 rows=4096)
+    -> Limit: 1 row(s)  (rows=1)
+        -> Covering index lookup on t2 using j (j = t1.j) (reverse)  (rows=4096)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.j' of SELECT #2 was resolved in SELECT #1
@@ -2791,13 +2793,13 @@ CREATE TABLE t1 (k INT, KEY(k)) ENGINE=MyISAM;
 INSERT INTO t1 VALUES (1);
 SELECT ra1.k
 FROM t1 AS ra1 LEFT JOIN t1 AS ra2
-ON CAST(SHA(ra2.k >> 'fixme') AS JSON) = ra2.k
+ON CAST(SHA2(ra2.k >> 'fixme', 256) AS JSON) = ra2.k
 LEFT JOIN
 t1 AS ra3 LEFT JOIN t1 AS ra4
 ON ra3.k = ra4.k
 ON ra3.k = ra3.k
 WHERE ra3.k <= ra1.k;
-ERROR 22032: Invalid JSON text in argument 1 to function cast_as_json: "The document root must not be followed by other values." at position 3.
+ERROR 22032: Invalid JSON text in argument 1 to function cast_as_json: "The document root must not be followed by other values." at position 1.
 DROP TABLE t1;
 #
 # Bug#35049440: Mysqld assert in Item_typecast_signed::val_int

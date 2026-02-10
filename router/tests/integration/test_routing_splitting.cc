@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -42,11 +42,14 @@
 #include <gtest/gtest-param-test.h>
 #include <gtest/gtest.h>
 
+#ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 #include "my_rapidjson_size_t.h"
+#endif
 
 #include <rapidjson/pointer.h>
 
 #include "hexify.h"
+#include "idc_metadata_schema.h"
 #include "mysql/harness/filesystem.h"
 #include "mysql/harness/net_ts/impl/socket.h"
 #include "mysql/harness/stdx/expected.h"
@@ -440,8 +443,7 @@ class TestEnv : public ::testing::Environment {
         GTEST_SKIP() << "mysql-server failed to start.";
       }
 
-      seeds.emplace_back(srv->server_host() + ":"s +
-                         std::to_string(srv->server_port()));
+      seeds.emplace_back(srv->classic_tcp_destination().str());
     }
 
     for (auto [ndx, srv] : stdx::views::enumerate(shared_servers_)) {
@@ -482,30 +484,12 @@ class TestEnv : public ::testing::Environment {
     ASSERT_NO_ERROR(primary_cli_res);
     auto primary_cli = std::move(*primary_cli_res);
 
-    std::stringstream ss;
-    {
-      std::ifstream ifs(ProcessManager::get_data_dir()
-                            .join("metadata-model-2.1.0.sql")
-                            .str());
-
-      ASSERT_TRUE(ifs.good());
-      ss << ifs.rdbuf();
-    }
-
-    auto &proc_mgr = srv->process_manager();
-    {
-      auto &mysql_proc =
-          proc_mgr.spawner(proc_mgr.get_origin().join("mysql").str())
-              .wait_for_sync_point(ProcessManager::Spawner::SyncPoint::NONE)
-              .spawn({"--host", "127.0.0.1", "--port",
-                      std::to_string(srv->server_port()), "--user", "root",
-                      "--password=", "-e",
-                      "source " + ProcessManager::get_data_dir()
-                                      .join("metadata-model-2.1.0.sql")
-                                      .str()});
-      ASSERT_NO_THROW(mysql_proc.wait_for_exit(20s))
-          << mysql_proc.get_current_output();
-      ASSERT_EQ(mysql_proc.exit_code(), 0) << mysql_proc.get_full_output();
+    // create a metadata schema
+    const char **query_ptr;
+    for (query_ptr = &idc_metadata_schema[0]; *query_ptr != nullptr;
+         query_ptr++) {
+      const std::string query{*query_ptr};
+      ASSERT_NO_ERROR(primary_cli.query(query));
     }
 
     // create a cluster
@@ -536,10 +520,8 @@ class TestEnv : public ::testing::Environment {
       auto row = (*query_res)[0];
       auto [server_uuid, server_id] = std::make_pair(row[0], row[1]);
 
-      auto server_classic_address =
-          srv->server_host() + ":"s + std::to_string(srv->server_port());
-      auto server_x_address =
-          srv->server_host() + ":"s + std::to_string(srv->server_mysqlx_port());
+      auto server_classic_address = srv->classic_tcp_destination().str();
+      auto server_x_address = srv->x_tcp_destination().str();
 
       // add this instance to the cluster.
       ASSERT_NO_ERROR(primary_cli.query(
@@ -584,10 +566,10 @@ class TestEnv : public ::testing::Environment {
               return "";
             })
             .spawn({"--bootstrap",
-                    "root@127.0.0.1:" + std::to_string(srv->server_port()),
-                    "--account", "router",         //
-                    "--report-host", "127.0.0.1",  //
-                    "-d", router_dir_.name(),      //
+                    "root@" + srv->classic_tcp_destination().str(),  //
+                    "--account", "router",                           //
+                    "--report-host", "127.0.0.1",                    //
+                    "-d", router_dir_.name(),                        //
                     "--conf-set-option",
                     "DEFAULT.plugin_folder=" +
                         ProcessManager::get_plugin_dir().str()});
@@ -1073,6 +1055,202 @@ TEST_P(SplittingConnectionTest, select_and_insert) {
     }
   }
   ASSERT_THAT(primary_port, ::testing::Not(::testing::IsEmpty()));
+
+  // enable tracing to detect if the query went to the primary or secondary.
+  ASSERT_NO_ERROR(cli.query("ROUTER SET trace = 1"));
+
+  SCOPED_TRACE("// clean up from earlier runs");
+  ASSERT_NO_ERROR(cli.query("TRUNCATE TABLE testing.t1"));
+
+  {
+    auto query_res = query_one_result(cli, "SHOW WARNINGS");
+    ASSERT_NO_ERROR(query_res);
+    ASSERT_THAT(*query_res, ElementsAre(::testing::SizeIs(3)));
+
+    auto json_trace = query_res->operator[](0)[2];
+
+    rapidjson::Document doc;
+    doc.Parse(json_trace.data(), json_trace.size());
+
+    for (const auto &[pntr, val] : {
+             std::pair{"/name", rapidjson::Value("mysql/query")},
+             std::pair{"/attributes/mysql.sharing_blocked",
+                       rapidjson::Value(false)},
+             std::pair{"/events/0/name",
+                       rapidjson::Value("mysql/query_classify")},
+             std::pair{"/events/0/attributes/mysql.query.classification",
+                       rapidjson::Value("accept_session_state_from_"
+                                        "session_tracker")},
+             std::pair{"/events/1/name",
+                       rapidjson::Value("mysql/connect_and_forward")},
+             std::pair{"/events/1/attributes/mysql.remote.is_connected",
+                       rapidjson::Value(false)},
+         }) {
+      ASSERT_TRUE(json_pointer_eq(doc, rapidjson::Pointer(pntr), val))
+          << json_trace;
+    }
+  }
+
+  SCOPED_TRACE("// INSERT on PRIMARY");
+  ASSERT_NO_ERROR(cli.query("INSERT INTO testing.t1 VALUES ()"));
+  {
+    auto query_res = query_one_result(cli, "SHOW WARNINGS");
+    ASSERT_NO_ERROR(query_res);
+    ASSERT_THAT(*query_res, ElementsAre(::testing::SizeIs(3)));
+
+    auto json_trace = query_res->operator[](0)[2];
+
+    rapidjson::Document doc;
+    doc.Parse(json_trace.data(), json_trace.size());
+
+    for (const auto &[pntr, val] : {
+             std::pair{"/name", rapidjson::Value("mysql/query")},
+             std::pair{"/attributes/mysql.sharing_blocked",
+                       rapidjson::Value(false)},
+             std::pair{"/events/0/name",
+                       rapidjson::Value("mysql/query_classify")},
+             std::pair{"/events/0/attributes/mysql.query.classification",
+                       rapidjson::Value("accept_session_state_from_"
+                                        "session_tracker")},
+             std::pair{"/events/1/name",
+                       rapidjson::Value("mysql/connect_and_forward")},
+             std::pair{"/events/1/attributes/mysql.remote.is_connected",
+                       rapidjson::Value(false)},
+             std::pair{"/events/1/events/0/name",
+                       rapidjson::Value("mysql/prepare_server_connection")},
+             std::pair{"/events/1/events/0/events/0/name",
+                       rapidjson::Value("mysql/from_stash")},
+             std::pair{"/events/1/events/0/events/0/attributes/"
+                       "mysql.remote.is_connected",
+                       rapidjson::Value(true)},
+             std::pair{"/events/1/events/0/events/0/attributes/"
+                       "mysql.remote.endpoint",
+                       rapidjson::Value("127.0.0.1:" + primary_port,
+                                        doc.GetAllocator())},
+             std::pair{"/events/1/events/0/events/0/attributes/"
+                       "db.name",
+                       rapidjson::Value("")},
+         }) {
+      ASSERT_TRUE(json_pointer_eq(doc, rapidjson::Pointer(pntr), val))
+          << json_trace;
+    }
+  }
+
+  SCOPED_TRACE("// switch schema");
+  ASSERT_NO_ERROR(cli.query("USE testing"));
+
+  SCOPED_TRACE(
+      "// SELECT COUNT(): check schema-change is propagated, check the INSERT "
+      "was replicated.");
+  {
+    auto query_res = query_one_result(cli, "SELECT COUNT(*) FROM t1");
+    ASSERT_NO_ERROR(query_res);
+    EXPECT_THAT(*query_res, ElementsAre(ElementsAre("1")));
+  }
+
+  SCOPED_TRACE("// get trace for SELECT COUNT");
+  {
+    auto query_res = query_one_result(cli, "SHOW WARNINGS");
+    ASSERT_NO_ERROR(query_res);
+    ASSERT_THAT(*query_res, ElementsAre(::testing::SizeIs(3)));
+
+    auto json_trace = query_res->operator[](0)[2];
+
+    rapidjson::Document doc;
+    doc.Parse(json_trace.data(), json_trace.size());
+
+    for (const auto &[pntr, val] : {
+             std::pair{"/name", rapidjson::Value("mysql/query")},
+             std::pair{"/attributes/mysql.sharing_blocked",
+                       rapidjson::Value(false)},
+             std::pair{"/events/0/name",
+                       rapidjson::Value("mysql/query_classify")},
+             std::pair{"/events/0/attributes/mysql.query.classification",
+                       rapidjson::Value("accept_session_state_from_"
+                                        "session_tracker,read-only")},
+             std::pair{"/events/1/name",
+                       rapidjson::Value("mysql/connect_and_forward")},
+             std::pair{"/events/1/attributes/mysql.remote.is_connected",
+                       rapidjson::Value(false)},
+             std::pair{"/events/1/events/0/name",
+                       rapidjson::Value("mysql/prepare_server_connection")},
+             std::pair{"/events/1/events/0/events/0/name",
+                       rapidjson::Value("mysql/from_stash")},
+             std::pair{"/events/1/events/0/events/0/attributes/"
+                       "mysql.remote.is_connected",
+                       rapidjson::Value(true)},
+             // std::pair{"/events/1/events/0/events/0/events/0/attributes/"
+             //           "mysql.remote.endpoint",
+             //           rapidjson::Value("")},
+             std::pair{"/events/1/events/0/events/0/attributes/"
+                       "db.name",
+                       rapidjson::Value("testing")},
+         }) {
+      // 11010 [the SECONDARY]
+      ASSERT_TRUE(json_pointer_eq(doc, rapidjson::Pointer(pntr), val))
+          << json_trace;
+    }
+  }
+}
+
+/**
+ * check connections can be shared after the connection is established.
+ *
+ * - connect
+ * - wait for connection be pooled
+ * - connect a 2nd connection to same backend
+ * - check they share the same connection
+ */
+TEST_P(SplittingConnectionTest, select_and_insert_with_ansi_quotes) {
+  RecordProperty("Bug", "116950");
+  RecordProperty("Description",
+                 "Check that read-write split works with ANSI_QUOTES sql_mode "
+                 "enabled. ANSI_QUOTES changes the meaning of double-quotes in "
+                 "statements from quotes-for-strings to quotes-for-fields");
+
+  MysqlClient cli;
+
+  auto account = SharedServer::caching_sha2_empty_password_account();
+
+  cli.username(account.username);
+  cli.password(account.password);
+
+  ASSERT_NO_ERROR(
+      cli.connect(shared_router()->host(), shared_router()->port(GetParam())));
+
+  // connection goes out of the pool and back to the pool again.
+  ASSERT_NO_ERROR(shared_router()->wait_for_stashed_server_connections(1, 1s));
+
+  std::string primary_port;
+
+  {
+    auto query_res = query_one_result(
+        cli, "SELECT * FROM performance_schema.replication_group_members");
+    ASSERT_NO_ERROR(query_res);
+
+    // 3 nodes
+    // - a PRIMARY and 2 SECONDARY
+    // - all ONLINE
+    EXPECT_THAT(
+        *query_res,
+        UnorderedElementsAre(
+            ElementsAre("group_replication_applier", testing::_, "127.0.0.1",
+                        testing::_, "ONLINE", "PRIMARY", testing::_, "MySQL"),
+            ElementsAre("group_replication_applier", testing::_, "127.0.0.1",
+                        testing::_, "ONLINE", "SECONDARY", testing::_, "MySQL"),
+            ElementsAre("group_replication_applier", testing::_, "127.0.0.1",
+                        testing::_, "ONLINE", "SECONDARY", testing::_,
+                        "MySQL")));
+
+    // find the port of the current PRIMARY.
+    for (auto const &row : *query_res) {
+      if (row[5] == "PRIMARY") primary_port = row[3];
+    }
+  }
+  ASSERT_THAT(primary_port, ::testing::Not(::testing::IsEmpty()));
+
+  // set the ANSI_QUOTES.
+  ASSERT_NO_ERROR(cli.query("SET sql_mode='ANSI_QUOTES'"));
 
   // enable tracing to detect if the query went to the primary or secondary.
   ASSERT_NO_ERROR(cli.query("ROUTER SET trace = 1"));
@@ -2327,6 +2505,17 @@ TEST_P(SplittingConnectionTest, set_option_succeeds) {
     rw_expected_stmts.emplace_back(stmt_type_sql_select, stmt_select_history);
   }
 
+  SCOPED_TRACE("// switch to secondary");
+
+  if (!started_on_rw) {
+    // if the test started with a RO node, the set-option will be applied to the
+    // secondary if we switch back to the secondary again.
+    //
+    // If the test started with a RW node, the set-option will be set as part of
+    // the initial handshake and will not be tracked.
+    ro_expected_stmts.emplace_back(stmt_type_com_set_option, "<NULL>");
+  }
+
   // secondary
   //
   // Router should:
@@ -2341,6 +2530,8 @@ TEST_P(SplittingConnectionTest, set_option_succeeds) {
     ro_expected_stmts.emplace_back(stmt_type_sql_select,
                                    "SELECT * FROM `testing` . `t1`");
   }
+
+  SCOPED_TRACE("// checking statement history of RO");
 
   // needed?
   ro_expected_stmts.emplace_back(stmt_type_sql_select, stmt_select_wait_gtid);
@@ -2724,6 +2915,38 @@ TEST_P(SplittingConnectionTest, select_overlong) {
     ASSERT_ERROR(query_res);
     // should fail with "Statement not allowed if access_mode is 'auto'"
     EXPECT_EQ(query_res.error().value(), 4501) << query_res.error();
+  }
+}
+
+TEST_P(SplittingConnectionTest, empty_statements) {
+  RecordProperty("Worklog", "12794");
+  RecordProperty(
+      "Description",
+      "Check if empty statements are properly tokenized and forwarded.");
+
+  MysqlClient cli;
+
+  auto account = SharedServer::caching_sha2_empty_password_account();
+
+  cli.username(account.username);
+  cli.password(account.password);
+
+  ASSERT_NO_ERROR(
+      cli.connect(shared_router()->host(), shared_router()->port(GetParam())));
+
+  for (std::string stmt : {"", "  ", ";"}) {
+    SCOPED_TRACE("// stmt: " + stmt);
+
+    auto query_res = query_one_result(cli, stmt);
+    ASSERT_ERROR(query_res);
+    EXPECT_EQ(query_res.error().value(), 1065) << query_res.error();
+  }
+
+  for (std::string stmt : {"-- ", "/* */"}) {
+    SCOPED_TRACE("// stmt: " + stmt);
+
+    auto query_res = query_one_result(cli, stmt);
+    ASSERT_NO_ERROR(query_res);
   }
 }
 

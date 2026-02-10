@@ -1,6 +1,6 @@
 /***********************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 Copyright (c) 2009, Percona Inc.
 
 Portions of this file contain modifications contributed and copyrighted
@@ -46,13 +46,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include "my_dbug.h"
 #include "my_io.h"
 
-#include "fil0fil.h"
-#include "ha_prototypes.h"
 #include "my_macros.h"
-#include "os0file.h"
 #include "sql_const.h"
 #include "srv0srv.h"
 #include "srv0start.h"
+#include "ut0counting_semaphore.h"
 #ifndef UNIV_HOTBACKUP
 #include "os0event.h"
 #include "os0thread.h"
@@ -104,6 +102,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #ifdef UNIV_HOTBACKUP
 #include <data0type.h>
 #endif /* UNIV_HOTBACKUP */
+
+#ifndef _WIN32
+static_assert(OS_FILE_CLOSED == -1,
+              "Our implementation for OSes other than Windows assumes an "
+              "invalid handle is indicated by -1");
+#endif
 
 /* Flush after each os_fsync_threshold bytes */
 unsigned long long os_fsync_threshold = 0;
@@ -727,17 +731,22 @@ class AIO {
   A thread can wait separately for any one of the segments. */
   ulint m_n_segments;
 
-  /** The event which is set to the signaled state when
-  there is space in the aio outside the ibuf segment */
-  os_event_t m_not_full;
-
-  /** The event which is set to the signaled state when
-  there are no pending i/os in this array */
+  /** The event which is set to the signaled state if and only if there are
+  no pending i/os in this array. In other words, when m_n_reserved == 0. */
   os_event_t m_is_empty;
 
-  /** Number of reserved slots in the AIO array outside
-  the ibuf segment */
-  ulint m_n_reserved;
+  /** Number of slots in the m_slots array, which are not yet promised to any
+  thread. A thread which wants to reserve a slot should first call
+  m_unused_slots.acquire(). And once the slot is no longer in use, it should
+  call m_unused_slots.release(). As this is initialized to m_slots.size(),
+  successful call to m_unused_slots.acquire() guarantees finding at least one
+  slot which can be reserved by the thread. In other words, this counter is
+  a lower bound on the number of i, s.t. m_slots[i].is_reserved==false. */
+  ut::counting_semaphore m_unused_slots;
+
+  /** Number of slots in the m_slots array, which have is_reserved==true.
+  This value is updated and checked only under m_mutex. */
+  size_t m_n_reserved;
 
   /** The index of last slot used to reserve. This is used to balance the
    incoming requests more evenly throughout the segments.
@@ -1269,11 +1278,10 @@ ulint AIO::pending_io_count() const {
       ut_a(slot.len > 0);
     }
   }
-
-  ut_a(m_n_reserved == count);
+  ut_a_eq(count, m_n_reserved);
 #endif /* UNIV_DEBUG */
 
-  ulint reserved = m_n_reserved;
+  const auto reserved = m_n_reserved;
 
   release();
 
@@ -1519,15 +1527,12 @@ ulint AIO::get_array_and_local_segment(AIO *&array, ulint segment) {
 void AIO::release(Slot *slot) {
   ut_ad(is_mutex_owned());
 
-  ut_ad(slot->is_reserved);
+  ut_a(slot->is_reserved);
 
   slot->is_reserved = false;
 
+  m_unused_slots.release();
   --m_n_reserved;
-
-  if (m_n_reserved == m_slots.size() - 1) {
-    os_event_set(m_not_full);
-  }
 
   if (m_n_reserved == 0) {
     os_event_set(m_is_empty);
@@ -3159,7 +3164,7 @@ pfs_os_file_t os_file_create_func(const char *name, ulint create_mode,
   ut_a(purpose == OS_LOG_FILE || purpose == OS_LOG_FILE_RESIZING ||
        purpose == OS_DATA_FILE || purpose == OS_DBLWR_FILE ||
        purpose == OS_CLONE_DATA_FILE || purpose == OS_CLONE_LOG_FILE ||
-       purpose == OS_BUFFERED_FILE);
+       purpose == OS_BUFFERED_FILE || OS_DATA_FILE_FOR_SPACE_ID_READ);
 
 #ifdef O_SYNC
   /* We let O_SYNC only affect log files; note that we map O_DSYNC to
@@ -3197,19 +3202,38 @@ pfs_os_file_t os_file_create_func(const char *name, ulint create_mode,
 
   } while (retry);
 
-  /* We disable OS caching (O_DIRECT) only on data files. For clone we
-  need to set O_DIRECT even for read_only mode. */
+  if (!*success) {
+    ut_a(file.m_file == OS_FILE_CLOSED);
+    return file;
+  }
 
-  if ((!read_only || purpose == OS_CLONE_DATA_FILE) && *success &&
+  bool use_odirect = false;
+
+  if ((!read_only || purpose == OS_CLONE_DATA_FILE) &&
       (purpose == OS_DATA_FILE || purpose == OS_CLONE_DATA_FILE ||
        purpose == OS_DBLWR_FILE) &&
       (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT ||
        srv_unix_file_flush_method == SRV_UNIX_O_DIRECT_NO_FSYNC)) {
-    os_file_set_nocache(file.m_file, name, mode_str);
+    use_odirect = true;
+  }
+
+  /* We also set O_DIRECT for files which are opened at startup to
+  read their space ID from the page header */
+  if (purpose == OS_DATA_FILE_FOR_SPACE_ID_READ) {
+    use_odirect = true;
+  }
+
+  if (use_odirect) {
+    /* Flag for executing os_file_set_nocache() without printing error
+    messages */
+    const bool on_error_silent_for_nocache =
+        (purpose == OS_DATA_FILE_FOR_SPACE_ID_READ);
+    os_file_set_nocache(file.m_file, name, mode_str,
+                        on_error_silent_for_nocache);
   }
 
 #ifdef USE_FILE_LOCK
-  if (!read_only && *success && create_mode != OS_FILE_OPEN_RAW &&
+  if (!read_only && create_mode != OS_FILE_OPEN_RAW &&
       /* Don't acquire file lock while cloning files. */
       purpose != OS_CLONE_DATA_FILE && purpose != OS_CLONE_LOG_FILE &&
       os_file_lock(file.m_file, name)) {
@@ -4164,7 +4188,12 @@ pfs_os_file_t os_file_create_func(const char *name, ulint create_mode,
     /* Do not use unbuffered i/o for the log files because
     we write really a lot and we have log flusher for fsyncs. */
 
-  } else if (srv_win_file_flush_method == SRV_WIN_IO_UNBUFFERED) {
+  } else if (srv_win_file_flush_method == SRV_WIN_IO_UNBUFFERED ||
+             purpose == OS_DATA_FILE_FOR_SPACE_ID_READ) {
+    /* We use unbuffered access only when allowed by the
+    'srv_win_file_flush_method', unless the purpose is
+    to read the space ID on the startup, in which case
+    we should always use the unbuffered access */
     attributes |= FILE_FLAG_NO_BUFFERING;
   }
 #endif /* UNIV_NON_BUFFERED_IO */
@@ -5292,10 +5321,11 @@ static bool os_file_handle_error_no_exit(const char *name,
 
 void os_file_set_nocache(int fd [[maybe_unused]],
                          const char *file_name [[maybe_unused]],
-                         const char *operation_name [[maybe_unused]]) {
+                         const char *operation_name [[maybe_unused]],
+                         bool on_error_silent [[maybe_unused]]) {
 /* some versions of Solaris may not have DIRECTIO_ON */
 #if defined(UNIV_SOLARIS) && defined(DIRECTIO_ON)
-  if (directio(fd, DIRECTIO_ON) == -1) {
+  if (directio(fd, DIRECTIO_ON) == -1 && !on_error_silent) {
     int errno_save = errno;
 
     ib::error(ER_IB_MSG_823)
@@ -5305,7 +5335,7 @@ void os_file_set_nocache(int fd [[maybe_unused]],
            " continuing anyway.";
   }
 #elif defined(O_DIRECT)
-  if (fcntl(fd, F_SETFL, O_DIRECT) == -1) {
+  if (fcntl(fd, F_SETFL, O_DIRECT) == -1 && !on_error_silent) {
     int errno_save = errno;
     static bool warning_message_printed = false;
     if (errno_save == EINVAL) {
@@ -5929,6 +5959,7 @@ dberr_t os_aio_handler(ulint segment, fil_node_t **m1, void **m2,
 AIO::AIO(latch_id_t id, ulint n, ulint segments)
     : m_slots(n),
       m_n_segments(segments),
+      m_unused_slots(n),
       m_n_reserved(),
       m_last_slot_used(0)
 #ifdef LINUX_NATIVE_AIO
@@ -5945,7 +5976,6 @@ AIO::AIO(latch_id_t id, ulint n, ulint segments)
 
   mutex_create(id, &m_mutex);
 
-  m_not_full = os_event_create();
   m_is_empty = os_event_create();
 
 #ifdef LINUX_NATIVE_AIO
@@ -6090,7 +6120,6 @@ AIO::~AIO() {
 
   mutex_destroy(&m_mutex);
 
-  os_event_destroy(m_not_full);
   os_event_destroy(m_is_empty);
 
 #if defined(LINUX_NATIVE_AIO)
@@ -6393,25 +6422,10 @@ Slot *AIO::reserve_slot(IORequest &type, fil_node_t *m1, void *m2,
 
   const auto slots_per_seg = slots_per_segment();
 
-  for (;;) {
-    acquire();
+  m_unused_slots.acquire(os_aio_simulated_wake_handler_threads);
 
-    if (m_n_reserved != m_slots.size()) {
-      break;
-    }
-
-    release();
-
-    if (!srv_use_native_aio) {
-      /* If the handler threads are suspended,
-      wake them so that we get more slots */
-
-      os_aio_simulated_wake_handler_threads();
-    }
-
-    os_event_wait(m_not_full);
-  }
-
+  acquire();
+  ut_a_lt(m_n_reserved, m_slots.size());
   /* We will check first, next(first), next(next(first))... which should be a
   permutation of values 0,..,m_slots.size()-1.*/
   auto find_slot = [this](size_t first, auto next) {
@@ -6467,10 +6481,6 @@ Slot *AIO::reserve_slot(IORequest &type, fil_node_t *m1, void *m2,
     os_event_reset(m_is_empty);
   }
 
-  if (m_n_reserved == m_slots.size()) {
-    os_event_reset(m_not_full);
-  }
-
   slot->is_reserved = true;
   slot->reservation_time = std::chrono::steady_clock::now();
   slot->m1 = m1;
@@ -6485,11 +6495,12 @@ Slot *AIO::reserve_slot(IORequest &type, fil_node_t *m1, void *m2,
   slot->type = type;
   slot->buf = static_cast<byte *>(buf);
   slot->ptr = slot->buf;
+  slot->n_bytes = 0;
 
   ut_ad(m1->is_offset_valid(offset));
 
   slot->offset = offset;
-  slot->err = DB_SUCCESS;
+  slot->err = DB_ERROR_UNSET;
   if (type.is_read()) {
     /* The original size must not be specified for reads. */
     ut_ad(!slot->type.get_original_size());
@@ -6606,7 +6617,6 @@ Slot *AIO::reserve_slot(IORequest &type, fil_node_t *m1, void *m2,
 
     iocb->data = slot;
 
-    slot->n_bytes = 0;
     slot->ret = 0;
   }
 #endif /* !_WIN32 && LINUX_NATIVE_AIO */
@@ -6839,9 +6849,6 @@ dberr_t os_aio_func(IORequest &type, AIO_mode aio_mode, const char *name,
                     pfs_os_file_t file, void *buf, os_offset_t offset, ulint n,
                     bool read_only, fil_node_t *m1, void *m2) {
   ut_a(!type.is_log());
-#ifdef _WIN32
-  BOOL ret = TRUE;
-#endif /* _WIN32 */
 
   const file::Block *e_block = type.get_encrypted_block();
 
@@ -6872,7 +6879,6 @@ dberr_t os_aio_func(IORequest &type, AIO_mode aio_mode, const char *name,
     Performance Schema instrumented os_file_read() and
     os_file_write(). Instead, we should use os_file_read_func()
     and os_file_write_func() */
-
     if (type.is_read()) {
       return (os_file_read_func(type, name, file.m_file, buf, offset, n));
     }
@@ -6881,73 +6887,100 @@ dberr_t os_aio_func(IORequest &type, AIO_mode aio_mode, const char *name,
     return (os_file_write_func(type, name, file.m_file, buf, offset, n));
   }
 
-try_again:
+  const auto array = AIO::select_slot_array(type, read_only, aio_mode);
+  bool io_dispatched = false;
+  while (!io_dispatched) {
+    {
+      auto slot = array->reserve_slot(type, m1, m2, file, name, buf, offset, n,
+                                      e_block);
+      if (srv_use_native_aio) {
+        if (type.is_read()) {
+          ++os_n_file_reads;
 
-  auto array = AIO::select_slot_array(type, read_only, aio_mode);
-
-  auto slot =
-      array->reserve_slot(type, m1, m2, file, name, buf, offset, n, e_block);
-
-  if (type.is_read()) {
-    if (srv_use_native_aio) {
-      ++os_n_file_reads;
-
-      os_bytes_read_since_printout += n;
+          os_bytes_read_since_printout += n;
 #ifdef _WIN32
-      ret = ReadFile(file.m_file, slot->ptr, slot->len, &slot->n_bytes,
-                     &slot->control);
+          /* If `ReadFile` returns positive value, then the request was
+          completed synchronously. This is fine, may happen when the file was
+          opened in non-overlapped mode (without FILE_FLAG_OVERLAPPED flag
+          specified). Yet, this operation have set the event specified in the
+          Overlapped structure, which is waited upon in the io_handler thread in
+          `os_aio_windows_handler()`. This will cause all the IO post-processing
+          to be executed in the io_handler thread. This includes checking the
+          bytes actually processed etc. There is nothing we want to do here, in
+          particular we don't want to check slot->n_bytes or any other slot
+          fields. Otherwise, if the error is ERROR_IO_PENDING then the IO was
+          successfully dispatched asynchronously and we don't need to do
+          anything more, neither. */
+          io_dispatched = ReadFile(file.m_file, slot->ptr, slot->len,
+                                   &slot->n_bytes, &slot->control) ||
+                          (GetLastError() == ERROR_IO_PENDING);
 #elif defined(LINUX_NATIVE_AIO)
-      if (!array->linux_dispatch(slot)) {
-        goto err_exit;
-      }
-#endif /* !_WIN32 && LINUX_NATIVE_AIO */
-    } else if (type.is_wake()) {
-      AIO::wake_simulated_handler_thread(
-          AIO::get_segment_no_from_slot(array, slot));
-    }
-  } else if (type.is_write()) {
-    if (srv_use_native_aio) {
-      ++os_n_file_writes;
-
-#ifdef _WIN32
-      ret = WriteFile(file.m_file, slot->ptr, slot->len, &slot->n_bytes,
-                      &slot->control);
-#elif defined(LINUX_NATIVE_AIO)
-      if (!array->linux_dispatch(slot)) {
-        goto err_exit;
-      }
+          io_dispatched = array->linux_dispatch(slot);
+#else
+          ut_error;
 #endif /* !_WIN32 && LINUX_NATIVE_AIO */
 
-    } else if (type.is_wake()) {
-      AIO::wake_simulated_handler_thread(
-          AIO::get_segment_no_from_slot(array, slot));
-    }
-  } else {
-    ut_error;
-  }
+        } else if (type.is_write()) {
+          ++os_n_file_writes;
 
 #ifdef _WIN32
-  if (srv_use_native_aio) {
-    if ((!ret && GetLastError() != ERROR_IO_PENDING) ||
-        (ret && slot->len != slot->n_bytes)) {
-      goto err_exit;
+          /* If `WriteFile` returns positive value, then the request was
+          completed synchronously. This is fine, may happen when the file was
+          opened in non-overlapped mode (without FILE_FLAG_OVERLAPPED flag
+          specified). Yet, this operation have set the event specified in the
+          Overlapped structure, which is waited upon in the io_handler thread in
+          `os_aio_windows_handler()`. This will cause all the IO post-processing
+          to be executed in the io_handler thread. This includes checking the
+          bytes actually processed etc. There is nothing we want to do here, in
+          particular we don't want to check slot->n_bytes or any other slot
+          fields. Otherwise, if the error is ERROR_IO_PENDING then the IO was
+          successfully dispatched asynchronously and we don't need to do
+          anything more too. */
+          io_dispatched = WriteFile(file.m_file, slot->ptr, slot->len,
+                                    &slot->n_bytes, &slot->control) ||
+                          (GetLastError() == ERROR_IO_PENDING);
+#elif defined(LINUX_NATIVE_AIO)
+          io_dispatched = array->linux_dispatch(slot);
+#else
+          ut_error;
+#endif /* !_WIN32 && LINUX_NATIVE_AIO */
+
+        } else {
+          ut_error;
+        }
+      } else {
+        /* For simulated AIO the fact of reserving of the slot is effectively
+        the dispatching. */
+        io_dispatched = true;
+        if (type.is_wake()) {
+          AIO::wake_simulated_handler_thread(
+              AIO::get_segment_no_from_slot(array, slot));
+        }
+      }
+
+      /* If the IO operation dispatching succeeded, we can't use the slot
+      anymore!
+      The IO completion in the io_handler thread will concurrently free the slot
+      and it may be even reserved again by some other IO request. Therefore, we
+      can not use contents of the `slot` variable to determine if the error has
+      happened or not. Instead we must use an on-stack `io_dispatched` variable.
+      Also, to avoid a mistake of accidentally accessing the `slot`, we let it
+      go out of scope as soon as we do one final
+      thing to it: release the `slot` in case of an error. */
+      if (!io_dispatched) {
+        array->release_with_mutex(slot);
+      }
+    }
+    if (!io_dispatched) {
+      if (!os_file_handle_error(name,
+                                type.is_read() ? "aio read" : "aio write")) {
+        return DB_IO_ERROR;
+      }
     }
   }
-#endif /* _WIN32 */
 
-  /* AIO request was queued successfully! */
+  /* AIO request was dispatched successfully! */
   return (DB_SUCCESS);
-
-#if defined LINUX_NATIVE_AIO || defined _WIN32
-err_exit:
-#endif /* LINUX_NATIVE_AIO || _WIN32 */
-
-  array->release_with_mutex(slot);
-  if (os_file_handle_error(name, type.is_read() ? "aio read" : "aio write")) {
-    goto try_again;
-  }
-
-  return (DB_IO_ERROR);
 }
 
 /** Simulated AIO handler for reaping IO requests */
@@ -6957,13 +6990,7 @@ class SimulatedAIOHandler {
   @param[in,out]        array   The AIO array
   @param[in]    segment Local segment in the array */
   SimulatedAIOHandler(AIO *array, ulint segment)
-      : m_oldest(),
-        m_n_elems(),
-        m_lowest_offset(std::numeric_limits<uint64_t>::max()),
-        m_array(array),
-        m_n_slots(),
-        m_segment(segment),
-        m_buf() {
+      : m_n_elems(), m_array(array), m_n_slots(), m_segment(segment), m_buf() {
     ut_ad(m_segment < 100);
 
     m_slots.resize(OS_AIO_MERGE_N_CONSECUTIVE);
@@ -6975,10 +7002,8 @@ class SimulatedAIOHandler {
   /** Reset the state of the handler
   @param[in]    n_slots Number of pending AIO operations supported */
   void init(ulint n_slots) {
-    m_oldest = std::chrono::seconds::zero();
     m_n_elems = 0;
     m_n_slots = n_slots;
-    m_lowest_offset = std::numeric_limits<uint64_t>::max();
 
     ut::aligned_free(m_buf);
     m_buf = nullptr;
@@ -7016,13 +7041,13 @@ class SimulatedAIOHandler {
   /** If there are at least 2 seconds old requests, then pick the
   oldest one to prevent starvation.  If several requests have the
   same age, then pick the one at the lowest offset.
+  @param[in] current_time Time of start of the slot selection.
   @return true if request was selected */
-  bool select() {
-    if (!select_oldest()) {
-      return (select_lowest_offset());
+  bool select(std::chrono::steady_clock::time_point current_time) {
+    if (select_oldest(current_time)) {
+      return true;
     }
-
-    return (true);
+    return select_lowest_offset();
   }
 
   /** Check if there are several consecutive blocks
@@ -7184,20 +7209,20 @@ class SimulatedAIOHandler {
 
     ulint offset = m_segment * m_n_slots;
 
-    m_lowest_offset = std::numeric_limits<uint64_t>::max();
+    auto lowest_offset = std::numeric_limits<uint64_t>::max();
 
     for (ulint i = 0; i < m_n_slots; ++i) {
       Slot *slot;
 
       slot = m_array->at(i + offset);
 
-      if (slot->is_reserved && slot->offset < m_lowest_offset) {
+      if (slot->is_reserved && slot->offset < lowest_offset) {
         /* Found an i/o request */
         m_slots[0] = slot;
 
         m_n_elems = 1;
 
-        m_lowest_offset = slot->offset;
+        lowest_offset = slot->offset;
       }
     }
 
@@ -7207,50 +7232,39 @@ class SimulatedAIOHandler {
   typedef std::vector<Slot *> slots_t;
 
  private:
-  /** Select the slot if it is older than the current oldest slot.
-  @param[in]    slot            The slot to check */
-  void select_if_older(Slot *slot) {
-    const auto time_diff =
-        std::max(std::chrono::steady_clock::now() - slot->reservation_time,
-                 std::chrono::steady_clock::duration{0});
-
-    if (time_diff >= std::chrono::seconds{2}) {
-      if ((time_diff > m_oldest) ||
-          (time_diff == m_oldest && slot->offset < m_lowest_offset)) {
-        /* Found an i/o request */
-        m_slots[0] = slot;
-
-        m_n_elems = 1;
-
-        m_oldest = time_diff;
-
-        m_lowest_offset = slot->offset;
-      }
-    }
-  }
-
-  /** Select th oldest slot in the array
-  @return true if oldest slot found */
-  bool select_oldest() {
+  /** Select the oldest slot in the array if there are any older than 2s.
+  @param[in] current_time Time of start of the slot selection.
+  @return true if any slot older than 2s is found */
+  bool select_oldest(std::chrono::steady_clock::time_point current_time) {
     ut_ad(m_n_elems == 0);
 
-    Slot *slot;
     ulint offset = m_n_slots * m_segment;
 
-    slot = m_array->at(offset);
-
-    for (ulint i = 0; i < m_n_slots; ++i, ++slot) {
-      if (slot->is_reserved) {
-        select_if_older(slot);
+    auto currrent_slot = m_array->at(offset);
+    Slot *oldest_slot = nullptr;
+    for (size_t i = 0; i < m_n_slots; ++i, ++currrent_slot) {
+      if (currrent_slot->is_reserved &&
+          (oldest_slot == nullptr ||
+           currrent_slot->reservation_time < oldest_slot->reservation_time ||
+           (currrent_slot->reservation_time == oldest_slot->reservation_time &&
+            currrent_slot->offset < oldest_slot->offset))) {
+        oldest_slot = currrent_slot;
       }
     }
 
-    return (m_n_elems > 0);
+    if (oldest_slot != nullptr &&
+        current_time - oldest_slot->reservation_time >=
+            std::chrono::seconds{2}) {
+      m_slots[0] = oldest_slot;
+
+      m_n_elems = 1;
+      return true;
+    }
+
+    return false;
   }
 
-  std::chrono::steady_clock::duration m_oldest;
   ulint m_n_elems;
-  os_offset_t m_lowest_offset;
 
   AIO *m_array;
   ulint m_n_slots;
@@ -7326,6 +7340,11 @@ static dberr_t os_aio_simulated_handler(ulint global_segment, fil_node_t **m1,
 
     srv_set_io_thread_op_info(global_segment, "looking for i/o requests (b)");
 
+    /* Take the current time once as it may cause syscalls and not be too
+    performant, it improves throughput greatly to have this executed before
+    we grab the AIO mutex. */
+    const auto current_time = std::chrono::steady_clock::now();
+
     array->acquire();
 
     ulint n_reserved;
@@ -7349,7 +7368,7 @@ static dberr_t os_aio_simulated_handler(ulint global_segment, fil_node_t **m1,
 
       return (DB_SUCCESS);
 
-    } else if (handler.select()) {
+    } else if (handler.select(current_time)) {
       break;
     }
 
@@ -7500,7 +7519,7 @@ void AIO::print(FILE *file) {
     }
   }
 
-  ut_a(m_n_reserved == count);
+  ut_a_eq(m_n_reserved, count);
 
   print_segment_info(file, n_res_seg);
 

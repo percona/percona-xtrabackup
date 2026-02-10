@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -95,10 +95,7 @@ static bool get_one_option(int optid, const struct my_option *, char *) {
 }
 
 static bool check_options_for_sanity() {
-  if (g_component_dir == nullptr || !*g_component_dir) {
-    return true;
-  }
-  return false;
+  return g_component_dir == nullptr || !*g_component_dir;
 }
 
 static bool get_options(int argc, char **argv, int &exit_code) {
@@ -122,9 +119,9 @@ static bool process_options(int *argc, char ***argv, int &exit_code) {
   }
   my_getopt_use_args_separator = false;
 
-  bool save_skip_unknown = my_getopt_skip_unknown;
+  bool const save_skip_unknown = my_getopt_skip_unknown;
   my_getopt_skip_unknown = true;
-  bool ret = get_options(*argc, *argv, exit_code);
+  bool const ret = get_options(*argc, *argv, exit_code);
   my_getopt_skip_unknown = save_skip_unknown;
   return ret;
 }
@@ -159,7 +156,7 @@ int main(int argc, char **argv) {
     deinit_registry();
   });
 
-  auto dynamic_loader = get_dynamic_loader();
+  auto *dynamic_loader = get_dynamic_loader();
 
   if (!dynamic_loader) {
     std::cerr << "Could not get handle of dynamic loader" << std::endl;
@@ -173,7 +170,7 @@ int main(int argc, char **argv) {
     full_path.append("/");
     full_path.append(component);
     const char *urn[] = {full_path.c_str()};
-    return dynamic_loader->load(urn, 1) ? true : false;
+    return dynamic_loader->load(urn, 1) != 0;
   };
 
   auto unload_component = [&dynamic_loader](const char *component_dir,

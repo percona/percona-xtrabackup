@@ -354,8 +354,6 @@ let $names = {
        "new": "key_mta_temp_table_LOCK" },
      { "old": "key_mts_gaq_LOCK",
        "new": "key_mta_gaq_LOCK" },
-     { "old": "Relay_log_info::slave_worker_hash_lock",
-       "new": "Relay_log_info::replica_worker_hash_lock" },
      { "old": "LOCK_slave_list",
        "new": "LOCK_replica_list" },
      { "old": "LOCK_slave_net_timeout",
@@ -370,8 +368,6 @@ let $names = {
   ],
 
   "cond": [
-     { "old": "Relay_log_info::slave_worker_hash_lock",
-       "new": "Relay_log_info::replica_worker_hash_cond" },
      { "old": "Master_info::data_cond",
        "new": "Source_info::data_cond" },
      { "old": "Master_info::start_cond",

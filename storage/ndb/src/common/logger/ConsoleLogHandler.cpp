@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@
 
 #include "ConsoleLogHandler.hpp"
 
-#include <time.h>
+#include <ctime>
 
 ConsoleLogHandler::ConsoleLogHandler(NdbOut &out) : LogHandler(), _out(out) {}
 
@@ -41,7 +41,8 @@ bool ConsoleLogHandler::is_open() { return true; }
 // PROTECTED
 //
 void ConsoleLogHandler::writeHeader(const char *pCategory,
-                                    Logger::LoggerLevel level, time_t now) {
+                                    Logger::LoggerLevel level,
+                                    const std::timespec *now) {
   char str[MAX_HEADER_LENGTH];
   _out << getDefaultHeader(str, pCategory, level, now);
 }

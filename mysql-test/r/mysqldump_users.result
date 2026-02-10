@@ -1,0 +1,102 @@
+#
+# WL#15658: Make mysqldump dump logical ACL statements
+#
+# Init: create a user and a role
+CREATE USER wl15658_user@localhost;
+CREATE ROLE wl15658_role@localhost;
+CREATE USER wl15658_another@localhost;
+GRANT SELECT ON *.* TO wl15658_user@localhost;
+GRANT UPDATE ON mysql.* TO wl15658_user@localhost;
+GRANT FLUSH_STATUS ON *.* TO wl15658_user@localhost;
+GRANT wl15658_role@localhost TO wl15658_user@localhost;
+CREATE TABLE wl15658_table(a INT);
+# Test FR1: the --users option should produce a "CREATE USER wl15658_user" line
+include/assert_grep.inc [CREATE USER wl15658_user@localhost]
+include/assert_grep.inc [FR1.2: CREATE USER wl15658_user@localhost before table data]
+include/assert_grep.inc [FR1.3: GRANT .. TO wl15658_user@localhost after table data]
+# Test FR1.4: should not fail
+include/assert_grep.inc [FR1.4: have CREATE USER wl15658_user@localhost]
+# Test FR1.5: excluded tables
+include/assert_grep.inc [FR1.5: no mysql.user]
+include/assert_grep.inc [FR1.5: no mysql.global_grants]
+include/assert_grep.inc [FR1.5: no mysql.db]
+include/assert_grep.inc [FR1.5: no mysql.tables_priv]
+include/assert_grep.inc [FR1.5: no mysql.columns_priv]
+include/assert_grep.inc [FR1.5: no mysql.procs_priv]
+include/assert_grep.inc [FR1.5: no mysql.proxies_priv]
+include/assert_grep.inc [FR1.5: no mysql.default_roles]
+include/assert_grep.inc [FR1.5: no mysql.role_edges]
+include/assert_grep.inc [FR1.5: no mysql.password_history]
+include/assert_grep.inc [FR2: no DROP USER without --add-drop-user]
+# FR1.6: --users and --flush-privileges causes error
+mysqldump: The --users option is incompatible with --flush-privileges
+include/assert_grep.inc [FR2: have DROP USER]
+include/assert_grep.inc [FR2: DROP USER before CREATE USER]
+include/assert_grep.inc [FR2.1: --add-drop-user a no-op if --users is missing]
+include/assert_grep.inc [FR3.1: --add-drop-user sans --users warning present]
+include/assert_grep.inc [FR3.1: All accounts included if no --include-user]
+# FR3.2: invalid data for --include-user: must fail
+Illegal use of option --include-user=<user>@<host>
+include/assert_grep.inc [FR3.3: Multiple --include-user specified, wl15658_user present]
+include/assert_grep.inc [FR3.3: Multiple --include-user specified, wl15658_role present]
+include/assert_grep.inc [FR3.4: --include-user is a no-op if no --users present]
+include/assert_grep.inc [FR3.4: --include-user sans --users warning present]
+include/assert_grep.inc [FR4.1: All accounts included if no --exclude-user]
+# FR4.2: invalid data for --exclude-user: must fail
+Illegal use of option --exclude-user=<user>@<host>
+include/assert_grep.inc [FR4.3: Multiple --exclude-user specified, wl15658_user not present]
+include/assert_grep.inc [FR4.3: Multiple --exclude-user specified, wl15658_role not present]
+include/assert_grep.inc [FR4.3: Multiple --exclude-user specified, CREATE USER wl15658_another present]
+include/assert_grep.inc [FR4.4: --include-user --exclude-user = no user]
+include/assert_grep.inc [FR4.4: --exclude-user --include-user = no user]
+include/assert_grep.inc [FR4.5: --exclude-user is a no-op if no --users present]
+include/assert_grep.inc [FR4.5: --exclude-user sans --users warning present]
+FR5: --users doesn't work if --xml is on
+mysqldump: The --users option is incompatible with --xml
+# Cleanup
+DROP USER wl15658_another@localhost;
+DROP USER wl15658_user@localhost;
+DROP ROLE wl15658_role@localhost;
+DROP TABLE wl15658_table;
+FR 3.5 and 4.6: account name formatting for user accounts
+CREATE USER 'wl15658 space'@localhost;
+include/assert_grep.inc [FR3.5: space in --include-user]
+CREATE USER 'wl15658-minus'@localhost;
+include/assert_grep.inc [FR3.5: minus in --include-user]
+CREATE USER 'wl15658%percent'@localhost;
+include/assert_grep.inc [FR3.5: percent in --include-user]
+CREATE USER 'wl15658\\backslash'@localhost;
+include/assert_grep.inc [FR3.5: backslash in --include-user]
+CREATE USER 'wl15658\'quote'@localhost;
+include/assert_grep.inc [FR3.5: quote in --include-user]
+CREATE USER 'wl15658_hst'@'space localhost';
+include/assert_grep.inc [FR3.5: space in host in --include-user]
+CREATE USER 'wl15658_hst'@'minus-localhost';
+include/assert_grep.inc [FR3.5: minus in host in --include-user]
+CREATE USER 'wl15658_hst'@'percent%localhost';
+include/assert_grep.inc [FR3.5: percent in host in --include-user]
+CREATE USER 'wl15658_hst'@'backslash\\localhost';
+include/assert_grep.inc [FR3.5: backslash in host in --include-user]
+CREATE USER 'wl15658_hst'@'quote\'localhost';
+include/assert_grep.inc [FR3.5: quote in host in --include-user]
+include/assert_grep.inc [FR3.5: --exclude-user percent]
+DROP USER 'wl15658 space'@localhost;
+DROP USER 'wl15658-minus'@localhost;
+DROP USER 'wl15658%percent'@localhost;
+DROP USER 'wl15658\\backslash'@localhost;
+DROP USER 'wl15658\'quote'@localhost;
+DROP USER 'wl15658_hst'@'space localhost';
+DROP USER 'wl15658_hst'@'minus-localhost';
+DROP USER 'wl15658_hst'@'percent%localhost';
+DROP USER 'wl15658_hst'@'backslash\\localhost';
+DROP USER 'wl15658_hst'@'quote\'localhost';
+include/assert_grep.inc [FR4.7: --exclude-user with a non-matched account results in a warning]
+# Test FR3.6: --include-user=nonexistent@nosuchhost must fail
+Warning: A partial dump from a server that has GTIDs will by default include the GTIDs of all transactions, even those that changed suppressed parts of the database. If you don't want to restore GTIDs, pass --set-gtid-purged=OFF. To make a complete dump, pass --all-databases --triggers --routines --events. 
+Warning: A dump from a server that has GTIDs enabled will by default include the GTIDs of all transactions, even those that were executed during its extraction and might not be represented in the dumped data. This might result in an inconsistent data dump. 
+In order to ensure a consistent backup of the database, pass --single-transaction or --lock-all-tables or --source-data. 
+mysqldump: Couldn't execute 'SHOW CREATE USER nonexistent@nosuchhost': Operation SHOW CREATE USER failed for 'nonexistent'@'nosuchhost' (User account does not exist) (1396)
+SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;
+SET @@SESSION.SQL_LOG_BIN= 0;
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ 'GTID_SET';
+# End if 9.3 tests

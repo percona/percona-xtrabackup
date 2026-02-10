@@ -1213,6 +1213,7 @@ a	b	a	b	a	a
 2	NULL	1	NULL	1	2
 2	NULL	2	NULL	2	2
 # Two LDTs depending on one same table
+SET explain_json_format_version = 1;
 explain select * from t2, t1, lateral (select t1.a) as dt,
 lateral (select t1.a+1) as dt2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -1447,6 +1448,7 @@ a	b	a	b	t1.a+t2.a
 select json_extract(trace,"$.steps[*].join_optimization.steps[*].refine_plan") from information_schema.optimizer_trace;
 json_extract(trace,"$.steps[*].join_optimization.steps[*].refine_plan")
 [[{"table": "`t2`"}, {"table": "`t1`"}, {"table": " `dt`", "rematerialized_for_each_row_of": "t1"}]]
+SET explain_json_format_version = DEFAULT;
 # Test when a dependency of LDT uses BKA: BKA code must
 # refresh LDT's content when it provides a row.
 set @old_opt_switch=@@optimizer_switch;
@@ -2757,6 +2759,7 @@ a	b	a	b	a	a
 2	NULL	1	NULL	1	2
 2	NULL	2	NULL	2	2
 # Two LDTs depending on one same table
+SET explain_json_format_version = 1;
 explain select * from t2, t1, lateral (select t1.a) as dt,
 lateral (select t1.a+1) as dt2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -2991,6 +2994,7 @@ a	b	a	b	t1.a+t2.a
 select json_extract(trace,"$.steps[*].join_optimization.steps[*].refine_plan") from information_schema.optimizer_trace;
 json_extract(trace,"$.steps[*].join_optimization.steps[*].refine_plan")
 [[{"table": "`t2`"}, {"table": "`t1`"}, {"table": " `dt`", "rematerialized_for_each_row_of": "t1"}]]
+SET explain_json_format_version = DEFAULT;
 # Test when a dependency of LDT uses BKA: BKA code must
 # refresh LDT's content when it provides a row.
 set @old_opt_switch=@@optimizer_switch;
@@ -3563,3 +3567,67 @@ ORDER BY c2 LIMIT 1
 );
 g_f1	g_f2	g_f3
 DROP TABLE t1, t2;
+#
+# Bug#37271834: Hypergraph: Wrong results for query with semijoin with
+#               lateral dependencies
+#
+CREATE TABLE t(x INT);
+INSERT INTO t(x) VALUES (1), (2), (3);
+SELECT * FROM
+t AS t0,
+LATERAL (
+SELECT * FROM t AS t1
+WHERE TRUE IN (SELECT t3.x IS NOT NULL
+FROM t AS t2 LEFT JOIN t AS t3
+ON t0.x = 2)
+) AS dt;
+x	x
+2	1
+2	2
+2	3
+SELECT * FROM
+t AS t0,
+LATERAL (
+SELECT * FROM t AS t1
+WHERE TRUE IN (SELECT t3.x IS NOT NULL
+FROM t AS t2 LEFT JOIN t AS t3
+ON t2.x + t0.x = t3.x)
+) AS dt;
+x	x
+1	1
+1	2
+1	3
+2	1
+2	2
+2	3
+SELECT * FROM
+t AS t0,
+LATERAL (
+SELECT * FROM t AS t1
+WHERE TRUE IN (SELECT t3.x IS NOT NULL
+FROM t AS t2 LEFT JOIN t AS t3
+ON t2.x = t3.x + t0.x)
+) AS dt;
+x	x
+1	1
+1	2
+1	3
+2	1
+2	2
+2	3
+SELECT * FROM
+t AS t0,
+LATERAL (
+SELECT * FROM t AS t1
+WHERE TRUE IN (SELECT t3.x IS NOT NULL
+FROM t AS t2 LEFT JOIN t AS t3
+ON t2.x >= t3.x + t0.x)
+) AS dt;
+x	x
+1	1
+1	2
+1	3
+2	1
+2	2
+2	3
+DROP TABLE t;

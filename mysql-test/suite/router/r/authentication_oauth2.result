@@ -1,0 +1,41 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+
+
+## I. Set custom configuration of OAUTH server
+#
+# 1. Verify redirection URL (Location) to the custom OAUTH2 server.
+# 2. Verify redirection URL (Location) to the custom OAUTH2 server,
+#    and ensure that query parameters are forwarded.
+# 3. Verify redirection URL (Location) to the custom OAUTH2 server,
+#    but confirm that query parameters such as onCompletionRedirect, onCompletionClose,
+#    and sessionType are not forwarded.
+#
+# Registred SERVICE at path: /svc
+# Registred AUTH APP at path: NULL
+
+#
+# I.1
+GET /svc/authentication/login
+
+OK
+
+#
+# I.2
+GET /svc/authentication/login?test_1=value_1&test_2=value_2
+
+OK
+
+#
+# I.3
+GET /svc/authentication/login?onCompletionRedirect=1&test_1=value_1&onCompletionClose=2&sessionType=cookie
+
+OK
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

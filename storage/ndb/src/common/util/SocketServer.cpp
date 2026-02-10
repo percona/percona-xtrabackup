@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -68,7 +68,7 @@ SocketServer::~SocketServer() {
   }
 }
 
-bool SocketServer::tryBind(ndb_sockaddr servaddr, char *error,
+bool SocketServer::tryBind(const ndb_sockaddr &servaddr, char *error,
                            size_t error_size) {
   const ndb_socket_t sock = ndb_socket_create(servaddr.get_address_family());
 
@@ -117,6 +117,10 @@ bool SocketServer::setup(SocketServer::Service *service,
   }
 
   DBUG_PRINT("info", ("NDB_SOCKET: %s", ndb_socket_to_string(sock).c_str()));
+
+  if (ndb_socket_can_disable_sigpipe())
+    if (ndb_socket_disable_sigpipe(sock) == -1)
+      DBUG_PRINT("error", ("setsockopt() - %d - %s", errno, strerror(errno)));
 
   if (ndb_socket_reuseaddr(sock, true) == -1) {
     DBUG_PRINT("error", ("setsockopt() - %d - %s", errno, strerror(errno)));
@@ -222,14 +226,14 @@ bool SocketServer::doAccept() {
 }
 
 extern "C" void *socketServerThread_C(void *_ss) {
-  SocketServer *ss = (SocketServer *)_ss;
+  auto *ss = (SocketServer *)_ss;
   ss->doRun();
   return nullptr;
 }
 
 struct NdbThread *SocketServer::startServer() {
   m_threadLock.lock();
-  if (m_thread == nullptr && m_stopThread == false) {
+  if (m_thread == nullptr && !m_stopThread) {
     m_thread = NdbThread_Create(socketServerThread_C, (void **)this,
                                 0,  // default stack size
                                 "NdbSockServ", NDB_THREAD_PRIO_LOW);
@@ -363,7 +367,7 @@ bool SocketServer::stopSessions(bool wait, unsigned wait_timeout) {
 /***** Session code ******/
 
 extern "C" void *sessionThread_C(void *_sc) {
-  SocketServer::Session *si = (SocketServer::Session *)_sc;
+  auto *si = (SocketServer::Session *)_sc;
 
   assert(si->m_thread_stopped == false);
 

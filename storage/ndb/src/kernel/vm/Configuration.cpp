@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -90,7 +90,6 @@ Configuration::Configuration() {
   _backupPath = 0;
   _initialStart = false;
   m_config_retriever = 0;
-  m_logLevel = 0;
 }
 
 Configuration::~Configuration() {
@@ -102,9 +101,6 @@ Configuration::~Configuration() {
     delete m_config_retriever;
   }
 
-  if (m_logLevel) {
-    delete m_logLevel;
-  }
   ndb_mgm_destroy_iterator(m_clusterConfigIter);
 }
 
@@ -298,6 +294,18 @@ void Configuration::setupConfiguration() {
   }
 
   /**
+   * Setup g_eventLogger log levels for logevents.
+   */
+
+  for (unsigned j = 0; j < LogLevel::LOGLEVEL_CATEGORIES; j++) {
+    Uint32 level;
+    LogLevel &logLevel = g_eventLogger->m_logLevel;
+    if (!iter.get(CFG_MIN_LOGLEVEL + j, &level)) {
+      logLevel.setLogLevel((LogLevel::EventCategory)j, level);
+    }
+  }
+
+  /**
    * Iff we use the 'default' (non-mt) send buffer implementation, the
    * send buffers are allocated here.
    */
@@ -361,6 +369,9 @@ void Configuration::setupConfiguration() {
     g_eventLogger->info("Mixology level set to 0x%x", _mixologyLevel);
     globalTransporterRegistry.setMixologyLevel(_mixologyLevel);
   }
+
+  _shutdownHandlingFault = 0;
+  _shutdownHandlingFaultExtra = 0;
 #endif
 
   /**
@@ -647,6 +658,20 @@ void Configuration::setRestartOnErrorInsert(int i) {
 Uint32 Configuration::getMixologyLevel() const { return _mixologyLevel; }
 
 void Configuration::setMixologyLevel(Uint32 l) { _mixologyLevel = l; }
+
+Uint32 Configuration::getShutdownHandlingFault() const {
+  return _shutdownHandlingFault;
+}
+
+Uint32 Configuration::getShutdownHandlingFaultExtra() const {
+  return _shutdownHandlingFaultExtra;
+}
+
+void Configuration ::setShutdownHandlingFault(Uint32 v, Uint32 extra) {
+  _shutdownHandlingFault = v;
+  _shutdownHandlingFaultExtra = extra;
+}
+
 #endif
 
 const ndb_mgm_configuration_iterator *Configuration::getOwnConfigIterator()
@@ -704,11 +729,6 @@ void Configuration::calcSizeAlt(ConfigValues *ownConfig) {
   unsigned int transactionBufferBytes = 1048576;
   unsigned int reservedTransactionBufferBytes = 1048576 / 4;
   unsigned int maxOpsPerTrans = ~(Uint32)0;
-
-  m_logLevel = new LogLevel();
-  if (!m_logLevel) {
-    ERROR_SET(fatal, NDBD_EXIT_MEMALLOC, "Failed to create LogLevel", "");
-  }
 
   struct AttribStorage {
     int paramId;
@@ -781,13 +801,6 @@ void Configuration::calcSizeAlt(ConfigValues *ownConfig) {
   noOfDataPages = (Uint32)(dataMem / 32768);
   noOfIndexPages = (Uint32)(indexMem / 8192);
   noOfIndexPages = DO_DIV(noOfIndexPages, ldmInstances);
-
-  for (unsigned j = 0; j < LogLevel::LOGLEVEL_CATEGORIES; j++) {
-    Uint32 tmp;
-    if (!ndb_mgm_get_int_parameter(&db, CFG_MIN_LOGLEVEL + j, &tmp)) {
-      m_logLevel->setLogLevel((LogLevel::EventCategory)j, tmp);
-    }
-  }
 
   // tmp
   ndb_mgm_configuration_iterator *iter = m_clusterConfigIter;

@@ -10,7 +10,7 @@ All tests must pass. If one or more of them fail on your system, please
 read the following manual section for instructions on how to report the
 problem:
 
-http://dev.mysql.com/doc/mysql/en/mysql-test-suite.html
+https://dev.mysql.com/doc/dev/mysql-server/latest/PAGE_TESTING_TOOLS.html
 
 If you want to use an already running MySQL server for specific tests,
 use the --extern option to mysql-test-run. Please note that in this mode,
@@ -68,5 +68,5 @@ extension. For example:
    that the bug is corrected in future releases.
 
 To submit your test case, put your .test file and .result file(s) into
-a tar.gz or zip archive, create a bug report at http://bugs.mysql.com/
+a tar.gz or zip archive, create a bug report at https://bugs.mysql.com/
 and attach the archive to the bug report.

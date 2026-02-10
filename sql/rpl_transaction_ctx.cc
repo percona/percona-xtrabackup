@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -108,6 +108,10 @@ int set_transaction_ctx(
   Find_thd_with_id find_thd_with_id(transaction_termination_ctx.m_thread_id,
                                     true);
 
+#ifndef NDEBUG
+  static std::size_t gno = 0;
+#endif
+
   THD_ptr thd_ptr =
       Global_THD_manager::get_instance()->find_thd(&find_thd_with_id);
   if (thd_ptr) {
@@ -122,6 +126,10 @@ int set_transaction_ctx(
         arbitrator, thence matching the arbitrator's transactions
         order.
       */
+      DBUG_EXECUTE_IF(
+          "simulate_bgct_rpco_deadlock", ++gno; if (gno % 3 == 0) {
+            thd_ptr->rpl_thd_ctx.binlog_group_commit_ctx().push_new_ticket();
+          });
       thd_ptr->rpl_thd_ctx.binlog_group_commit_ctx().assign_ticket();
     }
   }

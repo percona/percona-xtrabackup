@@ -34,12 +34,13 @@ WHERE PRIVILEGE_TYPE = 'RELOAD' ORDER BY 1,2,3;
 --let $restart_parameters = restart:
 --source include/restart_mysqld.inc
 
---echo # After upgrade, root and test user shall have FLUSH_PRIVILEGES privilege.
+--echo # After upgrade, root and test user should not have FLUSH_PRIVILEGES privilege.
 SELECT GRANTEE, PRIVILEGE_TYPE, IS_GRANTABLE FROM INFORMATION_SCHEMA.USER_PRIVILEGES
 WHERE PRIVILEGE_TYPE LIKE 'FLUSH_PRIVILEGES' ORDER BY 1,2,3;
 
 --echo # Cleanup
 DROP USER test@localhost, test_no_reload@localhost;
+GRANT FLUSH_PRIVILEGES ON *.* TO root@localhost WITH GRANT OPTION;
 # Clean up specific for CHTEST
 let $datadir = `SELECT @@datadir`;
 --error 0,1

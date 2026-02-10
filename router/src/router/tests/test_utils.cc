@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +34,7 @@
 #include "mysql/harness/filesystem.h"
 #include "mysql/harness/string_utils.h"
 #include "mysqlrouter/utils.h"  // get_tcp_port
+#include "mysqlrouter/utils_sqlstring.h"
 
 using ::testing::ContainerEq;
 using ::testing::Pair;
@@ -77,8 +78,8 @@ TEST_F(UtilsTests, copy_file) {
   for (int i = 0; i < 2000; i++) dataf << "somedata\n";
   dataf.close();
 
-  mysqlrouter::copy_file("empty.tf", "empty.tf2");
-  mysqlrouter::copy_file("data.tf", "data.tf2");
+  mysql_harness::copy_file("empty.tf", "empty.tf2");
+  mysql_harness::copy_file("data.tf", "data.tf2");
 
   try {
     EXPECT_TRUE(files_equal("empty.tf", "empty.tf2"));
@@ -224,6 +225,26 @@ TEST_F(UtilsTests, uint64_conversion) {
   EXPECT_EQ(static_cast<uint64_t>(0x7fffffffffffffff),
             strtoull_checked("9223372036854775807", kDefault));
   EXPECT_EQ(static_cast<uint64_t>(66), strtoull_checked("66", kDefault));
+}
+
+template <typename T>
+void assertSqlString(mysqlrouter::sqlstring sql, const T &value,
+                     const char *result) {
+  sql << value;
+  ASSERT_EQ(result, sql.str());
+}
+
+TEST(sqlstring, array) {
+  assertSqlString("SELECT CONCAT(!)", "test", "SELECT CONCAT(`test`)");
+
+  const std::vector<const char *> empty;
+  assertSqlString("SELECT CONCAT(!)", empty, "SELECT CONCAT()");
+
+  const std::vector<const char *> single{"test"};
+  assertSqlString("SELECT CONCAT(!)", single, "SELECT CONCAT(`test`)");
+
+  const std::vector<const char *> two{"A", "B"};
+  assertSqlString("SELECT CONCAT(!)", two, "SELECT CONCAT(`A`,`B`)");
 }
 
 int main(int argc, char **argv) {

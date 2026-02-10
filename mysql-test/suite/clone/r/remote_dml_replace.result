@@ -1,3 +1,4 @@
+RESET BINARY LOGS AND GTIDS;
 Install clone plugin on recipient server
 INSTALL PLUGIN clone SONAME 'CLONE_PLUGIN';
 CREATE TABLE t_recipient(col1 INT PRIMARY KEY, col2 int);
@@ -203,7 +204,7 @@ commit;
 select STATE, ERROR_NO, length(BINLOG_FILE) > 0, length(GTID_EXECUTED) > 0,
 (BINLOG_POSITION > 0) from performance_schema.clone_status;
 STATE	ERROR_NO	length(BINLOG_FILE) > 0	length(GTID_EXECUTED) > 0	(BINLOG_POSITION > 0)
-Completed	0	1	0	1
+Completed	0	1	1	1
 call execute_dml(3, 0, 1, 1, 1, 0);
 call execute_dml(0, 0, 100, 100, 10, 0);
 SHOW CREATE TABLE t1;
@@ -315,7 +316,7 @@ ID	STAGE	STATE
 select STATE, ERROR_NO, length(BINLOG_FILE) > 0, length(GTID_EXECUTED) > 0,
 (BINLOG_POSITION > 0) from performance_schema.clone_status;
 STATE	ERROR_NO	length(BINLOG_FILE) > 0	length(GTID_EXECUTED) > 0	(BINLOG_POSITION > 0)
-Completed	0	1	0	1
+Completed	0	1	1	1
 call execute_dml(3, 0, 1, 1, 1, 0);
 call execute_dml(0, 0, 100, 100, 10, 0);
 SHOW CREATE TABLE t1;

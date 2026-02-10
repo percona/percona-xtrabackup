@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
@@ -121,8 +121,10 @@
   @param str     A String to store the user list.
   @param user    A LEX_USER which will be appended into user list.
   @param comma   If true, append a ',' before the the user.
+  @param reason for the failure
  */
-void log_user(THD *thd, String *str, LEX_USER *user, bool comma = true) {
+void log_user(THD *thd, String *str, LEX_USER *user, bool comma,
+              const char *reason) {
   const String from_user(user->user.str, user->user.length,
                          system_charset_info);
   const String from_plugin(user->first_factor_auth_info.plugin.str,
@@ -138,6 +140,11 @@ void log_user(THD *thd, String *str, LEX_USER *user, bool comma = true) {
   append_query_string(thd, system_charset_info, &from_user, str);
   str->append(STRING_WITH_LEN("@"));
   append_query_string(thd, system_charset_info, &from_host, str);
+  if (reason) {
+    str->append(STRING_WITH_LEN(" ("));
+    str->append(reason);
+    str->append(STRING_WITH_LEN(")"));
+  }
 }
 
 extern bool initialized;
@@ -151,7 +158,8 @@ enum enum_acl_lists {
   COLUMN_PRIVILEGES_HASH,
   PROC_PRIVILEGES_HASH,
   FUNC_PRIVILEGES_HASH,
-  PROXY_USERS_ACL
+  PROXY_USERS_ACL,
+  LIB_PRIVILEGES_HASH,
 };
 
 bool check_change_password(THD *thd, const char *host, const char *user,
@@ -309,7 +317,8 @@ bool mysql_show_create_user(THD *thd, LEX_USER *user_name,
   if (!(acl_user =
             find_acl_user(user_name->host.str, user_name->user.str, true))) {
     String wrong_users;
-    log_user(thd, &wrong_users, user_name, wrong_users.length() > 0);
+    log_user(thd, &wrong_users, user_name, wrong_users.length() > 0,
+             "User account does not exist");
     my_error(ER_CANNOT_USER, MYF(0), "SHOW CREATE USER",
              wrong_users.c_ptr_safe());
     close_thread_tables(thd);
@@ -597,14 +606,14 @@ static bool auth_verify_password_history(
 
   /* iterate over the password history rows for the user */
   while (!error) {
-    MYSQL_TIME ts_val;
+    Date_val ts_val;
     char outbuf[MAX_FIELD_WIDTH] = {0};
     long ts_day, date_diff;
     String cred_val(&outbuf[0], sizeof(outbuf), &my_charset_bin);
     int is_error = 0;
 
     /* fetch the recorded time */
-    if (ts_field->get_date(&ts_val, 0)) goto get_next_row;
+    if (ts_field->val_date(&ts_val, 0)) goto get_next_row;
 
     /* convert to a day number */
     ts_day = calc_daynr(ts_val.year, ts_val.month, ts_val.day);
@@ -1235,6 +1244,72 @@ error:
 }
 
 /**
+  When CREATE USER doesn't specify authentication plugins,
+  this function will add default authentication plugins to MFA list.
+
+  @param thd            thread context
+  @param Str            user on which attributes has to be applied
+  @param policy_factors factors specified by the authentication policy
+
+  @retval 0 ok
+  @retval 1 ERROR;
+*/
+static bool add_default_auth_plugins(
+    THD *thd, LEX_USER *Str,
+    const authentication_policy::Factors &policy_factors) {
+  size_t factor_idx(0);
+  LEX_MFA *lex_mfa(nullptr);
+
+  /*
+    If 1. factor plugin name is not present in the statement,
+    set the plugin to one defined by authentication_policy
+  */
+
+  if (Str->first_factor_auth_info.plugin.length <= 0)
+    authentication_policy::get_first_factor_default_plugin(
+        thd->mem_root, &Str->first_factor_auth_info.plugin);
+
+  /* Skip for AUTHENTICATION_POLICY_ADMIN, so the admin
+     is able to omit default plugins for subsequent factors.
+  */
+  if (thd->security_context()
+          ->has_global_grant(STRING_WITH_LEN("AUTHENTICATION_POLICY_ADMIN"))
+          .first)
+    return false;
+
+  /*
+    Loop over factors not present in the statement, but defined in the policy.
+
+    If the policy factor defines default or mandatory plugin
+    add that plugin to the lex factor.
+  */
+
+  for (factor_idx = Str->mfa_list.size() + 1;
+       factor_idx < policy_factors.size(); ++factor_idx) {
+    if (policy_factors[factor_idx].is_optional())
+      break;  // rest of factors must be optional too
+
+    const std::string &plugin_name(
+        policy_factors[factor_idx].get_mandatory_or_default_plugin());
+
+    lex_mfa = new (thd->mem_root) LEX_MFA;
+    if (lex_mfa == nullptr) return true;
+
+    if (plugin_name.empty())
+      lex_mfa->plugin = EMPTY_CSTR;
+    else
+      lex_string_strmake(thd->mem_root, &lex_mfa->plugin, plugin_name.c_str(),
+                         plugin_name.length());
+    lex_mfa->auth = EMPTY_CSTR;
+    lex_mfa->uses_identified_by_clause = false;
+    lex_mfa->uses_identified_with_clause = true;
+    lex_mfa->nth_factor = factor_idx + 1;
+    Str->mfa_list.push_back(lex_mfa);
+  }
+  return false;
+}
+
+/**
   This function does following:
    1. Convert plain text password to hash and update the same in
       user definition.
@@ -1377,7 +1452,10 @@ bool set_and_validate_user_attributes(
         */
         if (!thd->is_error()) {
           String error_user;
-          log_user(thd, &error_user, Str, false);
+          log_user(thd, &error_user, Str, false,
+                   "The authentication plugin failed to generate an "
+                   "authentication string, but "
+                   "returned no specific error");
           my_error(ER_CANNOT_USER, MYF(0), cmd, error_user.c_ptr_safe());
         }
         return true;
@@ -1573,44 +1651,7 @@ bool set_and_validate_user_attributes(
             acl_user->password_reuse_interval;
     }
   } else { /* User does not exist */
-    size_t factor_idx(0);
-    LEX_MFA *lex_mfa(nullptr);
-    /*
-      If 1. factor plugin name is not present in the statement,
-      set the plugin to one defined by authentication_policy
-    */
-
-    if (Str->first_factor_auth_info.plugin.length <= 0)
-      authentication_policy::get_first_factor_default_plugin(
-          thd->mem_root, &Str->first_factor_auth_info.plugin);
-
-    /*
-      Loop over factors not present in the statement, but defined in the policy.
-
-      If the policy factor defines default plugin
-      add that plugin to the lex factor.
-    */
-
-    for (factor_idx = Str->mfa_list.size() + 1;
-         factor_idx < policy_factors.size(); ++factor_idx) {
-      if (policy_factors[factor_idx].is_optional())
-        break;  // rest of factors must be optional too
-
-      const std::string &plugin_name(
-          policy_factors[factor_idx].get_default_plugin());
-      if (plugin_name.empty()) continue;  // no default plugin defined
-
-      lex_mfa = new (thd->mem_root) LEX_MFA;
-      if (lex_mfa == nullptr) return true;
-
-      lex_string_strmake(thd->mem_root, &lex_mfa->plugin, plugin_name.c_str(),
-                         plugin_name.length());
-      lex_mfa->auth = EMPTY_CSTR;
-      lex_mfa->uses_identified_by_clause = false;
-      lex_mfa->uses_identified_with_clause = true;
-      lex_mfa->nth_factor = factor_idx + 1;
-      Str->mfa_list.push_back(lex_mfa);
-    }
+    if (add_default_auth_plugins(thd, Str, policy_factors)) return true;
 
     if (command == SQLCOM_GRANT) {
       my_error(ER_CANT_CREATE_USER_WITH_GRANT, MYF(0));
@@ -1626,8 +1667,12 @@ bool set_and_validate_user_attributes(
     and error if it is.
   */
   if (Str->alter_status.update_password_expired_fields &&
-      !Str->alter_status.use_default_password_lifetime &&
-      Str->alter_status.expire_after_days != 0 &&
+      (
+          // CREATE USER .. PASSWORD EXPIRE
+          Str->alter_status.update_password_expired_column ||
+          // CREATE USER PASSWORD EXPIRE INTERVAL
+          (!Str->alter_status.use_default_password_lifetime &&
+           Str->alter_status.expire_after_days != 0)) &&
       !auth_plugin_supports_expiration(
           Str->first_factor_auth_info.plugin.str)) {
     my_error(ER_PASSWORD_EXPIRATION_NOT_SUPPORTED_BY_AUTH_METHOD, MYF(0),
@@ -1760,7 +1805,7 @@ bool set_and_validate_user_attributes(
       */
       if (!thd->is_error()) {
         String error_user;
-        log_user(thd, &error_user, Str, false);
+        log_user(thd, &error_user, Str, false, nullptr);
         my_error(ER_CANNOT_USER, MYF(0), cmd, error_user.c_ptr_safe());
       }
       return (true);
@@ -2404,6 +2449,16 @@ static int handle_grant_struct(enum enum_acl_lists struct_no, bool drop,
         search_for_matching_grant(func_priv_hash.get(), matches);
       break;
 
+    case LIB_PRIVILEGES_HASH:
+      if (drop)
+        remove_matching_grants(library_priv_hash.get(), matches);
+      else if (user_to) {
+        if (rename_matching_grants(library_priv_hash.get(), matches, user_to))
+          return -1;
+      } else
+        search_for_matching_grant(library_priv_hash.get(), matches);
+      break;
+
     case PROXY_USERS_ACL:
       for (uint idx = 0; idx < acl_proxy_users->size(); idx++) {
         ACL_PROXY_USER *acl_proxy_user = &acl_proxy_users->at(idx);
@@ -2662,7 +2717,8 @@ end:
 static bool stop_if_orphaned_definer(THD *thd, const LEX_USER *user_name,
                                      const std::string &object_type) {
   String wrong_user;
-  log_user(thd, &wrong_user, const_cast<LEX_USER *>(user_name), false);
+  log_user(thd, &wrong_user, const_cast<LEX_USER *>(user_name), false,
+           nullptr);  // a specific error is used
   if (!thd->security_context()
            ->has_global_grant(STRING_WITH_LEN("ALLOW_NONEXISTENT_DEFINER"))
            .first) {
@@ -2815,7 +2871,8 @@ bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
       */
       if (!(user_name = get_current_user(thd, tmp_user_name))) {
         result = 1;
-        log_user(thd, &wrong_users, user_name, wrong_users.length() > 0);
+        log_user(thd, &wrong_users, user_name, wrong_users.length() > 0,
+                 "User account already exists");
         continue;
       }
       if (set_and_validate_user_attributes(
@@ -2823,7 +2880,8 @@ bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
               &tables[ACL_TABLES::TABLE_PASSWORD_HISTORY], &history_check_done,
               "CREATE USER", generated_passwords, &mfa, if_not_exists)) {
         result = 1;
-        log_user(thd, &wrong_users, user_name, wrong_users.length() > 0);
+        log_user(thd, &wrong_users, user_name, wrong_users.length() > 0,
+                 nullptr);  // no specific error data at this point
         continue;
       }
       if (!strcmp(user_name->user.str, "") &&
@@ -2855,7 +2913,8 @@ bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
         }
         if (if_not_exists) {
           String warn_user;
-          log_user(thd, &warn_user, user_name, false);
+          log_user(thd, &warn_user, user_name, false,
+                   nullptr);  // a specific warning issued
           push_warning_printf(
               thd, Sql_condition::SL_NOTE, ER_USER_ALREADY_EXISTS,
               ER_THD(thd, ER_USER_ALREADY_EXISTS), warn_user.c_ptr_safe());
@@ -2868,7 +2927,8 @@ bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
           }
           continue;
         } else {
-          log_user(thd, &wrong_users, user_name, wrong_users.length() > 0);
+          log_user(thd, &wrong_users, user_name, wrong_users.length() > 0,
+                   "User account already exists");
           result = 1;
         }
         continue;
@@ -2882,7 +2942,8 @@ bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
         result = 1;
         if (ret < 0) break;
 
-        log_user(thd, &wrong_users, user_name, wrong_users.length() > 0);
+        log_user(thd, &wrong_users, user_name, wrong_users.length() > 0,
+                 "Failed to update the user table");
 
         continue;
       }
@@ -3063,6 +3124,10 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
   bool transactional_tables;
   std::set<LEX_USER *> audit_users;
   DBUG_TRACE;
+  DBUG_EXECUTE_IF("test_acl_race_condition", {
+    assert(!debug_sync_set_action(
+        thd, STRING_WITH_LEN("now WAIT_FOR map_inserted NO_CLEAR_EVENT")));
+  });
 
   /* check if DROP user is allowed on this user list or not. */
   if (check_orphaned_definers(thd, list)) return true;
@@ -3095,6 +3160,8 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
       return true;
     }
 
+    Lock_state_list modified_user_lock_state_list;
+
     if (check_system_user_privilege(thd, list)) {
       commit_and_close_mysql_tables(thd);
       return true;
@@ -3124,6 +3191,10 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
         continue;
       }
 
+      ACL_temporary_lock_state::preserve_user_lock_state(
+          user_name->host.str, user_name->user.str,
+          modified_user_lock_state_list);
+
       audit_users.insert(tmp_user_name);
 
       const int ret = handle_grant_data(thd, tables, true, user_name, nullptr,
@@ -3135,12 +3206,14 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
         }
         if (if_exists) {
           String warn_user;
-          log_user(thd, &warn_user, user_name, false);
+          log_user(thd, &warn_user, user_name, false,
+                   nullptr);  // a specific error message
           push_warning_printf(
               thd, Sql_condition::SL_NOTE, ER_USER_DOES_NOT_EXIST,
               ER_THD(thd, ER_USER_DOES_NOT_EXIST), warn_user.c_ptr_safe());
         } else {
-          log_user(thd, &wrong_users, user_name, wrong_users.length() > 0);
+          log_user(thd, &wrong_users, user_name, wrong_users.length() > 0,
+                   "User account does not exist");
           result = 1;
         }
         continue;
@@ -3150,6 +3223,7 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
     /* Rebuild 'acl_check_hosts' since 'acl_users' has been modified */
     rebuild_check_host();
     rebuild_cached_acl_users_for_name();
+    clear_and_init_db_cache(); /* Clear privilege cache */
 
     if (result && !thd->is_error()) {
       String operation_str;
@@ -3166,7 +3240,9 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
       result =
           populate_roles_caches(thd, (tables + ACL_TABLES::TABLE_ROLE_EDGES));
 
-    result = log_and_commit_acl_ddl(thd, transactional_tables);
+    result =
+        log_and_commit_acl_ddl(thd, transactional_tables, nullptr, nullptr,
+                               false, true, &modified_user_lock_state_list);
 
     {
       /* Notify audit plugin. We will ignore the return value. */
@@ -3259,6 +3335,8 @@ bool mysql_rename_user(THD *thd, List<LEX_USER> &list) {
       return true;
     }
 
+    Lock_state_list modified_user_lock_state_list;
+
     while ((tmp_user_from = user_list++)) {
       LEX_USER *user_from;
       LEX_USER *user_to;
@@ -3273,6 +3351,10 @@ bool mysql_rename_user(THD *thd, List<LEX_USER> &list) {
       }
       assert(user_to != nullptr); /* Syntax enforces pairs of users. */
 
+      ACL_temporary_lock_state::preserve_user_lock_state(
+          user_from->host.str, user_from->user.str,
+          modified_user_lock_state_list);
+
       /*
         If we are renaming to anonymous user, make sure no roles are granted.
       */
@@ -3280,7 +3362,9 @@ bool mysql_rename_user(THD *thd, List<LEX_USER> &list) {
         List_of_granted_roles granted_roles;
         get_granted_roles(user_from, &granted_roles);
         if (!granted_roles.empty()) {
-          log_user(thd, &wrong_users, user_from, wrong_users.length() > 0);
+          log_user(thd, &wrong_users, user_from, wrong_users.length() > 0,
+                   "User account is renamed to anonymous user, but roles are "
+                   "granted to it");
           result = 1;
           continue;
         }
@@ -3298,7 +3382,9 @@ bool mysql_rename_user(THD *thd, List<LEX_USER> &list) {
           break;
         }
 
-        log_user(thd, &wrong_users, user_from, wrong_users.length() > 0);
+        log_user(
+            thd, &wrong_users, user_from, wrong_users.length() > 0,
+            nullptr);  // at this point we don't have a more concrete reason
         result = 1;
         continue;
       }
@@ -3311,7 +3397,9 @@ bool mysql_rename_user(THD *thd, List<LEX_USER> &list) {
           break;
         }
 
-        log_user(thd, &wrong_users, user_from, wrong_users.length() > 0);
+        log_user(
+            thd, &wrong_users, user_from, wrong_users.length() > 0,
+            nullptr);  // the concrete reason is hidden by handle_grant_data
         result = 1;
         continue;
       }
@@ -3356,7 +3444,9 @@ bool mysql_rename_user(THD *thd, List<LEX_USER> &list) {
     Security_context *current_sctx = thd->security_context();
     current_sctx->restore_security_context(thd, orig_sctx.get());
 
-    result = log_and_commit_acl_ddl(thd, transactional_tables);
+    result =
+        log_and_commit_acl_ddl(thd, transactional_tables, nullptr, nullptr,
+                               false, true, &modified_user_lock_state_list);
 
     /* Restore the updated security context */
     current_sctx->restore_security_context(thd, current_sctx);
@@ -3438,6 +3528,8 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
       return true;
     }
 
+    Lock_state_list modified_user_lock_state_list;
+
     if (check_system_user_privilege(thd, list)) {
       commit_and_close_mysql_tables(thd);
       return true;
@@ -3461,10 +3553,15 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
       }
       /* add the defaults where needed */
       if (!(user_from = get_current_user(thd, tmp_user_from))) {
-        log_user(thd, &wrong_users, tmp_user_from, wrong_users.length() > 0);
+        log_user(thd, &wrong_users, tmp_user_from, wrong_users.length() > 0,
+                 nullptr);  // should not happen
         result = 1;
         continue;
       }
+
+      acl_user = ACL_temporary_lock_state::preserve_user_lock_state(
+          user_from->host.str, user_from->user.str,
+          modified_user_lock_state_list);
 
       /* copy password expire attributes to individual lex user */
       user_from->alter_status = thd->lex->alter_password;
@@ -3476,17 +3573,6 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
         result = 1;
         continue;
       }
-      /*
-        Check if the user's authentication method supports expiration only
-        if PASSWORD EXPIRE attribute is specified
-      */
-      if (user_from->alter_status.update_password_expired_column &&
-          !auth_plugin_supports_expiration(
-              user_from->first_factor_auth_info.plugin.str)) {
-        result = 1;
-        log_user(thd, &wrong_users, user_from, wrong_users.length() > 0);
-        continue;
-      }
 
       if (!strcmp(user_from->user.str, "") &&
           (what_to_alter.m_what & PASSWORD_EXPIRE_ATTR) &&
@@ -3495,8 +3581,6 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
         is_anonymous_user = true;
         continue;
       }
-
-      acl_user = find_acl_user(user_from->host.str, user_from->user.str, true);
 
       if (history_check_done) {
         /*
@@ -3529,7 +3613,8 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
 
         if (if_exists) {
           String warn_user;
-          log_user(thd, &warn_user, user_from, false);
+          log_user(thd, &warn_user, user_from, false,
+                   nullptr);  // a specific error
           push_warning_printf(
               thd, Sql_condition::SL_NOTE, ER_USER_DOES_NOT_EXIST,
               ER_THD(thd, ER_USER_DOES_NOT_EXIST), warn_user.c_ptr_safe());
@@ -3541,7 +3626,8 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
                    warn_user.c_ptr_safe());
           }
         } else {
-          log_user(thd, &wrong_users, user_from, wrong_users.length() > 0);
+          log_user(thd, &wrong_users, user_from, wrong_users.length() > 0,
+                   "User account does not exist");
           result = 1;
         }
         continue;
@@ -3558,7 +3644,8 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
         }
         if (if_exists) {
           String warn_user;
-          log_user(thd, &warn_user, user_from, false);
+          log_user(thd, &warn_user, user_from, false,
+                   nullptr);  // a specific error
           push_warning_printf(
               thd, Sql_condition::SL_NOTE, ER_USER_DOES_NOT_EXIST,
               ER_THD(thd, ER_USER_DOES_NOT_EXIST), warn_user.c_ptr_safe());
@@ -3570,7 +3657,8 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
                    warn_user.c_ptr_safe());
           }
         } else {
-          log_user(thd, &wrong_users, user_from, wrong_users.length() > 0);
+          log_user(thd, &wrong_users, user_from, wrong_users.length() > 0,
+                   "User account does not exist");
           result = 1;
         }
         continue;
@@ -3617,7 +3705,8 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
 
     User_params user_params(&extra_users);
     result = log_and_commit_acl_ddl(thd, transactional_tables, &extra_users,
-                                    &user_params, false, write_to_binlog);
+                                    &user_params, false, write_to_binlog,
+                                    &modified_user_lock_state_list);
     /* Notify audit plugin. We will ignore the return value. */
     LEX_USER *audit_user;
     for (LEX_USER *one_user : audit_users) {

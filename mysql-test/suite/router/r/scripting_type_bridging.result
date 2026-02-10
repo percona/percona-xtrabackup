@@ -1,0 +1,173 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+# Registered MRS ROLE: AllPriv
+# Registered MRS Role Grant: /svc1 * * => READ,CREATE,UPDATE,DELETE
+# Registred SERVICE at path: /svc1
+# Registred DB_SCHEMA at path: /svc1/basic_schema
+# Registred AUTH APP at path: /svc1
+# Registred MRS USER: 'user1'
+# Registred CONTENT_SET at path: /svc1/set
+SET @my_set=@content_set_id;
+# Registred CONTENT_FILE at path: /svc1/set/Types.js
+SET @auth_content_file_id=@content_file_id;
+# Registred DB_OBJECT at path: /svc1/basic_schema/returnValue
+# Registered CONTENT_SET Object Definition for: Types.returnValue
+
+Calls a simple JavaScript function that returns 'Hello World!'
+No authentication is needed for this one
+
+# String
+PUT /svc1/basic_schema/returnValue (payload-size:35)
+{
+    "status": "ok",
+    "result": "This will be returned!"
+}
+OK
+
+# Booleans
+PUT /svc1/basic_schema/returnValue (payload-size:15)
+{
+    "status": "ok",
+    "result": true
+}
+OK
+PUT /svc1/basic_schema/returnValue (payload-size:17)
+{
+    "status": "ok",
+    "result": "true"
+}
+OK
+PUT /svc1/basic_schema/returnValue (payload-size:16)
+{
+    "status": "ok",
+    "result": false
+}
+OK
+PUT /svc1/basic_schema/returnValue (payload-size:18)
+{
+    "status": "ok",
+    "result": "false"
+}
+OK
+
+# Numbers
+PUT /svc1/basic_schema/returnValue (payload-size:15)
+{
+    "status": "ok",
+    "result": 1234
+}
+OK
+PUT /svc1/basic_schema/returnValue (payload-size:17)
+{
+    "status": "ok",
+    "result": "1234"
+}
+OK
+PUT /svc1/basic_schema/returnValue (payload-size:17)
+{
+    "status": "ok",
+    "result": 123.45
+}
+OK
+PUT /svc1/basic_schema/returnValue (payload-size:19)
+{
+    "status": "ok",
+    "result": "123.45"
+}
+OK
+
+# -(2 ^ 53 - 1)
+PUT /svc1/basic_schema/returnValue (payload-size:28)
+{
+    "status": "ok",
+    "result": -9007199254740991
+}
+OK
+
+#  -(2 ^ 31) - 1
+PUT /svc1/basic_schema/returnValue (payload-size:22)
+{
+    "status": "ok",
+    "result": -2147483649
+}
+OK
+
+# -(2 ^ 31)
+PUT /svc1/basic_schema/returnValue (payload-size:22)
+{
+    "status": "ok",
+    "result": -2147483648
+}
+OK
+
+# (2 ^ 31) - 1
+PUT /svc1/basic_schema/returnValue (payload-size:21)
+{
+    "status": "ok",
+    "result": 2147483647
+}
+OK
+
+# (2 ^ 31)
+PUT /svc1/basic_schema/returnValue (payload-size:21)
+{
+    "status": "ok",
+    "result": 2147483648
+}
+OK
+
+# (2 ^ 53) - 1
+PUT /svc1/basic_schema/returnValue (payload-size:27)
+{
+    "status": "ok",
+    "result": 9007199254740991
+}
+OK
+
+# Null
+PUT /svc1/basic_schema/returnValue (payload-size:15)
+{
+    "status": "ok",
+    "result": null
+}
+OK
+
+# Array
+PUT /svc1/basic_schema/returnValue (payload-size:53)
+{
+    "status": "ok",
+    "result": [
+        "sample",
+        true,
+        false,
+        1234,
+        12.34,
+        null
+    ]
+}
+OK
+
+# Map
+PUT /svc1/basic_schema/returnValue (payload-size:108)
+{
+    "status": "ok",
+    "result": {
+        "false": false,
+        "float": 12.34,
+        "integer": 1234,
+        "null": null,
+        "string": "sample",
+        "true": true
+    }
+}
+OK
+drop user user1@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

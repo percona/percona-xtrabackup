@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -66,6 +66,7 @@ std::vector<Gcs_node_suspicious>
 Gcs_xcom_statistics_manager_interface_impl::get_all_suspicious() const {
   std::vector<Gcs_node_suspicious> retval;
 
+  retval.reserve(m_suspicious_statistics.size());
   for (auto const &[node, number_of_fails] : m_suspicious_statistics)
     retval.push_back({node, number_of_fails});
 

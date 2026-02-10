@@ -115,6 +115,7 @@ table_handles
 table_io_waits_summary_by_index_usage
 table_io_waits_summary_by_table
 table_lock_waits_summary_by_table
+temporary_account_locks
 threads
 tls_channel_status
 user_defined_functions
@@ -1162,6 +1163,8 @@ host_cache	CREATE TABLE `host_cache` (
   `COUNT_DEFAULT_DATABASE_ERRORS` bigint NOT NULL,
   `COUNT_INIT_CONNECT_ERRORS` bigint NOT NULL,
   `COUNT_LOCAL_ERRORS` bigint NOT NULL,
+  `COUNT_ACCOUNT_LOCKED_ERRORS` bigint NOT NULL,
+  `COUNT_TEMPORARY_ACCOUNT_LOCKED_ERRORS` bigint NOT NULL,
   `COUNT_UNKNOWN_ERRORS` bigint NOT NULL,
   `FIRST_SEEN` timestamp NOT NULL,
   `LAST_SEEN` timestamp NOT NULL,
@@ -1553,6 +1556,19 @@ table_lock_waits_summary_by_table	CREATE TABLE `table_lock_waits_summary_by_tabl
   `AVG_TIMER_WRITE_EXTERNAL` bigint unsigned NOT NULL,
   `MAX_TIMER_WRITE_EXTERNAL` bigint unsigned NOT NULL,
   UNIQUE KEY `OBJECT` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`)
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+show create table temporary_account_locks;
+Table	Create Table
+temporary_account_locks	CREATE TABLE `temporary_account_locks` (
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `HOST` char(255) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+  `LOCKED` enum('YES','NO') NOT NULL,
+  `FAILED_LOGIN_ATTEMPTS` int NOT NULL,
+  `REMAINING_LOGIN_ATTEMPTS` int NOT NULL,
+  `PASSWORD_LOCK_TIME` int NOT NULL,
+  `LOCKED_SINCE` date DEFAULT NULL,
+  `LOCKED_UNTIL` date DEFAULT NULL,
+  UNIQUE KEY `ACCOUNT` (`USER`,`HOST`)
 ) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table threads;
 Table	Create Table

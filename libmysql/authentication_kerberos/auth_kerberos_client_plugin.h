@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,13 +50,13 @@ class Kerberos_plugin_client {
                          authentication_mode mode);
   ~Kerberos_plugin_client() = default;
   bool authenticate();
-  void set_upn_info(std::string name, std::string pwd);
-  void set_mysql_account_name(std::string name);
+  void set_upn_info(const std::string &name, std::string pwd);
+  void set_mysql_account_name(const std::string &name);
   bool obtain_store_credentials();
   bool read_spn_realm_from_server();
 
  protected:
-  void create_upn(std::string account_name);
+  void create_upn(const std::string &account_name);
   std::string m_user_principal_name;
   std::string m_password;
   std::string m_service_principal;

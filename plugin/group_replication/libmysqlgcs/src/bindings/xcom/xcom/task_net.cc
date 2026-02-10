@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,11 +34,11 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #endif
-#include <assert.h>
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cassert>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
 #ifdef _MSC_VER
 #include <stdint.h>
 #endif
@@ -91,14 +91,14 @@ int checked_getaddrinfo(const char *nodename, const char *servname,
   if (errval && errval != EAI_NONAME && errval != EAI_AGAIN) {
 #endif
 #if !defined(_WIN32)
-    IFDBG(
+    XCOM_IFDBG(
         D_NONE, NUMEXP(errval); STREXP(gai_strerror(errval));
         if (errval == EAI_SYSTEM) {
           NUMEXP(errno);
-          STREXP(g_strerror(errno));
+          STREXP(strerror(errno));
         });
 #else
-    IFDBG(D_NONE, NUMEXP(errval); STREXP(gai_strerror(errval)));
+    XCOM_IFDBG(D_NONE, NUMEXP(errval); STREXP(gai_strerror(errval)));
 #endif
   }
   assert((errval == 0 && *res) || (errval != 0 && *res == nullptr));
@@ -223,7 +223,7 @@ int init_net() {
   if (err != 0) {
     /* Tell the user that we could not find a usable */
     /* Winsock DLL. */
-    g_critical("WSAStartup failed with error: %d", err);
+    G_FATAL("WSAStartup failed with error: %d", err);
     return 1;
   }
 
@@ -236,7 +236,7 @@ int init_net() {
   if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) {
     /* Tell the user that we could not find a usable */
     /* WinSock DLL.                                  */
-    g_critical("Could not find a usable version of Winsock.dll");
+    G_FATAL("Could not find a usable version of Winsock.dll");
     return 1;
   } else {
     G_DEBUG("The Winsock 2.2 dll was found okay");

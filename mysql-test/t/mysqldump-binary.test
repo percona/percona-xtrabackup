@@ -1,4 +1,6 @@
 --echo # Bug#22601255 Restoring a dump of binary column, made with mysqldump, warns of invalid string
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 CREATE TABLE t1(
 u CHAR(10),
@@ -57,3 +59,5 @@ ST_AsText(g) FROM t1;
 
 DROP TABLE t1;
 --remove_file $MYSQLTEST_VARDIR/tmp/bug22601255.sql
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

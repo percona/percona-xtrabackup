@@ -1,0 +1,103 @@
+# Validate authentication application with SSL
+#
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+CREATE USER user_valid@'%' IDENTIFIED BY 'pwd';
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify that internal authentication fails to authenticate on HTTP (WL#16694 - TSFR_2_1_1)
+--echo #
+--echo # 1. authApp endpoint returns other intances not internal-auth.
+--echo # 2. using valid account, fails with an error.
+--echo # 3. Log warning is present in the logs
+--echo #
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--let $mrs_add_service_options='{"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}'
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/t1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_auth_app=mysql
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_auth_app=mrs
+--let $mrs_add_auth_vendor=MRS
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_user_name="svc_usr"
+--let $mrs_add_user_ext_uid=1000
+# auth_string: $A$005$VxmHRs/knOXHlsrB0onsYl8YmX0=$zBMKnT9FCep0IayH6aF5RI41z9EIGZoYalzD2MR971o=
+# encoded as base64:
+--let $mrs_add_user_auth_string="JEEkMDA1JFZ4bUhScy9rbk9YSGxzckIwb25zWWw4WW1YMD0kekJNS25UOUZDZXAwSWF5SDZhRjVSSTQxejlFSUdab1lhbHpEMk1SOTcxbz0="
+# Auth-string generated for "test" password
+--source ../include/mrs/user/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/authentication/authApps'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+--replace_regex /^Date.*/Date -> %DATE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=mysql'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=raw
+--let $mrs_client_arg_display=header
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"username":"user_valid","password":"pwd","authApp":"mrs"}'
+--source ../include/mrs/mrs_client.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=mrs'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=raw
+--let $mrs_client_arg_display=header
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_payload='{"username":"user_valid","nonce":"rand","authApp":"mrs"}'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.3
+
+--let $grep_pattern = .*WARNING .* Authentication application:'mysql'.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+--let $grep_pattern = .*WARNING .* Authentication application:'mrs'.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+--echo
+--echo # Cleanup
+DROP USER user_valid@'%';
+--source ../include/mrs/cleanup.inc

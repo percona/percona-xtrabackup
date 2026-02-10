@@ -39,18 +39,27 @@ INSERT INTO `‚s‚W` VALUES ('‚ ‚¢‚¤‚¦‚¨'),('‚ ‚¢‚¤‚¦'),('‚ ‚¢‚¤'),('‚ ‚¢'),('‚ ')
 INSERT INTO `‚s‚X` VALUES ('ƒ\\•\—\\'),('ƒ\\•\—\'),('ƒ\\•\'),('ƒ\\'),('ƒ\'),('');
 
 #InnoDB
+--sorted_result
 SELECT `‚b‚P`, LENGTH(`‚b‚P`) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`, LENGTH(`‚b‚P`) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`, LENGTH(`‚b‚P`) FROM `‚s‚R`;
 
 #MyISAM
+--sorted_result
 SELECT `‚b‚P`, LENGTH(`‚b‚P`) FROM `‚s‚S`;
+--sorted_result
 SELECT `‚b‚P`, LENGTH(`‚b‚P`) FROM `‚s‚T`;
+--sorted_result
 SELECT `‚b‚P`, LENGTH(`‚b‚P`) FROM `‚s‚U`;
 
 #MEMORY
+--sorted_result
 SELECT `‚b‚P`, LENGTH(`‚b‚P`) FROM `‚s‚V`;
+--sorted_result
 SELECT `‚b‚P`, LENGTH(`‚b‚P`) FROM `‚s‚W`;
+--sorted_result
 SELECT `‚b‚P`, LENGTH(`‚b‚P`) FROM `‚s‚X`;
 
 DROP TABLE `‚s‚P`;

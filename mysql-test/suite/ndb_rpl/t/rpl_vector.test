@@ -1,0 +1,5 @@
+source include/have_ndb.inc;
+let $engine_type=ndbcluster;
+let $vector_max_dim=7498;
+let $binlog_uses_minimal_row_image=1;
+--source common/rpl/rpl_vector.test

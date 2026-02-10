@@ -32,7 +32,7 @@ UNINSTALL COMPONENT "file://component_validate_password";
 CREATE TABLE t1(a INT);
 INSERT INTO t1 VALUES (1),(2);
 INSTALL COMPONENT "file://component_validate_password" SET length = (SELECT a FROM t1);
-ERROR HY000: You may only use constant expressions with SET
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT a FROM t1)' at line 1
 DROP TABLE t1;
 SET @gizmo = 32;
 INSTALL COMPONENT "file://component_validate_password" SET length = @gizmo;

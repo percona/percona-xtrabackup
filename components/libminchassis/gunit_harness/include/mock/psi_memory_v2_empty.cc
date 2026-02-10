@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -21,16 +21,16 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <stdio.h>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include "mysql/components/component_implementation.h"
 #include "mysql/components/service_implementation.h"
 #include "mysql/components/services/psi_memory_service.h"
 
 namespace psi_memory_v2_empty {
 
-static void register_memory(const char *, PSI_memory_info *, int) { return; }
+static void register_memory(const char *, PSI_memory_info *, int) {}
 
 static PSI_memory_key memory_alloc(PSI_memory_key, size_t,
                                    struct PSI_thread **owner) {
@@ -50,7 +50,7 @@ static PSI_memory_key memory_claim(PSI_memory_key, size_t,
   return PSI_NOT_INSTRUMENTED;
 }
 
-static void memory_free(PSI_memory_key, size_t, struct PSI_thread *) { return; }
+static void memory_free(PSI_memory_key, size_t, struct PSI_thread *) {}
 
 }  // namespace psi_memory_v2_empty
 

@@ -48,6 +48,7 @@ select * from t2 where b in (select a from t1);
 
 truncate table t0;
 insert into t0 values (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
+ANALYZE TABLE t0;
 
 # Try an InnoDB table with very long rowid
 create table t3 (
@@ -59,6 +60,7 @@ create table t3 (
 ) engine=innodb;
 insert into t3 select a,a, a,a,a from t0;
 
+ANALYZE TABLE t3;
 explain select * from t3 where b in (select a from t1);
 select * from t3 where b in (select a from t1);
 
@@ -79,6 +81,7 @@ create table t3 (
 insert into t3 select 
   A.a + 10*B.a, A.a + 10*B.a, A.a + 10*B.a, A.a + 10*B.a 
 from t0 A, t0 B where B.a <5;
+ANALYZE TABLE t3;
 
 --replace_column 10 #
 explain select * from t3 where b in (select a from t0);
@@ -125,6 +128,7 @@ drop table t1, t2;
 --echo
 create table t1 (c6 timestamp,key (c6)) engine=innodb;
 create table t2 (c2 double) engine=innodb;
+ANALYZE TABLE t1, t2;
 explain select 1 from t2 where c2 = any (select log10(null) from t1 where c6 <null)  ;
 drop table t1, t2;
 
@@ -134,6 +138,7 @@ drop table t1, t2;
 create table t3 ( c1 year) charset latin1 engine=innodb;
 insert into t3 values (2135),(2142);
 create table t2 (c1 tinytext,c2 text,c6 timestamp) charset latin1 engine=innodb;
+ANALYZE TABLE t2, t3;
 -- echo # The following must not crash, EXPLAIN should show one SJ strategy, not a mix:
 explain select 1 from t2 where 
   c2 in (select 1 from t3, t2) and

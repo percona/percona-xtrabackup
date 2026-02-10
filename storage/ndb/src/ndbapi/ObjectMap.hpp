@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -158,9 +158,8 @@ inline void *NdbObjectIdMap::getObject(Uint32 id) const {
   if (id < m_size) {
     if (m_map[id].isFree()) {
       return nullptr;
-    } else {
-      return m_map[id].getObj();
     }
+    return m_map[id].getObj();
   }
   return nullptr;
 }

@@ -163,7 +163,7 @@ procs_priv	CREATE TABLE `procs_priv` (
   `Db` char(64) COLLATE utf8mb3_bin NOT NULL DEFAULT '',
   `User` char(32) COLLATE utf8mb3_bin NOT NULL DEFAULT '',
   `Routine_name` char(64) COLLATE utf8mb3_general_ci NOT NULL DEFAULT '',
-  `Routine_type` enum('FUNCTION','PROCEDURE') COLLATE utf8mb3_bin NOT NULL,
+  `Routine_type` enum('FUNCTION','PROCEDURE','LIBRARY') COLLATE utf8mb3_bin NOT NULL,
   `Grantor` varchar(288) COLLATE utf8mb3_bin NOT NULL DEFAULT '',
   `Proc_priv` set('Execute','Alter Routine','Grant') COLLATE utf8mb3_general_ci NOT NULL DEFAULT '',
   `Timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

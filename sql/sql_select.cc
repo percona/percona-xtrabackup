@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -95,6 +95,7 @@
 #include "sql/opt_explain.h"
 #include "sql/opt_explain_format.h"
 #include "sql/opt_hints.h"  // hint_key_state()
+#include "sql/opt_option_usage.h"
 #include "sql/opt_trace.h"
 #include "sql/opt_trace_context.h"
 #include "sql/parse_tree_node_base.h"
@@ -248,11 +249,13 @@ void reset_statement_timer(THD *thd) {
  * engine (i.e. a column defined with NOT SECONDARY).
  *
  * @param lex Parse tree descriptor.
+ * @param not_secondary_col_str Column defined with NOT SECONDARY (out param).
  *
  * @return True if at least one of the read columns is not in the secondary
  * engine, false otherwise.
  */
-bool reads_not_secondary_columns(const LEX *lex) {
+bool reads_not_secondary_columns(const LEX *lex,
+                                 std::string_view *not_secondary_col_str) {
   // Check all read base tables.
   const Table_ref *tl = lex->query_tables;
   // For INSERT INTO SELECT statements, the table to insert into does not have
@@ -266,6 +269,10 @@ bool reads_not_secondary_columns(const LEX *lex) {
     for (unsigned int i = bitmap_get_first_set(tl->table->read_set);
          i != MY_BIT_NONE; i = bitmap_get_next_set(tl->table->read_set, i)) {
       if (tl->table->field[i]->is_flag_set(NOT_SECONDARY_FLAG)) {
+        assert(not_secondary_col_str != nullptr &&
+               not_secondary_col_str->empty());
+        *not_secondary_col_str =
+            std::string_view{tl->table->field[i]->field_name};
         Opt_trace_context *trace = &lex->thd->opt_trace;
         if (trace->is_started()) {
           std::string message("");
@@ -299,8 +306,7 @@ bool has_secondary_engine_defined(const LEX *lex, const Table_ref **tref) {
 }  // namespace
 
 // Compare two engine names using the system collation.
-static bool equal_engines(const LEX_CSTRING &engine1,
-                          const LEX_CSTRING &engine2) {
+bool equal_engines(const LEX_CSTRING &engine1, const LEX_CSTRING &engine2) {
   return system_charset_info->coll->strnncollsp(
              system_charset_info,
              pointer_cast<const unsigned char *>(engine1.str), engine1.length,
@@ -312,9 +318,6 @@ static bool equal_engines(const LEX_CSTRING &engine1,
 // and if that's true returns the name of that eligible secondary storage
 // engine.
 const MYSQL_LEX_CSTRING *get_eligible_secondary_engine_from(const LEX *lex) {
-  // Don't use secondary storage engines for statements that call stored
-  // routines.
-  if (lex->uses_stored_routines()) return nullptr;
   // Now check if the opened tables are available in a secondary
   // storage engine. Only use the secondary tables if all the tables
   // have a secondary tables, and they are all in the same secondary
@@ -357,9 +360,13 @@ const MYSQL_LEX_CSTRING *get_eligible_secondary_engine_from(const LEX *lex) {
 }
 
 const handlerton *get_secondary_engine_handlerton(const LEX *lex) {
-  if (const handlerton *hton = lex->m_sql_cmd->secondary_engine();
-      hton != nullptr) {
-    return hton;
+  /* m_sql_cmd could be nullptr when we call this from mysql_register_view to
+   * get the materialization engine for the particular materialized view. */
+  if (lex->m_sql_cmd != nullptr) {
+    if (const handlerton *hton = lex->m_sql_cmd->secondary_engine();
+        hton != nullptr) {
+      return hton;
+    }
   }
   const LEX_CSTRING *storage_engine = get_eligible_secondary_engine_from(lex);
   if (storage_engine != nullptr) {
@@ -385,7 +392,8 @@ std::string_view find_secondary_engine_fail_reason(const LEX *lex) {
   const auto *hton = get_secondary_engine_handlerton(lex);
   if (hton != nullptr &&
       hton->find_secondary_engine_offload_fail_reason != nullptr &&
-      lex->thd->variables.use_secondary_engine == SECONDARY_ENGINE_FORCED) {
+      (lex->thd->variables.use_secondary_engine == SECONDARY_ENGINE_FORCED ||
+       lex->can_execute_only_in_secondary_engine())) {
     return hton->find_secondary_engine_offload_fail_reason(lex->thd);
   }
   if (hton == nullptr && get_eligible_secondary_engine_from(lex) != nullptr &&
@@ -400,8 +408,7 @@ std::string_view find_secondary_engine_fail_reason(const LEX *lex) {
   return "All plans were rejected by the secondary storage engine";
 }
 
-static bool set_secondary_engine_fail_reason(const LEX *lex,
-                                             std::string_view reason) {
+bool set_secondary_engine_fail_reason(const LEX *lex, std::string_view reason) {
   const auto *hton = get_secondary_engine_handlerton(lex);
   if (hton != nullptr &&
       hton->set_secondary_engine_offload_fail_reason != nullptr &&
@@ -430,18 +437,9 @@ void find_and_set_offload_fail_reason(const LEX *lex) {
   // check known unsupported features and raise a specific offload error.
   std::string err_msg{};
   const Table_ref *tref = nullptr;
-  if (lex->uses_stored_routines() ||
-      (lex->m_sql_cmd != nullptr && lex->m_sql_cmd->is_part_of_sp()) ||
-      lex->thd->sp_runtime_ctx != nullptr) {
-    // We don't support secondary storage engine execution,
-    // if the query has statements that call stored routines.
-    err_msg =
-        "Statements that reference stored functions are not supported in "
-        "secondary engines.";
-  } else if ((lex->thd->get_transaction() != nullptr &&
-              lex->thd->get_transaction()->is_active(
-                  Transaction_ctx::SESSION)) ||
-             lex->thd->in_active_multi_stmt_transaction()) {
+  if ((lex->thd->get_transaction() != nullptr &&
+       lex->thd->get_transaction()->is_active(Transaction_ctx::SESSION)) ||
+      lex->thd->in_active_multi_stmt_transaction()) {
     // We don't support secondary storage engine execution,
     // if the query is part of a multi-statement transaction
     err_msg =
@@ -477,7 +475,8 @@ bool validate_use_secondary_engine(const LEX *lex) {
   const Sql_cmd *sql_cmd = lex->m_sql_cmd;
   // Ensure that all read columns are in the secondary engine.
   if (sql_cmd->using_secondary_storage_engine()) {
-    if (reads_not_secondary_columns(lex)) {
+    std::string_view not_secondary_col_str;
+    if (reads_not_secondary_columns(lex, &not_secondary_col_str)) {
       std::string_view err_msg = find_secondary_engine_fail_reason(lex);
       assert(!err_msg.empty());
       set_fail_reason_and_raise_error(lex, err_msg);
@@ -670,8 +669,9 @@ bool Sql_cmd_select::prepare_inner(THD *thd) {
     // Unlock the table as soon as possible, so don't set SELECT_NO_UNLOCK.
     select->make_active_options(0, 0);
 
-    if (select->prepare(thd, nullptr)) return true;
-
+    if (select->prepare(thd, nullptr)) {
+      return true;
+    }
     unit->set_prepared();
   } else {
     // If we have multiple query blocks, don't unlock and re-lock
@@ -732,6 +732,7 @@ bool Sql_cmd_dml::execute(THD *thd) {
       privileges for it.
     */
     cleanup(thd);
+    const bool prepared_for_secondary_engine = lex->using_secondary_engine();
     if (open_tables_for_query(thd, lex->query_tables, 0)) goto err;
 #ifndef NDEBUG
     if (sql_command_code() == SQLCOM_SELECT)
@@ -741,11 +742,16 @@ bool Sql_cmd_dml::execute(THD *thd) {
     const bool need_hypergraph_optimizer =
         thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER);
 
-    if (need_hypergraph_optimizer != lex->using_hypergraph_optimizer() &&
+    // If the query was prepared for execution on a different engine than the
+    // engine chosen at execution, or the query was prepared for a different
+    // optimizer, it must be reprepared.
+    if ((prepared_for_secondary_engine != lex->using_secondary_engine() ||
+         need_hypergraph_optimizer != lex->using_hypergraph_optimizer()) &&
         ask_to_reprepare(thd)) {
       goto err;
     }
     assert(need_hypergraph_optimizer == lex->using_hypergraph_optimizer());
+    assert(prepared_for_secondary_engine == lex->using_secondary_engine());
 
     // Bind table and field information
     if (restore_cmd_properties(thd)) goto err;
@@ -796,6 +802,19 @@ bool Sql_cmd_dml::execute(THD *thd) {
     ++thd->status_var.secondary_engine_execution_count;
     global_aggregated_stats.get_shard(thd->thread_id())
         .secondary_engine_execution_count++;
+  }
+
+  // Count usage of Traditional or Hypergraph Optimizer
+  // Using is_explainable_query() as there is almost complete overlap between
+  // explainable queries and queries for which we want to count the optimizer
+  // used.
+  if (!using_secondary_storage_engine() &&
+      is_explainable_query(sql_command_code())) {
+    if (lex->using_hypergraph_optimizer()) {
+      ++option_tracker_hypergraph_optimizer_usage_count;
+    } else {
+      ++option_tracker_traditional_optimizer_usage_count;
+    }
   }
 
   assert(!thd->is_error());
@@ -931,12 +950,8 @@ void accumulate_statement_cost(const LEX *lex) {
  */
 bool SecondaryEngineCallPrePrepareHook(THD *thd,
                                        const LEX_CSTRING &secondary_engine) {
-  handlerton *hton = nullptr;
-  plugin_ref ref = ha_resolve_by_name(thd, &secondary_engine, false);
-  if (ref != nullptr) {
-    hton = plugin_data<handlerton *>(ref);
-  }
-
+  const handlerton *hton =
+      EligibleSecondaryEngineHandlerton(thd, &secondary_engine);
   if (hton != nullptr) {
     secondary_engine_pre_prepare_hook_t secondary_engine_pre_prepare_hook =
         hton->secondary_engine_pre_prepare_hook;
@@ -1012,7 +1027,6 @@ bool optimize_secondary_engine(THD *thd) {
   if (retry_engine.has_value() &&
       (thd->lex->can_execute_only_in_secondary_engine() ||
        SecondaryEngineCallPrePrepareHook(thd, *retry_engine))) {
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     DBUG_EXECUTE_IF("emulate_user_query_kill", {
       thd->get_stmt_da()->set_error_status(thd, ER_QUERY_INTERRUPTED);
       return true;
@@ -1048,25 +1062,43 @@ bool optimize_secondary_engine(THD *thd) {
 }
 
 void notify_plugins_after_select(THD *thd, const Sql_cmd *cmd) {
-  /* Return if one of the 2 conditions is true:
+  auto executed_in = (cmd != nullptr && cmd->using_secondary_storage_engine())
+                         ? SelectExecutedIn::kSecondaryEngine
+                         : SelectExecutedIn::kPrimaryEngine;
+
+  /* If a cached plugin has been found, and query is non-trivial as defined by
+   * m_current_query_cost > 10, invoke the plugin callback directly. */
+  if (thd->m_current_query_cost >= 10 &&
+      thd->eligible_secondary_engine_handlerton() != nullptr &&
+      thd->eligible_secondary_engine_handlerton()->notify_after_select !=
+          nullptr) {
+    thd->eligible_secondary_engine_handlerton()->notify_after_select(
+        thd, executed_in);
+    return;
+  }
+
+  /* Return if secondary engine is not forced and one of the 2 conditions is
+   * true:
    * 1. when secondary engine statement context is not present, query cost is
    * lower than the secondary than the engine threshold.
    * 2. When secondary engine statement context is present, primary engine
    * is the better execution engine for this query.
    * This prevents calling plugin_foreach for short queries, reducing the
    * overhead. */
-  if (((thd->secondary_engine_statement_context() == nullptr) &&
-       thd->m_current_query_cost <=
-           thd->variables.secondary_engine_cost_threshold) ||
-      ((thd->secondary_engine_statement_context() != nullptr) &&
-       thd->secondary_engine_statement_context()
-           ->is_primary_engine_optimal())) {
+
+  bool is_secondary_engine_not_forced =
+      thd->variables.use_secondary_engine != SECONDARY_ENGINE_FORCED;
+  if (is_secondary_engine_not_forced && !thd->lex->has_external_tables() &&
+      ((thd->secondary_engine_statement_context() == nullptr &&
+        thd->m_current_query_cost <=
+            thd->variables.secondary_engine_cost_threshold) ||
+       (thd->secondary_engine_statement_context() != nullptr &&
+        thd->secondary_engine_statement_context()
+            ->is_primary_engine_optimal()))) {
     return;
   }
-  auto executed_in = (cmd != nullptr && cmd->using_secondary_storage_engine())
-                         ? SelectExecutedIn::kSecondaryEngine
-                         : SelectExecutedIn::kPrimaryEngine;
 
+  /* if secondary engine has not been cached, check for all plugins */
   plugin_foreach(
       thd,
       [](THD *t, plugin_ref plugin, void *arg) -> bool {
@@ -1341,8 +1373,8 @@ bool types_allow_materialization(Item *outer, Item *inner) {
     Materialization uses index lookup which implicitly converts the type of
     res_outer into that of res_inner.
     However, this can be done only if it respects rules in:
-    https://dev.mysql.com/doc/refman/8.0/en/type-conversion.html
-    https://dev.mysql.com/doc/refman/8.0/en/date-and-time-type-conversion.html
+    https://dev.mysql.com/doc/refman/en/type-conversion.html
+    https://dev.mysql.com/doc/refman/en/date-and-time-type-conversion.html
     Those rules say that, generally, if types differ, we convert them to
     REAL.
     So, looking up into a number is ok: outer will be converted to
@@ -1517,7 +1549,7 @@ SJ_TMP_TABLE *create_sj_tmp_table(THD *thd, JOIN *join,
     Applicability conditions are as follows:
 
     @par DuplicateWeedout strategy
-
+    Join order:
     @code
       (ot|nt)*  [ it ((it|ot|nt)* (it|ot))]  (nt)*
       +------+  +=========================+  +---+
@@ -1534,7 +1566,7 @@ SJ_TMP_TABLE *create_sj_tmp_table(THD *thd, JOIN *join,
     -# The suffix of outer non-correlated tables.
 
     @par FirstMatch strategy
-
+    Join order:
     @code
       (ot|nt)*  [ it (it)* ]  (nt)*
       +------+  +==========+  +---+
@@ -1548,7 +1580,7 @@ SJ_TMP_TABLE *create_sj_tmp_table(THD *thd, JOIN *join,
     -# The suffix of outer non-correlated tables.
 
     @par LooseScan strategy
-
+    Join order:
     @code
      (ot|ct|nt) [ loosescan_tbl (ot|nt|it)* it ]  (ot|nt)*
      +--------+   +===========+ +=============+   +------+
@@ -1573,7 +1605,7 @@ SJ_TMP_TABLE *create_sj_tmp_table(THD *thd, JOIN *join,
     -# The suffix of outer correlated and non-correlated tables.
 
     @par MaterializeLookup strategy
-
+    Join order:
     @code
      (ot|nt)*  [ it (it)* ]  (nt)*
      +------+  +==========+  +---+
@@ -1589,7 +1621,7 @@ SJ_TMP_TABLE *create_sj_tmp_table(THD *thd, JOIN *join,
     -# The suffix of outer non-correlated tables.
 
     @par MaterializeScan strategy
-
+    Join order:
     @code
      (ot|nt)*  [ it (it)* ]  (ot|nt)*
      +------+  +==========+  +-----+
@@ -2441,7 +2473,8 @@ bool init_ref_part(THD *thd, unsigned part_no, Item *val, bool *cond_guard,
                                    key_part_info, key_buff, nullable);
   if (unlikely(!s_key || thd->is_error())) return true;
 
-  if (used_tables & ~INNER_TABLE_BIT) {
+  if (used_tables & ~INNER_TABLE_BIT ||
+      !evaluate_during_optimization(val, thd->lex->current_query_block())) {
     /* Comparing against a non-constant. */
     ref->key_copy[part_no] = s_key;
   } else {
@@ -3205,7 +3238,6 @@ bool JOIN::setup_semijoin_materialized_table(JOIN_TAB *tab, uint tableno,
   sjm_exec->table_param = Temp_table_param();
   count_field_types(query_block, &sjm_exec->table_param,
                     emb_sj_nest->nested_join->sj_inner_exprs, false, true);
-  sjm_exec->table_param.bit_fields_as_long = true;
 
   char buffer[NAME_LEN];
   const size_t len = snprintf(buffer, sizeof(buffer) - 1, "<subquery%u>",
@@ -4485,9 +4517,20 @@ bool JOIN::make_tmp_tables_info() {
     computed for each group. Thus all MIN/MAX functions should be
     treated as regular functions, and there is no need to perform
     grouping in the main execution loop.
-    Notice that currently loose index scan is applicable only for
-    single table queries, thus it is sufficient to test only the first
-    join_tab element of the plan for its access method.
+    Currently loose index scan is only applicable for single table queries. The
+    only exception is when a single table query becomes a multi-table query
+    because of a semijoin transformation. We check the first join_tab element
+    of the plan for its access method here, which holds good even for the
+    multi-table query, but only when optimizer has picked nested loop joins.
+    Skip scan is enabled only for the original table in the query which is the
+    first table in the join order for a nested loop join. However, for hash
+    joins it does not hold good. So, we see an additional de-duplication step
+    when hash join is picked as it is not aware that de-duplication is taken
+    care by the access method picked.
+
+    TODO: Make optimize_distinct_group_order() understand that de-duplication
+    is taken care by the chosen access method, so that we avoid the additional
+    de-duplication step.
   */
   if (qep_tab && qep_tab[0].range_scan() &&
       is_loose_index_scan(qep_tab[0].range_scan()))

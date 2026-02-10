@@ -1,0 +1,167 @@
+--source include/have_router.inc
+
+# Set the router-id, to generate statistics
+# this way we can wait until router detects
+# changes to DB_OBJECTS.
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc1"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_content_set_path=/sch
+--let $mrs_add_content_set_enabled=1
+--source ../include/mrs/content_set/add.inc
+
+--let $mrs_add_content="plaintext file"
+--let $mrs_add_content_file_path=/file
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="gif file"
+--let $mrs_add_content_file_path=/file.gif
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="jpg file"
+--let $mrs_add_content_file_path=/file.jpg
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="png file"
+--let $mrs_add_content_file_path=/file.png
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="js file"
+--let $mrs_add_content_file_path=/file.js
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="mjs file"
+--let $mrs_add_content_file_path=/file.mjs
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="html file"
+--let $mrs_add_content_file_path=/file.html
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="htm file"
+--let $mrs_add_content_file_path=/file.htm
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="css file"
+--let $mrs_add_content_file_path=/file.css
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="svg file"
+--let $mrs_add_content_file_path=/file.svg
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="map file"
+--let $mrs_add_content_file_path=/file.map
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="unknown file"
+--let $mrs_add_content_file_path=/file.unknown
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="no name file"
+--let $mrs_add_content_file_path=/.gif
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="jpg after all"
+--let $mrs_add_content_file_path=/file.gif.jpg
+--source ../include/mrs/content_file/add.inc
+
+# Workaround: the end_object_definition, needs at least one db_object
+# to sync to its refresh.
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic_schema
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/obj
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Check Content-Type header for different file extenstions
+--echo #
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file
+  --response-type RAW
+  --expected-header Content-Type=text/plain;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.gif
+  --response-type RAW
+  --expected-header Content-Type=image/gif;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.jpg
+  --response-type RAW
+  --expected-header Content-Type=image/jpeg;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.png
+  --response-type RAW
+  --expected-header Content-Type=image/png;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.js
+  --response-type RAW
+  --expected-header Content-Type=text/javascript;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.mjs
+  --response-type RAW
+  --expected-header Content-Type=text/javascript;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.html
+  --response-type RAW
+  --expected-header Content-Type=text/html;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.htm
+  --response-type RAW
+  --expected-header Content-Type=text/html;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.css
+  --response-type RAW
+  --expected-header Content-Type=text/css;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.svg
+  --response-type RAW
+  --expected-header Content-Type=image/svg+xml;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.map
+  --response-type RAW
+  --expected-header Content-Type=text/plain;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.unknown
+  --response-type RAW
+  --expected-header Content-Type=text/plain;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/.gif
+  --response-type RAW
+  --expected-header Content-Type=image/gif;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/sch/file.gif.jpg
+  --response-type RAW
+  --expected-header Content-Type=image/jpeg;
+
+# Cleanup
+--let $cleanup_arg_mrs_existing_service=/svc1/sch/first.html
+--source ../include/mrs/cleanup.inc

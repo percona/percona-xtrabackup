@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,12 +22,11 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "applier_metrics_service_imp.h"
-#include <mysql/components/service_implementation.h>
-#include <mysql/components/services/rpl_applier_metrics_service.h>
-#include <cassert>
-#include <cstring>
+#include <mysql/components/services/rpl_applier_metrics_service.h>  // Enum_applier_metric_type
+#include <cassert>                                                  // assert
+#include "my_dbug.h"                   // DBUG_EVALUATE_IF
 #include "mysql/abi_helpers/packet.h"  // Packet_builder
-#include "sql/psi_memory_key.h"
+#include "sql/psi_memory_key.h"        // key_memory_applier_metric_service
 #include "sql/rpl_mi.h"
 #include "sql/rpl_msr.h"  // channel_map
 #include "sql/rpl_rli_pdb.h"
@@ -101,9 +100,9 @@ DEFINE_BOOL_METHOD(Applier_metrics_service_handler::get_applier_metrics,
           worker_metrics.get_transaction_ongoing_progress_size();
 
       waits_due_to_commit_order_count +=
-          worker_metrics.get_number_of_waits_on_commit_order();
+          worker_metrics.get_waits_due_to_commit_order().get_count();
       waits_due_to_commit_order_sum_time +=
-          worker_metrics.get_wait_time_on_commit_order();
+          worker_metrics.get_waits_due_to_commit_order().get_time();
     }
     mysql_mutex_unlock(&mi->rli->data_lock);
 
@@ -171,16 +170,16 @@ DEFINE_BOOL_METHOD(Applier_metrics_service_handler::get_applier_metrics,
       }
     }
 
+    builder.push_int(transaction_pending_t, transactions_pending_count);
+
     builder.push_bool(are_transaction_pending_counts_unknown_t,
                       !are_transaction_pending_counts_known);
 
-    builder.push_int(transaction_pending_t, transactions_pending_count);
+    builder.push_int(transactions_pending_size_sum_t,
+                     transactions_pending_size_sum);
 
     builder.push_bool(are_transaction_pending_sizes_unknown_t,
                       !are_transaction_pending_sizes_known);
-
-    builder.push_int(transactions_pending_size_sum_t,
-                     transactions_pending_size_sum);
 
     builder.push_int(transactions_committed_size_sum_t,
                      transactions_committed_size_sum);
@@ -192,25 +191,25 @@ DEFINE_BOOL_METHOD(Applier_metrics_service_handler::get_applier_metrics,
         waits_for_work_from_source_count_t,
         coord_metrics.get_work_from_source_wait_metric().get_count());
 
-    builder.push_int(waits_for_work_from_source_sum_time_t,
-                     coord_metrics.get_work_from_source_wait_metric()
-                         .get_sum_time_elapsed());
+    builder.push_int(
+        waits_for_work_from_source_sum_time_t,
+        coord_metrics.get_work_from_source_wait_metric().get_time());
 
     builder.push_int(
         waits_for_available_worker_count_t,
         coord_metrics.get_workers_available_wait_metric().get_count());
 
-    builder.push_int(waits_for_available_worker_sum_time_t,
-                     coord_metrics.get_workers_available_wait_metric()
-                         .get_sum_time_elapsed());
+    builder.push_int(
+        waits_for_available_worker_sum_time_t,
+        coord_metrics.get_workers_available_wait_metric().get_time());
 
     builder.push_int(
         waits_for_commit_dependency_count_t,
         coord_metrics.get_transaction_dependency_wait_metric().get_count());
 
-    builder.push_int(waits_for_commit_dependency_sum_time_t,
-                     coord_metrics.get_transaction_dependency_wait_metric()
-                         .get_sum_time_elapsed());
+    builder.push_int(
+        waits_for_commit_dependency_sum_time_t,
+        coord_metrics.get_transaction_dependency_wait_metric().get_time());
 
     builder.push_int(
         waits_for_queues_memory_count_t,
@@ -220,21 +219,34 @@ DEFINE_BOOL_METHOD(Applier_metrics_service_handler::get_applier_metrics,
     builder.push_int(
         waits_for_queues_memory_sum_time_t,
         coord_metrics.get_worker_queues_memory_exceeds_max_wait_metric()
-            .get_sum_time_elapsed());
+            .get_time());
 
     builder.push_int(
         waits_for_queues_full_count_t,
         coord_metrics.get_worker_queues_full_wait_metric().get_count());
 
-    builder.push_int(waits_for_queues_full_sum_time_t,
-                     coord_metrics.get_worker_queues_full_wait_metric()
-                         .get_sum_time_elapsed());
+    builder.push_int(
+        waits_for_queues_full_sum_time_t,
+        coord_metrics.get_worker_queues_full_wait_metric().get_time());
 
-    builder.push_int(time_to_read_from_relay_log_t,
-                     coord_metrics.get_time_to_read_from_relay_log_metric()
-                         .get_sum_time_elapsed());
+    builder.push_int(
+        time_to_read_from_relay_log_t,
+        coord_metrics.get_time_to_read_from_relay_log_metric().get_time());
 
     assert(builder.get_position() == number_of_applier_metrics);
+    assert(builder.get_position() == row.size());
+
+    // Produce a packet containing just the first three fields. The component
+    // should handle this correctly by setting the fields to NULL/0/''.
+    if (DBUG_EVALUATE_IF("replication_applier_metrics_truncate_packet", true,
+                         false)) {
+      // Keep 10 fields, truncating after transaction_pending_t and before
+      // are_transaction_pending_counts_unknown_t. This allows test cases to
+      // exercise the case that a field is present but its nullness field is
+      // missing.
+      row.assign(row.data(), 10);
+      break;
+    }
 
     ++row_it;
   }

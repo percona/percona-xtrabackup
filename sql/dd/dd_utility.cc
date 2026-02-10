@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,7 +40,7 @@ size_t normalize_string(const CHARSET_INFO *cs, const String_type &src,
     size according to it to avoid my_strnxfrm() padding result buffer with
     spaces(sort weights corresponding to spaces).
   */
-  size_t len = cs->coll->strnxfrmlen(
+  size_t const len = cs->coll->strnxfrmlen(
       cs, (cs->mbmaxlen *
            cs->cset->numchars(cs, src.c_str(), src.c_str() + src.length())));
   if (len > normalized_str_buf_length) return 0;
@@ -65,8 +65,10 @@ bool check_if_server_ddse_readonly(THD *thd, const char *schema_name_abbrev) {
   */
   handlerton *ddse = ha_resolve_by_legacy_type(thd, DB_TYPE_INNODB);
   if (ddse->is_dict_readonly && ddse->is_dict_readonly()) {
-    LogErr(WARNING_LEVEL, ER_SKIP_UPDATING_METADATA_IN_SE_RO_MODE,
-           schema_name_abbrev);
+    if (schema_name_abbrev) {
+      LogErr(WARNING_LEVEL, ER_SKIP_UPDATING_METADATA_IN_SE_RO_MODE,
+             schema_name_abbrev);
+    }
     return true;
   }
 

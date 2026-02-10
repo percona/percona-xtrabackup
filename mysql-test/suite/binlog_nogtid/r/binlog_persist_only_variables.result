@@ -38,7 +38,7 @@ INSERT INTO aliases(name) VALUES
 ('init_slave'), ('rpl_stop_slave_timeout'), ('log_slow_slave_statements'),
 ('slave_max_allowed_packet'), ('slave_compressed_protocol'),
 ('slave_exec_mode'), ('slave_type_conversions'),
-('slave_sql_verify_checksum'), ('slave_parallel_type'),
+('slave_sql_verify_checksum'),
 ('slave_preserve_commit_order'), ('master_verify_checksum'),
 ('log_slave_updates'), ('slave_allow_batching'), ('slave_load_tmpdir'),
 ('slave_net_timeout'), ('sql_slave_skip_counter'), ('slave_skip_errors'),
@@ -47,7 +47,7 @@ INSERT INTO aliases(name) VALUES
 ('slave_parallel_workers'), ('slave_pending_jobs_size_max'),
 ('pseudo_slave_mode'), ('skip_slave_start');
 
-include/assert.inc [Expect 108 variables in the table.]
+include/assert.inc [Expect 106 variables in the table.]
 
 # Test SET PERSIST_ONLY
 SET PERSIST_ONLY binlog_cache_size = @@GLOBAL.binlog_cache_size;
@@ -148,10 +148,6 @@ SET PERSIST_ONLY replica_load_tmpdir = @@GLOBAL.replica_load_tmpdir;
 ERROR HY000: Variable 'replica_load_tmpdir' is a non persistent read only variable
 SET PERSIST_ONLY replica_max_allowed_packet = @@GLOBAL.replica_max_allowed_packet;
 SET PERSIST_ONLY replica_net_timeout = @@GLOBAL.replica_net_timeout;
-SET PERSIST_ONLY replica_parallel_type = @@GLOBAL.replica_parallel_type;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET PERSIST_ONLY replica_parallel_workers = @@GLOBAL.replica_parallel_workers;
 SET PERSIST_ONLY replica_pending_jobs_size_max = @@GLOBAL.replica_pending_jobs_size_max;
 SET PERSIST_ONLY replica_preserve_commit_order = @@GLOBAL.replica_preserve_commit_order;
@@ -211,10 +207,6 @@ SET PERSIST_ONLY slave_net_timeout = @@GLOBAL.slave_net_timeout;
 Warnings:
 Warning	1287	'@@slave_net_timeout' is deprecated and will be removed in a future release. Please use replica_net_timeout instead.
 Warning	1287	'@@slave_net_timeout' is deprecated and will be removed in a future release. Please use replica_net_timeout instead.
-SET PERSIST_ONLY slave_parallel_type = @@GLOBAL.slave_parallel_type;
-Warnings:
-Warning	1287	'@@slave_parallel_type' is deprecated and will be removed in a future release. Please use replica_parallel_type instead.
-Warning	1287	'@@slave_parallel_type' is deprecated and will be removed in a future release. Please use replica_parallel_type instead.
 SET PERSIST_ONLY slave_parallel_workers = @@GLOBAL.slave_parallel_workers;
 Warnings:
 Warning	1287	'@@slave_parallel_workers' is deprecated and will be removed in a future release. Please use replica_parallel_workers instead.
@@ -261,16 +253,16 @@ Warning	1287	'@@sync_relay_log_info' is deprecated and will be removed in a futu
 Warning	1287	'@@sync_relay_log_info' is deprecated and will be removed in a future release.
 SET PERSIST_ONLY sync_source_info = @@GLOBAL.sync_source_info;
 
-include/assert.inc [Expect 97 persisted variables in persisted_variables table.]
+include/assert.inc [Expect 95 persisted variables in persisted_variables table.]
 
 ############################################################
 # 2. Restart server, it must preserve the persisted variable
 #    settings. Verify persisted configuration.
 # restart
 
-include/assert.inc [Expect 97 persisted variables in persisted_variables table.]
-include/assert.inc [Expect 97 persisted variables shown as PERSISTED in variables_info table.]
-include/assert.inc [Expect 97 persisted variables with matching persisted and global values.]
+include/assert.inc [Expect 95 persisted variables in persisted_variables table.]
+include/assert.inc [Expect 95 persisted variables shown as PERSISTED in variables_info table.]
+include/assert.inc [Expect 95 persisted variables with matching persisted and global values.]
 
 ############################################################
 # 3. Test RESET PERSIST. Verify persisted variable settings
@@ -341,7 +333,6 @@ RESET PERSIST replica_load_tmpdir;
 ERROR HY000: Variable replica_load_tmpdir does not exist in persisted config file
 RESET PERSIST replica_max_allowed_packet;
 RESET PERSIST replica_net_timeout;
-RESET PERSIST replica_parallel_type;
 RESET PERSIST replica_parallel_workers;
 RESET PERSIST replica_pending_jobs_size_max;
 RESET PERSIST replica_preserve_commit_order;

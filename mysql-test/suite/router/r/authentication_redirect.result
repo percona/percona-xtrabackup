@@ -1,0 +1,242 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+create user mrsuser@'%' identified by 'S3kre7';
+grant all on *.* to mrsuser@'%';
+
+
+## I. Create servcice without url-regex-redirection validation, check that basic validation is done:
+#
+# 1. host part contains control characters
+# 2. double slashes after host
+# 3. "@" to inject fake domains after it
+# 4. double slashes without protocol
+# 5. unknown protocol (allow only http, https)
+# 6. no protocol selected
+# 7. path part contains control characters
+# 8. relative path, directory traversing
+#
+## II. Create servcice with url-regex-redirection validation (accept alls), but basic validation takes precedense:
+#
+# 1. host part contains control characters
+# 2. double slashes after host
+# 3. "@" to inject fake domains after it
+# 4. double slashes without protocol
+# 5. unknown protocol (allow only http, https)
+# 6. no protocol selected
+# 7. path part contains control characters
+# 8. relative path, directory traversing
+#
+## III. Execute user redirection, but change the target URL
+#
+# 1. all fragments must be reseted
+#
+# Registred SERVICE at path: /svc_no_valid
+# Registred SERVICE at path: /svc_open_valid
+# Registred AUTH APP at path: NULL
+
+#
+# I.1
+GET /svc_no_valid/authentication/login
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%0Aservice.local/something/1
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%0Ahttps://www.service.local/something/1
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%09service.local/something/1
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%09https://www.service.local/something/1
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%0Bservice.local/something/1
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%0Bhttps://www.service.local/something/1
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://a%20.pl//www.something.ev
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=a%00.pl//www.evil.ev
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://a%00.pl//www.evil.ev
+
+OK
+
+#
+# I.2
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.evil.ev//https://www.service.local/something/1
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.evil.ev/x//something/1
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.evil.ev/x//
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.evil.ev//something/1
+
+OK
+
+#
+# I.3
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.service.local/something/1@https://www.evil.ev
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.service.local@https://www.evil.ev/something
+
+OK
+
+#
+# I.4
+GET /svc_no_valid/authentication/login?onCompletionRedirect=//www.evil.ev
+
+OK
+
+#
+# I.5
+GET /svc_no_valid/authentication/login?onCompletionRedirect=%20//www.evil.ev
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=a%20.pl//www.evil.ev
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=a.pl://www.evil.ev
+
+OK
+GET /svc_no_valid/authentication/login?onCompletionRedirect=mysql://www.evil.ev
+
+OK
+
+#
+# I.6
+GET /svc_no_valid/authentication/login?onCompletionRedirect=www.host_without_scheme.com
+
+OK
+
+#
+# I.7
+GET /svc_no_valid/authentication/login?onCompletionRedirect=https://www.host_without_scheme.com/path%0Asomething/1
+
+OK
+
+#
+# I.8
+GET /svc_no_valid/authentication/login?onCompletionRedirect=../../admin
+
+OK
+
+#
+# II.1
+GET /svc_open_valid/authentication/login
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%0Aservice.local/something/1
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%0Ahttps://www.service.local/something/1
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%09service.local/something/1
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%09https://www.service.local/something/1
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%0Bservice.local/something/1
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.evil.ev%0Bhttps://www.service.local/something/1
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://a%20.pl//www.something.ev
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=a%00.pl//www.evil.ev
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://a%00.pl//www.evil.ev
+
+OK
+
+#
+# II.2
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.evil.ev//https://www.service.local/something/1
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.evil.ev/x//something/1
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.evil.ev/x//
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.evil.ev//something/1
+
+OK
+
+#
+# II.3
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.service.local/something/1@https://www.evil.ev
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.service.local@https://www.evil.ev/something
+
+OK
+
+#
+# II.4
+GET /svc_open_valid/authentication/login?onCompletionRedirect=//www.evil.ev
+
+OK
+
+#
+# II.5
+GET /svc_open_valid/authentication/login?onCompletionRedirect=%20//www.evil.ev
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=a%20.pl//www.evil.ev
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=a.pl://www.evil.ev
+
+OK
+GET /svc_open_valid/authentication/login?onCompletionRedirect=mysql://www.evil.ev
+
+OK
+
+#
+# II.6
+GET /svc_open_valid/authentication/login?onCompletionRedirect=www.host_without_scheme.com
+
+OK
+
+#
+# II.7
+GET /svc_open_valid/authentication/login?onCompletionRedirect=https://www.host_without_scheme.com/path%0Asomething/1
+
+OK
+
+#
+# II.8
+GET /svc_open_valid/authentication/login?onCompletionRedirect=../../admin
+
+OK
+
+#
+# III.1
+GET /svc_no_valid/authentication/login?onCompletionRedirect=/path1/#fragment
+
+OK
+drop user mrsuser@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

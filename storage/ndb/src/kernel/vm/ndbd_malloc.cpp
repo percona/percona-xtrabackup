@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -62,7 +62,7 @@ const bool debugUinitMemUse = false;
 #endif
 
 static void *touch_mem(void *arg) {
-  struct AllocTouchMem *touch_mem_ptr = (struct AllocTouchMem *)arg;
+  auto *touch_mem_ptr = (struct AllocTouchMem *)arg;
 
 #if defined(VM_TRACE_MEM)
   g_eventLogger->info(
@@ -75,7 +75,7 @@ static void *touch_mem(void *arg) {
   size_t sz = touch_mem_ptr->sz;
   Uint32 index = touch_mem_ptr->index;
   bool make_readwritable = touch_mem_ptr->make_readwritable;
-  unsigned char *p = (unsigned char *)touch_mem_ptr->p;
+  auto *p = (unsigned char *)touch_mem_ptr->p;
   size_t num_pages_per_thread = 1;
   size_t first_page;
 
@@ -107,12 +107,13 @@ static void *touch_mem(void *arg) {
   first_page = index * num_pages_per_thread;
 
   if (first_page >= tot_pages) {
-    return NULL; /* We're done, no page to handle */
-  } else if ((tot_pages - first_page) < num_pages_per_thread) {
+    return nullptr; /* We're done, no page to handle */
+  }
+  if ((tot_pages - first_page) < num_pages_per_thread) {
     num_pages_per_thread = tot_pages - first_page;
   }
 
-  unsigned char *ptr = (unsigned char *)(p + (first_page * TOUCH_PAGE_SIZE));
+  auto *ptr = (unsigned char *)(p + (first_page * TOUCH_PAGE_SIZE));
   const unsigned char *end = p + sz;
 
   for (Uint32 i = 0; i < num_pages_per_thread;
@@ -149,7 +150,7 @@ static void *touch_mem(void *arg) {
       *watchCounter = 9;
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 void ndbd_alloc_touch_mem(void *p, size_t sz, volatile Uint32 *watchCounter,
@@ -188,13 +189,13 @@ void ndbd_alloc_touch_mem(void *p, size_t sz, volatile Uint32 *watchCounter,
     touch_mem_struct[i].index = i;
     touch_mem_struct[i].make_readwritable = make_readwritable;
 
-    thread_ptr[i] = NULL;
+    thread_ptr[i] = nullptr;
     if (sz > MIN_START_THREAD_SIZE) {
       thread_ptr[i] =
           NdbThread_Create(touch_mem, (NDB_THREAD_ARG *)&touch_mem_struct[i], 0,
                            "touch_thread", NDB_THREAD_PRIO_MEAN);
     }
-    if (thread_ptr[i] == NULL) {
+    if (thread_ptr[i] == nullptr) {
       touch_mem((void *)&touch_mem_struct[i]);
     }
   }

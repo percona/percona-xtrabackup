@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,15 +23,14 @@
 
 #include "gssapi_authentication_client.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
 
 #include "auth_kerberos_client_io.h"
 #include "gssapi_utility.h"
 #include "log_client.h"
-
-extern Logger_client *g_logger_client;
 
 Gssapi_client::Gssapi_client(const std::string &spn, MYSQL_PLUGIN_VIO *vio,
                              const std::string &upn,
@@ -40,16 +39,15 @@ Gssapi_client::Gssapi_client(const std::string &spn, MYSQL_PLUGIN_VIO *vio,
       m_vio{vio},
       m_user_principal_name{upn},
       m_password{password} {
-  m_kerberos = std::unique_ptr<auth_kerberos_context::Kerberos>(
-      new auth_kerberos_context::Kerberos(m_user_principal_name.c_str(),
-                                          m_password.c_str()));
+  m_kerberos = std::make_unique<auth_kerberos_context::Kerberos>(
+      m_user_principal_name.c_str(), m_password.c_str());
 }
 
-Gssapi_client::~Gssapi_client() {}
+Gssapi_client::~Gssapi_client() = default;
 
 bool Gssapi_client::authenticate() {
   bool rc_auth{false};
-  std::stringstream log_client_stream;
+  std::stringstream const log_client_stream;
   OM_uint32 major{0};
   OM_uint32 minor{0};
   gss_ctx_id_t ctxt{GSS_C_NO_CONTEXT};
@@ -59,7 +57,7 @@ bool Gssapi_client::authenticate() {
   gss_buffer_desc input{0, nullptr};
   gss_buffer_desc output{0, nullptr};
   gss_cred_id_t cred_id{GSS_C_NO_CREDENTIAL};
-  OM_uint32 req_flag{0};
+  OM_uint32 const req_flag{0};
   Kerberos_client_io m_io{m_vio};
   /* For making mutual flag, uncomment below line */
   // req_flag = {GSS_C_MUTUAL_FLAG};
@@ -124,12 +122,11 @@ void Gssapi_client::set_upn_info(const std::string &upn,
   m_password = {pwd};
   /* Kerberos core uses UPN for all other operations. UPN has changed, releases
    * current object and create */
-  if (m_kerberos.get()) {
+  if (m_kerberos) {
     m_kerberos.release();
   }
-  m_kerberos = std::unique_ptr<auth_kerberos_context::Kerberos>(
-      new auth_kerberos_context::Kerberos(m_user_principal_name.c_str(),
-                                          m_password.c_str()));
+  m_kerberos = std::make_unique<auth_kerberos_context::Kerberos>(
+      m_user_principal_name.c_str(), m_password.c_str());
 }
 
 bool Gssapi_client::obtain_store_credentials() {
@@ -139,11 +136,11 @@ bool Gssapi_client::obtain_store_credentials() {
 
 std::string Gssapi_client::get_user_name() {
   log_client_dbg("Getting user name from Kerberos credential cache.");
-  std::string cached_user_name{""};
+  std::string cached_user_name;
   if (m_kerberos->get_upn(&cached_user_name)) {
     size_t pos = std::string::npos;
     /* Remove realm */
-    if ((pos = cached_user_name.find("@")) != std::string::npos) {
+    if ((pos = cached_user_name.find('@')) != std::string::npos) {
       log_client_dbg("Trimming realm from upn.");
       cached_user_name.erase(pos, cached_user_name.length() - pos + 1);
     }

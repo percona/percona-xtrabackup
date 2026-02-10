@@ -285,7 +285,23 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	SIMPLE	t1	NULL	ref	idx1	idx1	123	const	1	100.00	NULL
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`f1` AS `f1` from `test`.`t1` where ((cast(json_unquote(json_extract(`f1`,_utf8mb4'$.name')) as char(30) charset utf8mb4) collate utf8mb4_bin) = 'james')
-DROP TABLE t1;
+SET charset utf8mb3;
+EXPLAIN SELECT * FROM t1 WHERE CAST(f1->>"$.name" AS CHAR(30)) COLLATE utf8mb4_bin = "james";
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ref	idx1	idx1	123	const	1	100.00	NULL
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`f1` AS `f1` from `test`.`t1` where ((cast(json_unquote(json_extract(`f1`,_utf8mb4'$.name')) as char(30) charset utf8mb4) collate utf8mb4_bin) = 'james')
+SET charset default;
+CREATE TABLE t2(f1 JSON, INDEX idx1 ((CAST(f1->>"$.name" AS CHAR(30) CHARSET utf8mb3)  COLLATE utf8mb3_bin)));
+Warnings:
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+EXPLAIN SELECT * FROM t2 WHERE CAST(f1->>"$.name" AS CHAR(30) CHARSET utf8mb3) COLLATE utf8mb3_bin = "james";
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	ref	idx1	idx1	93	const	1	100.00	NULL
+Warnings:
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Note	1003	/* select#1 */ select `test`.`t2`.`f1` AS `f1` from `test`.`t2` where ((cast(json_unquote(json_extract(`f1`,_utf8mb4'$.name')) as char(30) charset utf8mb3) collate utf8mb3_bin) = 'james')
+DROP TABLE t1, t2;
 # Test that doing an UPDATE on a hidden generated column returns "column
 # not found".
 CREATE TABLE t1 (col1 INT, INDEX idx1 ((col1 + col1)));
@@ -320,6 +336,7 @@ INSERT INTO t1 VALUES ('{"name":"knut"}');
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON SELECT * FROM t1 WHERE CAST(x->>'$.name' AS CHAR(30)) = 'knut';
 EXPLAIN
 {
@@ -360,6 +377,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`x` AS `x` from `test`.`t1` where (cast(json_unquote(json_extract(`x`,_utf8mb4'$.name')) as char(30) charset utf8mb4) = 'knut')
+SET explain_json_format_version = DEFAULT;
 DROP TABLE t1;
 # Check that we cannot drop the last visible column when we have hidden
 # generated columns.
@@ -749,12 +767,10 @@ ALTER TABLE t1 ADD INDEX i1 ((FIND_IN_SET('Admin', roles)));
 SHOW INDEXES FROM t1 WHERE key_name="i1";
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
 t1	1	i1	1	NULL	A	2	NULL	NULL		BTREE			YES	find_in_set(_utf8mb4\'Admin\',`roles`)
-SET explain_json_format_version = 2;
 EXPLAIN FORMAT=JSON INTO @explain
 SELECT id FROM t1 FORCE INDEX (i1) WHERE FIND_IN_SET('Admin', roles)>0;
-SET explain_json_format_version = DEFAULT;
-SELECT COALESCE(JSON_EXTRACT(@explain, '$.inputs[0].operation'),
-JSON_EXTRACT(@explain, '$.operation')) AS scan;
+SELECT COALESCE(JSON_EXTRACT(@explain, '$.query_plan.inputs[0].operation'),
+JSON_EXTRACT(@explain, '$.query_plan.operation')) AS scan;
 scan
 "Index range scan on t1 using i1 over (0 < find_in_set(_utf8mb4'Admin',`roles`))"
 SELECT id FROM t1 WHERE FIND_IN_SET('Admin', roles)>0;

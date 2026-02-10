@@ -25,8 +25,8 @@ connect(foo_con,localhost,foo,pwd,,,,SSL,,);
 --let $x_str = 0
 
 --echo ############ Verify the packet contents #################################
---let $digest_client = `SELECT MD5("$str")`
---let $digest_server = `SELECT MD5(REPEAT('X', $SIZE))`
+--let $digest_client = `SELECT SHA2("$str",256)`
+--let $digest_server = `SELECT SHA2(REPEAT('X', $SIZE),256)`
 if($digest_client != $digest_server)
 {
  die "Digests do not match";

@@ -26,6 +26,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -46,6 +48,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -66,6 +70,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -86,6 +92,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -106,6 +114,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -126,6 +136,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -146,6 +158,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -166,6 +180,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -186,6 +202,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -206,6 +224,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -226,6 +246,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -246,6 +268,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -292,6 +316,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -312,6 +338,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -332,6 +360,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -352,6 +382,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -372,6 +404,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -392,6 +426,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -412,6 +448,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -432,6 +470,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -452,6 +492,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -472,6 +514,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -492,6 +536,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -512,6 +558,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -558,6 +606,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -578,6 +628,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -598,6 +650,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -618,6 +672,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -638,6 +694,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -658,6 +716,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -678,6 +738,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -698,6 +760,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -718,6 +782,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -738,6 +804,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -758,6 +826,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -778,6 +848,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -824,6 +896,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -844,6 +918,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -864,6 +940,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -884,6 +962,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -904,6 +984,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -924,6 +1006,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -944,6 +1028,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -964,6 +1050,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -984,6 +1072,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1004,6 +1094,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1024,6 +1116,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
@@ -1044,6 +1138,8 @@ SET DEBUG="+d, wl14084_trigger_acl_ddl_timeout";
 SET DEBUG_SYNC="now WAIT_FOR flush_now";
 SET DEBUG_SYNC="wl14084_flush_privileges_after_table_locks SIGNAL proceed_with_acl_ddl";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET DEBUG="-d, wl14084_trigger_acl_ddl_timeout";
 connection conn_attempt;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction

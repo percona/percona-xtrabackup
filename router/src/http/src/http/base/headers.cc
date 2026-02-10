@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -31,8 +31,7 @@
 #include "http/base/headers.h"
 #include "m_string.h"  // NOLINT(build/include_subdir)
 
-namespace http {
-namespace base {
+namespace http::base {
 
 bool compare_case_insensitive(const std::string &l, const std::string_view &r) {
   if (l.length() != r.length()) return false;
@@ -43,7 +42,7 @@ Headers::Headers() = default;
 
 Headers::Headers(Headers &&other) : map_{std::move(other.map_)} {}
 
-Headers::~Headers() {}
+Headers::~Headers() = default;
 
 void Headers::add(const std::string_view &key, std::string &&value) {
   remove(key);
@@ -72,7 +71,7 @@ const std::string *Headers::find(const std::string_view &key) const {
 }
 
 const char *Headers::find_cstr(const char *key) const {
-  std::string_view sv_key{key};
+  std::string_view const sv_key{key};
   for (const auto &element : map_) {
     if (compare_case_insensitive(element.first, sv_key)) {
       return element.second.c_str();
@@ -94,5 +93,4 @@ void Headers::remove(const std::string_view &key) {
   if (it != map_.end()) map_.erase(it);
 }
 
-}  // namespace base
-}  // namespace http
+}  // namespace http::base

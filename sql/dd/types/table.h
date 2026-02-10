@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -289,6 +289,11 @@ class Table : virtual public Abstract_table {
   virtual const Partition_leaf_vector &leaf_partitions() const = 0;
 
   virtual Partition_leaf_vector *leaf_partitions() = 0;
+
+  virtual Partition *get_leaf_partition(const std::string &part_name) = 0;
+
+  virtual const Partition *get_leaf_partition(
+      const std::string &part_name) const = 0;
 
   /////////////////////////////////////////////////////////////////////////
   // Trigger collection.

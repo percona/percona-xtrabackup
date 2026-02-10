@@ -1,0 +1,180 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+CREATE USER user_valid@'%' IDENTIFIED BY 'pwd';
+CREATE USER user_not_reg@'%' IDENTIFIED BY 'pwd';
+CREATE USER user_blocked@'%' IDENTIFIED BY 'pwd';
+
+
+## I. Create three services that have basic-mysql authentication:
+#
+# 1. under first service create a schema that requires authentication
+#    and create two objects that don't require authentication, still
+#    they inherit authentication requirement from schema.
+# 2. under second service create a schema that doest require authentication
+#    and create two objects one of which requires authentication.
+#       srv1(basic auth)->schema1(requires-auth)->object1(doesn't require)
+#       srv1(basic auth)->schema1(requires-auth)->object2(doesn't require)
+#       srv2(basic auth)->schema2(doesn't require)->object3(requires)
+#       srv2(basic auth)->schema2(doesn't require)->object4(doesn't require)
+# 3. under thrid service create a schema that doest require authentication
+#    and create on objects. The authentication-application must be limited to
+#    registered users.
+#
+## II. Verify that non authorized request
+#
+# 1. Have access to db-object (/srv2/schema2/object4)
+# 2. Doesn't have access to db-object (object1,object2,object3)
+#
+## III. Authenticate user1 against service: /srv1, and verify it
+#
+# 1. Have access to db-object (object1,object2,object4)
+# 2. Doesn't have access to db-object (object3)
+#
+## IV. Authenticate user2 against service: /srv2, and verify it
+#
+# 1. Have access to db-object (object3,object4)
+# 2. Doesn't have access to db-object (object1,object2)
+#
+## V. Authenticate against service: /srv3, and verify it
+#
+# 1. Verify that registered user can login
+# 2. Verify that not-registered user can't login
+# 3. Verify that blocked user can't login
+#
+#
+
+#
+# I.1
+# Registred SERVICE at path: /svc1
+# Registred DB_SCHEMA at path: /svc1/basic1
+# Registred DB_OBJECT at path: /svc1/basic1/o1
+# Registred DB_OBJECT at path: /svc1/basic1/o2
+# Registred AUTH APP at path: /svc1
+
+#
+# I.2
+# Registred SERVICE at path: /svc2
+# Registred DB_SCHEMA at path: /svc2/basic2
+# Registred DB_OBJECT at path: /svc2/basic2/o3
+# Registred DB_OBJECT at path: /svc2/basic2/o4
+# Registred AUTH APP at path: /svc2
+
+#
+# I.3
+# Registred SERVICE at path: /svc3
+# Registred DB_SCHEMA at path: /svc3/basic
+# Registred DB_OBJECT at path: /svc3/basic/o
+# Registred DB_OBJECT at path: /svc3/basic/o4
+# Registred AUTH APP at path: /svc3
+# Registred MRS USER: 'user_blocked'
+# Registred MRS USER: 'user_valid'
+
+#
+# II.1
+GET /svc2/basic2/o4
+
+OK
+
+#
+# II.2
+GET /svc2/basic2/o3
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc1/basic1/o1
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc1/basic1/o2
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+
+#
+# III.1
+GET /svc1/authentication/login
+{"message":"Unauthorized","status":401}
+OK
+GET /svc1/authentication/login
+
+OK
+GET /svc2/authentication/login
+
+OK
+GET /svc1/basic1/o1
+
+OK
+GET /svc1/basic1/o2
+
+OK
+GET /svc2/basic2/o4
+
+OK
+
+#
+# III.2
+GET /svc2/basic2/o3
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+
+#
+# IV.1
+GET /svc2/basic2/o3
+
+OK
+
+#
+# IV.2
+GET /svc1/basic1/o1
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc1/basic1/o2
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc2/basic2/o4
+
+OK
+
+#
+# V.1
+GET /svc3/authentication/login
+
+OK
+
+#
+# V.2
+GET /svc3/authentication/login
+{"message":"Unauthorized","status":401}
+OK
+
+#
+# V.3
+GET /svc3/authentication/login
+{"message":"Unauthorized","status":401}
+OK
+DROP USER user_valid@'%';
+DROP USER user_not_reg@'%';
+DROP USER user_blocked@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

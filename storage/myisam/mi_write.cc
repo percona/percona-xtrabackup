@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,9 @@
 
 /* Write a row to a MyISAM table */
 
-#include <errno.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <cerrno>
 
 #include <algorithm>
 
@@ -63,7 +63,7 @@ int mi_write(MI_INFO *info, uchar *record) {
   int save_errno;
   my_off_t filepos;
   uchar *buff;
-  bool lock_tree = share->concurrent_insert;
+  bool const lock_tree = share->concurrent_insert;
   DBUG_TRACE;
   DBUG_PRINT("enter", ("isam: %d  data: %d", info->s->kfile, info->dfile));
 
@@ -107,7 +107,7 @@ int mi_write(MI_INFO *info, uchar *record) {
   buff = info->lastkey2;
   for (i = 0; i < share->base.keys; i++) {
     if (mi_is_key_active(share->state.key_map, i)) {
-      bool local_lock_tree =
+      bool const local_lock_tree =
           (lock_tree &&
            !(info->bulk_insert && is_tree_inited(&info->bulk_insert[i])));
       if (local_lock_tree) {
@@ -172,7 +172,7 @@ err:
     info->errkey = (int)i;
     while (i-- > 0) {
       if (mi_is_key_active(share->state.key_map, i)) {
-        bool local_lock_tree =
+        bool const local_lock_tree =
             (lock_tree &&
              !(info->bulk_insert && is_tree_inited(&info->bulk_insert[i])));
         if (local_lock_tree) mysql_rwlock_wrlock(&share->key_root_lock[i]);
@@ -182,7 +182,7 @@ err:
             break;
           }
         } else {
-          uint key_length = _mi_make_key(info, i, buff, record, filepos);
+          uint const key_length = _mi_make_key(info, i, buff, record, filepos);
           if (share->keyinfo[i].ck_delete(info, i, buff, key_length)) {
             if (local_lock_tree) mysql_rwlock_unlock(&share->key_root_lock[i]);
             break;
@@ -212,9 +212,9 @@ int _mi_ck_write(MI_INFO *info, uint keynr, uchar *key, uint key_length) {
 
   if (info->bulk_insert && is_tree_inited(&info->bulk_insert[keynr])) {
     return _mi_ck_write_tree(info, keynr, key, key_length);
-  } else {
-    return _mi_ck_write_btree(info, keynr, key, key_length);
   }
+  return _mi_ck_write_btree(info, keynr, key, key_length);
+
 } /* _mi_ck_write */
 
 /**********************************************************************
@@ -468,7 +468,7 @@ int _mi_insert(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key, uchar *anc_buff,
       /* the very first key on the page is always unpacked */
       assert((*b & 128) == 0);
       blen = *b++;
-      uint alen = get_key_length(&a);
+      uint const alen = get_key_length(&a);
       assert(info->ft1_to_ft2 == nullptr);
       if (alen == blen && ha_compare_text(keyinfo->seg->charset, a, alen, b,
                                           blen, false) == 0) {
@@ -823,17 +823,16 @@ int _mi_ck_write_tree(MI_INFO *info, uint keynr, uchar *key, uint key_length) {
 
 static int keys_compare(const void *a, const void *b, const void *c) {
   uint not_used[2];
-  const bulk_insert_param *param = static_cast<const bulk_insert_param *>(a);
-  const uchar *key1 = static_cast<const uchar *>(b);
-  const uchar *key2 = static_cast<const uchar *>(c);
+  const auto *param = static_cast<const bulk_insert_param *>(a);
+  const auto *key1 = static_cast<const uchar *>(b);
+  const auto *key2 = static_cast<const uchar *>(c);
   return ha_key_cmp(param->info->s->keyinfo[param->keynr].seg, key1, key2,
                     USE_WHOLE_KEY, SEARCH_SAME, not_used);
 }
 
 static void keys_free(void *v_key, TREE_FREE mode, const void *v_param) {
-  uchar *key = static_cast<uchar *>(v_key);
-  const bulk_insert_param *param =
-      static_cast<const bulk_insert_param *>(v_param);
+  auto *key = static_cast<uchar *>(v_key);
+  const auto *param = static_cast<const bulk_insert_param *>(v_param);
   /*
     Probably I can use info->lastkey here, but I'm not sure,
     and to be safe I'd better use local lastkey.
@@ -861,7 +860,6 @@ static void keys_free(void *v_key, TREE_FREE mode, const void *v_param) {
         mysql_rwlock_unlock(&param->info->s->key_root_lock[param->keynr]);
       return;
   }
-  return;
 }
 
 int mi_init_bulk_insert(MI_INFO *info, ulong cache_size, ha_rows rows) {

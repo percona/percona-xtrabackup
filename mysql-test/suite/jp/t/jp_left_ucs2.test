@@ -40,63 +40,117 @@ INSERT INTO `£Τ£Έ` VALUES ('¤Ά¤¤¤¦¤¨¤ª'),('¤Ά¤¤¤¦¤¨'),('¤Ά¤¤¤¦'),('¤Ά¤¤'),('¤Ά')
 INSERT INTO `£Τ£Ή` VALUES ('νάνένήνίνΰ'),('νάνένήνί'),('νάνένή'),('νάνέ'),('νά'),('');
 
 #InnoDB
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,0) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,1) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,2) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,3) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,4) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,5) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,0) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,1) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,2) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,3) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,4) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,5) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,0) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,1) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,2) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,3) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,4) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,5) FROM `£Τ£³`;
 
 #MyISAM
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,0) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,1) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,2) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,3) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,4) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,5) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,0) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,1) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,2) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,3) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,4) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,5) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,0) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,1) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,2) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,3) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,4) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,5) FROM `£Τ£¶`;
 
 #MEMORY
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,0) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,1) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,2) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,3) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,4) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,5) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,0) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,1) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,2) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,3) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,4) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,5) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,0) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,1) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,2) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,3) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,4) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, LEFT(`£Γ£±`,5) FROM `£Τ£Ή`;
 
 DROP TABLE `£Τ£±`;

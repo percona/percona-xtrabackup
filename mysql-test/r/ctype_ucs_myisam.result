@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 CREATE TABLE t1 (word varchar(64) NOT NULL, PRIMARY KEY (word))
 ENGINE=MyISAM CHARACTER SET ucs2 COLLATE ucs2_general_ci;
 Warnings:
@@ -341,3 +342,4 @@ SELECT * FROM t1 WHERE MATCH(a) AGAINST ('+abcd' IN BOOLEAN MODE);
 a
 abcd
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc

@@ -3700,7 +3700,7 @@ KEY `some_other_id` (`some_other_id`),
 KEY `one_other_idx` (`one_id`,`other_id`),
 KEY `other_id` (`other_id`,`time_created`)
 ) ENGINE=InnoDB AUTO_INCREMENT=101651329
-DEFAULT CHARSET=utf8mb3 COLLATE=utf8_unicode_ci ;
+DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci ;
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
@@ -4655,7 +4655,7 @@ explain format=tree SELECT 1
 FROM t AS t1
 WHERE NOT EXISTS (SELECT * FROM t AS t2 WHERE t2.f1 < NULL AND t1.f1 = t2.f1);
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Zero rows (no matching row in const table)  (rows=0)
@@ -4676,7 +4676,7 @@ WHERE NOT EXISTS (SELECT *
 FROM t AS t2
 WHERE t2.f1 BETWEEN 2 AND 3 AND t1.f1 = t2.f1);
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Limit: 1 row(s)  (rows=1)
@@ -4692,7 +4692,7 @@ FROM (SELECT f1 FROM t AS t2 WHERE t2.f1 < NULL) AS t4
 WHERE t1.f1 = t4.f1
 );
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Zero rows (no matching row in const table)  (rows=0)
@@ -4718,7 +4718,7 @@ FROM (SELECT f1 FROM t AS t2 WHERE t2.f1 BETWEEN 2 AND 3
 WHERE t1.f1 = t4.f1
 );
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Limit: 1 row(s)  (rows=1)
@@ -4733,7 +4733,7 @@ WHERE NOT EXISTS (SELECT *
 FROM t AS t2 JOIN t AS t3 ON t2.f1 < NULL
 WHERE t1.f1 = t2.f1);
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Zero rows (no matching row in const table)  (rows=0)
@@ -4756,7 +4756,7 @@ WHERE NOT EXISTS (SELECT *
 FROM t AS t2 JOIN t AS t3 ON t3.f1 < NULL
 WHERE t1.f1 = t3.f1);
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Zero rows (no matching row in const table)  (rows=0)
@@ -4779,7 +4779,7 @@ WHERE NOT EXISTS (SELECT *
 FROM t AS t2 JOIN t AS t3 ON t2.f1 BETWEEN 2 AND 3
 WHERE t1.f1 = t2.f1);
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Limit: 1 row(s)  (rows=1)
@@ -4797,7 +4797,7 @@ WHERE NOT EXISTS (SELECT *
 FROM t AS t2 JOIN t AS t3 ON t3.f1 BETWEEN 2 AND 3
 WHERE t1.f1 = t2.f1);
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Limit: 1 row(s)  (rows=1)
@@ -4817,7 +4817,7 @@ FROM (SELECT t2.f1 FROM t AS t2 JOIN t AS t3 ON t2.f1 < NULL
 WHERE t1.f1 = t4.f1
 );
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Zero rows (no matching row in const table)  (rows=0)
@@ -4844,7 +4844,7 @@ FROM (SELECT t2.f1 FROM t AS t2 JOIN t AS t3 ON t3.f1 < NULL
 WHERE t1.f1 = t4.f1
 );
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Zero rows (no matching row in const table)  (rows=0)
@@ -4872,7 +4872,7 @@ FROM t AS t2 JOIN t AS t3 ON t2.f1 BETWEEN 2 AND 3
 WHERE t1.f1 = t4.f1
 );
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Limit: 1 row(s)  (rows=1)
@@ -4893,7 +4893,7 @@ FROM t AS t2 JOIN t AS t3 ON t3.f1 BETWEEN 2 AND 3
 WHERE t1.f1 = t4.f1
 );
 EXPLAIN
--> Filter: exists(select #2) is false  (rows=4)
+-> Filter: (not exists(select #2))  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Select #2 (subquery in condition; dependent)
         -> Limit: 1 row(s)  (rows=1)
@@ -4950,4 +4950,43 @@ Warnings:
 Note	1003	/* select#1 */ select `test`.`tt`.`id` AS `id`,`test`.`tt`.`p_id` AS `p_id`,`test`.`tt`.`tag` AS `tag`,`test`.`tt`.`status` AS `status`,`test`.`tt`.`update_time` AS `update_time` from `test`.`tt` where ((`test`.`tt`.`status` = 0) and (`test`.`tt`.`o_id` = '054a579e5ea7415ab3afd2eeb14038c1') and (`test`.`tt`.`update_time` between '2024-02-15 00:00:00' and '2024-02-21 23:59:59')) order by `test`.`tt`.`update_time`,`test`.`tt`.`id` limit 0,100
 SET optimizer_switch=default;
 DROP TABLE tt;
+#
+# Bug#37808260: Performance degradation in MySQL>=8.4 vs MySQL 8.0
+#               due to redundant condition not optimized away
+#
+CREATE TABLE t1 (f1 INTEGER NOT NULL, f2 INTEGER NOT NULL,
+f3 INTEGER NOT NULL, KEY(f1,f2,f3));
+INSERT INTO t1 VALUES (1,1,1), (1,2,1), (2,3,4), (2,4,5), (3,3,6), (3,4,7);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=tree SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL));
+EXPLAIN
+-> Zero rows (no matching row in const table)  (rows=0)
+
+SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL));
+f1
+EXPLAIN FORMAT=tree SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL)) AND f1 = 1;
+EXPLAIN
+-> Zero rows (no matching row in const table)  (rows=0)
+
+SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL)) AND f1 = 1;
+f1
+EXPLAIN FORMAT=tree SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL), (1,1,1));
+EXPLAIN
+-> Filter: ((t1.f1,t1.f2,t1.f3) in ((1,1,NULL),(2,2,NULL),(1,1,1)))  (rows=1)
+    -> Covering index range scan on t1 using f1 over (f1 = 1 AND f2 = 1 AND f3 = 1)  (rows=1)
+
+SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL), (1,1,1));
+f1
+1
+EXPLAIN FORMAT=tree SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL), (1,1,1)) AND f1 = 1;
+EXPLAIN
+-> Filter: ((t1.f1 = 1) and ((t1.f1,t1.f2,t1.f3) in ((1,1,NULL),(2,2,NULL),(1,1,1))))  (rows=1)
+    -> Covering index range scan on t1 using f1 over (f1 = 1 AND f2 = 1 AND f3 = 1)  (rows=1)
+
+SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL), (1,1,1)) AND f1 = 1;
+f1
+1
+DROP TABLE t1;
 set optimizer_switch=default;

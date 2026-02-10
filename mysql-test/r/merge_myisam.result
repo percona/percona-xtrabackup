@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 drop table if exists t1,t2,t3,t4,t5,t6;
 drop database if exists mysqltest;
 create table t1 (a int not null primary key auto_increment, message char(20));
@@ -3809,3 +3810,4 @@ test.t4	check	status	OK
 # Clean-up
 DROP TABLES t1, t2, t3, t4;
 # End of bug #11764786 - 57657
+include/rpl/set_gtid_mode_on.inc

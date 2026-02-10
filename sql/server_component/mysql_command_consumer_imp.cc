@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <mysql/components/minimal_chassis.h>
 #include "include/my_byteorder.h"
 #include "include/my_sys.h"
+#include "include/my_thread_local.h"
 #include "include/my_time.h"
 #include "include/mysql/service_command.h"
 #include "include/mysql/strings/int2str.h"
@@ -40,13 +41,13 @@ PSI_memory_key key_memory_cc_MYSQL;
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::start,
                    (SRV_CTX_H * srv_ctx_h, MYSQL_H *mysql_h)) {
   try {
-    Dom_ctx *ctx = (Dom_ctx *)my_malloc(key_memory_cc_MYSQL, sizeof(Dom_ctx),
-                                        MYF(MY_WME | MY_ZEROFILL));
+    auto *ctx = (Dom_ctx *)my_malloc(key_memory_cc_MYSQL, sizeof(Dom_ctx),
+                                     MYF(MY_WME | MY_ZEROFILL));
     if (ctx == nullptr || mysql_h == nullptr) return true;
-    Mysql_handle *mysql_handle = reinterpret_cast<Mysql_handle *>(mysql_h);
+    auto *mysql_handle = reinterpret_cast<Mysql_handle *>(mysql_h);
     ctx->m_mysql = mysql_handle->mysql;
     *srv_ctx_h = reinterpret_cast<SRV_CTX_H>(ctx);
-    auto mcs_extn = MYSQL_COMMAND_SERVICE_EXTN(ctx->m_mysql);
+    auto *mcs_extn = MYSQL_COMMAND_SERVICE_EXTN(ctx->m_mysql);
     mcs_extn->consumer_srv_data = reinterpret_cast<SRV_CTX_H *>(ctx);
     ctx->m_result = &mcs_extn->data;
     if (!(*ctx->m_result = (MYSQL_DATA *)my_malloc(
@@ -75,7 +76,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::start_result_metadata,
                    (SRV_CTX_H srv_ctx_h, unsigned int num_cols, unsigned int,
                     const char *const)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     if (ctx->m_mysql->field_alloc == nullptr) {
       ctx->m_mysql->field_alloc = (MEM_ROOT *)my_malloc(
@@ -116,7 +117,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::field_metadata,
                    (SRV_CTX_H srv_ctx_h, struct Field_metadata *field,
                     const char *const)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     /* The field metadata strings are part of the query context and will be
        freed after query execution. Copy the metadata strings into the result
@@ -154,7 +155,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::end_result_metadata,
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::start_row,
                    (SRV_CTX_H srv_ctx_h)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     ctx->m_cur_row =
         (MYSQL_ROWS *)ctx->m_data->alloc->Alloc(sizeof(MYSQL_ROWS));
@@ -185,7 +186,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::start_row,
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::abort_row,
                    (SRV_CTX_H srv_ctx_h)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     auto count = ctx->m_data->rows;
     MYSQL_ROWS **last_row_hook = &ctx->m_data->data;
@@ -203,7 +204,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::abort_row,
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::end_row,
                    (SRV_CTX_H srv_ctx_h)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     ctx->m_prev_ptr = &ctx->m_cur_row->next;
   } catch (...) {
@@ -219,7 +220,7 @@ DEFINE_METHOD(void, mysql_command_consumer_dom_imp::handle_ok,
                unsigned long long affected_rows,
                unsigned long long last_insert_id, const char *const message)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return;
     ctx->m_mysql->affected_rows = affected_rows;
     ctx->m_mysql->warning_count = statement_warn_count;
@@ -238,7 +239,7 @@ DEFINE_METHOD(void, mysql_command_consumer_dom_imp::handle_error,
               (SRV_CTX_H srv_ctx_h, unsigned int sql_errno,
                const char *const err_msg, const char *const sqlstate)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return;
     *ctx->m_err_msg = err_msg ? err_msg : "";
     ctx->m_sql_errno = sql_errno;
@@ -247,13 +248,12 @@ DEFINE_METHOD(void, mysql_command_consumer_dom_imp::handle_error,
     mysql_components_handle_std_exception(__func__);
     return;
   }
-  return;
 }
 
 /* get_null */
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get, (SRV_CTX_H srv_ctx_h)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     char buff[5] = {"NULL"}; /* Store 'NULL' as null value into the data */
     const bool ret = store_data(srv_ctx_h, buff, 4);
@@ -269,7 +269,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get, (SRV_CTX_H srv_ctx_h)) {
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
                    (SRV_CTX_H srv_ctx_h, long long value)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     char buff[MY_INT64_NUM_DECIMAL_DIGITS + 1];
     const char *end = longlong10_to_str(value, buff, -10);
@@ -288,7 +288,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
                    (SRV_CTX_H srv_ctx_h, long long value,
                     unsigned int unsigned_flag)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     char buff[MY_INT64_NUM_DECIMAL_DIGITS + 1];
     const char *end = longlong10_to_str(value, buff, unsigned_flag ? 10 : -10);
@@ -306,8 +306,8 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
                    (SRV_CTX_H srv_ctx_h, const DECIMAL_T_H decimal)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
-    auto value = (const decimal_t *)(decimal);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    const auto *value = (const decimal_t *)(decimal);
     if (ctx == nullptr) return true;
     char buff[DECIMAL_MAX_STR_LENGTH + 1];
     int string_length = DECIMAL_MAX_STR_LENGTH + 1;
@@ -326,7 +326,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
                    (SRV_CTX_H srv_ctx_h, double value, unsigned int decimals)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     char buffer[FLOATING_POINT_BUFFER + 1];
     size_t length;
@@ -347,9 +347,9 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get_date,
                    (SRV_CTX_H srv_ctx_h, const MYSQL_TIME_H time)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
-    auto value = (const MYSQL_TIME *)(time);
+    const auto *value = (const MYSQL_TIME *)(time);
     char buff[MAX_DATE_STRING_REP_LENGTH];
     const size_t length = my_date_to_str(*value, buff);
     const bool ret_val = store_data(srv_ctx_h, buff, length);
@@ -364,9 +364,9 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get_time,
                    (SRV_CTX_H srv_ctx_h, const MYSQL_TIME_H time,
                     unsigned int precision)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
-    auto value = (const MYSQL_TIME *)(time);
+    const auto *value = (const MYSQL_TIME *)(time);
     char buff[MAX_DATE_STRING_REP_LENGTH];
     const size_t length = my_time_to_str(*value, buff, precision);
     const bool ret_val = store_data(srv_ctx_h, buff, length);
@@ -381,9 +381,9 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get_datetime,
                    (SRV_CTX_H srv_ctx_h, const MYSQL_TIME_H time,
                     unsigned int precision)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
-    auto value = (const MYSQL_TIME *)(time);
+    const auto *value = (const MYSQL_TIME *)(time);
     char buff[MAX_DATE_STRING_REP_LENGTH];
     const size_t length = my_datetime_to_str(*value, buff, precision);
     const bool ret_val = store_data(srv_ctx_h, buff, length);
@@ -398,7 +398,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get_string,
                    (SRV_CTX_H srv_ctx_h, const char *const value, size_t length,
                     const char *const)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     const bool ret = store_data(srv_ctx_h, value, length);
     ++(ctx->m_cur_field_num);
@@ -412,20 +412,19 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get_string,
 DEFINE_METHOD(void, mysql_command_consumer_dom_imp::client_capabilities,
               (SRV_CTX_H srv_ctx_h, unsigned long *capabilities)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return;
     *capabilities = ctx->m_mysql->server_capabilities;
   } catch (...) {
     mysql_components_handle_std_exception(__func__);
     return;
   }
-  return;
 }
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::error,
                    (SRV_CTX_H srv_ctx_h, unsigned int *err_num,
                     const char **error_msg)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr || err_num == nullptr || error_msg == nullptr)
       return true;
     *err_num = ctx->m_sql_errno;
@@ -440,8 +439,16 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::error,
 DEFINE_METHOD(void, mysql_command_consumer_dom_imp::end,
               (SRV_CTX_H srv_ctx_h)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return;
+    // Free MYSQL_FIELD buffer allocated in start_result_metadata()
+    if (ctx->m_mysql && ctx->m_mysql->field_alloc) {
+      ctx->m_mysql->field_alloc->Clear();
+      my_free(ctx->m_mysql->field_alloc);
+      ctx->m_mysql->field_alloc = nullptr;
+      ctx->m_mysql->fields = nullptr;
+    }
+
     /* The m_result is freed by
        free_result->mysql_free_result()->free_rows() api.
        In non result cases, it has to be freed here. */
@@ -458,13 +465,12 @@ DEFINE_METHOD(void, mysql_command_consumer_dom_imp::end,
     mysql_components_handle_std_exception(__func__);
     return;
   }
-  return;
 }
 
 DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::store_data,
                    (SRV_CTX_H srv_ctx_h, const char *data, size_t length)) {
   try {
-    Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
+    auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     assert(ctx);
     char *&field_buf = ctx->m_cur_row->data[ctx->m_cur_field_num];
     field_buf = (char *)ctx->m_data->alloc->Alloc(length + 1);

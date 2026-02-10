@@ -16,8 +16,6 @@ select @@ndb_log_transaction_dependency;
 --source include/rpl/connection_replica.inc
 --echo # 1. Using more than one worker
 select @@replica_parallel_workers;
---echo # 2. Using LOGICAL_CLOCK for parallel type
-select @@replica_parallel_type;
 
 --source include/rpl/connection_source.inc
 CREATE TABLE t1 (

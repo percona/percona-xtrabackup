@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
@@ -55,8 +55,7 @@ struct Is_simple : Gis_test<T_typeset> {
          gis::Coordinate_system::kGeographic) &&
         (g.coordinate_system() == gis::Coordinate_system::kCartesian))
       return is_simple(gis_project_on_pole(g));
-    else
-      return is_simple(g);
+    return is_simple(g);
   }
 };
 

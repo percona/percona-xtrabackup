@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 
 #include "mysql/strings/int2str.h"
 
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -98,7 +99,7 @@ char *ll2str(int64_t val, char *dst, int radix, bool upcase) {
 char *longlong10_to_str(int64_t val, char *dst, int radix) {
   assert(radix == 10 || radix == -10);
 
-  uint64_t uval = static_cast<uint64_t>(val);
+  auto uval = static_cast<uint64_t>(val);
 
   if (radix < 0) /* -10 */
   {

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,8 @@
 
 #include "random_generator.h"
 
-#include <assert.h>  // <cassert> is flawed: assert() lands in global namespace on Ubuntu 14.04, not std::
 #include <algorithm>
+#include <cassert>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -58,8 +58,9 @@ std::string get_alphabet(unsigned alphabet_mask) {
 
 RandomGeneratorInterface::~RandomGeneratorInterface() = default;
 
-std::string RandomGenerator::generate_identifier(
-    unsigned length, unsigned alphabet_mask) /*override*/ {
+std::string RandomGenerator::generate_identifier(unsigned length,
+                                                 unsigned alphabet_mask) const
+/*override*/ {
   std::string result;
   std::random_device rd;
   const std::string alphabet = get_alphabet(alphabet_mask);
@@ -105,7 +106,8 @@ std::string RandomGenerator::generate_strong_password(
 
 // returns "012345678901234567890123...", truncated to length
 std::string FakeRandomGenerator::generate_identifier(unsigned length,
-                                                     unsigned) /*override*/ {
+                                                     unsigned) const
+/*override*/ {
   std::string pwd;
   for (unsigned i = 0; i < length; i++) pwd += static_cast<char>('0' + i % 10);
   return pwd;

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2024, Oracle and/or its affiliates.
+Copyright (c) 1994, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -36,7 +36,7 @@ other files in library. The code in this file is used to make a library for
 external tools. */
 
 #include <sys/types.h>
-#include <time.h>
+#include <ctime>
 
 #include <iomanip>
 
@@ -64,7 +64,7 @@ void ut_print_buf(FILE *file,      /*!< in: file where to print */
   data = (const byte *)buf;
 
   for (i = 0; i < len; i++) {
-    int c = (int)*data++;
+    int const c = (int)*data++;
     putc(isprint(c) ? c : ' ', file);
   }
 
@@ -76,8 +76,8 @@ void ut_print_buf(FILE *file,      /*!< in: file where to print */
 @param[in] buf Memory buffer
 @param[in] len Length of the buffer */
 void ut_print_buf_hex(std::ostream &o, const void *buf, ulint len) {
-  auto ptr = reinterpret_cast<const byte *>(buf);
-  const auto end = ptr + len;
+  const auto *ptr = reinterpret_cast<const byte *>(buf);
+  const auto *const end = ptr + len;
 
   o << "(0x";
   while (ptr < end) {
@@ -98,7 +98,7 @@ void ut_print_buf(std::ostream &o, const void *buf, ulint len) {
   UNIV_MEM_ASSERT_RW(buf, len);
 
   for (data = static_cast<const byte *>(buf), i = 0; i < len; i++) {
-    int c = static_cast<int>(*data++);
+    int const c = static_cast<int>(*data++);
     o << (isprint(c) ? static_cast<char>(c) : ' ');
   }
 
@@ -164,10 +164,10 @@ ulint ut_strlcpy_rev(char *dst,       /*!< in: destination buffer */
                      const char *src, /*!< in: source buffer */
                      ulint size)      /*!< in: size of destination buffer */
 {
-  ulint src_size = strlen(src);
+  ulint const src_size = strlen(src);
 
   if (size != 0) {
-    ulint n = std::min(src_size, size - 1);
+    ulint const n = std::min(src_size, size - 1);
 
     memcpy(dst, src + src_size - n, n + 1);
   }

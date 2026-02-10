@@ -1,0 +1,410 @@
+# Bug#37324137: mysql error when optimize table and update
+#
+# Virtual generated columns which are not part of any index
+# are not serialized into undo log. And also there should
+# not be any attempt to deserialize them from it. Following
+# tests make sure that it works in case of table rebuild.
+# They run concurrent operations that impact all records
+# in table like OPTIMIZE and UPDATE.
+#
+show global variables like "innodb_sort_buffer_size";
+Variable_name	Value
+innodb_sort_buffer_size	1048576
+# Running concurrent optimize and update on table with one virtual column
+# that is not part of any index.
+SET debug_sync = 'alter_table_update_log signal send_concurrent WAIT_FOR concurrent_done';
+OPTIMIZE TABLE t1;
+SET debug_sync = 'now wait_for send_concurrent';
+UPDATE t1 SET id = id + 1;
+SET debug_sync = 'now signal concurrent_done';
+Table	Op	Msg_type	Msg_text
+test.t1	optimize	note	Table does not support optimize, doing recreate + analyze instead
+test.t1	optimize	status	OK
+SELECT id, c FROM t1 ORDER BY id LIMIT 100;
+id	c
+1	a
+2	a
+3	a
+4	a
+5	a
+6	a
+7	a
+8	a
+9	a
+10	a
+11	a
+12	a
+13	a
+14	a
+15	a
+16	a
+17	a
+18	a
+19	a
+20	a
+21	a
+22	a
+23	a
+24	a
+25	a
+26	a
+27	a
+28	a
+29	a
+30	a
+31	a
+32	a
+33	a
+34	a
+35	a
+36	a
+37	a
+38	a
+39	a
+40	a
+41	a
+42	a
+43	a
+44	a
+45	a
+46	a
+47	a
+48	a
+49	a
+50	a
+51	a
+52	a
+53	a
+54	a
+55	a
+56	a
+57	a
+58	a
+59	a
+60	a
+61	a
+62	a
+63	a
+64	a
+65	a
+66	a
+67	a
+68	a
+69	a
+70	a
+71	a
+72	a
+73	a
+74	a
+75	a
+76	a
+77	a
+78	a
+79	a
+80	a
+81	a
+82	a
+83	a
+84	a
+85	a
+86	a
+87	a
+88	a
+89	a
+90	a
+91	a
+92	a
+93	a
+94	a
+95	a
+96	a
+97	a
+98	a
+99	a
+100	a
+# Running concurrent optimize and update on table with two virtual columns.
+# One that is not part of any index and one that is.
+SET debug_sync = 'alter_table_update_log signal send_concurrent WAIT_FOR concurrent_done';
+OPTIMIZE TABLE t2;
+SET debug_sync = 'now wait_for send_concurrent';
+UPDATE t2 SET id = id + 1;
+SET debug_sync = 'now signal concurrent_done';
+Table	Op	Msg_type	Msg_text
+test.t2	optimize	note	Table does not support optimize, doing recreate + analyze instead
+test.t2	optimize	status	OK
+SELECT id, c, d FROM t2 ORDER BY id LIMIT 100;
+id	c	d
+1	1	a
+2	2	a
+3	3	a
+4	4	a
+5	5	a
+6	6	a
+7	7	a
+8	8	a
+9	9	a
+10	10	a
+11	11	a
+12	12	a
+13	13	a
+14	14	a
+15	15	a
+16	16	a
+17	17	a
+18	18	a
+19	19	a
+20	20	a
+21	21	a
+22	22	a
+23	23	a
+24	24	a
+25	25	a
+26	26	a
+27	27	a
+28	28	a
+29	29	a
+30	30	a
+31	31	a
+32	32	a
+33	33	a
+34	34	a
+35	35	a
+36	36	a
+37	37	a
+38	38	a
+39	39	a
+40	40	a
+41	41	a
+42	42	a
+43	43	a
+44	44	a
+45	45	a
+46	46	a
+47	47	a
+48	48	a
+49	49	a
+50	50	a
+51	51	a
+52	52	a
+53	53	a
+54	54	a
+55	55	a
+56	56	a
+57	57	a
+58	58	a
+59	59	a
+60	60	a
+61	61	a
+62	62	a
+63	63	a
+64	64	a
+65	65	a
+66	66	a
+67	67	a
+68	68	a
+69	69	a
+70	70	a
+71	71	a
+72	72	a
+73	73	a
+74	74	a
+75	75	a
+76	76	a
+77	77	a
+78	78	a
+79	79	a
+80	80	a
+81	81	a
+82	82	a
+83	83	a
+84	84	a
+85	85	a
+86	86	a
+87	87	a
+88	88	a
+89	89	a
+90	90	a
+91	91	a
+92	92	a
+93	93	a
+94	94	a
+95	95	a
+96	96	a
+97	97	a
+98	98	a
+99	99	a
+100	100	a
+# Running concurrent optimize and update on table with four virtual columns.
+# Two that are not part of any index and two are.
+SET debug_sync = 'alter_table_update_log signal send_concurrent WAIT_FOR concurrent_done';
+OPTIMIZE TABLE t3;
+SET debug_sync = 'now wait_for send_concurrent';
+UPDATE t3 SET id = id + 1;
+UPDATE t3 SET id = id + 2;
+SET debug_sync = 'now signal concurrent_done';
+Table	Op	Msg_type	Msg_text
+test.t3	optimize	note	Table does not support optimize, doing recreate + analyze instead
+test.t3	optimize	status	OK
+SELECT id, c, d, e, f FROM t3 ORDER BY id LIMIT 100;
+id	c	d	e	f
+3	3	a	126	249
+4	4	a	127	250
+5	5	a	128	251
+6	6	a	129	252
+7	7	a	130	253
+8	8	a	131	254
+9	9	a	132	255
+10	10	a	133	256
+11	11	a	134	257
+12	12	a	135	258
+13	13	a	136	259
+14	14	a	137	260
+15	15	a	138	261
+16	16	a	139	262
+17	17	a	140	263
+18	18	a	141	264
+19	19	a	142	265
+20	20	a	143	266
+21	21	a	144	267
+22	22	a	145	268
+23	23	a	146	269
+24	24	a	147	270
+25	25	a	148	271
+26	26	a	149	272
+27	27	a	150	273
+28	28	a	151	274
+29	29	a	152	275
+30	30	a	153	276
+31	31	a	154	277
+32	32	a	155	278
+33	33	a	156	279
+34	34	a	157	280
+35	35	a	158	281
+36	36	a	159	282
+37	37	a	160	283
+38	38	a	161	284
+39	39	a	162	285
+40	40	a	163	286
+41	41	a	164	287
+42	42	a	165	288
+43	43	a	166	289
+44	44	a	167	290
+45	45	a	168	291
+46	46	a	169	292
+47	47	a	170	293
+48	48	a	171	294
+49	49	a	172	295
+50	50	a	173	296
+51	51	a	174	297
+52	52	a	175	298
+53	53	a	176	299
+54	54	a	177	300
+55	55	a	178	301
+56	56	a	179	302
+57	57	a	180	303
+58	58	a	181	304
+59	59	a	182	305
+60	60	a	183	306
+61	61	a	184	307
+62	62	a	185	308
+63	63	a	186	309
+64	64	a	187	310
+65	65	a	188	311
+66	66	a	189	312
+67	67	a	190	313
+68	68	a	191	314
+69	69	a	192	315
+70	70	a	193	316
+71	71	a	194	317
+72	72	a	195	318
+73	73	a	196	319
+74	74	a	197	320
+75	75	a	198	321
+76	76	a	199	322
+77	77	a	200	323
+78	78	a	201	324
+79	79	a	202	325
+80	80	a	203	326
+81	81	a	204	327
+82	82	a	205	328
+83	83	a	206	329
+84	84	a	207	330
+85	85	a	208	331
+86	86	a	209	332
+87	87	a	210	333
+88	88	a	211	334
+89	89	a	212	335
+90	90	a	213	336
+91	91	a	214	337
+92	92	a	215	338
+93	93	a	216	339
+94	94	a	217	340
+95	95	a	218	341
+96	96	a	219	342
+97	97	a	220	343
+98	98	a	221	344
+99	99	a	222	345
+100	100	a	223	346
+101	101	a	224	347
+102	102	a	225	348
+# Running concurrent table rebuild with alter and update on table.
+SET debug_sync = 'alter_table_update_log signal send_concurrent WAIT_FOR concurrent_done';
+ALTER TABLE t1 ADD PRIMARY KEY (id);
+SET debug_sync = 'now wait_for send_concurrent';
+UPDATE t1 SET id = id + 10000;
+SET debug_sync = 'now signal concurrent_done';
+SELECT id FROM t1 ORDER BY id LIMIT 50;
+id
+10001
+10002
+10003
+10004
+10005
+10006
+10007
+10008
+10009
+10010
+10011
+10012
+10013
+10014
+10015
+10016
+10017
+10018
+10019
+10020
+10021
+10022
+10023
+10024
+10025
+10026
+10027
+10028
+10029
+10030
+10031
+10032
+10033
+10034
+10035
+10036
+10037
+10038
+10039
+10040
+10041
+10042
+10043
+10044
+10045
+10046
+10047
+10048
+10049
+10050
+DROP TABLE t3;
+DROP TABLE t2;
+DROP TABLE t1;

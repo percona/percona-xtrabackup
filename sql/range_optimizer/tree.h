@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,10 @@
 #ifndef SQL_RANGE_OPTIMIZER_TREE_H_
 #define SQL_RANGE_OPTIMIZER_TREE_H_
 
-#include <assert.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cassert>
+#include <cstddef>
+#include <cstring>
 
 #include "my_alloc.h"
 #include "my_base.h"
@@ -215,7 +216,7 @@ class SEL_ROOT {
   /**
     Number of nodes in the RB-tree, not including sentinels.
   */
-  uint16 elements{0};
+  size_t elements{0};
 };
 
 int sel_cmp(Field *f, uchar *a, uchar *b, uint8 a_flag, uint8 b_flag);

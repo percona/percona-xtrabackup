@@ -1,1 +1,2 @@
 --replica-parallel-workers=1
+--gtid-mode=off --enforce-gtid-consistency=off

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -283,7 +283,7 @@ const GsnName SignalNames[] = {
     {GSN_SCAN_PROCCONF, "SCAN_PROCCONF"},
     {GSN_SCAN_PROCREQ, "SCAN_PROCREQ"},
     {GSN_SEND_PACKED, "SEND_PACKED"},
-    {GSN_SET_LOGLEVELORD, "SET_LOGLEVELORD"},
+    {GSN_SET_LOGLEVELORD_v9_4_0, "SET_LOGLEVELORD"},
     {GSN_SHRINKCHECK2, "SHRINKCHECK2"},
     {GSN_READ_CONFIG_REQ, "READ_CONFIG_REQ"},
     {GSN_READ_CONFIG_CONF, "READ_CONFIG_CONF"},

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,9 +27,9 @@
 #define Logger_H
 
 #include <ndb_global.h>
-#include <time.h>
 #include <BaseString.hpp>
 #include <NdbOut.hpp>
+#include <ctime>
 #include "portlib/ndb_compiler.h"
 
 #define MAX_LOG_MESSAGE_SIZE 1024
@@ -121,7 +121,8 @@ class Logger {
       @len max length of result buffer
 
   */
-  static void format_timestamp(const time_t epoch, char *str, size_t len);
+  static void format_timestamp(const std::timespec *epoch, char *str,
+                               size_t len);
 
   // Timestamp - handy class for getting a timestamp string
   class Timestamp {
@@ -389,7 +390,7 @@ class Logger {
  public:
   class LoggerTest {
    public:
-    static void setHandlerPointerAdress(Logger &logger, LogHandler **lh) {
+    static void setHandlerPointerAddress(Logger &logger, LogHandler **lh) {
       logger.m_test_handler_backup = *lh;
       logger.m_test_handler = lh;
     }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@
 #include "my_config.h"
 
 #if defined(HAVE_POSIX_MEMALIGN)
-#include <stdlib.h>
+#include <cstdlib>
 #elif defined(HAVE_MEMALIGN)
 #include <memory.h>
 #elif defined(HAVE_ALIGNED_MALLOC)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,11 +25,9 @@
 
 #include "unittest/gunit/xplugin/xpl/mock/srv_session_services.h"
 
-namespace xpl {
-namespace test {
+namespace xpl::test {
 
 mock::Srv_session *mock::Srv_session::m_srv_session = nullptr;
 mock::Srv_session_info *mock::Srv_session_info::m_srv_session_info = nullptr;
 
-}  // namespace test
-}  // namespace xpl
+}  // namespace xpl::test

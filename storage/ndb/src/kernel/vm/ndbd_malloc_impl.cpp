@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,7 +28,7 @@
 #include "ndbd_malloc.hpp"
 #include "util/require.h"
 
-#include <time.h>
+#include <ctime>
 
 #include <ndb_global.h>
 #include <portlib/NdbMem.h>
@@ -281,7 +281,7 @@ bool Ndbd_mem_manager::do_virtual_alloc(Uint32 pages,
 
 static bool do_malloc(Uint32 pages, InitChunk *chunk, Uint32 *watchCounter,
                       void *baseaddress) {
-  void *ptr = 0;
+  void *ptr = nullptr;
   Uint32 sz = pages;
 
 retry:
@@ -293,8 +293,8 @@ retry:
       return false;
     case 'S':
     case 's': {
-      ptr = 0;
-      while (ptr == 0) {
+      ptr = nullptr;
+      while (ptr == nullptr) {
         if (watchCounter) *watchCounter = 9;
 
         ptr = sbrk(sizeof(Alloc_page) * sz);
@@ -305,7 +305,7 @@ retry:
             goto retry;
           }
 
-          ptr = 0;
+          ptr = nullptr;
           sz = 1 + (9 * sz) / 10;
           if (pages >= 32 && sz < 32) {
             sz = pages;
@@ -327,8 +327,8 @@ retry:
     }
     case 'M':
     case 'm': {
-      ptr = 0;
-      while (ptr == 0) {
+      ptr = nullptr;
+      while (ptr == nullptr) {
         if (watchCounter) *watchCounter = 9;
 
         ptr = NdbMem_AlignedAlloc(
@@ -339,10 +339,10 @@ retry:
               "malloc(%lluMb) => %p which is less than baseaddress!!",
               Uint64((sizeof(Alloc_page) * sz) >> 20), ptr);
           free(ptr);
-          ptr = 0;
+          ptr = nullptr;
         }
 
-        if (ptr == 0) {
+        if (ptr == nullptr) {
           if (method == 'M') {
             f_method_idx++;
             goto retry;
@@ -523,8 +523,8 @@ void Resource_limits::init_resource_spare(Uint32 id, Uint32 pct) {
  */
 
 int Ndbd_mem_manager::PageInterval::compare(const void *px, const void *py) {
-  const PageInterval *x = static_cast<const PageInterval *>(px);
-  const PageInterval *y = static_cast<const PageInterval *>(py);
+  const auto *x = static_cast<const PageInterval *>(px);
+  const auto *y = static_cast<const PageInterval *>(py);
 
   if (x->start < y->start) {
     return -1;
@@ -555,7 +555,7 @@ Uint32 Ndbd_mem_manager::ndb_log2(Uint32 input) {
 }
 
 Ndbd_mem_manager::Ndbd_mem_manager()
-    : m_base_page(NULL),
+    : m_base_page(nullptr),
       m_dump_on_alloc_fail(false),
       m_mapped_pages_count(0),
       m_mapped_pages_new_count(0) {
@@ -687,8 +687,8 @@ Uint32 Ndbd_mem_manager::get_shared_in_use() const {
 }
 
 int cmp_chunk(const void *chunk_vptr_1, const void *chunk_vptr_2) {
-  InitChunk *ptr1 = (InitChunk *)chunk_vptr_1;
-  InitChunk *ptr2 = (InitChunk *)chunk_vptr_2;
+  auto *ptr1 = (InitChunk *)chunk_vptr_1;
+  auto *ptr2 = (InitChunk *)chunk_vptr_2;
   if (ptr1->m_ptr < ptr2->m_ptr) return -1;
   if (ptr1->m_ptr > ptr2->m_ptr) return 1;
   assert(false);
@@ -708,7 +708,7 @@ bool Ndbd_mem_manager::init(Uint32 *watchCounter, Uint32 max_pages,
   Uint32 pages = max_pages;
   Uint32 max_page = 0;
 
-  const Uint64 pg = Uint64(sizeof(Alloc_page));
+  const auto pg = Uint64(sizeof(Alloc_page));
   if (pages == 0) {
     return false;
   }
@@ -723,7 +723,7 @@ bool Ndbd_mem_manager::init(Uint32 *watchCounter, Uint32 max_pages,
 #endif
 
   Uint32 allocated = 0;
-  m_base_page = NULL;
+  m_base_page = nullptr;
 
 #ifdef USE_DO_VIRTUAL_ALLOC
   {
@@ -818,7 +818,8 @@ bool Ndbd_mem_manager::init(Uint32 *watchCounter, Uint32 max_pages,
             20,
         (Uint64)(sizeof(Alloc_page) * allocated) >> 20);
     return false;
-  } else if (allocated < pages) {
+  }
+  if (allocated < pages) {
     g_eventLogger->warning(
         "Unable to alloc requested memory from OS: min: %lldMb"
         " requested: %lldMb allocated: %lldMb",
@@ -829,7 +830,7 @@ bool Ndbd_mem_manager::init(Uint32 *watchCounter, Uint32 max_pages,
     if (!alloc_less_memory) return false;
   }
 
-  if (m_base_page == NULL) {
+  if (m_base_page == nullptr) {
     /**
      * Sort chunks...
      */
@@ -846,7 +847,7 @@ bool Ndbd_mem_manager::init(Uint32 *watchCounter, Uint32 max_pages,
     m_unmapped_chunks[i].m_start = Uint32(start);
     Uint64 last64 = start + m_unmapped_chunks[i].m_cnt;
     assert((last64 >> 32) == 0);
-    Uint32 last = Uint32(last64);
+    auto last = Uint32(last64);
 
     if (last > max_page) max_page = last;
   }
@@ -868,7 +869,7 @@ void Ndbd_mem_manager::map(Uint32 *watchCounter, bool memlock,
   Uint32 limit = ~(Uint32)0;
   Uint32 sofar = 0;
 
-  if (resources != 0) {
+  if (resources != nullptr) {
     /*
      * To reduce start up time, only touch memory needed for selected resources.
      * The rest of memory will be touched in a second call to map.
@@ -960,7 +961,7 @@ void Ndbd_mem_manager::map(Uint32 *watchCounter, bool memlock,
   m_resource_limits.check();
   mt_mem_manager_unlock();
 
-  if (resources == 0 && memlock) {
+  if (resources == nullptr && memlock) {
     NdbMem_MemLockAll(1);
   }
 
@@ -988,8 +989,6 @@ void Ndbd_mem_manager::init_resource_spare(Uint32 id, Uint32 pct) {
   m_resource_limits.init_resource_spare(id, pct);
   mt_mem_manager_unlock();
 }
-
-#include <NdbOut.hpp>
 
 void Ndbd_mem_manager::grow(Uint32 start, Uint32 cnt) {
   assert(cnt);
@@ -1341,7 +1340,7 @@ void *Ndbd_mem_manager::alloc_page(Uint32 type, Uint32 *i, AllocZone zone,
           dump(true);
         }
         if (!locked) mt_mem_manager_unlock();
-        return NULL;
+        return nullptr;
       }
     } else {
       if (unlikely(m_dump_on_alloc_fail)) {
@@ -1351,7 +1350,7 @@ void *Ndbd_mem_manager::alloc_page(Uint32 type, Uint32 *i, AllocZone zone,
         dump(true);
       }
       if (!locked) mt_mem_manager_unlock();
-      return NULL;
+      return nullptr;
     }
   }
   alloc(zone, i, &cnt, min);
@@ -1370,7 +1369,7 @@ void *Ndbd_mem_manager::alloc_page(Uint32 type, Uint32 *i, AllocZone zone,
       }
       if (!locked) mt_mem_manager_unlock();
       *i = RNIL;
-      return NULL;
+      return nullptr;
     }
     m_resource_limits.check();
     if (!locked) mt_mem_manager_unlock();
@@ -1388,7 +1387,7 @@ void *Ndbd_mem_manager::alloc_page(Uint32 type, Uint32 *i, AllocZone zone,
     dump(true);
   }
   if (!locked) mt_mem_manager_unlock();
-  return 0;
+  return nullptr;
 }
 
 void *Ndbd_mem_manager::alloc_spare_page(Uint32 type, Uint32 *i,
@@ -1420,7 +1419,7 @@ void *Ndbd_mem_manager::alloc_spare_page(Uint32 type, Uint32 *i,
     dump(true);
   }
   mt_mem_manager_unlock();
-  return 0;
+  return nullptr;
 }
 
 void Ndbd_mem_manager::release_page(Uint32 type, Uint32 i, bool locked) {

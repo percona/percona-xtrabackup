@@ -8,6 +8,9 @@
 # Prepare
 #
 
+# Reset status variables to get 0 as their base value.
+FLUSH STATUS;
+
 SET @@GLOBAL.internal_tmp_mem_storage_engine = TempTable;
 
 CREATE TABLE t_int (c INT);

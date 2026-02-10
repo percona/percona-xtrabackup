@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -133,12 +133,12 @@ static Item *handle_sql2003_note184_exception(Parse_context *pc, Item *left,
   DBUG_TRACE;
 
   if (expr->type() == Item::SUBQUERY_ITEM) {
-    Item_subselect *expr2 = (Item_subselect *)expr;
+    Item_subselect *expr2 = down_cast<Item_subselect *>(expr);
+    if (expr2 == nullptr) return nullptr;
 
     if (expr2->subquery_type() == Item_subselect::SCALAR_SUBQUERY) {
       Item_singlerow_subselect *expr3 = (Item_singlerow_subselect *)expr2;
-      Query_block *subselect;
-
+      if (expr3 == nullptr) return nullptr;
       /*
         Implement the mandated change, by altering the semantic tree:
           left IN Item_singlerow_subselect(subselect)
@@ -147,22 +147,29 @@ static Item *handle_sql2003_note184_exception(Parse_context *pc, Item *left,
         which is represented as
           Item_in_subselect(left, subselect)
       */
-      subselect = expr3->invalidate_and_restore_query_block();
-      result = new (pc->mem_root) Item_in_subselect(left, subselect);
+      Query_block *const qb = expr3->invalidate_and_restore_query_block();
+      if (qb == nullptr) return nullptr;
+      result = new (pc->mem_root) Item_in_subselect(expr->m_pos, left, qb);
+      if (result == nullptr) return nullptr;
 
-      if (is_negation)
+      if (is_negation) {
         result =
             change_truth_value_of_condition(pc, result, Item::BOOL_NEGATED);
-
+      }
       return result;
     }
   }
 
-  if (is_negation)
-    result = new (pc->mem_root) Item_func_ne(left, expr);
-  else
-    result = new (pc->mem_root) Item_func_eq(left, expr);
-
+  if (is_negation) {
+    result = new (pc->mem_root) Item_func_ne(expr->m_pos, left, expr);
+  } else {
+    result = new (pc->mem_root) Item_func_eq(expr->m_pos, left, expr);
+  }
+  if (result == nullptr) return nullptr;
+#ifndef NDEBUG
+  result->set_contextualized();
+#endif
+  pc->thd->add_item(result);
   return result;
 }
 
@@ -171,8 +178,17 @@ bool PTI_comp_op::do_itemize(Parse_context *pc, Item **res) {
       right->itemize(pc, &right))
     return true;
 
-  *res = (*boolfunc2creator)(false)->create(left, right);
-  return *res == nullptr;
+  *res = (*boolfunc2creator)(false)->create(m_pos, left, right);
+  if (*res == nullptr) {
+    return true;
+  }
+
+#ifndef NDEBUG
+  (*res)->set_contextualized();
+#endif
+  pc->thd->add_item(*res);
+
+  return false;
 }
 
 bool PTI_comp_op_all::do_itemize(Parse_context *pc, Item **res) {
@@ -180,7 +196,8 @@ bool PTI_comp_op_all::do_itemize(Parse_context *pc, Item **res) {
       subselect->contextualize(pc))
     return true;
 
-  *res = all_any_subquery_creator(left, comp_op, is_all, subselect->value());
+  *res = all_any_subquery_creator(pc->thd, m_pos, left, comp_op, is_all,
+                                  subselect->value());
 
   return *res == nullptr;
 }
@@ -258,18 +275,20 @@ bool PTI_function_call_generic_ident_sys::do_itemize(Parse_context *pc,
   */
   Create_func *builder = find_native_function_builder(ident);
   if (builder)
-    *res = builder->create_func(thd, ident, opt_udf_expr_list);
+    *res = builder->create_func(thd, m_pos, ident, opt_udf_expr_list);
   else {
     if (udf) {
       if (udf->type == UDFTYPE_AGGREGATE) {
         pc->select->in_sum_expr--;
       }
 
-      *res = Create_udf_func::s_singleton.create(thd, udf, opt_udf_expr_list);
+      *res = Create_udf_func::s_singleton.create(thd, m_pos, udf,
+                                                 opt_udf_expr_list);
     } else {
       builder = find_qualified_function_builder(thd);
       assert(builder);
-      *res = builder->create_func(thd, ident, opt_udf_expr_list);
+      *res = builder->create_func(thd, m_pos, ident, opt_udf_expr_list);
+      pc->select->n_stored_func_calls++;
     }
   }
   return *res == nullptr || (*res)->itemize(pc, res);
@@ -279,10 +298,10 @@ void PTI_function_call_generic_2d::add_json_info(Json_object *obj) {
   String func_str;
 
   if (db.length > 0) {
-    append_identifier(nullptr, &func_str, db.str, db.length);
+    append_identifier_with_backtick(&func_str, db.str, db.length);
     func_str.append('.');
   }
-  append_identifier(nullptr, &func_str, func.str, func.length);
+  append_identifier_with_backtick(&func_str, func.str, func.length);
   obj->add_alias("func_name", create_dom_ptr<Json_string>(func_str.ptr(),
                                                           func_str.length()));
 }
@@ -311,7 +330,7 @@ bool PTI_function_call_generic_2d::do_itemize(Parse_context *pc, Item **res) {
 
   Create_qfunc *builder = find_qualified_function_builder(pc->thd);
   assert(builder);
-  *res = builder->create(pc->thd, db, func, true, opt_expr_list);
+  *res = builder->create(pc->thd, m_pos, db, func, true, opt_expr_list);
   return *res == nullptr || (*res)->itemize(pc, res);
 }
 
@@ -327,15 +346,29 @@ bool PTI_text_literal_nchar_string::do_itemize(Parse_context *pc, Item **res) {
 
 bool PTI_singlerow_subselect::do_itemize(Parse_context *pc, Item **res) {
   if (super::do_itemize(pc, res) || subselect->contextualize(pc)) return true;
-  *res = new (pc->mem_root) Item_singlerow_subselect(subselect->value());
+  *res = new (pc->mem_root) Item_singlerow_subselect(m_pos, subselect->value());
+  if (*res == nullptr) return true;
+
+#ifndef NDEBUG
+  down_cast<Item_subselect *>(*res)->set_contextualized();
+#endif
+  pc->thd->add_item(*res);
   pc->select->n_scalar_subqueries++;
-  return *res == nullptr;
+
+  return false;
 }
 
 bool PTI_exists_subselect::do_itemize(Parse_context *pc, Item **res) {
   if (super::do_itemize(pc, res) || subselect->contextualize(pc)) return true;
-  *res = new (pc->mem_root) Item_exists_subselect(subselect->value());
-  return *res == nullptr;
+  *res = new (pc->mem_root) Item_exists_subselect(m_pos, subselect->value());
+  if (*res == nullptr) return true;
+
+#ifndef NDEBUG
+  down_cast<Item_exists_subselect *>(*res)->set_contextualized();
+#endif
+  pc->thd->add_item(*res);
+
+  return false;
 }
 
 bool PTI_handle_sql2003_note184_exception::do_itemize(Parse_context *pc,
@@ -352,7 +385,7 @@ bool PTI_expr_with_alias::do_itemize(Parse_context *pc, Item **res) {
 
   if (alias.str) {
     if (pc->thd->lex->sql_command == SQLCOM_CREATE_VIEW &&
-        check_column_name(alias.str)) {
+        check_column_name(alias)) {
       my_error(ER_WRONG_COLUMN_NAME, MYF(0), alias.str);
       return true;
     }

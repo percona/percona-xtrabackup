@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -66,7 +66,7 @@ static const uint64_t MIN_XCOM_MAX_CACHE_SIZE = 134217728;
 Gcs_xcom_utils::~Gcs_xcom_utils() = default;
 
 u_long Gcs_xcom_utils::build_xcom_group_id(Gcs_group_identifier &group_id) {
-  std::string group_id_str = group_id.get_group_id();
+  const std::string &group_id_str = group_id.get_group_id();
   return mhash(static_cast<const unsigned char *>(
                    static_cast<const void *>(group_id_str.c_str())),
                group_id_str.size());
@@ -74,8 +74,8 @@ u_long Gcs_xcom_utils::build_xcom_group_id(Gcs_group_identifier &group_id) {
 
 void Gcs_xcom_utils::process_peer_nodes(
     const std::string *peer_nodes, std::vector<std::string> &processed_peers) {
-  std::string peer_init(peer_nodes->c_str());
-  std::string delimiter = ",";
+  std::string peer_init(*peer_nodes);
+  std::string const delimiter = ",";
 
   // Clear all whitespace in the string
   peer_init.erase(std::remove(peer_init.begin(), peer_init.end(), ' '),
@@ -88,7 +88,7 @@ void Gcs_xcom_utils::process_peer_nodes(
   std::string::size_type pos = peer_init.find_first_of(delimiter, lastPos);
 
   while (std::string::npos != pos || std::string::npos != lastPos) {
-    std::string peer(peer_init.substr(lastPos, pos - lastPos));
+    std::string const peer(peer_init.substr(lastPos, pos - lastPos));
     processed_peers.push_back(peer);
 
     // Skip delimiter
@@ -103,7 +103,7 @@ void Gcs_xcom_utils::validate_peer_nodes(
     std::vector<std::string> &peers, std::vector<std::string> &invalid_peers) {
   std::vector<std::string>::iterator it;
   for (it = peers.begin(); it != peers.end();) {
-    std::string server_and_port = *it;
+    std::string const server_and_port = *it;
     if (!is_valid_hostname(server_and_port)) {
       invalid_peers.push_back(server_and_port);
       it = peers.erase(it);
@@ -144,7 +144,7 @@ bool is_valid_hostname(const std::string &server_and_port) {
 
 end:
   if (addr) freeaddrinfo(addr);
-  return error == false;
+  return !error;
 }
 
 void fix_parameters_syntax(Gcs_interface_parameters &interface_params) {
@@ -198,9 +198,8 @@ void fix_parameters_syntax(Gcs_interface_parameters &interface_params) {
 
   bool should_configure_allowlist = true;
   if (ip_allowlist_reconfigure_str) {
-    should_configure_allowlist =
-        ip_allowlist_reconfigure_str->compare("on") == 0 ||
-        ip_allowlist_reconfigure_str->compare("true") == 0;
+    should_configure_allowlist = *ip_allowlist_reconfigure_str == "on" ||
+                                 *ip_allowlist_reconfigure_str == "true";
   }
 
   // sets the default ip allowlist
@@ -263,7 +262,7 @@ void fix_parameters_syntax(Gcs_interface_parameters &interface_params) {
   }
 }
 
-static enum_gcs_error is_valid_flag(const std::string param,
+static enum_gcs_error is_valid_flag(const std::string &param,
                                     std::string &flag) {
   enum_gcs_error error = GCS_OK;
 
@@ -369,7 +368,7 @@ bool is_parameters_syntax_correct(
    */
 
   // validate group name
-  if (group_name_str != nullptr && group_name_str->size() == 0) {
+  if (group_name_str != nullptr && group_name_str->empty()) {
     MYSQL_GCS_LOG_ERROR("The group_name parameter (" << group_name_str << ")"
                                                      << " is not valid.")
     error = GCS_NOK;
@@ -379,7 +378,7 @@ bool is_parameters_syntax_correct(
   // validate bootstrap string
   // accepted values: true, false, on, off
   if (bootstrap_group_str != nullptr) {
-    std::string &flag = const_cast<std::string &>(*bootstrap_group_str);
+    auto &flag = const_cast<std::string &>(*bootstrap_group_str);
     error = is_valid_flag("bootstrap_group", flag);
     if (error == GCS_NOK) goto end;
   }
@@ -418,7 +417,7 @@ bool is_parameters_syntax_correct(
   }
 
   // Communication Stack
-  if (communication_stack_str && (communication_stack_str->size() == 0 ||
+  if (communication_stack_str && (communication_stack_str->empty() ||
                                   !is_number(*communication_stack_str))) {
     MYSQL_GCS_LOG_ERROR("The Commmunication Stack parameter ("
                         << communication_stack_str << ") is not valid.")
@@ -443,7 +442,7 @@ bool is_parameters_syntax_correct(
       goto end;
     }
 
-    std::string host(host_str);
+    std::string const host(host_str);
     std::vector<std::string> ip;
     int configured_protocol;
     std::string net_namespace;
@@ -466,7 +465,7 @@ bool is_parameters_syntax_correct(
     }
 
     for (auto &ip_entry : ip) {
-      if (ip_entry.compare(host) != 0)
+      if (ip_entry != host)
         MYSQL_GCS_LOG_INFO("Translated '" << host << "' to "
                                           << ip_entry.c_str());
     }
@@ -483,7 +482,7 @@ bool is_parameters_syntax_correct(
     // see if any IP matches fromt he root namespace
     for (it = ips.begin(); it != ips.end() && !matches_local_ip; it++) {
       for (auto &ip_entry : ip) {
-        matches_local_ip = (*it).first.compare(ip_entry) == 0;
+        matches_local_ip = (*it).first == ip_entry;
 
         if (matches_local_ip) break;
       }
@@ -516,7 +515,7 @@ bool is_parameters_syntax_correct(
         for (it = namespace_ips.begin();
              it != namespace_ips.end() && !matches_local_ip; it++) {
           for (auto &ip_entry : ip) {
-            matches_local_ip = (*it).first.compare(ip_entry) == 0;
+            matches_local_ip = (*it).first == ip_entry;
 
             if (matches_local_ip) break;
           }
@@ -537,7 +536,7 @@ bool is_parameters_syntax_correct(
 
   // poll spin loops
   if (poll_spin_loops_str &&
-      (poll_spin_loops_str->size() == 0 || !is_number(*poll_spin_loops_str))) {
+      (poll_spin_loops_str->empty() || !is_number(*poll_spin_loops_str))) {
     MYSQL_GCS_LOG_ERROR("The poll_spin_loops parameter (" << poll_spin_loops_str
                                                           << ") is not valid.")
     error = GCS_NOK;
@@ -546,12 +545,12 @@ bool is_parameters_syntax_correct(
 
   // validate compression
   if (compression_str != nullptr) {
-    std::string &flag = const_cast<std::string &>(*compression_str);
+    auto &flag = const_cast<std::string &>(*compression_str);
     error = is_valid_flag("compression", flag);
     if (error == GCS_NOK) goto end;
   }
 
-  if (compression_threshold_str && (compression_threshold_str->size() == 0 ||
+  if (compression_threshold_str && (compression_threshold_str->empty() ||
                                     !is_number(*compression_threshold_str))) {
     MYSQL_GCS_LOG_ERROR("The compression_threshold parameter ("
                         << compression_threshold_str << ") is not valid.")
@@ -559,8 +558,7 @@ bool is_parameters_syntax_correct(
     goto end;
   }
 
-  if (wait_time_str &&
-      (wait_time_str->size() == 0 || !is_number(*wait_time_str))) {
+  if (wait_time_str && (wait_time_str->empty() || !is_number(*wait_time_str))) {
     MYSQL_GCS_LOG_ERROR("The wait_time parameter (" << wait_time_str
                                                     << ") is not valid.")
     error = GCS_NOK;
@@ -568,7 +566,7 @@ bool is_parameters_syntax_correct(
   }
 
   if (join_attempts_str &&
-      (join_attempts_str->size() == 0 || !is_number(*join_attempts_str))) {
+      (join_attempts_str->empty() || !is_number(*join_attempts_str))) {
     MYSQL_GCS_LOG_ERROR("The join_attempts parameter (" << join_attempts_str
                                                         << ") is not valid.")
     error = GCS_NOK;
@@ -577,7 +575,7 @@ bool is_parameters_syntax_correct(
 
   // validate suspicions parameters
   if (non_member_expel_timeout_str &&
-      (non_member_expel_timeout_str->size() == 0 ||
+      (non_member_expel_timeout_str->empty() ||
        !is_number(*non_member_expel_timeout_str))) {
     MYSQL_GCS_LOG_ERROR("The non_member_expel_timeout parameter ("
                         << non_member_expel_timeout_str << ") is not valid.")
@@ -586,7 +584,7 @@ bool is_parameters_syntax_correct(
   }
 
   if (join_sleep_time_str &&
-      (join_sleep_time_str->size() == 0 || !is_number(*join_sleep_time_str))) {
+      (join_sleep_time_str->empty() || !is_number(*join_sleep_time_str))) {
     MYSQL_GCS_LOG_ERROR("The join_sleep_time parameter (" << join_sleep_time_str
                                                           << ") is not valid.")
     error = GCS_NOK;
@@ -594,7 +592,7 @@ bool is_parameters_syntax_correct(
   }
 
   if (suspicions_processing_period_str &&
-      (suspicions_processing_period_str->size() == 0 ||
+      (suspicions_processing_period_str->empty() ||
        !is_number(*suspicions_processing_period_str))) {
     MYSQL_GCS_LOG_ERROR("The suspicions_processing_period parameter ("
                         << suspicions_processing_period_str
@@ -603,7 +601,7 @@ bool is_parameters_syntax_correct(
     goto end;
   }
 
-  if (member_expel_timeout_str && (member_expel_timeout_str->size() == 0 ||
+  if (member_expel_timeout_str && (member_expel_timeout_str->empty() ||
                                    !is_number(*member_expel_timeout_str))) {
     MYSQL_GCS_LOG_ERROR("The member_expel_timeout parameter ("
                         << member_expel_timeout_str << ") is not valid.")
@@ -613,21 +611,20 @@ bool is_parameters_syntax_correct(
 
   // Validate allowlist reconfiguration parameter
   if (reconfigure_ip_allowlist_str != nullptr) {
-    std::string &flag =
-        const_cast<std::string &>(*reconfigure_ip_allowlist_str);
+    auto &flag = const_cast<std::string &>(*reconfigure_ip_allowlist_str);
     error = is_valid_flag("reconfigure_ip_allowlist", flag);
     if (error == GCS_NOK) goto end;
   }
 
   // validate fragmentation
   if (fragmentation_str != nullptr) {
-    std::string &flag = const_cast<std::string &>(*fragmentation_str);
+    auto &flag = const_cast<std::string &>(*fragmentation_str);
     error = is_valid_flag("fragmentation", flag);
     if (error == GCS_NOK) goto end;
   }
 
   if (fragmentation_threshold_str &&
-      (fragmentation_threshold_str->size() == 0 ||
+      (fragmentation_threshold_str->empty() ||
        !is_number(*fragmentation_threshold_str))) {
     MYSQL_GCS_LOG_ERROR("The fragmentation_threshold parameter ("
                         << fragmentation_threshold_str << ") is not valid.")
@@ -639,7 +636,7 @@ bool is_parameters_syntax_correct(
   errno = 0;
   if (xcom_cache_size_str != nullptr &&
       // Verify if the input value is a valid number
-      (xcom_cache_size_str->size() == 0 || !is_number(*xcom_cache_size_str) ||
+      (xcom_cache_size_str->empty() || !is_number(*xcom_cache_size_str) ||
        // Check that it is not lower than the min value allowed for the var
        (strtoull(xcom_cache_size_str->c_str(), nullptr, 10) <
         MIN_XCOM_MAX_CACHE_SIZE) ||
@@ -657,7 +654,7 @@ bool is_parameters_syntax_correct(
 
 end:
   delete sock_probe_interface;
-  return error == GCS_NOK ? false : true;
+  return error != GCS_NOK;
 }
 
 std::string gcs_protocol_to_mysql_version(Gcs_protocol_version protocol) {

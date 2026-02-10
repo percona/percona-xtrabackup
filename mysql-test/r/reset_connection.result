@@ -249,3 +249,21 @@ Warnings:
 Warning	#	'SHOW PROFILES' is deprecated and will be removed in a future release. Please use Performance Schema instead
 
 End of tests
+#
+# Bug#30381098: COM_RESET_CONNECTION DOES NOT RESPECT CLIENT_INTERACTIVE
+#
+SET @saved_wait_timeout = @@global.wait_timeout;
+SET @saved_interactive_timeout = @@global.interactive_timeout;
+SET GLOBAL interactive_timeout = @@global.wait_timeout + 1000;
+# Test: should return 1000 (interactive timeout)
+SELECT @@session.wait_timeout - @@global.wait_timeout;
+@@session.wait_timeout - @@global.wait_timeout
+1000
+# Reset connection
+# Test: should still return 1000 (interactive timeout)
+SELECT @@session.wait_timeout - @@global.wait_timeout;
+@@session.wait_timeout - @@global.wait_timeout
+1000
+SET GLOBAL wait_timeout = @saved_wait_timeout;
+SET GLOBAL interactive_timeout = @saved_interactive_timeout;
+# End of 9.6 tests

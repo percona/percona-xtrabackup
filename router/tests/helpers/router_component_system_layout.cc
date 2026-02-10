@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -42,9 +42,9 @@ void RouterSystemLayout::init_system_layout_dir(
     const mysql_harness::Path &origin_path) {
   tmp_dir_ = mysql_harness::get_tmp_dir();
   mysql_harness::mkdir(tmp_dir_ + "/stage/bin", 0700, true);
-  exec_file_ = tmp_dir_ + "/stage/bin/mysqlrouter";
+  exec_file_ = tmp_dir_ + "/stage/bin/" + myslrouter_path.basename().str();
   mysql_harness::mkdir(tmp_dir_ + "/stage/var/lib", 0700, true);
-  mysqlrouter::copy_file(myslrouter_path.str(), exec_file_);
+  mysql_harness::copy_file(myslrouter_path.str(), exec_file_);
 #ifndef _WIN32
   chmod(exec_file_.c_str(), 0700);
 #endif

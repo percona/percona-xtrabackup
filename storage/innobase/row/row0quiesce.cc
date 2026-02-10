@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -37,7 +37,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dd/cache/dictionary_client.h"
 #include "sql/dd/dictionary.h"
 #include "sql/dd/types/column_type_element.h"
+#include "sql/debug_sync.h"
 
+#include "clone0clone.h"
 #include "dict0dd.h"
 #include "fsp0sysspace.h"
 #include "ha_prototypes.h"
@@ -1032,6 +1034,7 @@ void row_quiesce_table_complete(dict_table_t *table, trx_t *trx) {
   }
 
   if (trx_purge_state() != PURGE_STATE_DISABLED) {
+    clone_sys->get_gtid_persistor().wait_flush(false, false, nullptr);
     trx_purge_run();
   }
 
@@ -1106,7 +1109,12 @@ dberr_t row_quiesce_set_state(
 
   dict_table_x_lock_indexes(table);
 
+  DEBUG_SYNC_C("before_purge_run");
+
   if (trx_purge_state() != PURGE_STATE_DISABLED) {
+    // Just do the purge run without GTIDs flush. In some rare cases waiting
+    // for GTIDs flush to complete when dict_sys->mutex is already acquired
+    // and DDL is running. See i.e. Bug #110485.
     trx_purge_run();
   }
 

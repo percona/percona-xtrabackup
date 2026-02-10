@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+ Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -30,8 +30,8 @@
 #define helpers_hpp
 
 #include <my_config.h>
-#include <stdio.h>   // not using namespaces yet
-#include <stdlib.h>  // not using namespaces yet
+#include <cstdio>   // not using namespaces yet
+#include <cstdlib>  // not using namespaces yet
 
 /************************************************************
  * Helper Macros & Functions

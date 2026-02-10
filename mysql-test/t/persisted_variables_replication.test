@@ -1,3 +1,5 @@
+# Start with gtid_mode=OFF
+--source include/rpl/set_gtid_mode_off.inc
 --echo #
 --echo # Bug #27157520: SET PERSIST FOR GTID_MODE AND ENFORCE_GTID_CONSISTENCY IS NOT WORKING PROPERLY
 --echo #

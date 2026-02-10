@@ -33,7 +33,7 @@ SELECT LPAD('a', 18446744073709551615, 'x');
 --echo # Max unsigned long long int + 1:
 SELECT LPAD('a', 18446744073709551616, 'x');
 
---echo # The function should return an empty string if padstr is empty.
+--echo # The function should return the input string if padstr is empty.
 SELECT LPAD('a', 5, '') AS result;
 SELECT LPAD('a', 5, '') AS result;
 
@@ -51,3 +51,10 @@ SELECT LPAD('123', 5, 'x');
 
 --echo # The function should repeat padstr also if it has mulitplie characters.
 SELECT LPAD('a', 5, 'xy');
+
+--echo #
+--echo # Bug#37498117 LPAD function false
+--echo #
+
+SELECT LPAD("I LOVE SQL", 20, "");
+SELECT LPAD("I LOVE SQL in the morning", 20, "");

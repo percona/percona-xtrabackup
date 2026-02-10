@@ -1,6 +1,6 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
- 
+
 #Get deafult engine value
 --let $DEFAULT_ENGINE = `select @@global.default_storage_engine`
 
@@ -19,6 +19,9 @@ use test;
 let $type= 'MYISAM' ;
 -- source include/ps_create.inc
 -- source include/ps_renew.inc
+
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 -- source include/ps_query.inc
 
@@ -47,4 +50,6 @@ drop table t2 ;
 
 drop table t1, t9;
 
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc
 # End of 4.1 tests

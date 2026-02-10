@@ -1,0 +1,88 @@
+Simulator files need to have ".json" extension and contain series of JSON objects.
+To make files more readable one can add comments in lines starting with # character.
+
+First objects should be a routing guidelines document (rpd) that is used for simulation.
+At any point of the simulation rpd can be updated by providing a new rpd.
+
+Every other document defines an action differentiated by the type field:
+- "router" - sets router info (usually should be set before any classification).
+- "cache" - each object field, appart from "type", will became an entry in resolve
+  cache (should be set before classification if match expressions contain resolve
+  function calls).
+- "destination:name1,name2..." - document contains server info, that should be
+  classified to classes name1, name2 (order is important, and should be the same
+  as the order of class definitions in the rpd).
+- "source:name" - document contains session info, that should get classified
+  to name class.
+- document contains sql info that when classified by the rpd together with source
+  info, either identified by the "source" field or last used, should yield class
+  name.
+
+Simulator keeps track of the information that is being set. You can create as many
+destination (distinguished by "uuid" id) or session (distinguished by "serial" id)
+objects as you need. If you omit the id, the behavior for destinations and
+sessions is identical to that for router and sql object of which exists only one - the
+last used object will be updated. All this means that once you define all the objects
+the next time you want to use it only changed fields need to specified (and
+potentially object id).
+
+Examples of info objects with all allowed fields (fields like "tags.*" allow
+defining any kind of tag/hint/attribute following the dot):
+
+{
+  "type": "router",
+  "port.rw": 3306,
+  "port.ro": 3307,
+  "address": "123.123.123.1",
+  "localCluster": "clusterA",
+  "hostname": "mysql1",
+  "tags.cat": "tiger"
+}
+
+{
+  "type": "cache",
+  "oracle.com": "7.7.7.7"
+}
+
+{
+  "type": "destination:primary,secondary",
+  "uuid": "123e4567-e89b-12d3-a456-426614174000",  // destination object id
+  "memberRole": "PRIMARY",
+  "port": 3306,
+  "label": "No. 1",
+  "address": "123.123.123.12",
+  "version": "8.0.23",
+  "tags.firepower": "12",
+  "tags.shield": "7",
+  "clusterName": "TheCluster",
+  "clusterSetName": "",
+  "clusterRole": "UNDEFINED"
+}
+
+{
+  "type": "source:rw",
+  "serial": 666                // source information id
+  "targetPort": 3306,
+  "targetIp": "123.123.123.123",
+  "sourceIp": "7.7.7.7",
+  "user": "youknowwho",
+  "schema": "mystuff",
+  "connectAttrs.client": "shell",
+  "connectAttrs.clientVer": "8.0.25",
+}
+
+{
+  "type": "sql:ro",
+  "defaultSchema": "test",
+  "isRead": true,
+  "isUpdate": false,
+  "isDDL": false,
+  "queryTags.priority": "12",
+  "queryHints.howFast": "very"
+  "source": 666                // id of source object to which this sql belongs.
+}
+
+Simulator tries to execute all the "*.json" files from this directory.
+It creates guidelines classifier object defined by the routing guidelines
+document and proceeds to run actions defined by objects, checking that expected
+results are obtained. Simulator test fails whenever a problem is detected.

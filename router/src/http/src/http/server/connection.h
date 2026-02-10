@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2024, Oracle and/or its affiliates.
+  Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,7 @@
 #include "http/server/http_counters.h"
 #include "http/server/request.h"
 #include "http/server/request_handler_interface.h"
+#include "mysqlrouter/uri.h"
 
 namespace http {
 namespace server {
@@ -105,21 +106,30 @@ class ServerConnection : public http::base::Connection<Socket> {
 
     if (!(*Parent::allowed_method_)[method_pos]) {
       ServerRequest(this, session_id, (base::method::key_type)(1 << method_pos),
-                    path, std::move(input_headers))
+                    "", std::move(input_headers))
           .send_error(base::status_code::NotImplemented);
       return 1;
     }
 
     sessions_.erase(session_id);
-    auto pair = sessions_.try_emplace(session_id, this, session_id,
-                                      (base::method::key_type)(1 << method_pos),
-                                      path, std::move(input_headers));
+    try {
+      auto pair =
+          sessions_.try_emplace(session_id, this, session_id,
+                                (base::method::key_type)(1 << method_pos), path,
+                                std::move(input_headers));
 
-    char buffer[90];
-    http::base::time_to_rfc5322_fixdate(time(nullptr), buffer, sizeof(buffer));
-    pair.first->second.get_output_headers().add("Date", buffer);
-    pair.first->second.get_output_headers().add(
-        "Content-Type", "text/html; charset=ISO-8859-1");
+      char buffer[90];
+      http::base::time_to_rfc5322_fixdate(time(nullptr), buffer,
+                                          sizeof(buffer));
+      pair.first->second.get_output_headers().add("Date", buffer);
+      pair.first->second.get_output_headers().add(
+          "Content-Type", "text/html; charset=ISO-8859-1");
+    } catch (...) {
+      ServerRequest(this, session_id, (base::method::key_type)(1 << method_pos),
+                    "", std::move(input_headers))
+          .send_error(base::status_code::BadRequest);
+      return 1;
+    }
 
     return 0;
   }

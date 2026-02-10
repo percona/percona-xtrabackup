@@ -1,3 +1,5 @@
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show global status like "performance_schema_memory_classes_lost";
 Variable_name	Value
 Performance_schema_memory_classes_lost	0
@@ -1888,3 +1890,5 @@ event_scheduler	1	1
 root	1	1
 execute dump_hosts;
 HOST	CURRENT_CONNECTIONS	TOTAL_CONNECTIONS
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

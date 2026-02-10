@@ -278,9 +278,7 @@ Warning	1292	Truncated incorrect DOUBLE value: '1abcd'
 DROP PROCEDURE f1;
 SELECT SUBTIME('2006-07-16' , '05:05:02.040778');
 SUBTIME('2006-07-16' , '05:05:02.040778')
--04:44:56.040778
-Warnings:
-Warning	1292	Truncated incorrect time value: '2006-07-16'
+2006-07-15 18:54:57.959222
 SELECT abs('1bcd');
 abs('1bcd')
 1
@@ -296,9 +294,7 @@ DECLARE v1 TINYINT DEFAULT 450000;
 END|
 CALL sp1();
 SUBTIME('2006-07-16' , '05:05:02.040778')
--04:44:56.040778
-Warnings:
-Warning	1292	Truncated incorrect time value: '2006-07-16'
+2006-07-15 18:54:57.959222
 CALL sp2();
 ERROR 22003: Out of range value for column 'v1' at row 1
 DROP PROCEDURE sp1;

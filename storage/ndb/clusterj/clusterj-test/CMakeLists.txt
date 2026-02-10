@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -46,14 +46,17 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/BinaryPKTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/BinaryTypesTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/BitTypesTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/BlobInstanceTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/BlobTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/BulkDeleteTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/Bug17200163Test.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/ByteBufferPoolTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/CharsetTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/ClearSmokeTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/ConnectionPoolTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/DateAsSqlDateTypesTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/DateAsUtilDateTypesTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/DateAsPkSqlDateTypesTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/DatetimeAsSqlTimestampTypesTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/DatetimeAsUtilDateTypesTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/DbugTest.java
@@ -74,16 +77,25 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/FixedLengthCharTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/HashOnlyLongIntStringPKTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/LoadTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/LogAtWarning.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/LongIntStringPKTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/LongLongStringPKTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/LongvarbinaryPKTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/LongvarcharPKTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/MediumIntegerTypesTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/MediumUnsignedTypesTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/MultiDBHelper.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/MultiplePKTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/MultithreadedFindTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/MultithreadedTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/MultiDBLoad1Test.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/MultiDBScan1Test.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/MultiDBUpdate1Test.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/MultiDBUpdate2Test.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/MultiDBUpdate3Test.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/NegativeMetadataTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/NotPersistentTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/NotNullColumnTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/NullValuesTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/ObjectNotFoundTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/PartitionKeyTest.java
@@ -130,11 +142,13 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/ReconnectTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/RecvThreadCPUTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/ReleaseTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/ReleaseWithCacheTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/SaveTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/SchemaChangeTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/SerialTransactionsTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/SessionFactoryTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/StressTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/TableNotFoundTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/TableWithoutPKTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/TimeAsSqlTimeTypesTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/TimeAsUtilDateTypesTest.java
@@ -144,8 +158,12 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/TransactionErrorSetPartitionKeyTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/TransactionStateTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/UpdateTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/UnloadSchemaTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/UnloadSchemaAfterRecreateTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/UnloadSchemaAfterDeleteWithCacheTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/VarbinaryPKTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/VarbinaryTypesTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/VarcharPKTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/VarcharStringLengthTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/domaintypehandler/CrazyDomainTypeHandlerFactoryImpl.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/AllPrimitives.java
@@ -179,6 +197,8 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/Customer.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/DateAsSqlDateTypes.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/DateAsUtilDateTypes.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/model/DateAsPkSqlDateTypes.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/model/DateIdBase.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/DatetimeAsSqlTimestampTypes.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/DatetimeAsUtilDateTypes.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/DecimalTypes.java
@@ -188,6 +208,7 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/DynamicStringPKs.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/Employee.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/Employee2.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/model/Employee3.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/FloatTypes.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/HashOnlyLongIntStringPK.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/IdBase.java
@@ -196,6 +217,7 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/LongIntStringPK.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/LongLongStringPK.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/LongvarbinaryPK.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/model/LongvarcharPK.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/MediumIntegerTypes.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/MediumUnsignedTypes.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/NotPersistentTypes.java
@@ -211,6 +233,7 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/TimestampAsUtilDateTypes.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/VarbinaryPK.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/VarbinaryTypes.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/model/VarcharPK.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/YearTypes.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/util/MgmClient.java
 

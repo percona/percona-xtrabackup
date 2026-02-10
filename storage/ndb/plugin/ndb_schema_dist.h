@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -328,7 +328,7 @@ class Ndb_schema_dist_client {
 
   bool acl_notify(const char *db, const char *query, uint query_length,
                   bool participants_must_refresh);
-  bool acl_notify(std::string user_list);
+  bool acl_notify(const std::string &user_list);
 
   bool create_tablespace(const char *tablespace_name, int id, int version);
   bool alter_tablespace(const char *tablespace_name, int id, int version);

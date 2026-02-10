@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -43,8 +43,7 @@ void PrintTo(const Command_delegate::Info &x, ::std::ostream *os) {
 
 }  // namespace ngs
 
-namespace xpl {
-namespace test {
+namespace xpl::test {
 namespace {
 
 const longlong EXPECTED_VALUE_INTEGER = 1;
@@ -53,8 +52,7 @@ const longlong EXPECTED_IS_LONGLONG_UNSIGNED = true;
 const longlong EXPECTED_IS_LONGLONG_UNSIGNED_DEFAULT = false;
 const decimal_t EXPECTED_VALUE_DECIMAL = {0, 1, 2, false, nullptr};
 const double EXPECTED_VALUE_DOUBLE = 20.0;
-const MysqlTime EXPECTED_VALUE_DATATIME(2017, 12, 20, 20, 30, 00, 0, false,
-                                        MYSQL_TIMESTAMP_DATETIME);
+const MysqlTime EXPECTED_VALUE_DATATIME(2017, 12, 20, 20, 30, 00, 0);
 const char *EXPECTED_VALUE_STRING = "TEST STRING";
 
 }  // namespace
@@ -68,21 +66,17 @@ class Mock_callback_commands {
 };
 
 MATCHER_P(Eq_mysql_time, n, "") {
-  if ((arg.year != n.year) || (arg.month != n.month) || (arg.day != n.day) ||
+  return !static_cast<bool>(
+      (arg.year != n.year) || (arg.month != n.month) || (arg.day != n.day) ||
       (arg.hour != n.hour) || (arg.minute != n.minute) ||
       (arg.second != n.second) || (arg.second_part != n.second_part) ||
-      (arg.neg != n.neg) || (arg.time_type != n.time_type))
-    return false;
-
-  return true;
+      (arg.neg != n.neg) || (arg.time_type != n.time_type));
 }
 
 MATCHER_P(Eq_decimal, n, "") {
-  if ((arg.intg != n.intg) || (arg.frac != n.frac) || (arg.len != n.len) ||
-      (arg.sign != n.sign) || (arg.buf != n.buf))
-    return false;
-
-  return true;
+  return !static_cast<bool>((arg.intg != n.intg) || (arg.frac != n.frac) ||
+                            (arg.len != n.len) || (arg.sign != n.sign) ||
+                            (arg.buf != n.buf));
 }
 
 MATCHER_P(Eq_info, param, "") {
@@ -95,16 +89,18 @@ MATCHER_P(Eq_info, param, "") {
 
 class Callback_command_delegate_testsuite : public Test {
  public:
-  void SetUp() override { m_sut.reset(new Callback_command_delegate()); }
+  void SetUp() override {
+    m_sut = std::make_unique<Callback_command_delegate>();
+  }
 
   void create_sut_with_callback_mock() {
-    Callback_command_delegate::Start_row_callback start_row =
+    Callback_command_delegate::Start_row_callback const start_row =
         std::bind(&Mock_callback_commands::start_row, &m_mock_callbacks);
-    Callback_command_delegate::End_row_callback end_row =
+    Callback_command_delegate::End_row_callback const end_row =
         std::bind(&Mock_callback_commands::end_row, &m_mock_callbacks,
                   std::placeholders::_1);
 
-    m_sut.reset(new Callback_command_delegate(start_row, end_row));
+    m_sut = std::make_unique<Callback_command_delegate>(start_row, end_row);
   }
 
   void assert_row_and_data_functions(const bool expected_result) {
@@ -130,7 +126,7 @@ class Callback_command_delegate_testsuite : public Test {
   }
 
   void assert_sut_status_should_be_empty() {
-    ngs::Command_delegate::Info expect_empty;
+    ngs::Command_delegate::Info const expect_empty;
     ASSERT_THAT(m_sut->get_info(), Eq_info(expect_empty));
   }
 
@@ -261,5 +257,4 @@ TEST_F(Callback_command_delegate_testsuite,
   ASSERT_NO_FATAL_FAILURE(assert_sut_status_should_be_empty());
 }
 
-}  // namespace test
-}  // namespace xpl
+}  // namespace xpl::test

@@ -1,0 +1,22 @@
+# Tests for PERFORMANCE_SCHEMA
+
+-- error ER_DBACCESS_DENIED_ERROR
+alter table performance_schema.temporary_account_locks add column foo integer;
+
+-- error ER_TABLEACCESS_DENIED_ERROR
+truncate table performance_schema.temporary_account_locks;
+
+-- error ER_DBACCESS_DENIED_ERROR
+ALTER TABLE performance_schema.temporary_account_locks ADD INDEX test_index(LOCKED_SINCE);
+
+-- error ER_DBACCESS_DENIED_ERROR
+CREATE UNIQUE INDEX test_index ON performance_schema.temporary_account_locks(LOCKED_SINCE);
+
+-- error ER_DBACCESS_DENIED_ERROR
+DROP INDEX `ACCOUNT`
+  ON performance_schema.temporary_account_locks;
+
+CREATE TABLE test.create_select
+  AS SELECT * from performance_schema.temporary_account_locks;
+
+DROP TABLE test.create_select;

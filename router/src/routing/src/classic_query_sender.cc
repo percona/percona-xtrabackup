@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -177,9 +177,7 @@ static stdx::flags<StmtClassifier> classify(SqlLexer &&lexer,
 
               if (ident == "GET_LOCK" ||  //
                   ident == "SERVICE_GET_WRITE_LOCKS" ||
-                  ident == "SERVICE_GET_READ_LOCKS" ||
-                  ident == "VERSION_TOKENS_LOCK_SHARED" ||
-                  ident == "VERSION_TOKENS_LOCK_EXCLUSIVE") {
+                  ident == "SERVICE_GET_READ_LOCKS") {
                 classified |= StmtClassifier::StateChangeOnSuccess;
               }
 

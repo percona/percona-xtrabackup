@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -96,7 +96,7 @@ ER_LOG_GENERAL_CANNOT_OPEN
 ER_LOG_CANNOT_WRITE
   eng "Failed to write to %s: %s"
 
-ER_RPL_ZOMBIE_ENCOUNTERED
+OBSOLETE_ER_RPL_ZOMBIE_ENCOUNTERED
   eng "While initializing dump thread for replica with %s <%s>, found a zombie dump thread with the same %s. Source is killing the zombie dump thread(%u)."
 
 ER_RPL_GTID_TABLE_CANNOT_OPEN
@@ -105,7 +105,7 @@ ER_RPL_GTID_TABLE_CANNOT_OPEN
 ER_SYSTEM_SCHEMA_NOT_FOUND
   eng "System schema directory does not exist."
 
-ER_DD_INIT_UPGRADE_FAILED
+OBSOLETE_ER_DD_INIT_UPGRADE_FAILED
   eng "Error in initializing dictionary, upgrade will do a cleanup and exit"
 
 ER_VIEW_UNKNOWN_CHARSET_OR_COLLATION
@@ -3348,25 +3348,25 @@ ER_DD_MINOR_DOWNGRADE_VERSION_NOT_SUPPORTED
 ER_DD_NO_VERSION_FOUND
   eng "No data dictionary version number found."
 
-ER_THREAD_POOL_NOT_SUPPORTED_ON_PLATFORM
+OBSOLETE_ER_THREAD_POOL_NOT_SUPPORTED_ON_PLATFORM
   eng "Thread pool not supported, requires a minimum of %s."
 
-ER_THREAD_POOL_SIZE_TOO_LOW
+OBSOLETE_ER_THREAD_POOL_SIZE_TOO_LOW
   eng "thread_pool_size=0 means thread pool disabled, Allowed range of thread_pool_size is %d-%d."
 
-ER_THREAD_POOL_SIZE_TOO_HIGH
+OBSOLETE_ER_THREAD_POOL_SIZE_TOO_HIGH
   eng "thread_pool_size=%lu is too high, %d is maximum, thread pool is disabled. Allowed range of thread_pool_size is %d-%d."
 
-ER_THREAD_POOL_ALGORITHM_INVALID
+OBSOLETE_ER_THREAD_POOL_ALGORITHM_INVALID
   eng "thread_pool_algorithm can be set to 0 and 1, 0 indicates the default low concurrency algorithm, 1 means a high concurrency algorithm."
 
-ER_THREAD_POOL_INVALID_STALL_LIMIT
+OBSOLETE_ER_THREAD_POOL_INVALID_STALL_LIMIT
   eng "thread_pool_stall_limit can be %d at minimum and %d at maximum, smaller values would render the thread pool fairly useless and higher values could make it possible to have undetected deadlock issues in the MySQL Server."
 
-ER_THREAD_POOL_INVALID_PRIO_KICKUP_TIMER
+OBSOLETE_ER_THREAD_POOL_INVALID_PRIO_KICKUP_TIMER
   eng "Invalid value of thread_pool_prio_kickup_timer specified. Value of thread_pool_prio_kickup_timer should be in range 0-4294967294."
 
-ER_THREAD_POOL_MAX_UNUSED_THREADS_INVALID
+OBSOLETE_ER_THREAD_POOL_MAX_UNUSED_THREADS_INVALID
   eng "thread_pool_max_unused_threads cannot be set higher than %d."
 
 ER_THREAD_POOL_CON_HANDLER_INIT_FAILED
@@ -4629,7 +4629,7 @@ ER_GRP_RPL_TRANS_NOT_PRESENT_IN_GRP
 ER_GRP_RPL_TRANS_GREATER_THAN_GRP
   eng "It was not possible to assess if the member has more transactions than the group. The member will now exit the group."
 
-ER_GRP_RPL_MEMBER_VERSION_LOWER_THAN_GRP
+OBSOLETE_ER_GRP_RPL_MEMBER_VERSION_LOWER_THAN_GRP
   eng "Member version is lower than some group member, but since option 'group_replication_allow_local_lower_version_join is enabled, member will be allowed to join."
 
 ER_GRP_RPL_LOCAL_GTID_SETS_PROCESS_ERROR
@@ -5100,7 +5100,7 @@ ER_GRP_RPL_APPLIER_METADATA_REPO_MUST_BE_TABLE
 ER_GRP_RPL_CONNECTION_METADATA_REPO_MUST_BE_TABLE
   eng "Connection metadata repository must be set to TABLE."
 
-ER_GRP_RPL_INCORRECT_TYPE_SET_FOR_PARALLEL_APPLIER
+OBSOLETE_ER_GRP_RPL_INCORRECT_TYPE_SET_FOR_PARALLEL_APPLIER
   eng "In order to use parallel applier on Group Replication, parameter replica-parallel-type must be set to 'LOGICAL_CLOCK'."
 
 ER_GRP_RPL_REPLICA_PRESERVE_COMMIT_ORDER_NOT_SET
@@ -5781,8 +5781,8 @@ ER_IB_MSG_81
 ER_IB_MSG_82
   eng "%s"
 
-ER_IB_MSG_83
-  eng "%s"
+ER_IB_ERR_PAGE_DIRTY_AT_SHUTDOWN
+  eng "Page still fixed or dirty at shutdown. %s"
 
 ER_IB_MSG_84
   eng "%s"
@@ -6057,10 +6057,10 @@ ER_IB_MSG_173
 ER_IB_MSG_174
   eng "%s"
 
-ER_IB_MSG_175
+OBSOLETE_ER_IB_MSG_175
   eng "%s"
 
-ER_IB_MSG_176
+OBSOLETE_ER_IB_MSG_176
   eng "%s"
 
 ER_IB_MSG_177
@@ -6093,82 +6093,82 @@ OBSOLETE_ER_IB_MSG_185
 OBSOLETE_ER_IB_MSG_186
   eng "%s"
 
-ER_IB_MSG_187
+OBSOLETE_ER_IB_MSG_187
   eng "%s"
 
-ER_IB_MSG_188
+OBSOLETE_ER_IB_MSG_188
   eng "%s"
 
-ER_IB_MSG_189
+OBSOLETE_ER_IB_MSG_189
   eng "%s"
 
-ER_IB_MSG_190
+OBSOLETE_ER_IB_MSG_190
   eng "%s"
 
-ER_IB_MSG_191
+OBSOLETE_ER_IB_MSG_191
   eng "%s"
 
-ER_IB_MSG_192
+OBSOLETE_ER_IB_MSG_192
   eng "%s"
 
-ER_IB_MSG_193
+OBSOLETE_ER_IB_MSG_193
   eng "%s"
 
-ER_IB_MSG_194
+OBSOLETE_ER_IB_MSG_194
   eng "%s"
 
-ER_IB_MSG_195
+OBSOLETE_ER_IB_MSG_195
   eng "%s"
 
-ER_IB_MSG_196
+OBSOLETE_ER_IB_MSG_196
   eng "%s"
 
-ER_IB_MSG_197
+OBSOLETE_ER_IB_MSG_197
   eng "%s"
 
-ER_IB_MSG_198
+OBSOLETE_ER_IB_MSG_198
   eng "%s"
 
-ER_IB_MSG_199
+OBSOLETE_ER_IB_MSG_199
   eng "%s"
 
-ER_IB_MSG_200
+OBSOLETE_ER_IB_MSG_200
   eng "%s"
 
-ER_IB_MSG_201
+OBSOLETE_ER_IB_MSG_201
   eng "%s"
 
-ER_IB_MSG_202
+OBSOLETE_ER_IB_MSG_202
   eng "%s"
 
-ER_IB_MSG_203
+OBSOLETE_ER_IB_MSG_203
   eng "%s"
 
-ER_IB_MSG_204
+OBSOLETE_ER_IB_MSG_204
   eng "%s"
 
-ER_IB_MSG_205
+OBSOLETE_ER_IB_MSG_205
   eng "%s"
 
-ER_IB_MSG_206
+OBSOLETE_ER_IB_MSG_206
   eng "%s"
 
-ER_IB_MSG_207
+OBSOLETE_ER_IB_MSG_207
   eng "%s"
 
-ER_IB_MSG_208
+OBSOLETE_ER_IB_MSG_208
   eng "%s"
 
-ER_IB_MSG_209
+OBSOLETE_ER_IB_MSG_209
   eng "%s"
 
-ER_IB_MSG_210
+OBSOLETE_ER_IB_MSG_210
   eng "%s"
 
-ER_IB_MSG_211
+OBSOLETE_ER_IB_MSG_211
   eng "%s"
 
-ER_IB_MSG_212
+OBSOLETE_ER_IB_MSG_212
   eng "%s"
 
 ER_IB_MSG_213
@@ -6219,115 +6219,115 @@ OBSOLETE_ER_IB_MSG_227
 OBSOLETE_ER_IB_MSG_228
   eng "%s"
 
-ER_IB_MSG_229
+OBSOLETE_ER_IB_MSG_229
   eng "%s"
 
-ER_IB_MSG_230
+OBSOLETE_ER_IB_MSG_230
   eng "%s"
 
-ER_IB_MSG_231
+OBSOLETE_ER_IB_MSG_231
   eng "%s"
 
-ER_IB_MSG_232
+OBSOLETE_ER_IB_MSG_232
   eng "%s"
 
-ER_IB_MSG_233
+OBSOLETE_ER_IB_MSG_233
   eng "%s"
 
-ER_IB_MSG_234
+OBSOLETE_ER_IB_MSG_234
   eng "%s"
 
-ER_IB_MSG_235
+OBSOLETE_ER_IB_MSG_235
   eng "%s"
 
-ER_IB_MSG_236
+OBSOLETE_ER_IB_MSG_236
   eng "%s"
 
-ER_IB_MSG_237
+OBSOLETE_ER_IB_MSG_237
   eng "%s"
 
-ER_IB_MSG_238
+OBSOLETE_ER_IB_MSG_238
   eng "%s"
 
-ER_IB_MSG_239
+OBSOLETE_ER_IB_MSG_239
   eng "%s"
 
-ER_IB_MSG_240
+OBSOLETE_ER_IB_MSG_240
   eng "%s"
 
-ER_IB_MSG_241
+OBSOLETE_ER_IB_MSG_241
   eng "%s"
 
-ER_IB_MSG_242
+OBSOLETE_ER_IB_MSG_242
   eng "%s"
 
-ER_IB_MSG_243
+OBSOLETE_ER_IB_MSG_243
   eng "%s"
 
-ER_IB_MSG_244
+OBSOLETE_ER_IB_MSG_244
   eng "%s"
 
-ER_IB_MSG_245
+OBSOLETE_ER_IB_MSG_245
   eng "%s"
 
-ER_IB_MSG_246
+OBSOLETE_ER_IB_MSG_246
   eng "%s"
 
-ER_IB_MSG_247
+OBSOLETE_ER_IB_MSG_247
   eng "%s"
 
-ER_IB_MSG_248
+OBSOLETE_ER_IB_MSG_248
   eng "%s"
 
-ER_IB_MSG_249
+OBSOLETE_ER_IB_MSG_249
   eng "%s"
 
-ER_IB_MSG_250
+OBSOLETE_ER_IB_MSG_250
   eng "%s"
 
-ER_IB_MSG_251
+OBSOLETE_ER_IB_MSG_251
   eng "%s"
 
-ER_IB_MSG_252
+OBSOLETE_ER_IB_MSG_252
   eng "%s"
 
-ER_IB_MSG_253
+OBSOLETE_ER_IB_MSG_253
   eng "%s"
 
-ER_IB_MSG_254
+OBSOLETE_ER_IB_MSG_254
   eng "%s"
 
-ER_IB_MSG_255
+OBSOLETE_ER_IB_MSG_255
   eng "%s"
 
-ER_IB_MSG_256
+OBSOLETE_ER_IB_MSG_256
   eng "%s"
 
-ER_IB_MSG_257
+OBSOLETE_ER_IB_MSG_257
   eng "%s"
 
-ER_IB_MSG_258
+OBSOLETE_ER_IB_MSG_258
   eng "%s"
 
-ER_IB_MSG_259
+OBSOLETE_ER_IB_MSG_259
   eng "%s"
 
-ER_IB_MSG_260
+OBSOLETE_ER_IB_MSG_260
   eng "%s"
 
-ER_IB_MSG_261
+OBSOLETE_ER_IB_MSG_261
   eng "%s"
 
-ER_IB_MSG_262
+OBSOLETE_ER_IB_MSG_262
   eng "%s"
 
-ER_IB_MSG_263
+OBSOLETE_ER_IB_MSG_263
   eng "%s"
 
-ER_IB_MSG_264
+OBSOLETE_ER_IB_MSG_264
   eng "%s"
 
-ER_IB_MSG_265
+OBSOLETE_ER_IB_MSG_265
   eng "%s"
 
 ER_IB_MSG_266
@@ -6600,7 +6600,7 @@ ER_IB_MSG_354
 ER_IB_MSG_355
   eng "%s"
 
-ER_IB_MSG_356
+OBSOLETE_ER_IB_MSG_356
   eng "%s"
 
 ER_IB_MSG_357
@@ -6984,10 +6984,10 @@ ER_IB_MSG_482
 ER_IB_MSG_483
   eng "%s"
 
-ER_IB_MSG_484
+OBSOLETE_ER_IB_MSG_484
   eng "%s"
 
-ER_IB_MSG_485
+OBSOLETE_ER_IB_MSG_485
   eng "%s"
 
 ER_IB_MSG_486
@@ -8280,7 +8280,7 @@ ER_IB_MSG_914
 ER_IB_MSG_915
   eng "%s"
 
-ER_IB_MSG_916
+OBSOLETE_ER_IB_MSG_916
   eng "%s"
 
 ER_IB_MSG_917
@@ -8784,11 +8784,11 @@ ER_IB_MSG_1082
 ER_IB_MSG_1083
   eng "Error reading encryption for %s"
 
-ER_IB_MSG_CANNOT_OPEN_57_UNDO
+OBSOLETE_ER_IB_MSG_CANNOT_OPEN_57_UNDO
   eng "Unable to open undo tablespace number %lu"
 
-ER_IB_MSG_1085
-  eng "Opened %llu existing undo tablespaces."
+ER_IB_MSG_OPENED_N_UNDO_TS
+  eng "Opened %zu existing undo tablespaces."
 
 ER_IB_MSG_1086
   eng "Cannot create undo tablespaces since innodb_%s has been set. Using %llu existing undo tablespaces."
@@ -8814,13 +8814,13 @@ ER_IB_MSG_1092
 ER_IB_MSG_1093
   eng "Unable to initialize the header page in undo tablespace number %lu."
 
-ER_IB_MSG_1094
+OBSOLETE_ER_IB_MSG_1094
   eng "Cannot delete old undo tablespaces because they contain undo logs for XA PREPARED transactions."
 
-ER_IB_MSG_1095
+OBSOLETE_ER_IB_MSG_1095
   eng "Upgrading %zu existing undo tablespaces that were tracked in the system tablespace to %lu new independent undo tablespaces."
 
-ER_IB_MSG_1096
+OBSOLETE_ER_IB_MSG_1096
   eng "Deleting %llu new independent undo tablespaces that we just created."
 
 ER_IB_MSG_1097
@@ -8862,10 +8862,10 @@ ER_IB_MSG_1108
 ER_IB_MSG_1109
   eng "Size of InnoDB's ulint is %zu but size of void* is %zu. The sizes should be the same so that on a 64-bit platforms you can allocate more than 4 GB of memory."
 
-ER_IB_MSG_1110
+OBSOLETE_ER_IB_MSG_1110
   eng "Database upgrade cannot be accomplished in read-only mode."
 
-ER_IB_MSG_1111
+OBSOLETE_ER_IB_MSG_1111
   eng "Database upgrade cannot be accomplished with innodb_force_recovery > 0"
 
 ER_IB_MSG_1112
@@ -8964,7 +8964,7 @@ ER_IB_MSG_1142
 ER_IB_MSG_LOG_FILES_REWRITING
   eng "Starting to delete and rewrite redo log files."
 
-ER_IB_MSG_1144
+OBSOLETE_ER_IB_MSG_1144
   eng "Undo from 5.7 found. It will be purged"
 
 ER_IB_MSG_1145
@@ -9147,7 +9147,7 @@ ER_IB_MSG_1203
 ER_IB_MSG_1204
   eng "%s"
 
-ER_IB_MSG_1205
+OBSOLETE_ER_IB_MSG_1205
   eng "%s"
 
 ER_IB_MSG_1206
@@ -9177,8 +9177,8 @@ ER_IB_MSG_1213
 ER_IB_MSG_1214
   eng "Can't create UNDO tablespace %s %s"
 
-ER_IB_MSG_1215
-  eng "%s"
+ER_IB_MSG_WILL_CREATE_N_UNDO_TS
+  eng "Will create %zu new undo tablespaces."
 
 ER_IB_MSG_LOG_FILES_RESIZE_ON_START
   eng "Resizing redo log from %lluM to %lluM (LSN=%llu) synchronously. If this takes too long, consider starting the server with large --innodb_redo_log_capacity, and resizing the redo log online using SET."
@@ -9213,13 +9213,13 @@ ER_IB_MSG_1225
 ER_IB_MSG_1226
   eng "%s"
 
-ER_IB_MSG_1227
+OBSOLETE_ER_IB_MSG_1227
   eng "%s"
 
 ER_IB_MSG_1228
   eng "%s"
 
-ER_IB_MSG_1229
+OBSOLETE_ER_IB_MSG_1229
   eng "%s"
 
 OBSOLETE_ER_IB_MSG_1230
@@ -9659,7 +9659,7 @@ ER_IB_MSG_1280
 ER_IB_MSG_1281
   eng "%s"
 
-ER_IB_MSG_1282
+OBSOLETE_ER_IB_MSG_1282
   eng "%s"
 
 ER_IB_MSG_1283
@@ -9844,7 +9844,7 @@ ER_IB_MSG_SDI_Z_STREAM_ERROR
 ER_IB_MSG_SDI_Z_UNKNOWN_ERROR
   eng "%s"
 
-ER_IB_MSG_FOUND_WRONG_UNDO_SPACE
+OBSOLETE_ER_IB_MSG_FOUND_WRONG_UNDO_SPACE
   eng "Expected to find undo tablespace '%s' for Space ID=%lu, but found '%s' instead!  Did you change innodb_undo_directory?"
 
 ER_IB_MSG_NOT_END_WITH_IBU
@@ -9865,7 +9865,7 @@ OBSOLETE_ER_IB_MSG_UNDO_INJECT_BEFORE_RSEG
 ER_IB_MSG_FAILED_TO_FINISH_TRUNCATE
   eng "%s Failed to finish truncating Undo Tablespace '%s'"
 
-ER_IB_MSG_DEPRECATED_INNODB_UNDO_TABLESPACES
+OBSOLETE_ER_IB_MSG_DEPRECATED_INNODB_UNDO_TABLESPACES
   eng "The setting INNODB_UNDO_TABLESPACES is deprecated and is no longer used.  InnoDB always creates 2 undo tablespaces to start with. If you need more, please use CREATE UNDO TABLESPACE."
 
 ER_IB_MSG_WRONG_TABLESPACE_DIR
@@ -10645,7 +10645,7 @@ ER_SCHEMA_NAME_IN_UPPER_CASE_NOT_ALLOWED_FOR_FK
 ER_TABLE_NAME_IN_UPPER_CASE_NOT_ALLOWED_FOR_FK
   eng "Table name '%s.%s' containing upper case characters, used by foreign key '%s' in table '%s.%s', is not allowed with lower_case_table_names = 1."
 
-ER_IB_MSG_DICT_PARTITION_NOT_FOUND
+OBSOLETE_ER_IB_MSG_DICT_PARTITION_NOT_FOUND
   eng "Table Partition: %s is not found in InnoDB dictionary"
 
 ER_ACCESS_DENIED_FOR_USER_ACCOUNT_BLOCKED_BY_PASSWORD_LOCK
@@ -10663,7 +10663,7 @@ ER_MIGRATE_TABLE_TO_DD_OOM
 ER_RPL_RELAY_LOG_RECOVERY_INFO_AFTER_CLONE
   eng "Applier metadata information for channel '%s' was found after a clone operation. Relay log recovery will be executed to adjust positions and file information for this new server. Should that automatic procedure fail please adjust the positions through 'CHANGE REPLICATION SOURCE TO'"
 
-ER_IB_MSG_57_UNDO_SPACE_DELETE_FAIL
+OBSOLETE_ER_IB_MSG_57_UNDO_SPACE_DELETE_FAIL
   eng "Failed to delete 5.7 undo tablespace: %s during upgrade"
 
 ER_IB_MSG_DBLWR_1285
@@ -10786,7 +10786,7 @@ ER_IB_MSG_DBLWR_1327
 ER_IB_MSG_GTID_FLUSH_AT_SHUTDOWN
   eng "Could not flush all GTIDs during slow shutdown. Will recover GTIDs when server restarts."
 
-ER_IB_MSG_57_STAT_SPACE_DELETE_FAIL
+OBSOLETE_ER_IB_MSG_57_STAT_SPACE_DELETE_FAIL
   eng "Failed to delete 5.7 stat tablespace: %s during upgrade"
 
 ER_NDBINFO_UPGRADING_SCHEMA
@@ -10873,7 +10873,7 @@ ER_IB_ERR_RECOVERY_REDO_DISABLED
 ER_IB_WRN_FAST_SHUTDOWN_REDO_DISABLED
   eng "InnoDB cannot do cold shutdown 'innodb_fast_shutdown = 2' and is forcing 'innodb_fast_shutdown = 1' as redo logging is disabled. InnoDB would flush all dirty pages to ensure physical data consistency."
 
-ER_IB_WRN_REDO_DISABLED
+OBSOLETE_ER_IB_WRN_REDO_DISABLED
   eng "InnoDB redo logging is disabled. All data could be lost in case of a server crash."
 
 ER_IB_WRN_REDO_ENABLED
@@ -10888,7 +10888,7 @@ ER_TLS_CONFIGURATION_REUSED
 ER_IB_TABLESPACE_PATH_VALIDATION_SKIPPED
   eng "Skipping InnoDB tablespace path validation. Manually moved tablespace files will not be detected!"
 
-ER_IB_CANNOT_UPGRADE_WITH_DISCARDED_TABLESPACES
+OBSOLETE_ER_IB_CANNOT_UPGRADE_WITH_DISCARDED_TABLESPACES
   eng "Upgrade failed because database contains discarded tablespaces."
 
 ER_USERNAME_TRUNKATED
@@ -11260,7 +11260,7 @@ ER_NOTE_KEYRING_COMPONENT_METADATA_ITERATOR_INVALID_OUT_PARAM
 ER_IB_WRN_FAILED_TO_ACQUIRE_SERVICE
   eng "Innodb could not acquire service : %s"
 
-ER_IB_WRN_OLD_GEOMETRY_TYPE
+OBSOLETE_ER_IB_WRN_OLD_GEOMETRY_TYPE
   eng "Column %s of type GEOMETRY is in old (5.6) format which could be deprecated in the future. To change the format to latest, please consider rebuilding the table after the upgrade."
 
 ER_NET_WAIT_ERROR2
@@ -11672,7 +11672,7 @@ ER_IB_MSG_LOG_FILES_CREATED_BY_CLONE_AND_READ_ONLY_MODE
 ER_IB_MSG_LOG_WRITER_WRITE_FAILED
   eng "Error %d encountered when writing to the redo log file: %s."
 
-ER_IB_MSG_LOG_WRITER_WAIT_ON_NEW_LOG_FILE
+OBSOLETE_ER_IB_MSG_LOG_WRITER_WAIT_ON_NEW_LOG_FILE
   eng "Redo log writer is waiting for a new redo log file. Consider increasing innodb_redo_log_capacity."
 
 ER_IB_MSG_RECOVERY_CHECKPOINT_OUTSIDE_LOG_FILE
@@ -11684,10 +11684,10 @@ ER_IB_MSG_LOG_WRITER_ENTERED_EXTRA_MARGIN
 ER_IB_MSG_LOG_WRITER_EXITED_EXTRA_MARGIN
   eng "Redo log reclaimed some free space, resuming user threads."
 
-ER_IB_MSG_LOG_PARAMS_FILE_SIZE_UNUSED
+OBSOLETE_ER_IB_MSG_LOG_PARAMS_FILE_SIZE_UNUSED
   eng "Ignored deprecated configuration parameter innodb_log_file_size. Used innodb_redo_log_capacity instead."
 
-ER_IB_MSG_LOG_PARAMS_N_FILES_UNUSED
+OBSOLETE_ER_IB_MSG_LOG_PARAMS_N_FILES_UNUSED
   eng "Ignored deprecated configuration parameter innodb_log_files_in_group. Used innodb_redo_log_capacity instead."
 
 ER_IB_MSG_LOG_UPGRADE_FORCED_RECV
@@ -11941,10 +11941,10 @@ ER_IB_MSG_BUF_POOL_RESIZE_PROGRESS_UPDATE
 ER_IB_MSG_BUF_POOL_RESIZE_CODE_STATUS
   eng "Status code %u: %s"
 
-ER_THREAD_POOL_QUERY_THREADS_PER_GROUP_INVALID
+OBSOLETE_ER_THREAD_POOL_QUERY_THREADS_PER_GROUP_INVALID
   eng "Invalid value set to thread_pool_query_threads_per_group. Valid value range is %u - %u."
 
-ER_THREAD_POOL_QUERY_THRS_PER_GRP_EXCEEDS_TXN_THR_LIMIT
+OBSOLETE_ER_THREAD_POOL_QUERY_THRS_PER_GRP_EXCEEDS_TXN_THR_LIMIT
   eng "Query threads count(%u) exceeds transaction threads limit(%u) per group. Please use query threads count per group smaller or equal to max transaction threads limit per group"
 
 ER_IB_MSG_INVALID_PAGE_TYPE
@@ -11996,7 +11996,7 @@ ER_BULK_READER_COMMUNICATION_ERROR_LOG
   eng "Bulk reader got error in communication with source server, check the error log for additional details"
 
 ER_BULK_PARSER_MISSING_ENCLOSED_BY_LOG
-  eng "Missing ENCLOSED BY character at row %ld in file %s. Add OPTIONALLY to the ENCLOSED BY clause to allow this input."
+  eng "Missing ENCLOSED BY character at row %ld in file %s."
 
 ER_BULK_PARSER_ROW_BUFFER_MAX_TOTAL_COLS_EXCEEDED_LOG
   eng "The number of input columns that need to be buffered for parsing exceeded predefined buffer max size for file '%s'."
@@ -12163,10 +12163,10 @@ ER_AUTHENTICATION_OCI_DOWNLOAD_IDDP_PUBLIC_KEY
 OBSOLETE_ER_AUTHENTICATION_OCI_NO_MATCHING_GROUPS_IN_TOKEN
   eng "None of the groups extracted from security token matches any of the entries from authentication string."
 
-ER_SYS_VAR_REGISTRATION
+OBSOLETE_ER_SYS_VAR_REGISTRATION
   eng "Cannot register variable '%s'. Please check if it is not already registered by another component."
 
-ER_SYS_VAR_DEREGISTRATION
+OBSOLETE_ER_SYS_VAR_DEREGISTRATION
   eng "Cannot unregister variable '%s'. Please check if it was registered properly in the first place."
 
 ER_UDF_REGISTRATION
@@ -12298,6 +12298,68 @@ ER_WAITING_FOR_NO_THDS
 ER_IB_INDEX_PART_TOO_LONG
   eng "Index %s of %s.%s exceeds limit of %lu bytes per column."
 
+# The following 4 messages were incorrectly up-merged from 8.0.
+# They now live in the 8.1+ range. This decision was taken as
+# we now had the 4 messages in different ranges in 8.0 vis-a-vis
+# all higher versions, which means that once 8.0 becomes unsupported,
+# only one error number remains for each of these messages (namely
+# the one in the 8.1+ range). That in itself requires nothing else
+# (outside this explanatory message, anyway). We do however block
+# the 8.0 error-numbers of these messages in 8.1+ as OBSOLETE so
+# that if further messages are upmerged from 8.0, they are not
+# assigned the numbers in the 8.0 range of 8.1+ where the messages
+# from the initial broken merge should have been, as that would lead
+# to another batch of symbols that have different numbers in 8.0 and
+# 8.1+. This is less complicated than it sounds. :)
+
+OBSOLETE_ER_DD_UPDATE_DATADIR_FLAG_FAIL
+  eng "Failed to update data directory flag for dd table with tablespace id '%llu' when ibd file for '%s' is moved to new location '%s' during server shutdown"
+
+OBSOLETE_ER_IB_MSG_FIL_STATE_MOVED_PREV_OR_HAS_DATADIR
+  eng "%s DD ID: %llu - Tablespace %u, name '%s', found at '%s' outside default data directory. It is either moved or is created with 'DATA DIRECTORY'"
+
+OBSOLETE_ER_RPL_KILL_OLD_DUMP_THREAD_ENCOUNTERED
+  eng "Upon reconnection with the replica, while initializing the dump thread for %s <%s>, an existing dump thread with the same %s was detected. The source is terminating the previous dump thread (%u), which is normal and expected."
+
+OBSOLETE_ER_RPL_MTA_ALLOW_COMMIT_OUT_OF_ORDER
+  eng "The transaction '%-.192s' will commit out of order with respect to its source to follow the group global order."
+
+ER_CHECK_TABLE_FUNCTIONS
+  eng "Can not open table `%s`.`%s`; functions in constraints, partitions, or virtual columns may have failed."
+
+ER_CHECK_TABLE_FUNCTIONS_DETAIL
+  eng "%s"
+
+ER_GRP_RPL_CERT_BROADCAST_THREAD_CREATE_FAILED
+  eng "Failed to create the Group Replication certifier broadcast thread (THD_certifier_broadcast)."
+
+ER_GRP_RPL_CERT_BROADCAST_THREAD_STARTED
+  eng "The Group Replication certifier broadcast thread (THD_certifier_broadcast) started."
+
+ER_GRP_RPL_CERT_BROADCAST_THREAD_STOPPED
+  eng "The Group Replication certifier broadcast thread (THD_certifier_broadcast) stopped."
+
+ER_GRP_RPL_APPLIER_THD_KILLED_BY_SQL_KILL
+   eng "The group replication applier thread has received KILL request."
+
+ER_IB_MSG_WAITING_ON_LAGGING_REDO_LOG_CONSUMER
+  eng "Threads are unable to reserve space in redo log which can't be reclaimed due to the '%s' consumer still lagging behind at LSN = %llu. Consider increasing innodb_redo_log_capacity."
+
+ER_IB_MSG_ABORTING_LOG_ARCHIVER
+  eng "The redo log archiver is aborted as it was lagging behind at LSN = %llu and unable to advance for more than 2 seconds. Consider increasing the innodb_redo_log_capacity."
+
+ER_IB_INSTANT_ADD_DROP_COLUMN_NOT_ALLOWED
+  eng "Trying to add or drop column(s) in table '%s' for which the current record size is %zu which is more than the maximum allowed size (%zu) for a record. Therefore ADD or DROP column with ALGORITHM = INSTANT is not allowed."
+
+ER_IB_INSTANT_ADD_NOT_POSSIBLE
+  eng "Cannot add %zu field(s) in table '%s' because after adding it, the record size would be %zu which is more than the maximum allowed size (%zu) for a record."
+
+ER_IB_WRN_REDO_DISABLED_INFO
+  eng "InnoDB redo logging is disabled. All data could be lost in case of a server crash. Current lsn is %llu."
+
+ER_IB_MSG_LOG_WRITER_WAIT_ON_NEW_LOG_FILE_INFO
+  eng "Redo log writer is waiting for a new redo log file. Consider increasing innodb_redo_log_capacity. The current log capacity is %llu bytes. The log capacity used is %llu bytes."
+
 #
 # End of 8.0 error messages intended to be written to the server error log.
 #
@@ -12407,7 +12469,7 @@ ER_FIREWALL_SCHEDULER_REGISTER_FAILED
 ER_FIREWALL_INVALID_RELOAD_INTERVAL_VALUE
   eng "Invalid reload interval specified: %lu. Valid values are 0 (off) or greater than or equal to %d. Adjusting to %d."
 
-ER_WARN_DEPRECATED_DYNAMIC_PRIV_FOR_USER
+OBSOLETE_ER_WARN_DEPRECATED_DYNAMIC_PRIV_FOR_USER
    eng "'%s' (granted to '%s@%s') is deprecated and will be removed in a future release."
 
 ER_BULK_MULTI_READER_INFO
@@ -12743,8 +12805,8 @@ ER_LOG_DEPRECATE_NON_COMPOSABLE_MULTIPLE_ENGINE
 ER_DD_UPDATE_DATADIR_FLAG_FAIL
   eng "Failed to update data directory flag for dd table with tablespace id '%llu' when ibd file for '%s' is moved to new location '%s' during server shutdown"
 
-ER_IB_MSG_FIL_STATE_MOVED_PREV_OR_HAS_DATADIR
-  eng "%s DD ID: %llu - Tablespace %u, name '%s', found at '%s' outside default data directory. It is either moved or is created with 'DATA DIRECTORY'"
+ER_IB_MSG_FIL_STATE_MOVED_PREV
+  eng "%s DD ID: %llu - Tablespace %u, name '%s', found at '%s' outside default data directory, but DD misses info about DATA DIRECTORY"
 
 ER_LOAD_BULK_JSON_ERROR
   eng "Bulk CSV parser reports JSON error: %s at %zu"
@@ -12787,6 +12849,18 @@ ER_AUTHENTICATION_OPENID_FAILED_TO_UPDATE_CONFIGURATION
 
 ER_SIMPLE_ERROR_LOG_COMPONENT_STATUS
   eng "%s"
+
+ER_RPL_KILL_OLD_DUMP_THREAD_ENCOUNTERED
+  eng "Upon reconnection with the replica, while initializing the dump thread for %s <%s>, an existing dump thread with the same %s was detected. The source is terminating the previous dump thread (%u), which is normal and expected."
+
+ER_RPL_MTA_ALLOW_COMMIT_OUT_OF_ORDER
+  eng "The transaction '%-.192s' will commit out of order with respect to its source to follow the group global order."
+
+ER_TEMPTABLE_ENGINE_ERROR
+  eng "Temptable: %s"
+
+ER_AUDIT_LOG_INVALID_ROTATE_ON_TIME_VALUE
+   eng "Invalid audit_log_rotate_on_time interval specified: %lu. Valid values are 0 (off) or greater than or equal to %d. Adjusting to %d"
 
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt
@@ -12915,6 +12989,7 @@ ER_AUTHENTICATION_OPENID_OPTION_REGISTER
 ER_AUTHENTICATION_OPENID_OPTION_DEREGISTER
   eng "Option deregistration failed."
 
+<<<<<<< HEAD
 #
 # End of 9.0 error messages intended to be written to the server error log. 
 #
@@ -12936,6 +13011,375 @@ ER_KEYRING_COMPONENT_KMS_ERROR
 # End of Percona Server 8.0 server error log messages
 #  
 
+||||||| 61a3a1d8ef1
+=======
+ER_BULK_PARSER_UNEXPECTED_ENCLOSED_BY_CHARACTER_LOG
+  eng "Unexpected enclosed by character found inside unenclosed string at row %ld in file '%s' resulting in malformed CSV."
+
+ER_DIAG_LOG_STRING
+  eng "%s"
+
+ER_FAILED_TO_CREATE_RPL_OPT_TRACKER_THREAD
+  eng "Unable to create the thread that periodically tracks the replication features. The server will continue its bootstrap."
+
+ER_CONNECTION_CONTROL_STATUS_VAR_REG_FAILED
+  eng "component_connection_control status variables registration failed."
+
+ER_CONNECTION_CONTROL_STATUS_VAR_UNREG_FAILED
+  eng "component_connection_control status variables unregistration failed."
+
+ER_CONNECTION_CONTROL_VARIABLE_REGISTRATION_FAILED
+  eng "%s variable registration failed."
+
+ER_CONNECTION_CONTROL_VARIABLE_UNREGISTRATION_FAILED
+  eng "%s variable unregistration failed."
+
+ER_CONNECTION_CONTROL_FAILED_TO_GET_SECURITY_CTX
+  eng "Can't retrieve the security context from thread."
+
+ER_CONNECTION_CONTROL_FAILED_TO_GET_ATTRIBUTE_FROM_SECURITY_CTX
+  eng "Can't retrieve the %s from the security context."
+
+ER_CONNECTION_CONTROL_FAILED_DEINIT
+  eng "Failed to deinit %s."
+
+ER_GR_RM_MEMORY_STATS_FETCH_FAILED
+  eng "Error fetching system memory stats. Retrying in 5 seconds."
+
+ER_GR_RM_MEMORY_STATS_FETCH_SUCCESS
+  eng "Fetching system memory stats successfully resumed."
+
+ER_GR_RM_CHANNEL_LAG_QUERY_EXECUTION_FAILED
+  eng "Replication channel lag retrieval failed due to query execution error. Retrying in 5 seconds."
+
+ER_GR_RM_CHANNEL_LAG_QUERY_EXECUTION_SUCCESS
+  eng "Replication channel lag retrieved successfully resumed."
+
+ER_GR_RM_GR_MGMT_SERVICE_ACQUIRE_FAILED
+  eng "Failed to acquire Group Replication management service. Verify Group Replication status and configuration."
+
+ER_GR_RM_GR_MEMBER_NOT_REMOVED_APPLIER_THRESHOLD_HIT_QUARANTINE
+  eng "Member threshold exceeded: applier channel lag of %d seconds exceeded tolerance threshold configured to %d seconds. However, since it joined %d seconds ago and the quarantine period is configured to %d seconds, the member will not leave the group."
+
+ER_GR_RM_GR_MEMBER_NOT_REMOVED_RECOVERY_THRESHOLD_HIT_QUARANTINE
+  eng "Member threshold exceeded: recovery channel lag of %d seconds exceeded tolerance threshold configured to %d seconds. However, since it joined %d seconds ago and the quarantine period is configured to %d seconds, the member will not leave the group."
+
+ER_GR_RM_GR_MEMBER_NOT_REMOVED_MEMORY_THRESHOLD_HIT_QUARANTINE
+  eng "Member threshold exceeded: memory used of %d%% exceeded tolerance threshold configured to %d%%. However, since it joined %d seconds ago and the quarantine period is configured to %d seconds, the member will not leave the group."
+
+ER_GR_RM_GR_MEMBER_NOT_REMOVED_APPLIER_THRESHOLD_HIT_N_MEMBERS
+  eng "Member threshold exceeded: applier channel lag of %d seconds exceeded tolerance threshold configured to %d seconds. However, the group has less than 3 members, the member will not leave the group."
+
+ER_GR_RM_GR_MEMBER_NOT_REMOVED_RECOVERY_THRESHOLD_HIT_N_MEMBERS
+  eng "Member threshold exceeded: recovery channel lag of %d seconds exceeded tolerance threshold configured to %d seconds. However, the group has less than 3 members, the member will not leave the group."
+
+ER_GR_RM_GR_MEMBER_NOT_REMOVED_MEMORY_THRESHOLD_HIT_N_MEMBERS
+  eng "Member threshold exceeded: memory used of %d%% exceeded tolerance threshold configured to %d%%. However, the group has less than 3 members, the member will not leave the group."
+
+ER_GR_RM_MEMBER_LEAVING_APPLIER_THRESHOLD_HIT
+  eng "Member exiting group: applier channel lag of %d seconds exceeded tolerance threshold configured to %d seconds."
+
+ER_GR_RM_MEMBER_LEAVING_RECOVERY_THRESHOLD_HIT
+  eng "Member exiting group: recovery channel lag of %d seconds exceeded tolerance threshold configured to %d seconds."
+
+ER_GR_RM_MEMBER_LEAVING_MEMORY_THRESHOLD_HIT
+  eng "Member exiting group: memory used of %d%% exceeded tolerance threshold configured to %d%%."
+
+ER_NO_PATCH_DOWNGRADE_FOR_INNOVATION_RELEASES
+  eng "Patch downgrade from %d to %d is not supported because MySQL server version %d is an innovation release."
+
+ER_WARN_OPTION_USAGE_COUNTER_READ_FAILED
+  eng "Failed reading the initial usedCounter value for option %s: %s"
+
+ER_GRP_PREFER_MOST_UPDATED_CONFIG_DIFFER_ON_FAILOVER
+  eng "Members have different configurations (option group_replication_elect_prefers_most_updated.enabled) on usage of most up-to-date method on primary failover, method will not be used."
+
+ER_GRP_PRIMARY_ELECTION_METHOD_MOST_UPDATE
+      eng "Member with uuid %s was elected primary since it was the most up-to-date member with %lu transactions more than second most up-to-date member %s. In case of a tie member weight and then uuid lexical order was used over the most updated members."
+
+ER_GRP_PRIMARY_ELECTION_METHOD_MEMBER_WEIGHT
+      eng "Member with uuid %s was elected primary since it was highest weight member with value %d. In case of a tie uuid lexical order was used."
+
+ER_GRP_PRIMARY_ELECTION_FATAL_PROCESS
+  eng "Fatal error during the primary election process of Group Replication. The server will leave the group."
+
+ER_KEYRING_COMPONENT_KEYRING_HASHICORP_DATA_EXTRACT_FAILED
+   eng "Hashicorp Vault DATA extract failed."
+
+ER_KEYRING_COMPONENT_KEYRING_HASHICORP_KEY_MALFORMED
+   eng "Hashicorp Vault KEY malformed."
+
+ER_KEYRING_COMPONENT_KEYRING_HASHICORP_AUTH_FAIL
+   eng "Hashicorp Vault server authentication failed."
+
+ER_KEYRING_COMPONENT_KEYRING_HASHICORP_CURL_SETOPT_FAILED
+   eng "Hashicorp Vault server curl_easy_setopt failed."
+
+ER_COMPONENT_FIREWALL_OTHER_ERROR
+  eng "Firewall component error: '%s'."
+
+ER_COMPONENT_FIREWALL_INVALID_RELOAD_INTERVAL_VALUE
+   eng "Invalid firewall reload interval specified: %lu. Valid values are 0 (off) or greater than or equal to %d. Adjusting to %d."
+
+ER_COMPONENT_FIREWALL_VAR_REGISTRATION_FAILURE
+  eng "Cannot register variable '%s'.'%s'."
+
+ER_COMPONENT_FIREWALL_NOTIFICATION_REGISTRATION_FAILURE
+  eng "Firewall component failed to register notification service. Periodical reloads will not work."
+
+ER_COMPONENT_FIREWALL_RECORDING_TRUNCATED
+  eng "Statement from %s was truncated and won't be recorded, consider enlarging value of max_digest_length variable."
+
+ER_COMPONENT_FIREWALL_SUSPICIOUS_STMT_TRUNCATED
+  eng "SUSPICIOUS STATEMENT from %s. Statement truncated."
+
+ER_COMPONENT_FIREWALL_ACCESS_DENIED_TRUNCATED
+  eng "ACCESS DENIED for %s. Statement truncated."
+
+ER_COMPONENT_FIREWALL_SUSPICIOUS_STMT
+  eng "SUSPICIOUS STATEMENT from %s. Statement \"%s\" doesn't match any statement from any allowlist."
+
+ER_COMPONENT_FIREWALL_ACCESS_DENIED
+  eng "ACCESS DENIED for %s. Statement: Statement \"%s\" doesn't match any statement from any allowlist."
+
+ER_COMPONENT_FIREWALL_CANNOT_ACCESS_TABLE
+  eng "Cannot access %s.%s table."
+
+ER_COMPONENT_FIREWALL_INVALID_TABLE_DEFINITION
+  eng "Invalid definition of %s.%s table."
+
+ER_COMPONENT_FIREWALL_CANNOT_READ_TABLE
+  eng "Cannot read data from %s.%s table."
+
+ER_COMPONENT_FIREWALL_DATABASE
+  eng "Error accessing database: %s."
+
+ER_COMPONENT_FIREWALL_INIT
+  eng "Error while initializing the component: %s."
+
+ER_COMPONENT_FIREWALL_PROCESSING_ERROR
+  eng "Error on processing statement."
+
+ER_COMPONENT_FIREWALL_TRACING_ERROR
+  eng "Error on tracing suspicious statement."
+
+ER_COMPONENT_FIREWALL_PROCESSING_EXCEPTION
+  eng "Exception on processing statement: '%s'."
+
+ER_NOTE_COMPONENT_FIREWALL_RELOAD
+  eng "Cache reload with interval %d seconds is on."
+
+ER_COMPONENT_FIREWALL_RELOAD_TOO_SHORT_PERIOD
+  eng "Attempt to reload cache before the previous reload not finished. Consider increasing value of component_firewall.reload_interval_seconds."
+
+ER_VAR_REGISTRATION
+  eng "Cannot register variable '%s.%s'. Please check if it is not already registered."
+
+ER_VAR_DEREGISTRATION
+  eng "Cannot unregister variable '%s.%s'. Please check if it was registered properly in the first place."
+
+ER_SERVER_STARTING_WITH_RESOURCE
+   eng "MySQL Server has access to %llu %s."
+
+ER_INFO_AUTHENTICATION_OCI
+   eng "authentication_oci plugin reported: %s."
+
+ER_SERVER_MEMORY_OPTION_INVALID
+   eng "MySQL Server configured to use %llu bytes but can only access %llu bytes."
+
+ER_WARN_KEYRING_PLUGIN_DEPRECTED
+  eng "Plugin %s is of the deprecated keyring plugin type. Please use the corresponding keyring component instead."
+
+ER_AUDIT_LOG_OFFLOAD_INFO
+  eng "%s"
+
+ER_AUDIT_LOG_OFFLOAD_WARNING
+  eng "%s"
+
+ER_AUDIT_LOG_OFFLOAD_ERROR
+  eng "%s"
+
+ER_WARN_SERVER_MEMORY_INIT_FAIL
+  eng "Failed to read or validate server_memory, and falling back to total physical memory."
+
+ER_KEYRING_COMPONENT_KMIP_PATH_EMPTY
+   eng "Keyring kmip path is empty in configuration file."
+
+ER_KEYRING_COMPONENT_KMIP_INVALID_KEY_TYPE
+   eng "Invalid key type: %s used. Should be AES or SECRET."
+
+ER_KEYRING_COMPONENT_KMIP_INVALID_KEY_LENGTH
+   eng "Invalid key length: %d used."
+
+ER_KEYRING_COMPONENT_KMIP_GENERATE_KEY_INVALID_PARAMETER
+   eng "Invalid key generate parameter: %s = %s, must be %s."
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_LOAD_KEY_UID
+   eng "Could not load keys uids from the KMIP server"
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_ALLOCATE
+   eng "Could not allocate memory for %s object."
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_ADD_ATTRIBUTE
+  eng "Could not add attribute, attribute_name=%s attribute value=%s"
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_FETCH_KEY
+  eng "Could not fetch generated key"
+
+ER_KEYRING_COMPONENT_KMIP_INIT_PRIMARY
+   eng "Could not initialize bio with primary server!"
+
+ER_KEYRING_COMPONENT_KMIP_INIT_STANDBY
+   eng "Could not initialize bio with standby server: %s"
+
+ER_KEYRING_COMPONENT_KMIP_TRYING_STANDBY
+   eng "Could not connect to the primary server %s. Trying the standby servers."
+
+ER_KEYRING_COMPONENT_KMIP_KEY_MISMATCH
+  eng "Private key does not match the certificate public key because of %s"
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_SET_KEY_FILE
+  eng "Error while setting the private key '%s' file: %s."
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_SET_CERTIFICATE_FILE
+  eng "Error while setting the certificate '%s' file: %s."
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_LOAD_SSL_TRUST_STORE
+  eng "Error while setting the ca certificate '%s' file: %s."
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_REMOVE_KEY
+  eng "Could not remove the '%s' key."
+
+ER_KEYRING_COMPONENT_KMIP_CONNECTION_TO_SERVER_FAILED
+  eng "Could not connect to the OKV server"
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_INIT_CLIENT
+  eng "Could not initialize OKV client, failed to allocate memory for client environment settings."
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_INIT_SSL_LAYER
+  eng "Could not initialize SSL layer, because of the following SSL error: %s"
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_RETRIEVE_KEY_SIGNATURE
+  eng "Could not retrieve key signature from custom attributes"
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_RETRIEVE_KEY
+  eng "Could not retrieve key from OKV"
+
+ER_KEYRING_COMPONENT_KMIP_STANDBY_SERVER_COUNT_EXCEEDED
+  eng "Number of STANDBY_SERVER values exceeded maximum limit of 64."
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_GENERATE_KEY
+  eng "Could not generate the key."
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_STORE_KEY
+  eng "Could not store the key."
+
+ER_WARN_COMPONENT_KEYRING_KMIP_DUPLICATE_KEY
+  eng "Duplicate key found in kmip keyring with Name: %s and Owner: %s."
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_ACTIVATE_KEYS
+  eng "Could not activate the key."
+
+ER_KEYRING_COMPONENT_KMIP_FAILED_TO_STORE_OR_GENERATE_KEY
+  eng "Could not store/generate the key - failed to set key attribute x-key-ready"
+
+ER_WARN_DEPRECATED_SASL_MECHANISM
+  eng "Value '%s' of variable authentication_ldap_sasl_auth_method_name is deprecated and will be removed in future. Consider using more secure '%s'."
+
+ER_INVALID_SERVER_OPTION_CHARSET
+  eng "Character set 'utf8' rejected as command line option."
+
+ER_INVALID_SERVER_OPTION_COLLATION
+  eng "Collation '%s' rejected as command line option."
+
+ER_FAILED_TO_FIND_CHARSET_NAME
+  eng "Unknown character set: '%-.64s'."
+
+ER_WARN_THREAD_POOL_QUERY_THREADS_INCOMPATIBLE_MTL
+  eng "The default or user configured value thread_pool_query_threads_per_group(%u) exceeds transaction threads limit per group (%u). To ensure correct operation, the server is automatically setting thread_pool_query_threads_per_group to %u. If this is not intended, consider setting thread_pool_max_transactions_limit to a higher value.%s"
+
+ER_WARN_THREAD_POOL_QUERY_THREADS_MISMATCH_INCOMPATIBLE_ALGO
+  eng "The configured value thread_pool_query_threads_per_group(1) is not recommended when used with HIGH_CONCURRENCY_ALGORITHM. Consider setting thread_pool_query_threads_per_group to a higher value for better performance."
+
+ER_WARN_THREAD_POOL_DEDICATED_LISTENERS_INCOMPATIBLE_MTL
+  eng "The thread_pool_dedicated_listeners option can only be set to ON if thread_pool_max_transaction_limit > 0. Since this requirement is not met, the server is automatically disabling thread_pool_dedicated_listeners. To use dedicated listeners, please consider enabling thread_pool_max_transactions_limit."
+
+ER_CONN_CONTROL_STAT_CONN_EXEMPTED_USERS_UPDATE_FAILED
+  eng "Failed to update connection delay user exempt stats"
+
+ER_AUTOPILOT_OLTP_ADVISOR_INFO
+  eng "%s"
+
+ER_AUTOPILOT_OLTP_ADVISOR_WARNING
+  eng "%s"
+
+ER_AUTOPILOT_OLTP_ADVISOR_ERROR
+  eng "%s"
+
+ER_WARN_EVENT_TRACKING_BRIDGE_INVALID_EVENT
+  eng "An event of type %s is missing extra data and cannot be processed by the server's component plugin bridge. As a result plugins will not get the notification."
+
+ER_INVALID_PREVIOUS_DIAGNOSTICS_AREA_STATUS
+  eng "Invalid previous diagnostics area status '%.64s' when attempting to report status '%.64s'. This is a bug and the server will now abort. The previous error (if any) was '%.128s' and the requested error (if any) is '%.128s'."
+
+ER_CHECK_TABLE_FUNCTIONS_DOWNGRADED
+  eng "Error MY-%06d occurred while checking table-definitions: %s"
+
+ER_SERVER_ERROR_NO_CONTAINER_SUPPORT_IN_WIN
+   eng "Server does not support containers on Windows"
+
+ER_SERVER_ERROR_NOT_IN_CONTAINER
+   eng "Server is not running in a container but --container_aware is turned ON"
+
+ER_SERVER_WARN_CONTAINER_IGNORED
+   eng "Server ignores the discovered container restrictions as --container_aware is OFF"
+
+ER_AUDIT_LOG_COMPONENT_FILE_PRUNE_FAILED
+  eng "Failed to auto-prune file '%s'."
+
+ER_AUDIT_LOG_STATUS_VARIABLES_REGISTRATION_FAILED
+  eng "Failed to register status variables."
+
+ER_AUDIT_LOG_STATUS_VARIABLES_UNREGISTRATION_FAILED
+  eng "Failed to unregister status variables."
+
+ER_AUDIT_LOG_SYSTEM_VARIABLE_REGISTRATION_FAILED
+  eng "Failed to register %s.%s system variable."
+
+ER_AUDIT_LOG_SYSTEM_VARIABLE_UNREGISTRATION_FAILED
+  eng "Failed to unregister %s.%s system variable."
+
+ER_AUDIT_LOG_WRITE_TO_FILE_FAILED
+  eng "Error writing file \'%-.200s\'."
+
+ER_AUDIT_LOG_PASSWORD_GENERATED
+  eng "Encryption password has not been set; it will be generated automatically. Use %s to obtain the password or %s to set a new one."
+
+ER_AUDIT_LOG_INFO
+  eng "Component component_audit_log reported: '%s'"
+
+ER_AUDIT_LOG_WARNING
+  eng "Component component_audit_log reported: '%s'"
+
+ER_AUDIT_LOG_ERROR
+  eng "Component component_audit_log reported: '%s'"
+
+ER_AUDIT_LOG_FILE_PATH_TOO_LONG
+  eng "File path is too long (%zu). Absolute file path in the current configuration should not exceed %zu characters."
+
+ER_AUDIT_LOG_CANNOT_ALLOCATE_ASYNCHRONOUS_BUFFER
+  eng "Cannot allocate asynchronous write buffer of size: %zu bytes."
+
+ER_AUDIT_LOG_COMPONENT_PASSWORD_HAS_BEEN_COPIED
+  eng "'%s' password has been copied into '%.32s' and will be removed with first purged password."
+
+ER_AUDIT_LOG_DATABASE_NAME_TOO_LONG
+  eng "Database name is too long (%zu). Database name should not exceed %zu characters."
+
+ER_AUDIT_LOG_DATABASE_NAME_EMPTY
+  eng "Database name cannot be empty."
+
+>>>>>>> tags/mysql-9.6.0
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for
 # other error messages.

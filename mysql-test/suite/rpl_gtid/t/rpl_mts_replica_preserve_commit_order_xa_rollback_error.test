@@ -196,7 +196,6 @@ DROP TABLE t2;
 --source include/rpl/sync_to_replica.inc
 --source include/rpl/stop_replica.inc
 
-SET GLOBAL replica_parallel_type= @save_replica_parallel_type;
 --disable_warnings
 SET GLOBAL replica_parallel_workers= @save_replica_parallel_workers;
 --enable_warnings

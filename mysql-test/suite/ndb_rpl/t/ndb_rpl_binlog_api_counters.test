@@ -1,0 +1,236 @@
+################################################################################
+# Test the NDB Event API counters for the binlog injector consumer. Each test
+# assesses that counters match the expected intervals
+################################################################################
+
+--source include/have_ndb.inc
+--source include/have_binlog_format_mixed_or_row.inc
+
+--echo #####################################################################
+--echo # With sql_log_bin=0, data events are not sent to the binlog injector
+--echo #####################################################################
+
+SET sql_log_bin=0;
+
+CREATE TABLE t1 (a INT PRIMARY KEY, b BLOB, lb LONGBLOB, lt LONGTEXT) ENGINE = NDB;
+
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @start_event_bytes;
+
+INSERT INTO t1 VALUES (1, repeat('!', 4096), repeat('@', 65536), repeat('lorem', 65536)),
+                      (2, repeat('#', 4096), repeat('$', 65536), repeat('ipsum', 65536));
+# Wait for gci to close and move
+--save_master_pos
+
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @end_event_bytes;
+
+if (`SELECT @end_event_bytes - @start_event_bytes >= 4096`)
+{
+  echo # More than 4096 bytes of event data was received.;
+  let $start_value=`SELECT @start_event_bytes`;
+  let $end_value=`SELECT @end_event_bytes`;
+  echo start value: $start_value;
+  echo end value: $end_value;
+  die "Expected less than 4096 bytes of data for the events received";
+}
+--echo # No more than 4096 bytes of event data was received
+
+DROP TABLE t1;
+SET sql_log_bin=1;
+
+--echo #####################################################################
+--echo # With log-replica-updates=OFF, data events are filtered out and thus
+--echo # updates applied by a replica server are not sent to the injector.
+--echo #####################################################################
+
+# SETUP: Server 1 does not log-replica-updates.
+# Replica cluster contains servers 1 and 2, Source cluster contains server 3.
+# Server 2 is the applier at Replica cluster.
+--let $rpl_server_count= 3
+--let $rpl_topology= 3->2
+--source include/rpl/init.inc
+
+--let $rpl_connection_name= server.1
+--let $rpl_server_number= 1
+--source include/rpl/connect.inc
+
+--let $rpl_connection_name= replica
+--let $rpl_server_number= 2
+--source include/rpl/connect.inc
+
+--let $rpl_connection_name= source
+--let $rpl_server_number= 3
+--source include/rpl/connect.inc
+
+
+--let $rpl_connection_name= server.1
+--source include/connection.inc
+# Server 1 must have log_replica_updates=OFF
+SELECT @@log_replica_updates;
+--echo # Save Server.1 start counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @start_event_bytes;
+
+--let $rpl_connection_name= replica
+--source include/connection.inc
+--echo # Save Replica start counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @start_event_bytes;
+
+--let $rpl_connection_name= source
+--source include/connection.inc
+CREATE TABLE t1 (a INT PRIMARY KEY, b BLOB, mb MEDIUMBLOB) ENGINE = NDB;
+
+INSERT INTO t1 VALUES (1, repeat(0x41, 8192), repeat(0x42, 65536)),
+                      (2, repeat(0x43, 8192), repeat(0x44, 65536)),
+                      (3, repeat(0x45, 8192), repeat(0x46, 65536)),
+                      (4, repeat(0x47, 8192), repeat(0x48, 65536));
+--save_master_pos
+
+--sync_slave_with_master replica
+--let $rpl_connection_name= replica
+--source include/connection.inc
+SELECT LENGTH(b), LENGTH(mb) FROM t1;
+
+--let $rpl_connection_name= server.1
+--source include/connection.inc
+--echo # Save Server.1 end counter
+--save_master_pos
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @end_event_bytes;
+
+if (`SELECT @end_event_bytes - @start_event_bytes > 8192`)
+{
+  echo # Should not have received any row event data.;
+  let $start_value=`SELECT @start_event_bytes`;
+  let $end_value=`SELECT @end_event_bytes`;
+  echo start value: $start_value;
+  echo end value: $end_value;
+  die "Expected no more than 8192 bytes of data for the events received";
+}
+--echo # No row event data was received
+
+--let $rpl_connection_name= replica
+--source include/connection.inc
+--save_master_pos
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @end_event_bytes;
+
+# Must be more than 294912 (4*8192 + 4*65536)
+if (`SELECT @end_event_bytes - @start_event_bytes <= 294912`)
+{
+  echo # Should have received all row event data.;
+  let $start_value=`SELECT @start_event_bytes`;
+  let $end_value=`SELECT @end_event_bytes`;
+  echo start value: $start_value;
+  echo end value: $end_value;
+  die "Expected more than 294912 bytes of data (all event data received)";
+}
+--echo # All row event data was received
+
+--let $rpl_connection_name= source
+--source include/connection.inc
+DROP TABLE t1;
+--source include/rpl/deinit.inc
+
+--echo #####################################################################
+--echo # With binlog slices, data events are split among the subscribers
+--echo # according to the slice id they have subscribed to. Only data
+--echo # that is for the subscriber to write to binlog can be received by
+--echo # said subscriber.
+--echo #####################################################################
+
+# Setup: Use servers 1 and 2 to approximately equally split the data events
+# onto their own respective binlogs
+
+--connect(server1,127.0.0.1,root,,test,$MASTER_MYPORT)
+--connect(server2,127.0.0.1,root,,test,$MASTER_MYPORT1)
+--connection server1
+
+CREATE TABLE mysql.ndb_replication(
+       db VARBINARY(63),
+       table_name VARBINARY(63),
+       server_id INT UNSIGNED,
+       binlog_type INT UNSIGNED,
+       conflict_fn VARBINARY(128),
+       binlog_row_slice_count INT UNSIGNED,
+       binlog_row_slice_id INT UNSIGNED,
+       PRIMARY KEY USING HASH(db, table_name, server_id)
+) ENGINE = NDB;
+
+INSERT INTO mysql.ndb_replication VALUES ("test", "t1", 1, 3, NULL, 2, 0);
+INSERT INTO mysql.ndb_replication VALUES ("test", "t1", 2, 3, NULL, 2, 1);
+
+SELECT * FROM mysql.ndb_replication ORDER BY server_id;
+
+CREATE TABLE t1 (a INT PRIMARY KEY, data VARBINARY(2048)) ENGINE = NDB;
+
+# just making sure
+--connection server1
+--echo # Save Server.1 start counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @start_event_bytes;
+--connection server2
+--echo # Save Server.2 start counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @start_event_bytes;
+
+--echo # Insert data and verify
+--disable_query_log ONCE
+--let $r=0
+--let $rows=1000
+--disable_query_log
+while ($r < $rows)
+{
+  --eval INSERT INTO t1 VALUES ($r, repeat('@', 2048))
+  --inc $r
+}
+--enable_query_log
+SELECT COUNT(a) FROM t1;
+--save_master_pos
+
+--connection server1
+--echo # Save Server.1 end counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @end_event_bytes;
+--connection server2
+--echo # Save Server.2 end counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @end_event_bytes;
+
+--connection default
+
+--echo # Build up some data to assert byte distribution 
+--disable_query_log
+# (32 byte pk) + (2048 byte val)
+SET @per_row_bytes=32+2048;
+SELECT COUNT(a) FROM t1 INTO @row_count;
+# at least 65% of rows should be filtered out
+SELECT @per_row_bytes*@row_count*0.65 INTO @high_mark;
+--enable_query_log
+
+--let $high_mark= `SELECT @high_mark`
+
+--connection server2
+if (`SELECT IF(@end_event_bytes - @start_event_bytes < $high_mark, 0, 1)`)
+{
+  echo # Server 2 should have received only a part of the data;
+  let $start_value=`SELECT @start_event_bytes`;
+  let $end_value=`SELECT @end_event_bytes`;
+  let $logged_bytes=`SELECT @end_event_bytes - @start_event_bytes`;
+  echo start value: $start_value;
+  echo end value: $end_value;
+  echo server logged bytes: $logged_bytes;
+  echo ceil (bound) value: $high_mark;
+  die "Expected received bytes to be close to per server bytes";
+}
+--echo # Server 2 event data was balanced out
+
+--connection server1
+if (`SELECT IF(@end_event_bytes - @start_event_bytes < $high_mark, 0, 1)`)
+{
+  echo # Server 1 should have received only a part of the data;
+  let $start_value=`SELECT @start_event_bytes`;
+  let $end_value=`SELECT @end_event_bytes`;
+  let $logged_bytes=`SELECT @end_event_bytes - @start_event_bytes`;
+  echo start value: $start_value;
+  echo end value: $end_value;
+  echo per_server bytes: $per_server;
+  echo ceil (bound) value: $high_mark;
+  die "Expected received bytes to be close to per server bytes";
+}
+--echo # Server 1 event data was balanced out
+
+DROP TABLE t1;
+DROP TABLE mysql.ndb_replication;

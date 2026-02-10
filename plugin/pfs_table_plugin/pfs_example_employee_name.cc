@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -62,7 +62,7 @@ static bool is_duplicate(Ename_Record *record, int skip_index) {
  * in performance schema is opened.
  */
 PSI_table_handle *ename_open_table(PSI_pos **pos) {
-  Ename_Table_Handle *temp = new Ename_Table_Handle();
+  auto *temp = new Ename_Table_Handle();
   temp->current_row.e_number.is_null = true;
   temp->current_row.f_name_length = 0;
   temp->current_row.l_name_length = 0;
@@ -76,7 +76,7 @@ PSI_table_handle *ename_open_table(PSI_pos **pos) {
  * in performance schema is closed.
  */
 void ename_close_table(PSI_table_handle *handle) {
-  Ename_Table_Handle *temp = (Ename_Table_Handle *)handle;
+  auto *temp = (Ename_Table_Handle *)handle;
   delete temp;
 }
 
@@ -92,7 +92,7 @@ static void copy_record(Ename_Record *dest, Ename_Record *source) {
 
 /* Define implementation of PFS_engine_table_proxy. */
 int ename_rnd_next(PSI_table_handle *handle) {
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
 
   for (h->m_pos.set_at(&h->m_next_pos); h->m_pos.has_more(); h->m_pos.next()) {
     Ename_Record *record = &ename_records_array[h->m_pos.get_index()];
@@ -115,7 +115,7 @@ int ename_rnd_init(PSI_table_handle *h [[maybe_unused]],
 
 /* Set position of a cursor on a specific index */
 int ename_rnd_pos(PSI_table_handle *handle) {
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
   Ename_Record *record = &ename_records_array[h->m_pos.get_index()];
 
   if (record->m_exist) {
@@ -129,7 +129,7 @@ int ename_rnd_pos(PSI_table_handle *handle) {
 /* Initialize the table index */
 int ename_index_init(PSI_table_handle *handle, uint idx,
                      bool sorted [[maybe_unused]], PSI_index_handle **index) {
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
 
   /* If there are multiple indexes, initialize based on the idx provided */
   switch (idx) {
@@ -163,12 +163,12 @@ int ename_index_read(PSI_index_handle *index, PSI_key_reader *reader,
                      unsigned int idx, int find_flag) {
   switch (idx) {
     case 0: {
-      Ename_index_by_emp_num *i = (Ename_index_by_emp_num *)index;
+      auto *i = (Ename_index_by_emp_num *)index;
       /* Read all keys on index one by one */
       col_int_svc->read_key(reader, &i->m_emp_num, find_flag);
     } break;
     case 1: {
-      Ename_index_by_emp_fname *i = (Ename_index_by_emp_fname *)index;
+      auto *i = (Ename_index_by_emp_fname *)index;
       /* Read all keys on index one by one */
       col_string_svc->read_key_string(reader, &i->m_emp_fname, find_flag);
     } break;
@@ -182,7 +182,7 @@ int ename_index_read(PSI_index_handle *index, PSI_key_reader *reader,
 
 /* Read the next indexed value */
 int ename_index_next(PSI_table_handle *handle) {
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
   Ename_index *i = nullptr;
 
   switch (h->index_num) {
@@ -214,16 +214,15 @@ int ename_index_next(PSI_table_handle *handle) {
 
 /* Reset cursor position */
 void ename_reset_position(PSI_table_handle *handle) {
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
   h->m_pos.reset();
   h->m_next_pos.reset();
-  return;
 }
 
 /* Read current row from the current_row and display them in the table */
 int ename_read_column_value(PSI_table_handle *handle, PSI_field *field,
                             uint index) {
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
 
   switch (index) {
     case 0: /* EMPLOYEE_NUMBER */
@@ -247,7 +246,7 @@ int ename_read_column_value(PSI_table_handle *handle, PSI_field *field,
 
 /* Store row data into records array */
 int ename_write_row_values(PSI_table_handle *handle) {
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
 
   mysql_mutex_lock(&LOCK_ename_records_array);
 
@@ -273,7 +272,7 @@ int ename_write_row_values(PSI_table_handle *handle) {
     int i = (ename_next_available_index + 1) % EMPLOYEEE_NAME_MAX_ROWS;
     int itr_count = 0;
     while (itr_count < EMPLOYEEE_NAME_MAX_ROWS) {
-      if (ename_records_array[i].m_exist == false) {
+      if (!ename_records_array[i].m_exist) {
         ename_next_available_index = i;
         break;
       }
@@ -290,7 +289,7 @@ int ename_write_row_values(PSI_table_handle *handle) {
 /* Read field data to be written from Field and store that into buffer */
 int ename_write_column_value(PSI_table_handle *handle, PSI_field *field,
                              unsigned int index) {
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
 
   char *f_name = (char *)h->current_row.f_name;
   unsigned int *f_name_length = &h->current_row.f_name_length;
@@ -318,7 +317,7 @@ int ename_write_column_value(PSI_table_handle *handle, PSI_field *field,
 /* Update row data from records array */
 int ename_update_row_values(PSI_table_handle *handle) {
   int result = 0;
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
 
   Ename_Record *cur = &ename_records_array[h->m_pos.get_index()];
 
@@ -337,7 +336,7 @@ int ename_update_row_values(PSI_table_handle *handle) {
 /* Read field data to be updated from Field and store that into buffer */
 int ename_update_column_value(PSI_table_handle *handle, PSI_field *field,
                               unsigned int index) {
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
 
   char *f_name = (char *)h->current_row.f_name;
   unsigned int *f_name_length = &h->current_row.f_name_length;
@@ -364,7 +363,7 @@ int ename_update_column_value(PSI_table_handle *handle, PSI_field *field,
 
 /* Delete row data form records array */
 int ename_delete_row_values(PSI_table_handle *handle) {
-  Ename_Table_Handle *h = (Ename_Table_Handle *)handle;
+  auto *h = (Ename_Table_Handle *)handle;
 
   Ename_Record *cur = &ename_records_array[h->m_pos.get_index()];
 
@@ -378,17 +377,16 @@ int ename_delete_row_values(PSI_table_handle *handle) {
   return 0;
 }
 
-int ename_delete_all_rows(void) {
+int ename_delete_all_rows() {
   mysql_mutex_lock(&LOCK_ename_records_array);
-  for (int i = 0; i < EMPLOYEEE_NAME_MAX_ROWS; i++)
-    ename_records_array[i].m_exist = false;
+  for (auto &i : ename_records_array) i.m_exist = false;
   ename_rows_in_table = 0;
   ename_next_available_index = 0;
   mysql_mutex_unlock(&LOCK_ename_records_array);
   return 0;
 }
 
-unsigned long long ename_get_row_count(void) { return ename_rows_in_table; }
+unsigned long long ename_get_row_count() { return ename_rows_in_table; }
 
 void init_ename_share(PFS_engine_table_share_proxy *share) {
   share->m_table_name = "pfs_example_employee_name";

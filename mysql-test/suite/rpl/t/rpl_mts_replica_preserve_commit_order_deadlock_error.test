@@ -23,7 +23,6 @@
 # ========
 #
 # Commit order deadlock occurs only when MTS + LOGICAL CLOCK are enabled.
---source include/have_replica_parallel_type_logical_clock.inc
 # This test needs at least 2 MTA workers
 --let $option_name = replica_parallel_workers
 --let $option_operator = >

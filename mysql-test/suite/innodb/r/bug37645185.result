@@ -1,0 +1,22 @@
+#
+# Bug #37645185: Improve redo log related error log messages
+#
+call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* InnoDB redo logging is disabled. All data could be lost in case of a server crash. Current lsn is \\d+.");
+call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* InnoDB redo logging is enabled. Data is now safe and can be recovered in case of a server crash.");
+'#-------------------------------------------------------------------------#'
+## Disable REDO_LOG to verify the wrn_msg ER_IB_WRN_REDO_DISABLED_INFO
+ALTER INSTANCE DISABLE INNODB REDO_LOG;
+Pattern "InnoDB redo logging is disabled. All data could be lost in case of a server crash. Current lsn is" found
+ALTER INSTANCE ENABLE INNODB REDO_LOG;
+SHOW GLOBAL STATUS LIKE 'Innodb_redo_log_enabled';
+Variable_name	Value
+Innodb_redo_log_enabled	ON
+'#-------------------------------------------------------------------------#'
+mysql -e "SHOW ENGINE INNODB STATUS"
+Grepping InnoDB status for Log capacity
+Pattern "Log capacity" found
+Grepping InnoDB status for Log capacity used
+Pattern "Log capacity used" found
+mysql -e "SELECT VARIABLE_NAME FROM performance_schema.global_variables WHERE VARIABLE_NAME LIKE 'innodb_redo_log_%';"
+Grepping InnoDB status for innodb_redo_log_capacity
+Pattern "innodb_redo_log_capacity" found

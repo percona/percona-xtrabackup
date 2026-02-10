@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,11 +25,12 @@
 #define RPL_LOG_ENCRYPTION_INCLUDED
 
 #include <openssl/evp.h>
-#include <sql/stream_cipher.h>
 #include <stdint.h>
 #include <map>
 #include <string>
+
 #include "my_inttypes.h"
+#include "mysys/stream_cipher.h"
 
 class Basic_istream;
 class Basic_ostream;

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -117,7 +117,7 @@ class NdbReceiver {
    * At setup
    */
   class NdbRecAttr *getValue(const class NdbColumnImpl *, char *user_dst_ptr);
-  void getValues(const NdbRecord *, char *);
+  void getValues(const NdbRecord *, char *, char *, Uint32);
   void prepareSend();
 
   static void calculate_batch_size(const NdbImpl &, Uint32 parallelism,
@@ -149,6 +149,7 @@ class NdbReceiver {
     during a scan using NdbRecord.
   */
   void do_setup_ndbrecord(const NdbRecord *ndb_record, char *row_buffer,
+                          char *row_side_buffer, Uint32 row_side_buffer_size,
                           bool read_range_no, bool read_key_info);
 
   /**
@@ -182,6 +183,8 @@ class NdbReceiver {
 
   /* The (single) current row in 'unpacked' NdbRecord format */
   char *m_row_buffer;
+  char *m_row_side_buffer;
+  Uint32 m_row_side_buffer_size;
 
   /* Block of memory used to buffer all rows in a batch during scan. */
   NdbReceiverBuffer *m_recv_buffer;
@@ -242,7 +245,9 @@ class NdbReceiver {
    * Return the number of words consumed.
    */
   static Uint32 unpackNdbRecord(const NdbRecord *record, Uint32 bmlen,
-                                const Uint32 *aDataPtr, char *row);
+                                const Uint32 *aDataPtr, char *row,
+                                char *row_side_buffer,
+                                Uint32 row_side_buffer_size);
 
   /**
    * Handle a stream of field values, both 'READ_PACKED' and plain

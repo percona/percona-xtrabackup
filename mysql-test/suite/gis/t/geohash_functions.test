@@ -1535,3 +1535,17 @@ DO ST_POINTFROMGEOHASH('0', 10);
 --echo # The only geographic SRS allowed is 4326.
 --error ER_ONLY_IMPLEMENTED_FOR_SRID_0_AND_4326
 DO ST_GEOHASH(ST_GEOMFROMTEXT('POINT(0 0)', 3819), 10);
+
+--echo #
+--echo # Bug#38541728: Assertion '!null_value || is_nullable()' failed after
+--echo #               validate_srid_arg
+--echo #
+
+--error ER_DATA_OUT_OF_RANGE
+DO ST_POINTFROMGEOHASH(ST_GEOHASH(POINT(129, 224), 84),
+                       CONVERT((1 <=> 2), UNSIGNED INT)
+                      );
+
+--error ER_DATA_OUT_OF_RANGE
+DO ST_POINTFROMGEOHASH(ST_GEOHASH(POINT(129, CAST(-1 AS UNSIGNED) + 10), 84),
+                       CONVERT((1 <=> 2), UNSIGNED INT));

@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 SET @@GLOBAL.GTID_MODE=OFF_PERMISSIVE;
 CREATE TABLE t2 (c1 INT);
 set @@autocommit=0;
@@ -21,3 +22,4 @@ DROP TABLE t1;
 SET SESSION GTID_NEXT=DEFAULT;
 SET GLOBAL server_id = OLD_SERVER_ID;
 SET GLOBAL GTID_MODE=OFF;
+include/rpl/set_gtid_mode_on.inc

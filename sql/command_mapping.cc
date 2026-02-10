@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -42,7 +42,7 @@ class Command_maps final {
     return (it != server_command_map.end() ? it->second : COM_END);
   }
 
-  static const char *sql_commands[static_cast<unsigned int>(SQLCOM_END)];
+  static const char *sql_commands[static_cast<unsigned int>(SQLCOM_END) + 1];
 
  private:
   std::unordered_map<const char *, enum_server_command> server_command_map;
@@ -206,7 +206,13 @@ const char *Command_maps::sql_commands[] = {"select",
                                             "unlock_instance",
                                             "restart_server",
                                             "create_srs",
-                                            "drop_srs"};
+                                            "drop_srs",
+                                            "show_parse_tree",
+                                            "create_library",
+                                            "drop_library",
+                                            "show_create_library",
+                                            ""};
+// keep the empty string last and add new elements before it.
 
 Command_maps *g_command_maps{nullptr};
 }  // namespace
@@ -229,7 +235,7 @@ enum_server_command get_server_command(const char *server_command) {
 }
 
 const char *get_sql_command_string(enum_sql_command sql_command) {
-  static_assert(((size_t)(SQLCOM_END - SQLCOM_SELECT)) ==
+  static_assert(((size_t)(SQLCOM_END - SQLCOM_SELECT) + 1) ==
                 (sizeof(Command_maps::sql_commands) / sizeof(char *)));
   return Command_maps::sql_commands[sql_command];
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
 
 /* Remove a row from a MyISAM table */
 
-#include <errno.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <cerrno>
 
 #include "my_byteorder.h"
 #include "my_dbug.h"
@@ -734,9 +734,10 @@ static uint remove_key(MI_KEYDEF *keyinfo, uint nod_flag,
       if (keyinfo->flag & HA_BINARY_PACK_KEY) {
         const uchar *old_key = start;
         uint prev_pack_length;
-        uint next_length =
+        uint const next_length =
             get_key_length(pointer_cast<const uchar **>(&keypos));
-        uint prev_length = get_key_pack_length(&old_key, &prev_pack_length);
+        uint const prev_length =
+            get_key_pack_length(&old_key, &prev_pack_length);
         if (next_length > prev_length) {
           /* We have to copy data from the current key to the next key */
           memmove(keypos - next_length + prev_length, lastkey + prev_length,
@@ -778,7 +779,7 @@ static uint remove_key(MI_KEYDEF *keyinfo, uint nod_flag,
           if (next_length >=
               prev_length) { /* Key after is based on deleted key */
             uint pack_length;
-            uint tmp = next_length - prev_length;
+            uint const tmp = next_length - prev_length;
             memmove(keypos - tmp, lastkey + next_length - tmp, tmp);
             rest_length += tmp;
             pack_length = prev_length ? get_pack_length(rest_length) : 0;

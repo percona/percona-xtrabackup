@@ -1,1 +1,1 @@
---replica-skip-errors=13119
+--replica-skip-errors=13119 --gtid_mode=off --enforce-gtid-consistency=off

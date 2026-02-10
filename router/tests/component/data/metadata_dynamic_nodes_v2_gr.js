@@ -11,27 +11,6 @@
 var common_stmts = require("common_statements");
 var gr_memberships = require("gr_memberships");
 
-if (mysqld.global.gr_node_host === undefined) {
-  mysqld.global.gr_node_host = "127.0.0.1";
-}
-
-
-if (mysqld.global.gr_id === undefined) {
-  mysqld.global.gr_id = "uuid";
-}
-
-if (mysqld.global.gr_nodes === undefined) {
-  mysqld.global.gr_nodes = [];
-}
-
-if (mysqld.global.cluster_nodes === undefined) {
-  mysqld.global.cluster_nodes = [];
-}
-
-if (mysqld.global.notices === undefined) {
-  mysqld.global.notices = [];
-}
-
 if (mysqld.global.md_query_count === undefined) {
   mysqld.global.md_query_count = 0;
 }
@@ -40,115 +19,204 @@ if (mysqld.global.transaction_count === undefined) {
   mysqld.global.transaction_count = 0;
 }
 
-if (mysqld.global.mysqlx_wait_timeout_unsupported === undefined) {
-  mysqld.global.mysqlx_wait_timeout_unsupported = 0;
-}
-
-if (mysqld.global.gr_notices_unsupported === undefined) {
-  mysqld.global.gr_notices_unsupported = 0;
-}
-
-if (mysqld.global.cluster_type === undefined) {
-  mysqld.global.cluster_type = "gr";
-}
-
-if (mysqld.global.cluster_name === undefined) {
-  mysqld.global.cluster_name = "test";
-}
-
-if (mysqld.global.gr_pos === undefined) {
-  mysqld.global.gr_pos = 0;
-}
-
-if (mysqld.global.router_options === undefined) {
-  mysqld.global.router_options = "";
+// at start, .connects is undefined
+// at first connect, set it to 1
+// at each following connect, increment it.
+//
+// .globals is shared between mock-server threads
+if (mysqld.global.connects === undefined) {
+  mysqld.global.connects = 1;
+} else {
+  mysqld.global.connects = mysqld.global.connects + 1;
 }
 
 if (mysqld.global.update_last_check_in_count === undefined) {
   mysqld.global.update_last_check_in_count = 0;
 }
 
+// how many times the router.last_check_in was updated (this was updated)
+// in schema pre-2.4 version
+if (mysqld.global.old_update_last_check_in_count === undefined) {
+  mysqld.global.old_update_last_check_in_count = 0;
+}
+
 if (mysqld.global.update_attributes_count === undefined) {
   mysqld.global.update_attributes_count = 0;
 }
 
-if (mysqld.global.metadata_schema_version === undefined) {
-  mysqld.global.metadata_schema_version = [2, 2, 0];
+
+function prepare_globals() {
+  if (mysqld.global.gr_node_host === undefined) {
+    mysqld.global.gr_node_host = "127.0.0.1";
+  }
+
+  if (mysqld.global.routing_guidelines === undefined) {
+    mysqld.global.routing_guidelines = "";
+  }
+
+  if (mysqld.global.router_rw_classic_port === undefined) {
+    mysqld.global.router_rw_classic_port = "";
+  }
+
+  if (mysqld.global.router_ro_classic_port === undefined) {
+    mysqld.global.router_ro_classic_port = "";
+  }
+
+  if (mysqld.global.router_rw_x_port === undefined) {
+    mysqld.global.router_rw_x_port = "";
+  }
+
+  if (mysqld.global.router_ro_x_port === undefined) {
+    mysqld.global.router_ro_x_port = "";
+  }
+
+  if (mysqld.global.router_rw_split_classic_port === undefined) {
+    mysqld.global.router_rw_split_classic_port = "";
+  }
+
+  if (mysqld.global.gr_id === undefined) {
+    mysqld.global.gr_id = "uuid";
+  }
+
+  if (mysqld.global.gr_nodes === undefined) {
+    mysqld.global.gr_nodes = [];
+  }
+
+  if (mysqld.global.cluster_nodes === undefined) {
+    mysqld.global.cluster_nodes = [];
+  }
+
+  if (mysqld.global.notices === undefined) {
+    mysqld.global.notices = [];
+  }
+
+  if (mysqld.global.mysqlx_wait_timeout_unsupported === undefined) {
+    mysqld.global.mysqlx_wait_timeout_unsupported = 0;
+  }
+
+  if (mysqld.global.gr_notices_unsupported === undefined) {
+    mysqld.global.gr_notices_unsupported = 0;
+  }
+
+  if (mysqld.global.cluster_name === undefined) {
+    mysqld.global.cluster_name = "test";
+  }
+
+  if (mysqld.global.gr_pos === undefined) {
+    mysqld.global.gr_pos = 0;
+  }
+
+  if (mysqld.global.router_options === undefined) {
+    mysqld.global.router_options = "{}";
+  }
+
+  if (mysqld.global.metadata_schema_version === undefined) {
+    mysqld.global.metadata_schema_version = [2, 3, 0];
+  }
+
+  if (mysqld.global.server_version === undefined) {
+    // Let's keep the default server version as some known compatible version.
+    // If there is a need to some specific compatibility checks, this should be
+    // overwritten from the test.
+    mysqld.global.server_version = "8.3.0";
+  }
+
+  // ensure the cluster-type is set even if set_mock_metadata() did not set
+  // it.
+  if (mysqld.global.cluster_type === undefined) {
+    mysqld.global.cluster_type = "gr";
+  }
 }
-
-var members = gr_memberships.gr_members(
-    mysqld.global.gr_node_host, mysqld.global.gr_nodes);
-
-const online_gr_nodes = members
-                            .filter(function(memb, indx) {
-                              return (memb[3] === "ONLINE");
-                            })
-                            .length;
-
-const recovering_gr_nodes = members
-                                .filter(function(memb, indx) {
-                                  return (memb[3] === "RECOVERING");
-                                })
-                                .length;
-
-const member_state = members[mysqld.global.gr_pos] ?
-    members[mysqld.global.gr_pos][3] :
-    undefined;
-
-var options = {
-  group_replication_members: members,
-  gr_member_state: member_state,
-  gr_members_all: members.length,
-  gr_members_online: online_gr_nodes,
-  gr_members_recovering: recovering_gr_nodes,
-  innodb_cluster_instances: gr_memberships.cluster_nodes(
-      mysqld.global.gr_node_host, mysqld.global.cluster_nodes),
-  gr_id: mysqld.global.gr_id,
-  cluster_type: mysqld.global.cluster_type,
-  innodb_cluster_name: mysqld.global.cluster_name,
-  router_options: mysqld.global.router_options,
-  metadata_schema_version: mysqld.global.metadata_schema_version,
-};
-
-// prepare the responses for common statements
-var common_responses = common_stmts.prepare_statement_responses(
-    [
-      "router_set_session_options",
-      "router_set_gr_consistency_level",
-      "router_select_cluster_type_v2",
-      "select_port",
-      "router_commit",
-      "router_rollback",
-      "router_select_schema_version",
-      "router_check_member_state",
-      "router_select_members_count",
-      "router_select_group_membership",
-      "router_clusterset_present",
-      "router_select_router_options_view",
-    ],
-    options);
-
-var router_select_metadata =
-    common_stmts.get("router_select_metadata_v2_gr", options);
-
-var router_start_transaction =
-    common_stmts.get("router_start_transaction", options);
-
-var router_update_attributes =
-    common_stmts.get("router_update_attributes_v2", options);
-
-var router_update_last_check_in_v2 =
-    common_stmts.get("router_update_last_check_in_v2", options);
-
 
 ({
   handshake: {
     auth: {
       username: mysqld.global.user,
       password: mysqld.global.password,
-    }
+    },
+    greeting: {server_version: mysqld.global.server_version}
   },
   stmts: function(stmt) {
+    prepare_globals();
+
+    var members = gr_memberships.gr_members(
+        mysqld.global.gr_node_host, mysqld.global.gr_nodes);
+
+    const online_gr_nodes = members
+                                .filter(function(memb, indx) {
+                                  return (memb[3] === "ONLINE");
+                                })
+                                .length;
+
+    const recovering_gr_nodes = members
+                                    .filter(function(memb, indx) {
+                                      return (memb[3] === "RECOVERING");
+                                    })
+                                    .length;
+
+    const member_state = members[mysqld.global.gr_pos] ?
+        members[mysqld.global.gr_pos][3] :
+        undefined;
+
+    var options = {
+      group_replication_members: members,
+      gr_member_state: member_state,
+      gr_members_all: members.length,
+      gr_members_online: online_gr_nodes,
+      gr_members_recovering: recovering_gr_nodes,
+      innodb_cluster_instances: gr_memberships.cluster_nodes(
+          mysqld.global.gr_node_host, mysqld.global.cluster_nodes),
+      gr_id: mysqld.global.gr_id,
+      cluster_type: mysqld.global.cluster_type,
+      innodb_cluster_name: mysqld.global.cluster_name,
+      router_options: mysqld.global.router_options,
+      metadata_schema_version: mysqld.global.metadata_schema_version,
+      routing_guidelines: mysqld.global.routing_guidelines,
+      router_info: mysqld.global.router_info,
+      router_rw_classic_port: mysqld.global.router_rw_classic_port,
+      router_ro_classic_port: mysqld.global.router_ro_classic_port,
+      router_rw_split_classic_port: mysqld.global.router_rw_split_classic_port,
+      router_rw_x_port: mysqld.global.router_rw_x_port,
+      router_ro_x_port: mysqld.global.router_ro_x_port,
+    };
+
+    // prepare the responses for common statements
+    var common_responses = common_stmts.prepare_statement_responses(
+        [
+          "router_set_session_options",
+          "router_set_gr_consistency_level",
+          "router_select_cluster_type_v2",
+          "select_port",
+          "router_commit",
+          "router_rollback",
+          "router_select_schema_version",
+          "router_check_member_state",
+          "router_select_members_count",
+          "router_select_group_membership",
+          "router_clusterset_present",
+          "router_select_router_options_view",
+          "get_routing_guidelines_version",
+          "get_guidelines_router_info",
+          "get_routing_guidelines",
+        ],
+        options);
+
+    var router_select_metadata =
+        common_stmts.get("router_select_metadata_v2_gr", options);
+
+    var router_start_transaction =
+        common_stmts.get("router_start_transaction", options);
+
+    var router_update_attributes =
+        common_stmts.get("router_update_attributes_v2", options);
+
+    var router_update_last_check_in_v2_4 =
+        common_stmts.get("router_update_last_check_in_v2_4", options);
+
+    var router_update_last_check_in_old =
+        common_stmts.get("router_update_last_check_in_v2", options);
+
+
     if (common_responses.hasOwnProperty(stmt)) {
       return common_responses[stmt];
     } else if (stmt === router_start_transaction.stmt) {
@@ -256,9 +324,12 @@ var router_update_last_check_in_v2 =
           ]
         }
       };
-    } else if (stmt === router_update_last_check_in_v2.stmt) {
+    } else if (stmt === router_update_last_check_in_v2_4.stmt) {
       mysqld.global.update_last_check_in_count++;
-      return router_update_last_check_in_v2;
+      return router_update_last_check_in_v2_4;
+    } else if (stmt === router_update_last_check_in_old.stmt) {
+      mysqld.global.old_update_last_check_in_count++;
+      return router_update_last_check_in_old;
     } else if (res = stmt.match(router_update_attributes.stmt_regex)) {
       mysqld.global.upd_attr_config_json = res[7];
       mysqld.global.update_attributes_count++;

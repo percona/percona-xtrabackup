@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,11 +35,11 @@
 #endif
 #endif
 
-#include <assert.h>
 #include <kernel_types.h>
 #include <Bitmask.hpp>
 #include <EventLogger.hpp>
 #include <Vector.hpp>
+#include <cassert>
 #include <cstdint>
 #include "NdbSeqLock.hpp"
 #include "Pool.hpp"
@@ -288,7 +288,8 @@ class Ndbd_mem_manager {
 
   bool init(Uint32 *watchCounter, Uint32 pages,
             bool allow_alloc_less_than_requested = true);
-  void map(Uint32 *watchCounter, bool memlock = false, Uint32 resources[] = 0);
+  void map(Uint32 *watchCounter, bool memlock = false,
+           Uint32 resources[] = nullptr);
   void init_resource_spare(Uint32 id, Uint32 pct);
   void *get_memroot() const;
 
@@ -683,7 +684,7 @@ inline void Resource_limits::post_release_resource_pages(Uint32 id,
   release_resource_spare(id, cnt);
 }
 
-inline void Resource_limits::release_resource_spare(Uint32 id, Uint32 cnt) {
+inline void Resource_limits::release_resource_spare(Uint32 id, Uint32 /*cnt*/) {
   const Resource_limit &rl = m_limit[id - 1];
 
   Uint32 pct = rl.m_spare_pct;
@@ -850,7 +851,7 @@ inline void *Ndbd_mem_manager::get_valid_page(Uint32 page_num) const {
 #ifdef VM_TRACE
     abort();
 #endif
-    return NULL;
+    return nullptr;
   }
   bool page_is_mapped;
   Uint32 lock_value;
@@ -886,7 +887,7 @@ inline void *Ndbd_mem_manager::get_valid_page(Uint32 page_num) const {
 #ifdef VM_TRACE
     abort();
 #endif
-    return NULL;
+    return nullptr;
   }
 
   return (void *)(m_base_page + page_num);
@@ -905,13 +906,14 @@ inline Free_page_data *Ndbd_mem_manager::get_free_page_data(Alloc_page *ptr,
 inline Uint32 Ndbd_mem_manager::get_page_zone(Uint32 page) {
   if (page < ZONE_19_BOUND) {
     return ZONE_19;
-  } else if (page < ZONE_27_BOUND) {
-    return ZONE_27;
-  } else if (page < ZONE_30_BOUND) {
-    return ZONE_30;
-  } else {
-    return ZONE_32;
   }
+  if (page < ZONE_27_BOUND) {
+    return ZONE_27;
+  }
+  if (page < ZONE_30_BOUND) {
+    return ZONE_30;
+  }
+  return ZONE_32;
 }
 
 inline void Ndbd_mem_manager::set(Uint32 first, Uint32 last) {

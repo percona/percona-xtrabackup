@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -72,7 +72,6 @@ struct EVP_MD_CTX_deleter {
 
 using BIO_ptr = std::unique_ptr<BIO, BIO_deleter>;
 using X509_ptr = std::unique_ptr<X509, X509_deleter>;
-using ASN1_TIME_ptr = std::unique_ptr<ASN1_TIME, ASN1_TIME_deleter>;
 using EVP_PKEY_ptr = std::unique_ptr<EVP_PKEY, EVP_PKEY_deleter>;
 using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, EVP_MD_CTX_deleter>;
 

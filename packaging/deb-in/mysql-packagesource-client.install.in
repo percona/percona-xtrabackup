@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,9 @@ usr/bin/mysqldumpslow
 usr/bin/mysqlimport
 usr/bin/mysqlshow
 usr/bin/mysqlslap
+
+@DEB_INSTALL_CLIENT_EXTRA@
+
 # charsets
 usr/share/mysql-@MYSQL_BASE_VERSION@/charsets/*.xml
 usr/share/mysql-@MYSQL_BASE_VERSION@/charsets/README

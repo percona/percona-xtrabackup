@@ -35,6 +35,10 @@ if (mysqld.global.router_rw_x_port === undefined) {
   mysqld.global.router_rw_x_port = "";
 }
 
+if (mysqld.global.router_rw_split_classic_port === undefined) {
+  mysqld.global.router_rw_split_classic_port = "";
+}
+
 if (mysqld.global.router_ro_x_port === undefined) {
   mysqld.global.router_ro_x_port = "";
 }
@@ -119,6 +123,7 @@ var options = {
   router_version: mysqld.global.router_version,
   router_rw_classic_port: mysqld.global.router_rw_classic_port,
   router_ro_classic_port: mysqld.global.router_ro_classic_port,
+  router_rw_split_classic_port: mysqld.global.router_rw_split_classic_port,
   router_rw_x_port: mysqld.global.router_rw_x_port,
   router_ro_x_port: mysqld.global.router_ro_x_port,
   router_metadata_user: mysqld.global.router_metadata_user,
@@ -135,6 +140,8 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_check_member_state",
       "router_select_members_count",
       "router_select_group_membership",
+      "get_guidelines_router_info",
+      "get_routing_guidelines",
     ],
     options);
 

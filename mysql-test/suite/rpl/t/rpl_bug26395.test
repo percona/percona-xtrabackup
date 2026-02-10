@@ -37,9 +37,8 @@
 # have_debug is needed since we use the @@debug variable on master
 --source include/have_debug.inc
 
-# test adapts simulation of incomplete transaction that MTS does not tolerate
-# when is stopped. So it reacts with an error whereas the single-threaded is fine.
---source include/not_replica_parallel_workers.inc
+# enough to cover row based replication
+--source include/have_binlog_format_row.inc
 
 --source include/rpl/init_source_replica.inc
 
@@ -47,6 +46,8 @@
 
 --echo [on master]
 --connection master
+
+call mtr.add_suppression("The replica coordinator and worker threads are stopped, possibly leaving data in inconsistent state");
 
 CREATE TABLE tinnodb (a INT) ENGINE = INNODB;
 SHOW CREATE TABLE tinnodb;
@@ -80,6 +81,9 @@ sync_with_master 0;
 
 --echo ==== Verify results on slave ====
 
+# the applier will stop workers and fails with this error, since
+# they are in the middle of a transaction
+--let $slave_sql_errno=1756
 source include/rpl/stop_replica.inc;
 
 --let $status_items=Replica_IO_State,Last_SQL_Error,Last_IO_Error
@@ -99,10 +103,15 @@ connection master;
 DROP TABLE tinnodb;
 set @@debug= @old_debug;
 
+RESET BINARY LOGS AND GTIDS;
+
 --echo [on slave]
 connection slave;
 DROP TABLE tinnodb;
 
-# Warning: do not add more tests here. The binlog is in a bad state.
---let $rpl_only_running_threads= 1
+RESET REPLICA;
+RESET BINARY LOGS AND GTIDS;
+
+--source include/rpl/start_replica.inc
+
 --source include/rpl/deinit.inc

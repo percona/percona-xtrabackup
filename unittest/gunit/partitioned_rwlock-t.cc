@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -67,7 +67,7 @@ class Reader_thread : public Thread {
   }
   void run() override {
     for (uint i = 0; i < 1000; ++i) {
-      Partitioned_rwlock_read_guard lock(m_rwlock, m_thread_id);
+      Partitioned_rwlock_read_guard const lock(m_rwlock, m_thread_id);
       /*
         With correct rwlock implementation readers should not
         observe counter values not divisible by 100.
@@ -88,7 +88,7 @@ class Writer_thread : public Thread {
       : m_rwlock(rwlock), m_shared_counter(shared_counter) {}
   void run() override {
     for (uint i = 0; i < 1000; ++i) {
-      Partitioned_rwlock_write_guard lock(m_rwlock);
+      Partitioned_rwlock_write_guard const lock(m_rwlock);
       /*
         Add 100 to counter value using 100 single increments. We rely
         on counter being "volatile" to prevent compiler optimizations.
@@ -127,9 +127,9 @@ TEST(PartitionedRwlock, Concurrent) {
     readers[i].init(i, &rwlock, &shared_counter);
 
   writer.start();
-  for (uint i = 0; i < PARTS_NUM; ++i) readers[i].start();
+  for (auto &reader : readers) reader.start();
 
-  for (uint i = 0; i < PARTS_NUM; ++i) readers[i].join();
+  for (auto &reader : readers) reader.join();
   writer.join();
 
   rwlock.destroy();

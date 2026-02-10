@@ -383,7 +383,6 @@ DROP TABLE t1,t2,t3,t4;
 CREATE TABLE t1 (id int not null);
 INSERT INTO t1 VALUES (1),(2);
 
---skip_if_hypergraph  # Different warnings.
 SELECT id FROM t1 WHERE id IN(4564, (SELECT IF(1=0,1,1/0)) );
 
 DROP TABLE t1;

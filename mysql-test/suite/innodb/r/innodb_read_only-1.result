@@ -1,3 +1,5 @@
+include/suppress_messages.inc
+# Connection 1 suppresses message <Failed to compress the gtid_executed table>.
 SET GLOBAL innodb_file_per_table = 1;
 SELECT @@innodb_file_per_table;
 @@innodb_file_per_table

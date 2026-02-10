@@ -64,3 +64,40 @@ join t1 as t4 on t4.a = t3.b /* index scan disguised as JT_ALL */;
 Expected push message found in EXPLAIN;
 
 drop table t1;
+#
+# Bug#37126176 Add lookup references to iterator-based EXPLAIN FORMAT=JSON for index lookups
+#
+SET @saved_json_format_version = @@explain_json_format_version;
+SET @@explain_json_format_version = 2;
+CREATE TABLE t1 (
+a INT NOT NULL,
+b INT NOT NULL,
+c INT NOT NULL,
+d INT NOT NULL,
+PRIMARY KEY (`a`,`b`)
+) ENGINE=ndbcluster;
+INSERT INTO t1 VALUES
+(1,1,1,1), (2,2,2,2), (3,3,3,3), (4,4,4,4),
+(1,2,5,1), (1,3,1,2), (1,4,2,3),
+(2,1,3,4), (2,3,4,5), (2,4,5,1),
+(3,1,1,2), (3,2,2,3), (3,4,3,4),
+(4,1,4,5), (4,2,5,1), (4,3,1,2);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @v1 SELECT * FROM t1 JOIN t1 AS t2 ON t2.a = t1.b AND t2.b = t1.c;
+SELECT JSON_CONTAINS(JSON_ARRAY("test.t1.b", "test.t1.c"),
+JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_references')))
+AS pushed_join_ref_refers_to_columns
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'pushed_join_ref')) AS index_access_type_path) AS t;
+pushed_join_ref_refers_to_columns
+1
+DROP TABLE t1;
+SET @v1 = NULL;
+SET @@explain_json_format_version = @saved_json_format_version;

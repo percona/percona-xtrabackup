@@ -4,6 +4,7 @@
 
 --source include/have_debug.inc
 --source include/have_debug_sync.inc
+--source include/hypergraph_is_active.inc
 
 CREATE TABLE t1 (c1 INT NOT NULL, c2 varchar (64), PRIMARY KEY (c1))
 PARTITION BY RANGE (c1)
@@ -79,7 +80,7 @@ INSERT DELAYED IGNORE INTO t1 PARTITION(p0, p1) (c1, c2)
 #INSERT .... SET
 EXPLAIN
 INSERT INTO t1 PARTITION(p0, p1)
-  SET c1 = (SELECT c1 from t2);
+  SET c1 = (SELECT c1 from t2 LIMIT 1);
 
 
 #REPLACE .... VALUES
@@ -95,12 +96,12 @@ REPLACE DELAYED INTO t1 PARTITION(p0, p1) (c1, c2)
 #REPLACE .... SET
 EXPLAIN
 REPLACE INTO t1 PARTITION(p0, p1)
-  SET c1 = (SELECT c1 from t2);
+  SET c1 = (SELECT c1 from t2 LIMIT 1);
 
 #No effect on EXPLAIN FOR CONNECTION .... for both SINGLE/MULTI-TABLE DML
 let $QID= `SELECT CONNECTION_ID()`;
 let $point=   planned_single_delete;
-if ($HYPERGRAPH_TEST) {
+if ($hypergraph_is_active) {
   # Hypergraph uses the same code path for single-table and multi-table DELETE.
   let $point = before_reset_query_plan;
 }

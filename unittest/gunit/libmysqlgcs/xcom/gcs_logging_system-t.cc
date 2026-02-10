@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -47,7 +47,9 @@ class LoggingDebuggingSystemTest : public GcsBaseTestNoLogging {
   void SetUp() override {
     common_sink = new Gcs_async_buffer(new Mock_gcs_log_sink());
     logger = new Gcs_default_logger(common_sink);
-    debugger = new Gcs_default_debugger(common_sink);
+    clock_timestamp_provider = std::make_shared<Gcs_clock_timestamp_provider>();
+    clock_timestamp_provider->initialize();
+    debugger = new Gcs_default_debugger(common_sink, clock_timestamp_provider);
   }
 
   void TearDown() override {
@@ -63,15 +65,18 @@ class LoggingDebuggingSystemTest : public GcsBaseTestNoLogging {
 
     delete common_sink;
     common_sink = nullptr;
+
+    clock_timestamp_provider->finalize();
   }
 
   Gcs_async_buffer *common_sink;
   Gcs_default_logger *logger;
   Gcs_default_debugger *debugger;
+  std::shared_ptr<Gcs_clock_timestamp_provider> clock_timestamp_provider;
 };
 
 TEST_F(LoggingDebuggingSystemTest, DefaultLifecycle) {
-  Mock_gcs_log_sink *mock_sink = static_cast<Mock_gcs_log_sink *>(
+  auto *mock_sink = static_cast<Mock_gcs_log_sink *>(
       static_cast<Gcs_async_buffer *>(common_sink)->get_sink());
 
   ON_CALL(*mock_sink, initialize()).WillByDefault(Return(GCS_OK));
@@ -109,7 +114,7 @@ TEST_F(LoggingDebuggingSystemTest, DefaultLifecycle) {
   Gcs_log_manager::initialize(logger);
   Gcs_debug_manager::initialize(debugger);
 
-  Gcs_group_identifier *group_id = new Gcs_group_identifier("only_group");
+  auto *group_id = new Gcs_group_identifier("only_group");
   Gcs_interface_parameters if_params;
 
   if_params.add_parameter("group_name", group_id->get_group_id());
@@ -124,7 +129,7 @@ TEST_F(LoggingDebuggingSystemTest, DefaultLifecycle) {
   if_params.add_parameter("ip_allowlist", Gcs_ip_allowlist::DEFAULT_ALLOWLIST);
 
   Gcs_interface *xcom_if = Gcs_xcom_interface::get_interface();
-  enum_gcs_error initialized = xcom_if->initialize(if_params);
+  enum_gcs_error const initialized = xcom_if->initialize(if_params);
 
   ASSERT_EQ(GCS_OK, initialized);
 
@@ -143,7 +148,7 @@ TEST_F(LoggingDebuggingSystemTest, DefaultLifecycle) {
     Gcs_log_manager::get_logger()->log_event(level, c_msg);
   }
 
-  enum_gcs_error finalize_error = xcom_if->finalize();
+  enum_gcs_error const finalize_error = xcom_if->finalize();
   ASSERT_EQ(GCS_OK, finalize_error);
 
   Gcs_xcom_interface::cleanup();
@@ -176,7 +181,7 @@ class Wrapper_file_sink : public Sink_interface {
         .WillByDefault(Invoke(m_sink, &Gcs_file_sink::get_information));
   }
 
-  ~Wrapper_file_sink() { delete m_sink; }
+  ~Wrapper_file_sink() override { delete m_sink; }
 
   MOCK_METHOD1(log_event, void(const std::string &message));
   MOCK_METHOD2(log_event, void(const char *message, size_t message_size));
@@ -197,13 +202,13 @@ TEST_F(FileOutputSystemTest, SinkFileTest) {
   */
   char file_name_buffer[FN_REFLEN];
   std::stringstream buffer;
-  std::string repeat("/unknown");
-  size_t base = repeat.length();
+  std::string const repeat("/unknown");
+  size_t const base = repeat.length();
   size_t size = 0;
   File m_fd;
   uchar read_buffer[10];
   read_buffer[0] = '\0';
-  std::string info("testing");
+  std::string const info("testing");
 
   /*
     Try to create a file that exceeds the normal name's length.

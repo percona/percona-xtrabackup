@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -280,12 +280,14 @@ bool Session::can_forward_error_code_to_client(const int error_code) {
   // Lets ignore ER_ACCESS_DENIED_ERROR it is used by the plugin to
   // return general authentication problem. It may have not too
   // accurate error message.
-  static const std::set<int> allowed_error_codes{
-      ER_DBACCESS_DENIED_ERROR,    ER_MUST_CHANGE_PASSWORD_LOGIN,
-      ER_ACCOUNT_HAS_BEEN_LOCKED,  ER_SECURE_TRANSPORT_REQUIRED,
-      ER_SERVER_OFFLINE_MODE,      ER_SERVER_OFFLINE_MODE_REASON,
-      ER_SERVER_OFFLINE_MODE_USER, ER_BAD_DB_ERROR,
-      ER_AUDIT_API_ABORT};
+  static const std::set<int> allowed_error_codes{ER_DBACCESS_DENIED_ERROR,
+                                                 ER_MUST_CHANGE_PASSWORD_LOGIN,
+                                                 ER_ACCOUNT_HAS_BEEN_LOCKED,
+                                                 ER_SECURE_TRANSPORT_REQUIRED,
+                                                 ER_SERVER_OFFLINE_MODE,
+                                                 ER_SERVER_OFFLINE_MODE_REASON,
+                                                 ER_BAD_DB_ERROR,
+                                                 ER_AUDIT_API_ABORT};
 
   return 0 < allowed_error_codes.count(error_code);
 }

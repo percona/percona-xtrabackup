@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,8 @@
 
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_internal_message_headers.h"
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 
@@ -79,9 +79,9 @@ unsigned long long Gcs_internal_message_header::get_total_length() const {
 unsigned long long Gcs_internal_message_header::encode(
     unsigned char *buffer) const {
   unsigned char *slider = buffer;
-  unsigned short s_cargo_type = static_cast<unsigned short>(m_cargo_type);
-  unsigned short s_used_version = static_cast<unsigned short>(m_used_version);
-  unsigned short s_max_version = static_cast<unsigned short>(m_max_version);
+  auto s_cargo_type = static_cast<unsigned short>(m_cargo_type);
+  auto s_used_version = static_cast<unsigned short>(m_used_version);
+  auto s_max_version = static_cast<unsigned short>(m_max_version);
 
   s_used_version = htole16(s_used_version);
   memcpy(slider, &s_used_version, WIRE_USED_VERSION_SIZE);
@@ -218,7 +218,7 @@ void Gcs_dynamic_header::set_payload_length(unsigned long long new_length) {
 
 unsigned long long Gcs_dynamic_header::encode(unsigned char *buffer) const {
   unsigned char *slider = buffer;
-  unsigned int stage_code_enc = static_cast<unsigned int>(m_stage_code);
+  auto stage_code_enc = static_cast<unsigned int>(m_stage_code);
 
   unsigned short buffer_length_enc = htole16(m_dynamic_header_length);
   memcpy(slider, &buffer_length_enc, WIRE_HD_LEN_SIZE);

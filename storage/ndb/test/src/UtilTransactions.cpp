@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +48,6 @@ int UtilTransactions::clearTable(Ndb *pNdb, NdbScanOperation::ScanFlag flags,
   // them one by one
   int retryAttempt = 0;
   const int retryMax = 10;
-  int deletedRows = 0;
   int check;
   NdbScanOperation *pOp;
   NdbError err;
@@ -112,7 +111,6 @@ int UtilTransactions::clearTable(Ndb *pNdb, NdbScanOperation::ScanFlag flags,
           NDB_ERR(err);
           goto failed;
         }
-        deletedRows++;
       } while ((check = pOp->nextResult(false)) == 0);
 
       if (check != -1) {
@@ -695,11 +693,8 @@ int UtilTransactions::scanAndCompareUniqueIndex(
     }
 
     int eof;
-    int rows = 0;
 
     while ((eof = pOp->nextResult()) == 0) {
-      rows++;
-
       // ndbout << row.c_str().c_str() << endl;
 
       if (readRowFromTableAndIndex(pNdb, pTrans, pIndex, row) != NDBT_OK) {
@@ -1070,10 +1065,7 @@ int UtilTransactions::verifyOrderedIndex(
     }
 
     int eof = 0;
-    int rows = 0;
     while (check == 0 && (eof = pOp->nextResult()) == 0) {
-      rows++;
-
       bool checkDestIndex = (destIndex != NULL);
       if (checkDestIndex && !findNulls) {
         /* Check for NULLs */
@@ -1175,7 +1167,6 @@ int UtilTransactions::verifyOrderedIndex(
         closeTransaction(pNdb);
         NdbSleep_MilliSleep(50);
         retryAttempt++;
-        rows--;
         continue;
       }
       NDB_ERR(err);

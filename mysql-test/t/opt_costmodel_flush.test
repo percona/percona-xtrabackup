@@ -5,6 +5,9 @@
 # To get stable cost estimates, the test should only be run with 
 # 16K InnoDB page size.
 
+SET GLOBAL explain_json_format_version = 1;
+SET SESSION explain_json_format_version = 1;
+
 CREATE TABLE t0 (
   i1 INTEGER
 );
@@ -349,3 +352,5 @@ SET cost_value=DEFAULT;
 FLUSH OPTIMIZER_COSTS;
 
 DROP TABLE t0,t1;
+
+SET GLOBAL explain_json_format_version = DEFAULT;

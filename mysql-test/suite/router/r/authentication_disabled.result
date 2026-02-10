@@ -1,0 +1,44 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+
+
+## I. Verify that internal authentication fails to authenticate when disabled (WL#16694 - TSFR_2_2)
+#
+# 1. authApp endpoint returns other intances not internal-auth.
+# 2. using valid account, fails with an error.
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+# Registred DB_OBJECT at path: /svc/basic/t1
+# Registred AUTH APP at path: /svc
+# Registred AUTH APP at path: /svc
+
+#
+# I.1
+GET /svc/authentication/authApps
+[
+    {
+        "name": "mrs",
+        "vendorId": "0x30000000000000000000000000000000"
+    }
+]
+OK
+
+#
+# I.2
+Date -> %DATE%
+Content-Type  ->  text/html; charset=ISO-8859-1
+Access-Control-Allow-Methods  ->  GET, POST, OPTIONS
+Referrer-Policy  ->  no-referrer
+Location  ->  /svc/authentication/completed?login=fail
+Content-Length  ->  0
+
+# Cleanup
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

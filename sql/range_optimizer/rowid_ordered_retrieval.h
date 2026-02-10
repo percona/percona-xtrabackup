@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,7 +60,7 @@ struct MY_BITMAP;
   used only to filter rowid sequence produced by other merged quick selects.
 */
 
-class RowIDIntersectionIterator : public RowIDCapableRowIterator {
+class RowIDIntersectionIterator final : public RowIDCapableRowIterator {
  public:
   RowIDIntersectionIterator(
       THD *thd, MEM_ROOT *return_mem_root, TABLE *table_arg,
@@ -69,14 +69,15 @@ class RowIDIntersectionIterator : public RowIDCapableRowIterator {
       unique_ptr_destroy_only<RowIterator> cpk_child);
   ~RowIDIntersectionIterator() override;
 
-  bool Init() override;
-  int Read() override;
   uchar *last_rowid() const override {
     assert(need_rows_in_rowid_order);
     return m_last_rowid;
   }
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   /*
     Range quick selects this intersection consists of, not including
     cpk_quick.
@@ -167,17 +168,17 @@ struct Quick_ror_union_less {
 
 */
 
-class RowIDUnionIterator : public TableRowIterator {
+class RowIDUnionIterator final : public TableRowIterator {
  public:
   RowIDUnionIterator(
       THD *thd, MEM_ROOT *return_mem_root, TABLE *table,
       Mem_root_array<unique_ptr_destroy_only<RowIterator>> children);
   ~RowIDUnionIterator() override;
 
-  bool Init() override;
-  int Read() override;
-
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   Mem_root_array<unique_ptr_destroy_only<RowIterator>> m_children;
 
   Priority_queue<RowIterator *,

@@ -1,5 +1,7 @@
 #include "plugin.h"
 #include "status_var.h"
+#include "mysql/components/services/bits/status_variables_bits.h"
+#include "mysql/components/services/bits/thd.h"
 enum enum_mysql_show_type {
   SHOW_UNDEF,
   SHOW_BOOL,
@@ -47,6 +49,7 @@ struct MYSQL_XID {
   char data[128];
 };
 #include <mysql/components/services/bits/system_variables_bits.h>
+#include "mysql/components/services/bits/thd.h"
 struct st_mysql_value {
   int (*value_type)(struct st_mysql_value *);
   const char *(*val_str)(struct st_mysql_value *, char *buffer, int *length);
@@ -59,6 +62,9 @@ typedef int (*mysql_var_check_func)(void * thd, SYS_VAR *var, void *save,
                                     struct st_mysql_value *value);
 typedef void (*mysql_var_update_func)(void * thd, SYS_VAR *var,
                                       void *var_ptr, const void *save);
+struct SYS_VAR {
+  int flags; const char *name; const char *comment; mysql_var_check_func check; mysql_var_update_func update;
+};
 struct st_mysql_plugin {
   int type;
   void *info;
@@ -119,7 +125,6 @@ void *thd_get_ha_data(const void * thd, const struct handlerton *hton);
 void thd_set_ha_data(void * thd, const struct handlerton *hton,
                      const void *ha_data);
 void remove_ssl_err_thread_state();
-unsigned int thd_get_num_vcpus();
 struct st_mysql_keyring {
   int interface_version;
   bool (*mysql_key_store)(const char *key_id, const char *key_type,

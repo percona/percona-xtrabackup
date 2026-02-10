@@ -1,0 +1,46 @@
+# Verify that authentication endpoint completed are created and return
+# expected content.
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+--echo ## I. Create services with default compelted content and user-defined
+--echo # 1. verify that default page ix html/txt and its legnth
+--echo # 2. verify user provided page content
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/a"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_service_path="/b"
+--let $mrs_add_host_name=""
+--let $auth_completed_page_content="example"
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--let $mrs_add_schema_auth=TRUE
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/
+--let $mrs_client_arg_path='/a/authentication/completed'
+--let $mrs_client_arg_response_type=raw
+--let $mrs_client_arg_display=request,header,result
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/b/authentication/completed'
+--let $mrs_client_arg_response_type=raw
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

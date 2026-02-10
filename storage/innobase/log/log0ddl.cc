@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 Portions of this file contain modifications contributed and copyrighted by
 Google, Inc. Those modifications are gratefully acknowledged and are described
@@ -2014,7 +2014,6 @@ void Log_DDL::replay_rename_table_log(const char *old_name,
     we may consider to do this in row_rename_table_for_mysql,
     so no need to worry this rename here */
     char errstr[512];
-
     dict_stats_rename_table(old_name, new_name, errstr, sizeof(errstr));
   }
 }

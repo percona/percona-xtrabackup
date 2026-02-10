@@ -8,8 +8,9 @@
 # helps it be planned in reasonable time. If you wish to use it to study
 # memory usage, you can simply increase optimizer_max_subgraph_pairs again.
 #
-# Even though this is to test the hypergraph optimizer, it runs just fine
-# under the old one, so we don't include have_hypergraph.inc.
+
+# We do disable_hypergraph at the end, so we must do:
+--source include/have_hypergraph.inc
 
 set optimizer_max_subgraph_pairs=10000;
 

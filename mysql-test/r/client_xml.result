@@ -1,3 +1,4 @@
+RESET BINARY LOGS AND GTIDS;
 set @old_concurrent_insert= @@global.concurrent_insert;
 set @@global.concurrent_insert= 0;
 drop table if exists t1;
@@ -19,6 +20,9 @@ insert into t1 values (1, 2, 'a&b a<b a>b');
 </resultset>
 <?xml version="1.0"?>
 <mysqldump xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;
+SET @@SESSION.SQL_LOG_BIN= 0;
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ 'GTID_SET';
 <database name="test">
 	<table_structure name="t1">
 		<field Field="a&amp;b" Type="int" Null="YES" Key="" Extra="" Comment="" />
@@ -33,6 +37,7 @@ insert into t1 values (1, 2, 'a&b a<b a>b');
 	</row>
 	</table_data>
 </database>
+SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 </mysqldump>
 <?xml version="1.0"?>
 

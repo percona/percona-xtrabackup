@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -242,8 +242,9 @@ static int build_prefix(const LEX_CSTRING *prefix, const char *optional,
 
   if (unlikely((prefix_length + optional_len + 1) >=
                PFS_MAX_FULL_METRIC_PREFIX_NAME_LENGTH)) {
+    const char *optional_print = (optional == nullptr) ? "<nullptr>" : optional;
     pfs_print_error("build_prefix: prefix+optional is too long <%s> <%s>\n",
-                    prefix->str, optional);
+                    prefix->str, optional_print);
     return 1;
   }
 

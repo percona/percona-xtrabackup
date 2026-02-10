@@ -207,7 +207,6 @@ LIMIT 100;
 ANALYZE TABLE t1;
 SET @@SESSION.sql_mode='NO_ENGINE_SUBSTITUTION';
 eval EXPLAIN $query1;
---skip_if_hypergraph
 eval $query1;
 
 DROP TABLE t1;

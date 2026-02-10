@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,6 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include <array>
 #include <csignal>
 #include <iostream>  // cerr
 #include <memory>
@@ -53,9 +52,11 @@ struct MysqlServerMockConfig {
   std::string queries_filename;
   std::string module_prefix;
   std::string bind_address{"0.0.0.0"};
-  std::string port{"3306"};
+  std::string port;
+  std::string socket;
   std::string http_port{};
   std::string xport{};
+  std::string xsocket;
   bool verbose{false};
   std::string logging_folder;
 
@@ -77,6 +78,27 @@ static void init_DIM() {
 
   // logging facility
   mysql_harness::DIM::instance().set_static_LoggingRegistry(&static_registry);
+}
+
+static void add_common_mock_server_options(
+    mysql_harness::ConfigSection &section,
+    const MysqlServerMockConfig &config) {
+  section.set("library", "mock_server");
+  // bind-address
+  // port
+  // named-socket
+  section.set("filename", config.queries_filename);
+  section.set("module_prefix", config.module_prefix);
+  // protocol
+  section.set("ssl_mode", config.ssl_mode);
+  section.set("ssl_cert", config.ssl_cert);
+  section.set("ssl_key", config.ssl_key);
+  section.set("tls_version", config.tls_version);
+  section.set("ssl_cipher", config.ssl_cipher);
+  section.set("ssl_ca", config.ssl_ca);
+  section.set("ssl_capath", config.ssl_capath);
+  section.set("ssl_crl", config.ssl_crl);
+  section.set("ssl_crlpath", config.ssl_crlpath);
 }
 
 class MysqlServerMockFrontend {
@@ -134,7 +156,7 @@ class MysqlServerMockFrontend {
          "rest_mock_server"},
         mysql_harness::logging::kMainLogger);
     mysql_harness::logging::create_main_log_handler(
-        registry, "mock_server", config_.logging_folder, true);
+        registry, "mock_server_" + config_.port, config_.logging_folder, true);
 
     registry.set_ready();
 
@@ -148,6 +170,11 @@ class MysqlServerMockFrontend {
 
       config_.module_prefix = cwd.native();
     }
+
+    if (config_.port.empty() && config_.socket.empty()) {
+      config_.port = "3306";
+    }
+
     loader_config->set_default("logging_folder", config_.logging_folder);
     loader_config->add("logger");
     auto &logger_conf = loader_config->get("logger", "");
@@ -155,6 +182,22 @@ class MysqlServerMockFrontend {
     logger_conf.add("timestamp_precision", "ms");
     const std::string logfile_name = "mock_server_" + config_.port + ".log";
     logger_conf.add("filename", logfile_name);
+
+    signal_handler_.add_sig_handler(
+        SIGTERM, [&](int /* sig */, const std::string &signal_info) {
+          mysql_harness::ProcessStateComponent::get_instance()
+              .request_application_shutdown(
+                  mysql_harness::ShutdownPending::Reason::REQUESTED,
+                  signal_info);
+        });
+
+    signal_handler_.add_sig_handler(
+        SIGINT, [&](int /* sig */, const std::string &signal_info) {
+          mysql_harness::ProcessStateComponent::get_instance()
+              .request_application_shutdown(
+                  mysql_harness::ShutdownPending::Reason::REQUESTED,
+                  signal_info);
+        });
 
     // initialize the signal handler
     signal_handler_.register_ignored_signals_handler();
@@ -198,40 +241,41 @@ class MysqlServerMockFrontend {
       http_server_config.set("static_folder", "");
     }
 
-    auto &mock_server_config = loader_config->add("mock_server", "classic");
-    mock_server_config.set("library", "mock_server");
-    mock_server_config.set("bind_address", config_.bind_address);
-    mock_server_config.set("port", config_.port);
-    mock_server_config.set("filename", config_.queries_filename);
-    mock_server_config.set("module_prefix", config_.module_prefix);
-    mock_server_config.set("protocol", "classic");
-    mock_server_config.set("ssl_mode", config_.ssl_mode);
-    mock_server_config.set("ssl_cert", config_.ssl_cert);
-    mock_server_config.set("ssl_key", config_.ssl_key);
-    mock_server_config.set("tls_version", config_.tls_version);
-    mock_server_config.set("ssl_cipher", config_.ssl_cipher);
-    mock_server_config.set("ssl_ca", config_.ssl_ca);
-    mock_server_config.set("ssl_capath", config_.ssl_capath);
-    mock_server_config.set("ssl_crl", config_.ssl_crl);
-    mock_server_config.set("ssl_crlpath", config_.ssl_crlpath);
+    if (!config_.port.empty() && config_.port != "0") {
+      auto &mock_server_config = loader_config->add("mock_server", "classic");
 
-    if (!config_.xport.empty()) {
-      auto &mock_x_server_config = loader_config->add("mock_server", "x");
-      mock_x_server_config.set("library", "mock_server");
-      mock_x_server_config.set("bind_address", config_.bind_address);
-      mock_x_server_config.set("port", config_.xport);
-      mock_x_server_config.set("filename", config_.queries_filename);
-      mock_x_server_config.set("module_prefix", config_.module_prefix);
-      mock_x_server_config.set("protocol", "x");
-      mock_x_server_config.set("ssl_mode", config_.ssl_mode);
-      mock_x_server_config.set("ssl_cert", config_.ssl_cert);
-      mock_x_server_config.set("ssl_key", config_.ssl_key);
-      mock_x_server_config.set("tls_version", config_.tls_version);
-      mock_x_server_config.set("ssl_cipher", config_.ssl_cipher);
-      mock_x_server_config.set("ssl_ca", config_.ssl_ca);
-      mock_x_server_config.set("ssl_capath", config_.ssl_capath);
-      mock_x_server_config.set("ssl_crl", config_.ssl_crl);
-      mock_x_server_config.set("ssl_crlpath", config_.ssl_crlpath);
+      mock_server_config.set("bind_address", config_.bind_address);
+      mock_server_config.set("port", config_.port);
+      mock_server_config.set("protocol", "classic");
+
+      add_common_mock_server_options(mock_server_config, config_);
+    }
+
+    if (!config_.xport.empty() && config_.xport != "0") {
+      auto &mock_server_config = loader_config->add("mock_server", "x");
+      mock_server_config.set("bind_address", config_.bind_address);
+      mock_server_config.set("port", config_.xport);
+      mock_server_config.set("protocol", "x");
+
+      add_common_mock_server_options(mock_server_config, config_);
+    }
+
+    if (!config_.socket.empty()) {
+      auto &mock_server_config =
+          loader_config->add("mock_server", "classic_socket");
+
+      mock_server_config.set("named_socket", config_.socket);
+      mock_server_config.set("protocol", "classic");
+
+      add_common_mock_server_options(mock_server_config, config_);
+    }
+
+    if (!config_.xsocket.empty()) {
+      auto &mock_server_config = loader_config->add("mock_server", "x_socket");
+      mock_server_config.set("named_socket", config_.xsocket);
+      mock_server_config.set("protocol", "x");
+
+      add_common_mock_server_options(mock_server_config, config_);
     }
 
     dim.set_Config(loader_config.release(),
@@ -248,38 +292,14 @@ class MysqlServerMockFrontend {
 
     logger_.debug("Starting");
 
-#if !defined(_WIN32)
-    //
-    // reopen the logfile on SIGHUP.
-    //
-
     static const char kSignalHandlerServiceName[]{"signal_handler"};
 
     loader_->waitable_services().emplace_back(kSignalHandlerServiceName);
 
-    // as the LogReopener depends on the loggers being started, it must be
-    // initialized after Loader::start_all() has been called.
-    loader_->after_all_started([&]() {
-      signal_handler_.add_sig_handler(
-          SIGTERM, [&](int /* sig */, const std::string &signal_info) {
-            mysql_harness::ProcessStateComponent::get_instance()
-                .request_application_shutdown(
-                    mysql_harness::ShutdownPending::Reason::REQUESTED,
-                    signal_info);
-          });
+    loader_->after_all_started(
+        [&]() { mysql_harness::on_service_ready(kSignalHandlerServiceName); });
 
-      signal_handler_.add_sig_handler(
-          SIGINT, [&](int /* sig */, const std::string &signal_info) {
-            mysql_harness::ProcessStateComponent::get_instance()
-                .request_application_shutdown(
-                    mysql_harness::ShutdownPending::Reason::REQUESTED,
-                    signal_info);
-          });
-
-      mysql_harness::on_service_ready(kSignalHandlerServiceName);
-    });
-
-    // after the first plugin finished, stop the log-reopener
+#if !defined(_WIN32)
     loader_->after_first_finished([&]() {
       signal_handler_.remove_sig_handler(SIGTERM);
       signal_handler_.remove_sig_handler(SIGINT);
@@ -326,10 +346,20 @@ class MysqlServerMockFrontend {
         CmdOptionValueReq::required, "int",
         [this](const std::string &port) { config_.port = port; });
     arg_handler_.add_option(
+        CmdOption::OptionNames({"--socket"}),
+        "unix-domain-socket to listen on for classic protocol connections.",
+        CmdOptionValueReq::required, "path",
+        [this](const std::string &value) { config_.socket = value; });
+    arg_handler_.add_option(
         CmdOption::OptionNames({"-X", "--xport"}),
         "TCP port to listen on for X protocol connections.",
         CmdOptionValueReq::required, "int",
         [this](const std::string &port) { config_.xport = port; });
+    arg_handler_.add_option(
+        CmdOption::OptionNames({"--xsocket"}),
+        "unix-domain-socket to listen on for x protocol connections.",
+        CmdOptionValueReq::required, "path",
+        [this](const std::string &value) { config_.xsocket = value; });
     arg_handler_.add_option(
         CmdOption::OptionNames({"--http-port"}),
         "TCP port to listen on for HTTP/REST connections.",

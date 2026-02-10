@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,13 +33,26 @@
   the file descriptor.
 */
 
-#include <errno.h>
-#include <stddef.h>
+#include <assert.h>       // for assert
+#include <openssl/bio.h>  // for BIO_get_callback_arg, BIO_CB_RETURN
+#include <openssl/err.h>  // for ERR_get_error, ERR_peek_error
+#include <openssl/evp.h>
+#include <openssl/opensslv.h>   // for OPENSSL_VERSION_NUMBER
+#include <openssl/safestack.h>  // IWYU pragma: keep STACK_OF
+#include <openssl/ssl.h>        // for SSL_get_error, SSL_free, SSL_get...
+#include <openssl/x509.h>       // IWYU pragma: keep X509_free
+#include <stdio.h>              // IWYU pragma: keep sprintf
+#include <string.h>             // IWYU pragma: keep strcpy
+
+#include <cerrno>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
+#include "my_psi_config.h"
+#include "my_sys.h"
 #include "mysql/psi/mysql_socket.h"
+#include "mysql/psi/psi_socket.h"
 #include "vio/vio_priv.h"
 
 /*
@@ -389,7 +402,7 @@ int vio_ssl_shutdown(Vio *vio) {
 void vio_ssl_delete(Vio *vio) {
   if (!vio) return; /* It must be safe to delete null pointer */
 
-  if (vio->inactive == false)
+  if (!vio->inactive)
     vio_ssl_shutdown(vio); /* Still open, close connection first */
 
   if (vio->ssl_arg) {
@@ -636,7 +649,7 @@ static int ssl_do(struct st_VioSSLFd *ptr, Vio *vio, long timeout,
                   unsigned long *ssl_errno_holder, SSL **sslptr,
                   const char *sni_servername) {
   SSL *ssl = nullptr;
-  my_socket sd = mysql_socket_getfd(vio->mysql_socket);
+  my_socket const sd = mysql_socket_getfd(vio->mysql_socket);
 
   /* Declared here to make compiler happy */
 #if !defined(NDEBUG)
@@ -786,8 +799,8 @@ static int ssl_do(struct st_VioSSLFd *ptr, Vio *vio, long timeout,
 int sslaccept(struct st_VioSSLFd *ptr, Vio *vio, long timeout,
               unsigned long *ssl_errno_holder) {
   DBUG_TRACE;
-  int ret = ssl_do(ptr, vio, timeout, nullptr, SSL_accept, ssl_errno_holder,
-                   nullptr, nullptr);
+  int const ret = ssl_do(ptr, vio, timeout, nullptr, SSL_accept,
+                         ssl_errno_holder, nullptr, nullptr);
   return ret;
 }
 
@@ -795,11 +808,11 @@ int sslconnect(struct st_VioSSLFd *ptr, Vio *vio, long timeout,
                SSL_SESSION *session, unsigned long *ssl_errno_holder, SSL **ssl,
                const char *sni_servername) {
   DBUG_TRACE;
-  int ret = ssl_do(ptr, vio, timeout, session, SSL_connect, ssl_errno_holder,
-                   ssl, sni_servername);
+  int const ret = ssl_do(ptr, vio, timeout, session, SSL_connect,
+                         ssl_errno_holder, ssl, sni_servername);
   return ret;
 }
 
 bool vio_ssl_has_data(Vio *vio) {
-  return SSL_pending(static_cast<SSL *>(vio->ssl_arg)) > 0 ? true : false;
+  return SSL_pending(static_cast<SSL *>(vio->ssl_arg)) > 0;
 }

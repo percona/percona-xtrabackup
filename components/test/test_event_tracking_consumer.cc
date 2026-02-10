@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -259,9 +259,7 @@ class Event_tracking_counters {
  public:
   /** Constructor */
   Event_tracking_counters() {
-    for (unsigned int i = 0; i < static_cast<unsigned int>(Event_types::LAST);
-         ++i)
-      event_counters_[i] = 0;
+    for (auto &event_counter : event_counters_) event_counter = 0;
   }
 
   /** Destructor */
@@ -311,9 +309,7 @@ class Event_tracking_counters {
   }
 
   void reset_all() {
-    for (unsigned int index = 0;
-         index < static_cast<unsigned int>(Event_types::LAST); ++index)
-      event_counters_[index] = 0;
+    for (auto &event_counter : event_counters_) event_counter = 0;
   }
 
  private:
@@ -565,7 +561,7 @@ static mysql_service_status_t init() {
     if (!variables_registered)
       (void)mysql_status_var_service->unregister_variable(status_vars);
     if (!functions_registered) unregister_functions();
-    if (g_session_data_map) delete g_session_data_map;
+    delete g_session_data_map;
     g_session_data_map = nullptr;
   });
 
@@ -611,8 +607,8 @@ static mysql_service_status_t deinit() {
     mysql_thd_store_service->set(o_thd, g_slot, nullptr);
   }
 
-  if (g_event_tracking_counters) delete g_event_tracking_counters;
-  if (g_session_data_map) delete g_session_data_map;
+  delete g_event_tracking_counters;
+  delete g_session_data_map;
 
   /* Unregister functions */
   unregister_functions();
@@ -697,7 +693,7 @@ long long configure_event_tracking_filter(UDF_INIT *, UDF_ARGS *args,
 
   if (!args->args[0] || !args->args[1]) return 0;
 
-  std::string event_name{args->args[0], args->lengths[0]};
+  std::string const event_name{args->args[0], args->lengths[0]};
   unsigned int index = 0;
 
   bool found = false;
@@ -712,7 +708,7 @@ long long configure_event_tracking_filter(UDF_INIT *, UDF_ARGS *args,
 
   if (!found) return 0;
 
-  unsigned long long new_filter =
+  unsigned long long const new_filter =
       *(reinterpret_cast<unsigned long long *>(args->args[1]));
 
   switch (static_cast<Event_types>(index)) {
@@ -794,7 +790,7 @@ bool display_session_data_init(UDF_INIT *initid, UDF_ARGS *args,
 
 /** Deinit function for display_session_data */
 void display_session_data_deinit(UDF_INIT *initid) {
-  if (initid->ptr) delete[] initid->ptr;
+  delete[] initid->ptr;
   initid->ptr = nullptr;
 }
 
@@ -810,11 +806,11 @@ char *display_session_data(UDF_INIT *initid, UDF_ARGS *, char *,
   MYSQL_THD o_thd{nullptr};
   if (thread_reader->get(&o_thd)) return nullptr;
 
-  Connection_data *session_data = reinterpret_cast<Connection_data *>(
+  auto *session_data = reinterpret_cast<Connection_data *>(
       mysql_thd_store_service->get(o_thd, g_slot));
   if (!session_data) return nullptr;
 
-  std::string last_trace = session_data->get_last_trace();
+  std::string const last_trace = session_data->get_last_trace();
 
   if (last_trace.empty() ||
       last_trace.length() > static_cast<size_t>(initid->max_length - 1))
@@ -854,7 +850,7 @@ long long reset_event_tracking_counter(UDF_INIT *, UDF_ARGS *args,
 
   if (!args->args[0]) return 0;
 
-  std::string event_name{args->args[0], args->lengths[0]};
+  std::string const event_name{args->args[0], args->lengths[0]};
 
   if (event_name == "all") {
     g_event_tracking_counters->reset_all();
@@ -886,7 +882,7 @@ static bool update_current_trace(std::string &event_name,
   MYSQL_THD o_thd{nullptr};
   if (thread_reader->get(&o_thd)) return true;
 
-  Connection_data *session_data = reinterpret_cast<Connection_data *>(
+  auto *session_data = reinterpret_cast<Connection_data *>(
       mysql_thd_store_service->get(o_thd, g_slot));
   if (!session_data) {
     session_data = g_session_data_map->create(connection_id);
@@ -905,7 +901,7 @@ static bool end_current_trace() {
   MYSQL_THD o_thd{nullptr};
   if (thread_reader->get(&o_thd)) return true;
 
-  Connection_data *session_data = reinterpret_cast<Connection_data *>(
+  auto *session_data = reinterpret_cast<Connection_data *>(
       mysql_thd_store_service->get(o_thd, g_slot));
   if (!session_data) return true;
 
@@ -1063,7 +1059,7 @@ bool Event_tracking_connection_implementation::callback(
           break;
         }
         case EVENT_TRACKING_CONNECTION_DISCONNECT: {
-          Connection_data *session_data = reinterpret_cast<Connection_data *>(
+          auto *session_data = reinterpret_cast<Connection_data *>(
               mysql_thd_store_service->get(o_thd, g_slot));
           if (session_data) {
             g_session_data_map->remove(data->connection_id);
@@ -1072,7 +1068,7 @@ bool Event_tracking_connection_implementation::callback(
           break;
         }
         case EVENT_TRACKING_CONNECTION_CHANGE_USER: {
-          Connection_data *session_data = reinterpret_cast<Connection_data *>(
+          auto *session_data = reinterpret_cast<Connection_data *>(
               mysql_thd_store_service->get(o_thd, g_slot));
           if (session_data) {
             session_data = reinterpret_cast<Connection_data *>(

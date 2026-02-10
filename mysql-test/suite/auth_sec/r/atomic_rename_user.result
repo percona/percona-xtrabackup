@@ -52,6 +52,8 @@ userZ
 # This event sequence pattern MUST NOT be present in binlog: !Q(RENAME USER.*userA.*TO.*userX.*,.*userB.*TO.*userY.*,.*userC.*TO.*userZ.*)
 include/rpl/assert_binlog_events.inc
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/rpl/save_binlog_file_position.inc
 # Try renaming two different user and use same user as target
 RENAME USER userA TO userX, userB TO userX;
@@ -86,13 +88,17 @@ Warnings:
 Warning	1726	Storage engine 'MyISAM' does not support system tables. [mysql.user]
 FLUSH PRIVILEGES;
 Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 Warning	1805	Column count of mysql.user is wrong. Expected 51, found 1. The table is probably corrupted
 SHOW WARNINGS;
 Level	Code	Message
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 Warning	1805	Column count of mysql.user is wrong. Expected 51, found 1. The table is probably corrupted
 DROP TABLE mysql.user;
 RENAME TABLE mysql.user_bak TO mysql.user;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 #
 # Bug #32068470: TO_HOST AND TO_USER NOT SET
 # Self-renaming isuses

@@ -1,4 +1,4 @@
-# Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -51,10 +51,10 @@ FOREACH(test ${TESTS})
 ENDFOREACH()
 
 SET(SRC_FILES
-gtid_set-t.cc)
+  legacy_gtid_set-t.cc)
 
-MYSQL_ADD_EXECUTABLE(gtid_set-t ${SRC_FILES}
-  ADD_TEST gtid_set
+MYSQL_ADD_EXECUTABLE(legacy_gtid_set-t ${SRC_FILES}
+  ADD_TEST legacy_gtid_set
   LINK_LIBRARIES gunit_large server_unittest_library
   COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}")
 
@@ -69,3 +69,10 @@ MYSQL_ADD_EXECUTABLE(compatibility_binlogevents-t compatibility_binlogevents-t.c
   LINK_LIBRARIES mysql_gtid mysql_binlog_event_standalone gunit_small
   COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}"
   COMPILE_OPTIONS ${COMPATIBILITY_TEST_OPT})
+
+IF(MY_COMPILER_IS_GNU AND FPROFILE_USE)
+  ADD_COMPILE_FLAGS(payload_event_buffer_istream-t.cc COMPILE_FLAGS
+    "-Wno-array-bounds"
+    "-Wno-stringop-overflow"
+    )
+ENDIF()

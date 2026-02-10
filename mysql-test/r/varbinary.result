@@ -595,17 +595,17 @@ SELECT SUBTIME((_binary '12007-12-31 23:59:59.999999' | _binary '12007-12-31 23:
 SUBTIME((_binary '12007-12-31 23:59:59.999999' | _binary '12007-12-31 23:59:59.999999'),'1 1:1:1.000002')
 NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: '12007-12-31 23:59:59.999999'
+Warning	1292	Incorrect datetime value: '12007-12-31 23:59:59.999999'
 SELECT SUBTIME(120120519090607 | 120120519090607 ,'1 1:1:1.000002');
 SUBTIME(120120519090607 | 120120519090607 ,'1 1:1:1.000002')
 NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: '120120519090607'
+Warning	1292	Incorrect datetime value: '120120519090607'
 SELECT SUBTIME(120120519090607 ,'1 1:1:1.000002');
 SUBTIME(120120519090607 ,'1 1:1:1.000002')
 NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: '120120519090607'
+Warning	1292	Incorrect datetime value: '120120519090607'
 CREATE TABLE t1(gid INT, a VARBINARY(20), b BIGINT);
 INSERT INTO t1 VALUES(1, _binary '2012-05-19 09:06:07', 20120519090607),
 (1, _binary '2012-05-19 09:06:07', 20120519090607),
@@ -644,13 +644,13 @@ SUBTIME(BIT_OR(a), '1 1:1:1.000002')
 2012-05-18 08:05:05.999998
 NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: '12012-05-19 09:06:07'
+Warning	1292	Incorrect datetime value: '12012-05-19 09:06:07'
 SELECT SUBTIME(BIT_OR(b), '1 1:1:1.000002') FROM t1 GROUP BY gid;
 SUBTIME(BIT_OR(b), '1 1:1:1.000002')
 2012-05-18 08:05:05.999998
 NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: '120120519090607'
+Warning	1292	Incorrect datetime value: '120120519090607'
 SELECT SUBTIME(BIT_OR(a), '1 1:1:1.000002') FROM t1 WHERE gid = 1;
 SUBTIME(BIT_OR(a), '1 1:1:1.000002')
 2012-05-18 08:05:05.999998
@@ -661,12 +661,12 @@ SELECT SUBTIME(BIT_OR(a), '1 1:1:1.000002') FROM t1 WHERE gid = 2;
 SUBTIME(BIT_OR(a), '1 1:1:1.000002')
 NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: '12012-05-19 09:06:07'
+Warning	1292	Incorrect datetime value: '12012-05-19 09:06:07'
 SELECT SUBTIME(BIT_OR(b), '1 1:1:1.000002') FROM t1 WHERE gid = 2;
 SUBTIME(BIT_OR(b), '1 1:1:1.000002')
 NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: '120120519090607'
+Warning	1292	Incorrect datetime value: '120120519090607'
 DROP TABLE t1;
 #
 # Test conversions

@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -106,8 +106,13 @@ bool mbr_contain_cmp(const dd::Spatial_reference_system *srs, rtr_mbr_t *a,
   return result;
 }
 
-bool mbr_equal_cmp(const dd::Spatial_reference_system *srs, rtr_mbr_t *a,
-                   rtr_mbr_t *b) {
+bool mbr_equal_physically(rtr_mbr_t *a, rtr_mbr_t *b) {
+  return a->xmin == b->xmin && a->xmax == b->xmax && a->ymin == b->ymin &&
+         a->ymax == b->ymax;
+}
+
+bool mbr_equal_logically(const dd::Spatial_reference_system *srs, rtr_mbr_t *a,
+                         rtr_mbr_t *b) {
   // These points should not have initialized values at this point,
   // which are min == DBL_MAX and max == -DBL_MAX.
   assert(a->xmin <= a->xmax && a->ymin <= a->ymax);
@@ -208,53 +213,123 @@ bool mbr_disjoint_cmp(const dd::Spatial_reference_system *srs, rtr_mbr_t *a,
 
 bool mbr_within_cmp(const dd::Spatial_reference_system *srs, rtr_mbr_t *a,
                     rtr_mbr_t *b) {
-  bool result = false;
+  /* This function actually computes `a CoveredBy b` relation.
+  And mbr_contain_cmp(src,a,b) actually computes `a Covers b`.
+
+  This function could be as simple as return mbr_contain_cmp(src,b,a), if it
+  did not have to handle 'legacy_empty_box' defined as
+
+       {x,y}min = DBL_MAX, {x,y}max= -DBL_MAX
+
+  which historically was used to represent MBR(GEOMETRYCOLECTION()). Nowadays,
+  MBR(EMPTY GEOMETRYCOLECTION) is computed to, and stored as 'full_range_box':
+
+       {x,y}min = -DBL_MAX, {x,y}max= DBL_MAX
+
+  The situation where a or b (or both!) equal legacy_empty_box might arise
+  because of:
+    1. Legacy spatial indexes, which might still contain tuples with MBR for
+       empty geometry collection encoded in the old way, and passed as `b`
+    2. InnoDB sometimes passing a constant representing the MBR of an empty
+       geometry collection in this old form as argument `a`.
+  The other predicates (like mbr_contain_cmp) do not seem to be ever used in
+  such a way, so they don't have this special handling.
+
+  Scenario 1 occurs if spatial index was created back in 5.7, and contains
+  tuples representing GEOMETRYCOLLECTION() and was not rebuilt since then.
+  As in 5.7 there were no SRIDs and modern optimizer ignores indexes without
+  SRID, InnoDB only does "minimal maintenance" of the index by adding/removing
+  tuples in it to match those in clustered index. For that, when traversing the
+  R-tree it is using mbr_within_cmp(mbr(PK.geo), mbr(non-leaf)). Note, that the
+  clustered index geometry column does not store mbr explicitly, instead it is
+  computed at run time, using the current code base, so LHS will never use
+  legacy_empty_box format in this case, but RHS might.
+
+  Another action permitted for such index is CHECK TABLE, which uses
+  mbr_within_cmp(legacy_empty_box,mbr(node)). More on that below.
+
+  Scenario 2 occurs in already mentioned CHECK TABLE, where InnoDB's intent is
+  to traverse the whole R-tree. It achieves this by attempting a search for
+  records which satisfy mbr_within_cmp(legacy_empty_box,mbr(node)) which
+  conceptually makes sense ("empty set is covered by every set").
+  Note that using the new format for empty geometry collection i.e. the
+  mbr_within_cmp(full_range_box, mbr(node)) would not achieve this goal,
+  because most of mbr(nodes) do not contain full range. What is needed is a
+  predicate which always evaluates to true, such as
+  mbr_contains_cmp(full_range_box, mbr(node)), alas, that would mean that
+  mbr_contains_cmp would also have to be able to handle tuples from legacy
+  indexes, and we prefer to support this in just one place, here.
+
+  There are also two other places in which InnoDB specifies a=legacy_empty_box,
+  both of which try to handle a missing geometry blob. One of them is when
+  reporting operation to undo log, and thus probably unreachable. The other is
+  handling a rollback interrupted by a crash where it tries to construct search
+  tuple to clean up from secondary index. As row_purge_upd_exist_or_extern_func
+  removes externally stored fields (such as geometry blob) only after removing
+  secondary index records, there should be no such records to remove, and thus
+  search for them isn't needed, but refactoring it is difficult, so we just
+  need to avoid a crash here by handling it arbitrarily. Original code handled
+  it by scanning full R-tree, and so we do that, too. */
   try {
-    // If min and max coordinates have been reversed, InnoDB expects the result
-    // to be inverse too. But not if a and b have the exact same coordinates.
-    bool invert = false;
-    if (a->xmin > a->xmax && a->ymin > a->ymax &&
-        !(a->xmin == b->xmin && a->ymin == b->ymin && a->xmax == b->xmax &&
-          a->ymax == b->ymax)) {
-      invert = true;
+    if (a->xmax < a->xmin || a->ymax < a->ymin) {
+      /* This only happens when InnoDB has specified `a` as special constant:*/
+      assert(a->xmin == DBL_MAX);
+      assert(a->ymin == DBL_MAX);
+      assert(a->xmax == -DBL_MAX);
+      assert(a->ymax == -DBL_MAX);
+      /* ... which was meant to represent empty geometry collection and as such
+      should be considered 'covered by' every other MBR. We handle it by
+      returning true because there is no guarantee provided that functions used
+      below know how to handle an MBR with min < max. */
+      return true;
     }
 
     // Correct the min and max corners to generate proper boxes.
-    double a_xmin = std::min(a->xmin, a->xmax);
-    double a_ymin = std::min(a->ymin, a->ymax);
-    double a_xmax = std::max(a->xmin, a->xmax);
-    double a_ymax = std::max(a->ymin, a->ymax);
-    double b_xmin = std::min(b->xmin, b->xmax);
-    double b_ymin = std::min(b->ymin, b->ymax);
-    double b_xmax = std::max(b->xmin, b->xmax);
-    double b_ymax = std::max(b->ymin, b->ymax);
-
+    // The only reason this can happen, is that b is an mbr comming from 5.7
+    // spatial index and is legacy_empty_box.
+    if (b->xmax < b->xmin || b->ymax < b->ymin) {
+      assert(b->xmin == DBL_MAX);
+      assert(b->ymin == DBL_MAX);
+      assert(b->xmax == -DBL_MAX);
+      assert(b->ymax == -DBL_MAX);
+    }
+    // We handle it by converting b to the modern (8.0+) representation used for
+    // empty geometry collection, which is full_range_box.
+    // This is a bit wrong as then everything seems to be covered_by b, so we
+    // waste time for traversing fragments of tree which do not really cover
+    // anything (except empty geometry collection), but this is handled by other
+    // functions which do post-filtering.
+    // This behaviour was introduced in 8.0 and we keep it for now.
+    const double b_xmin = std::min(b->xmin, b->xmax);
+    const double b_ymin = std::min(b->ymin, b->ymax);
+    const double b_xmax = std::max(b->xmin, b->xmax);
+    const double b_ymax = std::max(b->ymin, b->ymax);
     gis::Covered_by covered_by(srs ? srs->semi_major_axis() : 0.0,
                                srs ? srs->semi_minor_axis() : 0.0);
     if (srs == nullptr || srs->is_cartesian()) {
-      gis::Cartesian_box a_box(gis::Cartesian_point(a_xmin, a_ymin),
-                               gis::Cartesian_point(a_xmax, a_ymax));
+      gis::Cartesian_box a_box(gis::Cartesian_point(a->xmin, a->ymin),
+                               gis::Cartesian_point(a->xmax, a->ymax));
       gis::Cartesian_box b_box(gis::Cartesian_point(b_xmin, b_ymin),
                                gis::Cartesian_point(b_xmax, b_ymax));
-      result = covered_by(&a_box, &b_box);
+      return covered_by(&a_box, &b_box);
     } else {
       assert(srs->is_geographic());
-      gis::Geographic_box a_box(gis::Geographic_point(srs->to_radians(a_xmin),
-                                                      srs->to_radians(a_ymin)),
-                                gis::Geographic_point(srs->to_radians(a_xmax),
-                                                      srs->to_radians(a_ymax)));
+      gis::Geographic_box a_box(
+          gis::Geographic_point(srs->to_radians(a->xmin),
+                                srs->to_radians(a->ymin)),
+          gis::Geographic_point(srs->to_radians(a->xmax),
+                                srs->to_radians(a->ymax)));
       gis::Geographic_box b_box(gis::Geographic_point(srs->to_radians(b_xmin),
                                                       srs->to_radians(b_ymin)),
                                 gis::Geographic_point(srs->to_radians(b_xmax),
                                                       srs->to_radians(b_ymax)));
-      result = covered_by(&a_box, &b_box);
+      return covered_by(&a_box, &b_box);
     }
-    if (invert) result = !result;
   } catch (...) {
     assert(false); /* purecov: inspected */
   }
 
-  return result;
+  return false;
 }
 
 void mbr_join(const dd::Spatial_reference_system *srs, double *a,

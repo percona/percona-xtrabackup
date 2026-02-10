@@ -1,5 +1,6 @@
 {
     "common": {
+        "accept_external_connections": true,
         "bind_address": "0.0.0.0",
         "client_connect_timeout": 9,
         "client_ssl_cipher": "",
@@ -40,6 +41,7 @@
     },
     "endpoints": {
         "bootstrap_ro": {
+            "accept_external_connections": true,
             "bind_address": "0.0.0.0",
             "bind_port": 6447,
             "client_connect_timeout": 9,
@@ -71,6 +73,7 @@
             "wait_for_my_writes_timeout": 2
         },
         "bootstrap_rw": {
+            "accept_external_connections": true,
             "bind_address": "0.0.0.0",
             "bind_port": 6446,
             "client_connect_timeout": 9,
@@ -102,6 +105,7 @@
             "wait_for_my_writes_timeout": 2
         },
         "bootstrap_rw_split": {
+            "accept_external_connections": true,
             "access_mode": "auto",
             "bind_address": "0.0.0.0",
             "bind_port": 6450,
@@ -134,6 +138,7 @@
             "wait_for_my_writes_timeout": 2
         },
         "bootstrap_x_ro": {
+            "accept_external_connections": true,
             "bind_address": "0.0.0.0",
             "bind_port": 6449,
             "client_connect_timeout": 9,
@@ -165,6 +170,7 @@
             "wait_for_my_writes_timeout": 2
         },
         "bootstrap_x_rw": {
+            "accept_external_connections": true,
             "bind_address": "0.0.0.0",
             "bind_port": 6448,
             "client_connect_timeout": 9,
@@ -234,6 +240,7 @@
     "metadata_cache": {
         "auth_cache_refresh_interval": 5.0,
         "auth_cache_ttl": -1.0,
+        "close_connection_after_refresh": true,
         "connect_timeout": 5,
         "read_timeout": 30,
         "ssl_ca": "",

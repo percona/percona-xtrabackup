@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -32,10 +32,12 @@
 #include <vector>
 
 #include "my_thread.h"  // my_thread_self_setname
+#include "mysql/harness/destination.h"
 #include "mysql/harness/event_state_tracker.h"
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/plugin.h"
 #include "mysqld_error.h"
+#include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/mysql_client_thread_token.h"
 #include "mysqlrouter/mysql_session.h"
 
@@ -48,13 +50,14 @@ IMPORT_LOG_FUNCTIONS()
 
 MetadataCache::MetadataCache(
     const unsigned router_id, const std::string &clusterset_id,
-    const std::vector<mysql_harness::TCPAddress> &metadata_servers,
+    const std::vector<mysql_harness::TcpDestination> &metadata_servers,
     std::shared_ptr<MetaData> cluster_metadata,
     const metadata_cache::MetadataCacheTTLConfig &ttl_config,
     const mysqlrouter::SSLOptions &ssl_options,
     const mysqlrouter::TargetCluster &target_cluster,
     const metadata_cache::RouterAttributes &router_attributes,
-    size_t thread_stack_size, bool use_cluster_notifications)
+    size_t thread_stack_size, bool use_cluster_notifications,
+    bool close_connection_after_refresh)
     : target_cluster_(target_cluster),
       clusterset_id_(clusterset_id),
       ttl_config_(ttl_config),
@@ -63,9 +66,10 @@ MetadataCache::MetadataCache(
       meta_data_(std::move(cluster_metadata)),
       refresh_thread_(thread_stack_size),
       use_cluster_notifications_(use_cluster_notifications),
+      close_connection_after_refresh_(close_connection_after_refresh),
       router_attributes_(router_attributes) {
-  for (const auto &s : metadata_servers) {
-    metadata_servers_.emplace_back(s);
+  for (const auto &srv : metadata_servers) {
+    metadata_servers_.emplace_back(srv);
   }
 }
 
@@ -112,17 +116,21 @@ void MetadataCache::refresh_thread() {
           "Cluster metadata upgrade in progress, aborting the metada refresh");
     } catch (const std::exception &e) {
       log_info("Failed refreshing metadata: %s", e.what());
-      on_refresh_failed(true);
+      on_refresh_failed();
     }
 
-    meta_data_->disconnect();
+    if (!refresh_ok || close_connection_after_refresh_ ||
+        meta_data_->get_cluster_type() != mysqlrouter::ClusterType::GR_V2) {
+      meta_data_->disconnect();
+    }
 
     if (refresh_ok) {
       if (!ready_announced_) {
         ready_announced_ = true;
+        const auto &name =
+            metadata_cache::MetadataCacheAPI::instance()->instance_name();
         mysql_harness::on_service_ready(
-            "metadata_cache:" +
-            metadata_cache::MetadataCacheAPI::instance()->instance_name());
+            name.empty() ? "metadata_cache" : "metadata_cache:" + name);
       }
       // update router attributes in the routers table once when we start
       if (attributes_upd) {
@@ -242,13 +250,14 @@ bool metadata_cache::ManagedInstance::operator==(
          xport == other.xport && hidden == other.hidden &&
          disconnect_existing_sessions_when_hidden ==
              other.disconnect_existing_sessions_when_hidden &&
-         ignore == other.ignore;
+         ignore == other.ignore && tags == other.tags &&
+         version == other.version && label == other.label;
 }
 
 metadata_cache::ManagedInstance::ManagedInstance(
     mysqlrouter::InstanceType p_type, const std::string &p_mysql_server_uuid,
     const ServerMode p_mode, const ServerRole p_role, const std::string &p_host,
-    const uint16_t p_port, const uint16_t p_xport)
+    const uint16_t p_port, const uint16_t p_xport, std::string label)
     : type(p_type),
       mysql_server_uuid(p_mysql_server_uuid),
       mode(p_mode),
@@ -258,7 +267,8 @@ metadata_cache::ManagedInstance::ManagedInstance(
       xport(p_xport),
       hidden(mysqlrouter::kNodeTagHiddenDefault),
       disconnect_existing_sessions_when_hidden(
-          mysqlrouter::kNodeTagDisconnectWhenHiddenDefault) {}
+          mysqlrouter::kNodeTagDisconnectWhenHiddenDefault),
+      label(std::move(label)) {}
 
 metadata_cache::ManagedInstance::ManagedInstance(
     mysqlrouter::InstanceType p_type)
@@ -269,16 +279,15 @@ metadata_cache::ManagedInstance::ManagedInstance(
 }
 
 metadata_cache::ManagedInstance::ManagedInstance(
-    mysqlrouter::InstanceType p_type, const TCPAddress &addr)
+    mysqlrouter::InstanceType p_type, const mysql_harness::TcpDestination &dest)
     : ManagedInstance(p_type) {
-  host = addr.address();
-  port = addr.port();
+  host = dest.hostname();
+  port = dest.port();
 }
 
-metadata_cache::ManagedInstance::operator TCPAddress() const {
-  TCPAddress result(host, port);
-
-  return result;
+metadata_cache::ManagedInstance::operator mysql_harness::TcpDestination()
+    const {
+  return mysql_harness::TcpDestination(host, port);
 }
 
 namespace metadata_cache {
@@ -356,8 +365,7 @@ std::string get_hidden_info(const metadata_cache::ManagedInstance &instance) {
   return result;
 }
 
-void MetadataCache::on_refresh_failed(bool terminated,
-                                      bool md_servers_reachable) {
+void MetadataCache::on_refresh_failed(bool md_servers_reachable) {
   stats_([](auto &stats) {
     stats.refresh_failed++;
     stats.last_refresh_failed = std::chrono::system_clock::now();
@@ -368,7 +376,7 @@ void MetadataCache::on_refresh_failed(bool terminated,
           false, EventStateTracker::EventId::MetadataRefreshOk);
 
   // we failed to fetch metadata from any of the metadata servers
-  if (!terminated) {
+  if (!md_servers_reachable) {
     const auto log_level =
         refresh_state_changed ? LogLevel::kError : LogLevel::kDebug;
     log_custom(log_level,
@@ -385,7 +393,7 @@ void MetadataCache::on_refresh_failed(bool terminated,
       if (clearing) cluster_topology_.clear_all_members();
     }
     if (clearing) {
-      on_instances_changed(md_servers_reachable, {}, {});
+      on_instances_changed(md_servers_reachable, {});
       const auto log_level =
           refresh_state_changed ? LogLevel::kInfo : LogLevel::kDebug;
       log_custom(log_level,
@@ -400,15 +408,53 @@ void MetadataCache::on_refresh_succeeded(
       true, EventStateTracker::EventId::MetadataRefreshOk);
   stats_([&metadata_server](auto &stats) {
     stats.last_refresh_succeeded = std::chrono::system_clock::now();
-    stats.last_metadata_server_host = metadata_server.address();
+    stats.last_metadata_server_host = metadata_server.hostname();
     stats.last_metadata_server_port = metadata_server.port();
     stats.refresh_succeeded++;
   });
 }
 
-void MetadataCache::on_instances_changed(
-    const bool md_servers_reachable,
-    const metadata_cache::ClusterTopology &cluster_topology, uint64_t view_id) {
+static void trace_instances_info(
+    const metadata_cache::ClusterTopology &cluster_topology) {
+  const auto &clusterset_name = cluster_topology.name;
+  for (const auto &cluster : cluster_topology.clusters_data) {
+    const std::string cluster_role = cluster.is_primary ? "PRIMARY" : "REPLICA";
+    for (const auto &cluster_member : cluster.members) {
+      if (cluster_member.mode == metadata_cache::ServerMode::Unavailable) {
+        continue;
+      }
+
+      std::string tags_str;
+      for (const auto &tag : cluster_member.tags) {
+        tags_str += "\n\t\t" + tag.first + ": " + tag.second;
+      }
+
+      const std::string member_role =
+          cluster_member.mode == metadata_cache::ServerMode::ReadWrite
+              ? "PRIMARY"
+              : "SECONDARY";
+
+      const auto label_port =
+          cluster_member.port == 0 ? cluster_member.xport : cluster_member.port;
+      const std::string label =
+          cluster_member.host + ":" + std::to_string(label_port);
+
+      log_debug(
+          "Instance reported from metadata:\n\tAddress: %s,\n\tPort: "
+          "%hu\n\tX "
+          "port: %hu\n\tUUID: %s\n\tMember role: %s\n\tClusterSet name: "
+          "%s\n\tCluster name: %s\n\tCluster role: %s\n\tLabel: %s\n\tTags: "
+          "%s",
+          cluster_member.host.c_str(), cluster_member.port,
+          cluster_member.xport, cluster_member.mysql_server_uuid.c_str(),
+          member_role.c_str(), clusterset_name.c_str(), cluster.name.c_str(),
+          cluster_role.c_str(), label.c_str(), tags_str.c_str());
+    }
+  }
+}
+
+void MetadataCache::on_instances_changed(const bool md_servers_reachable,
+                                         uint64_t view_id) {
   // Socket acceptors state will be updated when processing new instances
   // information.
   trigger_acceptor_update_on_next_refresh_ = false;
@@ -416,40 +462,87 @@ void MetadataCache::on_instances_changed(
   {
     std::lock_guard<std::mutex> lock(cluster_instances_change_callbacks_mtx_);
 
-    for (auto each : state_listeners_) {
-      each->notify_instances_changed(cluster_topology, md_servers_reachable,
-                                     view_id);
+    for (auto *each : state_listeners_) {
+      each->notify_instances_changed(md_servers_reachable, view_id);
     }
   }
 
+  if (log_level_is_handled(mysql_harness::logging::LogLevel::kDebug)) {
+    trace_instances_info(get_cluster_topology());
+  }
+
   if (use_cluster_notifications_) {
-    const auto cluster_nodes = cluster_topology.get_all_members();
     meta_data_->setup_notifications_listener(
-        cluster_topology, [this]() { on_refresh_requested(); });
+        get_cluster_topology(), [this]() { on_refresh_requested(); });
   }
 }
 
 void MetadataCache::on_handle_sockets_acceptors() {
-  auto instances = get_cluster_nodes();
-  {
-    std::lock_guard<std::mutex> lock(acceptor_handler_callbacks_mtx_);
+  std::lock_guard lock(acceptor_handler_callbacks_mtx_);
 
-    trigger_acceptor_update_on_next_refresh_ = false;
-    for (const auto &callback : acceptor_update_listeners_) {
-      // If setting up any acceptor failed we should retry on next md refresh
-      if (!callback->update_socket_acceptor_state(instances)) {
-        trigger_acceptor_update_on_next_refresh_ = true;
-      }
+  trigger_acceptor_update_on_next_refresh_ = false;
+  for (const auto &callback : acceptor_update_listeners_) {
+    // If setting up any acceptor failed we should retry on next md refresh
+    if (!callback->update_socket_acceptor_state()) {
+      trigger_acceptor_update_on_next_refresh_ = true;
     }
   }
 }
 
-void MetadataCache::on_md_refresh(
-    const bool cluster_nodes_changed,
-    const metadata_cache::ClusterTopology &cluster_topology) {
-  std::lock_guard<std::mutex> lock(md_refresh_callbacks_mtx_);
-  for (auto &each : md_refresh_listeners_) {
-    each->on_md_refresh(cluster_nodes_changed, cluster_topology);
+void MetadataCache::update_routing_guidelines(
+    const std::string &routing_guidelines_doc) {
+  // We want to copy the callback to avoid holding a lock when we are
+  // calculating what needs to be done according to the new guidelines
+  std::vector<
+      metadata_cache::MetadataCacheAPI::on_routing_guidelines_change_callback_t>
+      routing_guidelines_update_callbacks;
+  {
+    std::lock_guard routing_guidelines_lock(
+        routing_guidelines_update_callback_mtx_);
+    if (update_routing_guidelines_callback_) {
+      for (const auto &on_update_clb :
+           on_routing_guidelines_change_callbacks_) {
+        routing_guidelines_update_callbacks.push_back(on_update_clb);
+      }
+    }
+  }
+
+  try {
+    if (!routing_guidelines_update_callbacks.empty()) {
+      const auto &update_details =
+          update_routing_guidelines_callback_(routing_guidelines_doc);
+      for (const auto &clb : routing_guidelines_update_callbacks) {
+        clb(update_details);
+      }
+      update_reported_routing_guideline_name(update_details.guideline_name);
+      log_debug("Routing guidelines document updated");
+    }
+  } catch (const std::exception &e) {
+    log_error("Update routing guidelines failed: %s", e.what());
+  }
+}
+
+void MetadataCache::on_md_refresh(const bool cluster_nodes_changed,
+                                  const std::string &routing_guidelines_doc) {
+  {
+    std::lock_guard lock(md_refresh_callbacks_mtx_);
+    for (auto &each : md_refresh_listeners_) {
+      each->on_md_refresh(cluster_nodes_changed);
+    }
+  }
+
+  const auto &router_info = meta_data_->fetch_router_info(router_id_);
+  if (router_info) {
+    std::lock_guard lock(router_info_update_callback_mtx_);
+    for (const auto &update_router_info_clb : update_router_info_callbacks_) {
+      // Do it for each routing plugin
+      update_router_info_clb(*router_info);
+    }
+  }
+
+  if (last_routing_guidelines_used_ != routing_guidelines_doc) {
+    update_routing_guidelines(routing_guidelines_doc);
+    last_routing_guidelines_used_ = routing_guidelines_doc;
   }
 }
 
@@ -666,8 +759,10 @@ void MetadataCache::update_router_attributes() {
               "Updating the router attributes in metadata failed: %s (%u)\n"
               "Make sure to follow the correct steps to upgrade your "
               "metadata.\n"
-              "Run the dba.upgradeMetadata() then launch the new Router "
-              "version when prompted",
+              "In MySQL Shell, run dba.upgradeMetadata(), then launch the new "
+              "Router version when prompted.\n"
+              "If the MySQL account used by MySQL Router is missing "
+              "privileges, run dba.setupRouterAccount() to update its grants.",
               e.message().c_str(), e.code());
         }
       } else {
@@ -703,6 +798,14 @@ void MetadataCache::update_router_last_check_in() {
   periodic_stats_update_counter_ = 1;
 }
 
+void MetadataCache::update_reported_routing_guideline_name(
+    const std::string &guideline_name) {
+  if (cluster_topology_.writable_server) {
+    const auto &rw_server = cluster_topology_.writable_server.value();
+    meta_data_->report_guideline_name(guideline_name, rw_server, router_id_);
+  }
+}
+
 bool MetadataCache::needs_initial_attributes_update() {
   return !initial_attributes_update_done_;
 }
@@ -720,8 +823,31 @@ bool MetadataCache::needs_last_check_in_update() {
   }
 }
 
-void MetadataCache::fetch_whole_topology(bool val) {
-  fetch_whole_topology_ = val;
-  log_info("Configuration changed, fetch_whole_topology=%s",
-           std::to_string(val).c_str());
+void MetadataCache::add_routing_guidelines_update_callbacks(
+    metadata_cache::MetadataCacheAPI::update_routing_guidelines_callback_t
+        update_callback,
+    metadata_cache::MetadataCacheAPI::on_routing_guidelines_change_callback_t
+        on_routing_guidelines_change_callback) {
+  std::lock_guard lock{routing_guidelines_update_callback_mtx_};
+  if (!update_routing_guidelines_callback_)
+    update_routing_guidelines_callback_ = std::move(update_callback);
+  on_routing_guidelines_change_callbacks_.push_back(
+      std::move(on_routing_guidelines_change_callback));
+}
+
+void MetadataCache::clear_routing_guidelines_update_callbacks() {
+  std::lock_guard lock{routing_guidelines_update_callback_mtx_};
+  update_routing_guidelines_callback_ = nullptr;
+  on_routing_guidelines_change_callbacks_.clear();
+}
+
+void MetadataCache::add_router_info_update_callback(
+    metadata_cache::MetadataCacheAPI::update_router_info_callback_t clb) {
+  std::lock_guard lock{router_info_update_callback_mtx_};
+  update_router_info_callbacks_.push_back(clb);
+}
+
+void MetadataCache::clear_router_info_update_callback() {
+  std::lock_guard lock{router_info_update_callback_mtx_};
+  update_router_info_callbacks_.clear();
 }

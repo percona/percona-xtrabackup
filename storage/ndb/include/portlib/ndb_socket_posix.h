@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -90,6 +90,14 @@ static inline int ndb_socket_nonblock(ndb_socket_t s, int enable) {
   if (fcntl(s.s, F_SETFL, flags) == -1) return ndb_socket_errno();
 
   return 0;
+}
+
+static constexpr bool ndb_socket_can_disable_sigpipe() {
+#ifdef SO_NOSIGPIPE
+  return true;
+#else
+  return false;
+#endif
 }
 
 static inline bool ndb_is_socket(ndb_socket_t s [[maybe_unused]]) {

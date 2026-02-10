@@ -11,6 +11,8 @@ Host	Db	User	Select_priv	Insert_priv	Update_priv	Delete_priv	Create_priv	Drop_pr
 localhost	mysqltest	mysqltest_1	Y	Y	Y	Y	Y	Y	N	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y
 update db set db = 'MYSQLtest' where db = 'mysqltest' and user = 'mysqltest_1' and host = 'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for mysqltest_1@localhost;
 Grants for mysqltest_1@localhost
 GRANT USAGE ON *.* TO `mysqltest_1`@`localhost`
@@ -20,5 +22,7 @@ Host	Db	User	Select_priv	Insert_priv	Update_priv	Delete_priv	Create_priv	Drop_pr
 localhost	MYSQLtest	mysqltest_1	Y	Y	Y	Y	Y	Y	N	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y	Y
 delete from db where db = 'MYSQLtest' and user = 'mysqltest_1' and host = 'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop user mysqltest_1@localhost;
 drop database MYSQLtest;

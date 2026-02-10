@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2001, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2001, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 #include <mysqld_error.h>
 #include <sys/types.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "client/check/mysqlcheck.h"
@@ -131,14 +132,14 @@ static inline void escape_str(const string &src, size_t start, size_t end,
 }
 
 static string escape_table_name(const string &src) {
-  string res = "";
+  string res;
 
   escape_str(src, 0, src.length(), res);
   return res;
 }
 
 static string escape_db_table_name(const string &src, size_t dot_pos) {
-  string res = "";
+  string res;
 
   /* Escape database name. */
   escape_str(src, 0, dot_pos - 1, res);
@@ -172,7 +173,7 @@ static int process_all_tables_in_db(const string &database) {
     /* Skip views if we don't perform renaming. */
     if ((num_columns == 2) && (strcmp(row[1], "VIEW") == 0)) continue;
 
-    table_names.push_back(row[0]);
+    table_names.emplace_back(row[0]);
   }
   mysql_free_result(res);
 
@@ -191,7 +192,7 @@ static int run_query(const string &query) {
 
 static int rebuild_table(const string &name) {
   int rc = 0;
-  string query = "ALTER TABLE " + name + " FORCE";
+  string const query = "ALTER TABLE " + name + " FORCE";
   if (mysql_real_query(sock, query.c_str(), (ulong)query.length())) {
     fprintf(stderr, "Failed to %s\n", query.c_str());
     fprintf(stderr, "Error: %s\n", mysql_error(sock));
@@ -255,7 +256,7 @@ static int handle_request_for_tables(const string &tables) {
       break;
   }
 
-  string query = operation + " TABLE " + tables + " " + options;
+  string const query = operation + " TABLE " + tables + " " + options;
 
   if (mysql_real_query(sock, query.c_str(), (ulong)query.length())) {
     DBError(sock,
@@ -291,10 +292,10 @@ static void print_result() {
         list
       */
       if (found_error && opt_auto_repair && what_to_do != DO_REPAIR &&
-          strcmp(row[3], "OK")) {
+          strcmp(row[3], "OK") != 0) {
         if (table_rebuild) {
           if (prev_alter[0])
-            alter_table_cmds.push_back(prev_alter);
+            alter_table_cmds.emplace_back(prev_alter);
           else
             tables4rebuild.push_back(escape_db_table_name(prev, dot_pos));
         } else {
@@ -315,7 +316,7 @@ static void print_result() {
       } else {
         printf("%s\n%-9s: %s", row[0], row[2], row[3]);
       }
-      if (opt_auto_repair && strcmp(row[2], "note")) {
+      if (opt_auto_repair && strcmp(row[2], "note") != 0) {
         const char *alter_txt = strstr(row[3], "ALTER TABLE");
         found_error = true;
         if (alter_txt) {
@@ -346,7 +347,7 @@ static void print_result() {
   if (found_error && opt_auto_repair && what_to_do != DO_REPAIR) {
     if (table_rebuild) {
       if (prev_alter[0])
-        alter_table_cmds.push_back(prev_alter);
+        alter_table_cmds.emplace_back(prev_alter);
       else
         tables4rebuild.push_back(escape_db_table_name(prev, dot_pos));
     } else {
@@ -387,7 +388,7 @@ void mysql_check(MYSQL *connection, int what_to_do, bool opt_alldbs,
   ::opt_upgrade = opt_upgrade;
   ::opt_write_binlog = opt_write_binlog;
   ::verbose = verbose;
-  ::opt_skip_database = opt_skip_database;
+  ::opt_skip_database = std::move(opt_skip_database);
   ::DBError = dberror;
 
   if (!::opt_write_binlog) {
@@ -400,7 +401,7 @@ void mysql_check(MYSQL *connection, int what_to_do, bool opt_alldbs,
   if (::opt_alldbs) process_all_databases();
   /* Only one database and selected table(s) */
   else if (arguments.size() > 1 && !::opt_databases) {
-    string db_name = arguments[0];
+    string const db_name = arguments[0];
     arguments.erase(arguments.begin());
     process_selected_tables(db_name, arguments);
   }

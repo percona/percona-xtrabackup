@@ -151,6 +151,8 @@ INSERT INTO mysql.user SELECT * FROM save_user;
 DELETE FROM mysql.role_edges;
 INSERT INTO mysql.role_edges SELECT * FROM save_role_edges;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 #
 # Bug#29395197 REVOKE ALLOWS INCORRECT VALUES
 #

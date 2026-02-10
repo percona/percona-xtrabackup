@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -40,8 +40,7 @@ std::string_view k_err_html_response_format{
     "<H1>%s</H1>\n"
     "</BODY></HTML>\n"};
 
-namespace http {
-namespace server {
+namespace http::server {
 
 using Headers = ServerRequest::Headers;
 using IOBuffer = ServerRequest::IOBuffer;
@@ -85,7 +84,7 @@ void ServerRequest::send_error(StatusType status_code,
                 40);
 
   const auto size =
-      snprintf(&buffer[0], buffer.size(), k_err_html_response_format.data(),
+      snprintf(buffer.data(), buffer.size(), k_err_html_response_format.data(),
                status_code, status_text.c_str(), status_text.c_str());
 
   assert(0 != size &&
@@ -111,9 +110,9 @@ void ServerRequest::send_reply(StatusType status_code,
                                const IOBuffer &buffer) {
   using namespace std::literals;  // NOLINT(build/namespaces_literals)
 
-  static std::string k_path;
+  static std::string const k_path;
 
-  auto value = holder_.input_headers_.find("Connection");
+  const auto *value = holder_.input_headers_.find("Connection");
   if (value) {
     if (http::base::compare_case_insensitive(*value, "Keep-Alive"sv)) {
       holder_.output_headers_.add("Connection", "Keep-Alive");
@@ -135,11 +134,11 @@ base::method::key_type ServerRequest::get_method() const {
 const base::Uri &ServerRequest::get_uri() const { return uri_; }
 
 bool ServerRequest::is_modified_since(time_t last_modified) {
-  auto *value = holder_.input_headers_.find("If-Modified-Since");
+  const auto *value = holder_.input_headers_.find("If-Modified-Since");
 
   if (value) {
     try {
-      time_t if_mod_since_ts =
+      time_t const if_mod_since_ts =
           http::base::time_from_rfc5322_fixdate(value->c_str());
 
       if (!(last_modified > if_mod_since_ts)) {
@@ -162,10 +161,8 @@ bool ServerRequest::add_last_modified(time_t last_modified) {
     holder_.output_headers_.add("Last-Modified", date_buf);
 
     return true;
-  } else {
-    return false;
   }
+  return false;
 }
 
-}  // namespace server
-}  // namespace http
+}  // namespace http::server

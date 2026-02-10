@@ -259,14 +259,12 @@ CHECK TABLE t1 EXTENDED;
 --sorted_result
 SELECT * FROM t1;
 SELECT * FROM t1 order by a;
---skip_if_hypergraph  # Does not use the index leading to the error.
 SELECT * FROM t1 order by b;
 INSERT INTO t1 VALUES (3, 3);
 INSERT INTO t1 VALUES (4, 4);
 --sorted_result
 SELECT * FROM t1;
 SELECT * FROM t1 order by a;
---skip_if_hypergraph  # Does not use the index leading to the error.
 SELECT * FROM t1 order by b;
 DROP TABLE t1;
 
@@ -429,7 +427,7 @@ DROP TABLE t2;
 
 --echo # Create table t2 with one column added INSTANTly
 CREATE TABLE t2(id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, v1 VARCHAR(255));
-ALTER TABLE t2 ADD COLUMN v2 VARCHAR(255);
+ALTER TABLE t2 ADD COLUMN v2 VARCHAR(255), ALGORITHM=INSTANT;
 ALTER TABLE t2 DISCARD TABLESPACE;
 
 --echo # Copy CFG/IBD file from temp
@@ -445,8 +443,8 @@ DROP TABLE t2;
 
 --echo # Create table t2 with two column added INSTANTly
 CREATE TABLE t2(id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY);
-ALTER TABLE t2 ADD COLUMN v1 VARCHAR(255);
-ALTER TABLE t2 ADD COLUMN v2 VARCHAR(255);
+ALTER TABLE t2 ADD COLUMN v1 VARCHAR(255), ALGORITHM=INSTANT;
+ALTER TABLE t2 ADD COLUMN v2 VARCHAR(255), ALGORITHM=INSTANT;
 ALTER TABLE t2 DISCARD TABLESPACE;
 
 --echo # Copy CFG/IBD file from temp

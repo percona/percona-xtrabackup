@@ -240,6 +240,8 @@ last_t1()
 # must not throw an error
 CALL test_t1(last_t1() + 1);
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # existing connections continue as before even after flush
 # must not throw an error
 SELECT USER();
@@ -278,6 +280,8 @@ N
 UPDATE mysql.user SET password_expired='Y'
   WHERE user='must_change' and host = 'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT USER();
 ERROR HY000: You must reset your password using ALTER USER statement before executing this statement.
 SELECT last_t1();
@@ -317,7 +321,7 @@ ALTER USER must_change@localhost IDENTIFIED BY 'aha4';
 ALTER USER
 invalid_user@localhost,
 must_change@localhost PASSWORD EXPIRE;
-ERROR HY000: Operation ALTER USER failed for 'invalid_user'@'localhost'
+ERROR HY000: Operation ALTER USER failed for 'invalid_user'@'localhost' (User account does not exist)
 SELECT password_expired FROM mysql.user
 WHERE user='must_change' and host = 'localhost';
 password_expired

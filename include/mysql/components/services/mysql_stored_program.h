@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -56,6 +56,7 @@ BEGIN_SERVICE_DEFINITION(mysql_stored_program_metadata_query)
   "sp_body"        -> mysql_cstring_with_length *
   "sp_type"        -> uint16_t
   "argument_count" -> uint32_t
+  "import_count"   -> uint32_t
 
   @param [in]  sp_handle Handle to stored procedure structure
   @param [in]  key       Metadata name
@@ -927,4 +928,33 @@ DECLARE_BOOL_METHOD(set,
                     (stored_program_handle sp, external_program_handle value));
 
 END_SERVICE_DEFINITION(mysql_stored_program_external_program_handle)
+
+/*
+ * Import-related services:
+ */
+BEGIN_SERVICE_DEFINITION(mysql_stored_program_import_metadata_query)
+
+/**
+  Get stored program import metadata
+
+  @param [in]  sp_handle      Handle to stored procedure structure
+  @param [in]  index          Argument index
+  @param [out] schema_name    Name of the schema where library is defined
+  @param [out] library_name   Name of the library
+  @param [out] version        Version of the library
+  @param [out] alias          Alias, if provided. Returns nullptr if not
+  @param [out] extension      Not used
+
+  @returns status of get operation
+  @retval false Success
+  @retval true  Failure
+*/
+DECLARE_BOOL_METHOD(get, (stored_program_handle sp_handle, uint32_t index,
+                          mysql_cstring_with_length *schema_name,
+                          mysql_cstring_with_length *library_name,
+                          mysql_cstring_with_length *version,
+                          mysql_cstring_with_length *alias, void *extension));
+
+END_SERVICE_DEFINITION(mysql_stored_program_import_metadata_query)
+
 #endif /* MYSQL_STORED_PROGRAM_H */

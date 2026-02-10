@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,6 @@
 #include "sql/tztime.h"
 #include "unittest/gunit/mock_field_datetime.h"
 #include "unittest/gunit/mock_field_timestamp.h"
-#include "unittest/gunit/mock_field_timestampf.h"
 #include "unittest/gunit/test_utils.h"
 
 namespace item_func_now_local_unittest {
@@ -67,7 +66,7 @@ class ItemFuncNowLocalTest : public ::testing::Test {
 */
 TEST_F(ItemFuncNowLocalTest, saveInField) {
   Item_func_now_local *item = new Item_func_now_local(0);
-  Mock_field_timestamp f;
+  Mock_field_timestamp f(Field::NONE, 0);
 
   EXPECT_FALSE(item->resolve_type(get_thd()));
   f.make_writable();
@@ -77,21 +76,6 @@ TEST_F(ItemFuncNowLocalTest, saveInField) {
             f.to_timeval().m_tv_sec);
   // CURRENT_TIMESTAMP should truncate.
   EXPECT_EQ(0, f.to_timeval().m_tv_usec);
-}
-
-/*
-  Tests that Item_func_now_local::store_in() goes through the optimized
-  interface Field::store_timestamp() on a Field_timestamp.
-*/
-TEST_F(ItemFuncNowLocalTest, storeInTimestamp) {
-  Mock_field_timestamp f;
-  Item_func_now_local::store_in(&f);
-
-  EXPECT_EQ(get_thd()->query_start_timeval_trunc(0).m_tv_sec,
-            f.to_timeval().m_tv_sec);
-  // CURRENT_TIMESTAMP should truncate.
-  EXPECT_EQ(0, f.to_timeval().m_tv_usec);
-  EXPECT_TRUE(f.store_timestamp_called);
 }
 
 int powers_of_10[DATETIME_MAX_DECIMALS + 1] = {1,     10,     100,    1000,
@@ -110,13 +94,13 @@ int truncate(int n, int scale) {
 /*
   Tests that Item_func_now_local::store_in() goes through the optimized
   interface Field_temporal_with_date_and_time::store_timestamp_internal() on a
-  Field_timestampf.
+  Field_timestamp.
 
   We also test that the CURRENT_TIMESTAMP value gets truncated, not rounded.
 */
-TEST_F(ItemFuncNowLocalTest, storeInTimestampf) {
+TEST_F(ItemFuncNowLocalTest, storeInTimestamp) {
   for (ulong scale = 0; scale <= DATETIME_MAX_DECIMALS; ++scale) {
-    Mock_field_timestampf f(Field::NONE, scale);
+    Mock_field_timestamp f(Field::NONE, scale);
     f.make_writable();
     Item_func_now_local::store_in(&f);
 
@@ -135,17 +119,19 @@ TEST_F(ItemFuncNowLocalTest, storeInTimestampf) {
 */
 TEST_F(ItemFuncNowLocalTest, storeInDatetime) {
   Mock_field_datetime f;
-  MYSQL_TIME now_time;
   THD *thd = get_thd();
   timeval now = {1313677243,
                  1234};  // Thu Aug 18 16:20:43 CEST 2011 and 1234 ms
   thd->set_time(&now);
 
   Item_func_now_local::store_in(&f);
+
+  Datetime_val now_time;
   thd->variables.time_zone->gmt_sec_to_TIME(
       &now_time, {thd->start_time.tv_sec, thd->start_time.tv_usec});
-  MYSQL_TIME stored_time;
-  f.get_time(&stored_time);
+
+  Datetime_val stored_time;
+  f.val_datetime(&stored_time, 0);
 
   EXPECT_EQ(now_time.year, stored_time.year);
   EXPECT_EQ(now_time.month, stored_time.month);

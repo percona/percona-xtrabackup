@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -33,8 +33,7 @@
 
 #include "http/base/http_time.h"
 
-namespace http {
-namespace base {
+namespace http::base {
 
 int time_to_rfc5322_fixdate(time_t ts, char *date_buf, size_t date_buf_len) {
   struct tm t_m;
@@ -123,5 +122,4 @@ time_t time_from_rfc5322_fixdate(const char *date_buf) {
   return time_from_struct_tm_utc(&t_m);
 }
 
-}  // namespace base
-}  // namespace http
+}  // namespace http::base

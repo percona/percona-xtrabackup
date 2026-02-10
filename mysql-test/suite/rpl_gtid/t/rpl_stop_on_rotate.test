@@ -25,7 +25,6 @@
 #
 
 --source include/have_debug_sync.inc
---source include/have_replica_parallel_workers.inc
 --source include/have_binlog_format_row.inc
 --source include/rpl/init_source_replica.inc
 

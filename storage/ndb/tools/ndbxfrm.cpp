@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,8 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 #include "util/require.h"
 
 #include "kernel/signaldata/FsOpenReq.hpp"
@@ -82,18 +82,18 @@ static struct my_option my_long_options[] =
   // Specific options
   { "compress", 'c', "Compress file",
     &g_compress, nullptr, nullptr, GET_BOOL, NO_ARG,
-    0, 0, 0, 0, 0, 0 },
+    0, 0, 0, nullptr, 0, nullptr },
   { "decrypt-key", NDB_OPT_NOSHORT, "Decryption key",
-    nullptr, nullptr, 0, GET_PASSWORD, OPT_ARG,
+    nullptr, nullptr, nullptr, GET_PASSWORD, OPT_ARG,
     0, 0, 0, nullptr, 0, &opt_decrypt_key},
   { "decrypt-key-from-stdin", NDB_OPT_NOSHORT, "Decryption key",
-    &opt_decrypt_key_from_stdin.opt_value, nullptr, 0, GET_BOOL, NO_ARG,
+    &opt_decrypt_key_from_stdin.opt_value, nullptr, nullptr, GET_BOOL, NO_ARG,
     0, 0, 0, nullptr, 0, &opt_decrypt_key_from_stdin},
   { "decrypt-password", NDB_OPT_NOSHORT, "Decryption password",
-    nullptr, nullptr, 0, GET_PASSWORD, OPT_ARG,
+    nullptr, nullptr, nullptr, GET_PASSWORD, OPT_ARG,
     0, 0, 0, nullptr, 0, &opt_decrypt_password},
   { "decrypt-password-from-stdin", NDB_OPT_NOSHORT, "Decryption password",
-    &opt_decrypt_password_from_stdin.opt_value, nullptr, 0, GET_BOOL, NO_ARG,
+    &opt_decrypt_password_from_stdin.opt_value, nullptr, nullptr, GET_BOOL, NO_ARG,
     0, 0, 0, nullptr, 0, &opt_decrypt_password_from_stdin},
   { "encrypt-block-size", NO_ARG,
     "Size of input data chunks that are encrypted as an unit. Used with XTS, "

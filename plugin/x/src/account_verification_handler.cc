@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -228,9 +228,6 @@ ngs::Error_code Account_verification_handler::get_offline_mode_error() const {
   char attr_value[1024] = "";
   size_t len_attr = sizeof(attr_value);
 
-  char user_value[USERNAME_CHAR_LENGTH + 1] = "";
-  size_t len_user = sizeof(user_value);
-
   char time_value[30] = "";
   size_t len_time = sizeof(time_value);
 
@@ -242,17 +239,12 @@ ngs::Error_code Account_verification_handler::get_offline_mode_error() const {
     if (service.is_valid()) {
       service->get(nullptr, "offline_mode", "reason", attr_value, &len_attr);
       service->get_time(nullptr, "offline_mode", time_value, &len_time);
-      service->get_user(nullptr, "offline_mode", user_value, &len_user);
     }
     mysql_plugin_registry_release(plugin_registry);
   }
 
   if (attr_value[0] != '\0') {
     return ngs::SQLError(ER_SERVER_OFFLINE_MODE_REASON, time_value, attr_value);
-  }
-
-  if (user_value[0] != '\0') {
-    return ngs::SQLError(ER_SERVER_OFFLINE_MODE_USER, time_value, user_value);
   }
 
   return ngs::SQLError(ER_SERVER_OFFLINE_MODE);

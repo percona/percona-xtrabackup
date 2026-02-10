@@ -1,4 +1,4 @@
-# Copyright (c) 2024, Oracle and/or its affiliates.
+# Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -38,3 +38,13 @@ MYSQL_ADD_PLUGIN(mysql_native_password
   CLIENT_ONLY
   MODULE_OUTPUT_NAME "mysql_native_password"
 )
+
+IF(LINUX)
+  SET(PLUGIN_VERSION_FILE
+    ${CMAKE_CURRENT_SOURCE_DIR}/mysql_native_password.ver)
+  # Hide all symbols in mysys, to avoid ODR violations.
+  # There is *one* visible symbol: _mysql_client_plugin_declaration_
+  TARGET_LINK_OPTIONS(mysql_native_password PRIVATE
+    LINKER:--version-script=${PLUGIN_VERSION_FILE}
+    )
+ENDIF()

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -39,8 +39,6 @@
 #include "storage/perfschema/unittest/stub_server_telemetry.h"
 #include "storage/perfschema/unittest/stub_telemetry_metrics.h"
 #include "unittest/mytap/tap.h"
-
-extern struct PSI_bootstrap PFS_bootstrap;
 
 static void test_oom() {
   int rc;

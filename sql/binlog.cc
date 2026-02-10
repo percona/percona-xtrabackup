@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -138,7 +138,7 @@
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 #include "sql/sql_parse.h"  // sqlcom_can_generate_row_events
-#include "sql/sql_show.h"   // append_identifier
+#include "sql/sql_show.h"   // append_identifier_*
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/transaction_info.h"
@@ -981,7 +981,7 @@ class binlog_cache_data {
   /// @retval false Success: the transaction was either compressed
   /// successfully, or compression was not attempted, or compression
   /// failed and left the uncompressed transaction intact.
-  [[NODISCARD]] bool compress(THD *thd);
+  [[nodiscard]] bool compress(THD *thd);
 
  private:
   /*
@@ -1139,6 +1139,12 @@ class binlog_cache_mngr {
   std::string m_incident;
 
  public:
+#ifndef NDEBUG
+  /// The number of times that the incident status has been set due to the
+  /// debug symbol binlog_inject_incident.
+  int m_injected_incident_count{0};
+#endif
+
   binlog_cache_mngr(ulong *ptr_binlog_stmt_cache_use_arg,
                     ulong *ptr_binlog_stmt_cache_disk_use_arg,
                     ulong *ptr_binlog_cache_use_arg,
@@ -1505,6 +1511,17 @@ int binlog_cache_data::write_event(Log_event *ev) {
   DBUG_TRACE;
 
   if (ev != nullptr) {
+    DBUG_EXECUTE_IF("binlog_inject_incident", {
+      // Set the incident status only once per session. Without this limitation,
+      // it usually gets sets first for the transaction cache and then, when
+      // writing the Incident_log_event, set again from the statement cache.
+      // When an incident occurs while writing an incident, it results in
+      // binlog_error_action, which is not our intention here.
+      if (m_cache_mngr.m_injected_incident_count == 0) {
+        set_incident();
+        ++m_cache_mngr.m_injected_incident_count;
+      }
+    });
     DBUG_EXECUTE_IF("simulate_disk_full_at_flush_pending",
                     { DBUG_SET("+d,simulate_file_write_error"); });
 
@@ -2037,7 +2054,7 @@ class Binlog_cache_compressor {
   /// @retval true The transaction cache has been corrupted,
   /// e.g. because an IO error occurred while replacing it, so the
   /// transaction has to abort.
-  [[NODISCARD]] bool compress() {
+  [[nodiscard]] bool compress() {
     if (!shall_compress()) return false;
     if (setup_compressor()) return false;
     if (setup_buffer_sequence()) return false;
@@ -2060,7 +2077,7 @@ class Binlog_cache_compressor {
   ///
   /// @retval true compression should be attempted
   /// @retval false compression should not be attempted
-  [[NODISCARD]] bool shall_compress() {
+  [[nodiscard]] bool shall_compress() {
     DBUG_TRACE;
     // no compression enabled (ctype == NONE at this point)
     if (!m_thd.variables.binlog_trx_compression) {
@@ -2100,7 +2117,7 @@ class Binlog_cache_compressor {
   /// Get and configure the compressor; update m_compressor.
   /// Set the compression_level for m_compressor
   /// @return true on error, false on success.
-  [[NODISCARD]] bool setup_compressor() {
+  [[nodiscard]] bool setup_compressor() {
     m_compressor = m_context.get_compressor(&m_thd);
     if (m_compressor == nullptr) {
       DBUG_PRINT("info", ("fallback to uncompressed: compressor==nullptr"));
@@ -2123,7 +2140,7 @@ class Binlog_cache_compressor {
   /// m_managed_buffer_sequence.
   ///
   /// @return true on error, false on success.
-  [[NODISCARD]] bool setup_buffer_sequence() {
+  [[nodiscard]] bool setup_buffer_sequence() {
     mysql::containers::buffers::Grow_calculator grow_calculator;
     grow_calculator.set_max_size(
         mysql::binlog::event::Transaction_payload_event::max_payload_length);
@@ -2141,7 +2158,7 @@ class Binlog_cache_compressor {
   /// store the output in the Managed_buffer_sequence.
   ///
   /// @return true on error, false on success.
-  [[NODISCARD]] bool compress_to_buffer_sequence() {
+  [[nodiscard]] bool compress_to_buffer_sequence() {
     Compressed_ostream stream{m_compressor, m_managed_buffer_sequence};
 
     THD_STAGE_GUARD(&m_thd, stage_binlog_transaction_compress);
@@ -2170,7 +2187,7 @@ class Binlog_cache_compressor {
   /// data.
   ///
   /// @return true on error, false on success.
-  [[NODISCARD]] bool get_payload_event_from_buffer_sequence(
+  [[nodiscard]] bool get_payload_event_from_buffer_sequence(
       Transaction_payload_log_event &tple) {
     tple.set_payload(&m_managed_buffer_sequence.read_part());
     tple.set_compression_type(m_compression_type);
@@ -2187,7 +2204,7 @@ class Binlog_cache_compressor {
   /// Log_event::write)
   ///
   /// @return true on error, false on success.
-  [[NODISCARD]] bool overwrite_cache_with_payload_event(
+  [[nodiscard]] bool overwrite_cache_with_payload_event(
       Transaction_payload_log_event &tple) {
     // Truncate cache file
     if (m_cache_storage.truncate(0)) {
@@ -5611,6 +5628,15 @@ void MYSQL_BIN_LOG::dec_prep_xids(THD *thd) {
   }
 }
 
+void MYSQL_BIN_LOG::wait_for_prep_xids() {
+  DBUG_TRACE;
+  mysql_mutex_lock(&LOCK_xids);
+  while (get_prep_xids() > 0) {
+    mysql_cond_wait(&m_prep_xids_cond, &LOCK_xids);
+  }
+  mysql_mutex_unlock(&LOCK_xids);
+}
+
 /*
   Wrappers around new_file_impl to avoid using argument
   to control locking. The argument 1) less readable 2) breaks
@@ -5674,7 +5700,6 @@ int MYSQL_BIN_LOG::new_file_impl(
     mysql_mutex_assert_owner(&LOCK_log);
   DBUG_EXECUTE_IF("semi_sync_3-way_deadlock",
                   DEBUG_SYNC(current_thd, "before_rotate_binlog"););
-  mysql_mutex_lock(&LOCK_xids);
   /*
     We need to ensure that the number of prepared XIDs are 0.
 
@@ -5683,10 +5708,7 @@ int MYSQL_BIN_LOG::new_file_impl(
     - We keep the LOCK_log to block new transactions from being
       written to the binary log.
    */
-  while (get_prep_xids() > 0) {
-    mysql_cond_wait(&m_prep_xids_cond, &LOCK_xids);
-  }
-  mysql_mutex_unlock(&LOCK_xids);
+  wait_for_prep_xids();
 
   m_binlog_index_monitor.lock();
 
@@ -8899,6 +8921,17 @@ void THD ::check_and_emit_warning_for_non_composable_engines(
       continue;
     // Skip secondary engines like RAPID
     if (!table->table->s->is_primary_engine()) continue;
+    if (is_temporary_table(table) &&
+        hton_is_secondary_engine(table->table->s->db_type())) {
+      /// If a temporary table exists on a secondary engine, it is guarantee
+      /// that the engine must support temporary tables.
+      assert(secondary_engine_supports_temporary_tables(
+          table->table->s->db_type()));
+      /// Note that temporary tables can only have a single engine. Both the
+      /// TABLE_SHARE::db_type() and TABLE_SHARE::secondary_engine will point to
+      /// that same engine.
+      continue;
+    }
     handlerton *engine = table->table->file->ht;
     std::string engine_name(ha_resolve_storage_engine_name(engine));
     std::string database_name(table->db);

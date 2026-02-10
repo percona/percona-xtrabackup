@@ -1,0 +1,53 @@
+# ==== PURPOSE ====
+#
+# This test checks whether transaction boundaries are correctly identified
+# during the relay log sanitization.
+#
+# ==== IMPLEMENTATION ====
+#
+# To check that transaction boundaries are correctly identified during the
+# relay log sanitization, we create an asynchronous channel that
+# applies prepared logs.
+#
+# T1.
+#     Test steps:
+#
+#     For each of the following cases, test that PITR is able to finish
+#     recovery (sanitizer does not remove the analyzed logs):
+#
+#     1. Stage: Run log sanitizer on relay log containing XID event
+#     2. Stage: Run log sanitizer on relay log containing atomic DDL
+#     3. Stage: Run log sanitizer on relay log containing COMMIT QUERY
+#     4. Stage: Run log sanitizer on relay log containing XA transaction
+#
+#     Test pass conditions:
+#
+#     - Applier applies binlog files without errors (GTID executed set matches
+#       expected GTID set, sanitizer does not remove the log)
+#
+# ==== REFERENCES ====
+#
+# Bug#37635908 Relay Log Sanitizer may cause PITR to become stuck
+#
+
+# This test does not depend on binlog format
+--source include/have_binlog_format_row.inc
+
+--let $rpl_server_count= 2
+--let $rpl_topology= none
+--source include/rpl/init.inc
+
+--let $test_query = INSERT INTO t VALUES (NULL), (NULL), (NULL)
+--source common/rpl/rpl_sanitizer_trx_boundaries.test
+
+--let $test_query = DROP TABLE t
+--source common/rpl/rpl_sanitizer_trx_boundaries.test
+
+--let $test_query = BEGIN; INSERT INTO t VALUES (NULL), (NULL), (NULL); COMMIT
+--source common/rpl/rpl_sanitizer_trx_boundaries.test
+
+--let $test_query = XA START 'a'; INSERT INTO t VALUES (NULL); XA END 'a'; XA PREPARE 'a'; XA COMMIT 'a';
+--source common/rpl/rpl_sanitizer_trx_boundaries.test
+
+--let $rpl_skip_sync = 1
+--source include/rpl/deinit.inc

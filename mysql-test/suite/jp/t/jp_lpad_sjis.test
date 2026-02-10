@@ -39,18 +39,27 @@ INSERT INTO `‚s‚W` VALUES ('‚ ‚¢‚¤‚¦‚¨'),('‚ ‚¢‚¤‚¦'),('‚ ‚¢‚¤'),('‚ ‚¢'),('‚ ')
 INSERT INTO `‚s‚X` VALUES ('ƒ\\•\—\\'),('ƒ\\•\—\'),('ƒ\\•\'),('ƒ\\'),('ƒ\'),('');
 
 #InnoDB
+--sorted_result
 SELECT `‚b‚P`, LPAD(`‚b‚P`,5,'¡') FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`, LPAD(`‚b‚P`,5,'‚w') FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`, LPAD(`‚b‚P`,5,'–\') FROM `‚s‚R`;
 
 #MyISAM
+--sorted_result
 SELECT `‚b‚P`, LPAD(`‚b‚P`,5,'¡') FROM `‚s‚S`;
+--sorted_result
 SELECT `‚b‚P`, LPAD(`‚b‚P`,5,'‚w') FROM `‚s‚T`;
+--sorted_result
 SELECT `‚b‚P`, LPAD(`‚b‚P`,5,'–\' ) FROM `‚s‚U`;
 
 #MEMORY
+--sorted_result
 SELECT `‚b‚P`, LPAD(`‚b‚P`,5,'¡') FROM `‚s‚V`;
+--sorted_result
 SELECT `‚b‚P`, LPAD(`‚b‚P`,5,'‚w') FROM `‚s‚W`;
+--sorted_result
 SELECT `‚b‚P`, LPAD(`‚b‚P`,5,'–\' ) FROM `‚s‚X`;
 
 DROP TABLE `‚s‚P`;

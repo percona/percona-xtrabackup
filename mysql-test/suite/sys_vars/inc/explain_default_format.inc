@@ -1,4 +1,5 @@
 --source include/elide_costs.inc
+--source include/hypergraph_is_active.inc
 
 # WL15040: Add system variable to control EXPLAIN format
 
@@ -9,7 +10,9 @@ set @orig_explain_format=@@global.explain_format;
 select @@explain_format, @@global.explain_format;
 
 # hypergraph with TRADITIONAL_STRICT should error out, rather than convert to TREE.
---error 0, ER_HYPERGRAPH_NOT_SUPPORTED_YET
+if ($hypergraph_is_active) {
+  --error ER_HYPERGRAPH_NOT_SUPPORTED_YET
+}
 explain select 1;
 
 set explain_format=traditional;

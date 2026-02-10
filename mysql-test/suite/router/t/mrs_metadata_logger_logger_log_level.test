@@ -1,0 +1,43 @@
+# Verify that the logging level defined in [logger] section used for MRS metadata logging when it is
+# not explicitly overwritten in [mysql_rest_service].level
+--source include/have_router.inc
+# mrs metadata logging is only enabled when md version is >= 4.0.2
+--source ../include/mrs/is_mrs_schema_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+
+--echo *******************************************************
+--echo # Create an example service "svc"
+--echo *******************************************************
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t1
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic/t1/1 --wait-until-status 60 --display none
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic/t1 --response-type RAW --expected-status 200 --display none
+
+--let mrs_log_expected_level="DEBUG"
+--let $mrs_log_expected_message="%"
+--source ../include/mrs/changes/wait_log_in_metadata.inc
+
+# make sure there are no DEBUG logs
+--assert(`select count(*) > 0 from mysql_rest_service_metadata.router_general_log where log_type = "DEBUG"`)
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

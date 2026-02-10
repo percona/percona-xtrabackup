@@ -1,0 +1,95 @@
+--source include/have_ndb.inc
+
+--let $ndb_2_fs = $MYSQLTEST_VARDIR/mysql_cluster.1/ndbd.2/ndb_2_fs
+
+--echo # Missing files D2
+
+--exec $NDB_MGM --execute="2 RESTART -n"
+--echo remove_file ndb_2_fs/D2/NDBCNTR/P0.sysfile
+--remove_file $ndb_2_fs/D2/NDBCNTR/P0.sysfile
+--echo remove_file ndb_2_fs/D2/DBDIH/P0.sysfile
+--remove_file $ndb_2_fs/D2/DBDIH/P0.sysfile
+--echo remove_file ndb_2_fs/D2/DBDICT/P0.SchemaLog
+--remove_file $ndb_2_fs/D2/DBDICT/P0.SchemaLog
+--echo remove_file ndb_2_fs/D2/DBDICT/T8/S0.TableList
+--remove_file $ndb_2_fs/D2/DBDICT/T8/S0.TableList
+--echo remove_file ndb_2_fs/D2/DBDIH/S2.FragList
+--remove_file $ndb_2_fs/D2/DBDIH/S2.FragList
+--exec $NDB_MGM --execute="2 START"
+--exec $NDB_WAITER
+
+--echo # Missing files D1
+
+--exec $NDB_MGM --execute="2 RESTART -n"
+--echo remove_file ndb_2_fs/D1/NDBCNTR/P0.sysfile
+--remove_file $ndb_2_fs/D1/NDBCNTR/P0.sysfile
+--echo remove_file ndb_2_fs/D1/DBDIH/P0.sysfile
+--remove_file $ndb_2_fs/D1/DBDIH/P0.sysfile
+--echo remove_file ndb_2_fs/D1/DBDICT/P0.SchemaLog
+--remove_file $ndb_2_fs/D1/DBDICT/P0.SchemaLog
+# D2/DBDICT/T8/S0.TableList is not recreated still missing, use file from D1
+--echo move_file ndb_2_fs/D1/DBDICT/T8/S0.TableList ndb_2_fs/D2/DBDICT/T8/S0.TableList
+--move_file $ndb_2_fs/D1/DBDICT/T8/S0.TableList $ndb_2_fs/D2/DBDICT/T8/S0.TableList
+--echo remove_file ndb_2_fs/D1/DBDIH/S2.FragList
+--remove_file $ndb_2_fs/D1/DBDIH/S2.FragList
+--exec $NDB_MGM --execute="2 START"
+--exec $NDB_WAITER
+
+--echo # Empty files D2
+
+--exec $NDB_MGM --execute="2 RESTART -n"
+--echo empty file ndb_2_fs/D2/NDBCNTR/P0.sysfile
+--remove_file $ndb_2_fs/D2/NDBCNTR/P0.sysfile
+--write_file $ndb_2_fs/D2/NDBCNTR/P0.sysfile
+EOF
+--echo empty file ndb_2_fs/D2/DBDIH/P0.sysfile
+--remove_file $ndb_2_fs/D2/DBDIH/P0.sysfile
+--write_file $ndb_2_fs/D2/DBDIH/P0.sysfile
+EOF
+--echo empty file ndb_2_fs/D2/DBDICT/P0.SchemaLog
+--remove_file $ndb_2_fs/D2/DBDICT/P0.SchemaLog
+--write_file $ndb_2_fs/D2/DBDICT/P0.SchemaLog
+EOF
+# D1/DBDICT/T8/S0.TableList is not recreated still missing, use file from D2
+--echo move_file ndb_2_fs/D2/DBDICT/T8/S0.TableList ndb_2_fs/D1/DBDICT/T8/S0.TableList
+--move_file $ndb_2_fs/D2/DBDICT/T8/S0.TableList $ndb_2_fs/D1/DBDICT/T8/S0.TableList
+--echo empty file ndb_2_fs/D2/DBDICT/T8/S0.TableList
+--write_file $ndb_2_fs/D2/DBDICT/T8/S0.TableList
+EOF
+--echo empty ndb_2_fs/D2/DBDIH/S2.FragList
+--remove_file $ndb_2_fs/D2/DBDIH/S2.FragList
+--write_file $ndb_2_fs/D2/DBDIH/S2.FragList
+EOF
+--exec $NDB_MGM --execute="2 START"
+--exec $NDB_WAITER
+
+--echo # Empty files D1
+
+--exec $NDB_MGM --execute="2 RESTART -n"
+--echo empty ndb_2_fs/D1/NDBCNTR/P0.sysfile
+--remove_file $ndb_2_fs/D1/NDBCNTR/P0.sysfile
+--write_file $ndb_2_fs/D1/NDBCNTR/P0.sysfile
+EOF
+--echo empty ndb_2_fs/D1/DBDIH/P0.sysfile
+--remove_file $ndb_2_fs/D1/DBDIH/P0.sysfile
+--write_file $ndb_2_fs/D1/DBDIH/P0.sysfile
+EOF
+--echo empty file ndb_2_fs/D1/DBDICT/P0.SchemaLog
+--remove_file $ndb_2_fs/D1/DBDICT/P0.SchemaLog
+--write_file $ndb_2_fs/D1/DBDICT/P0.SchemaLog
+EOF
+# D2/DBDICT/T8/S0.TableList is not recreated still empty, use file from D1
+--echo empty file ndb_2_fs/D1/DBDICT/P0.SchemaLog
+--move_file $ndb_2_fs/D1/DBDICT/T8/S0.TableList $ndb_2_fs/D2/DBDICT/T8/S0.TableList
+--write_file $ndb_2_fs/D1/DBDICT/T8/S0.TableList
+EOF
+--echo empty file ndb_2_fs/D1/DBDIH/S2.FragList
+--remove_file $ndb_2_fs/D1/DBDIH/S2.FragList
+--write_file $ndb_2_fs/D1/DBDIH/S2.FragList
+EOF
+--exec $NDB_MGM --execute="2 START"
+--exec $NDB_WAITER
+
+# D1/DBDICT/T8/S0.TableList is not recreated still empty, copy file from D2
+--remove_file $ndb_2_fs/D1/DBDICT/T8/S0.TableList
+--copy_file $ndb_2_fs/D2/DBDICT/T8/S0.TableList $ndb_2_fs/D1/DBDICT/T8/S0.TableList

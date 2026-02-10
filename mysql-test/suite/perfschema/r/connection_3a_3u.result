@@ -1,3 +1,5 @@
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 call dump_all();
 processlist_user	processlist_host
 event_scheduler	localhost
@@ -807,3 +809,5 @@ variable_name	variable_value
 Performance_schema_accounts_lost	15
 Performance_schema_hosts_lost	0
 Performance_schema_users_lost	15
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

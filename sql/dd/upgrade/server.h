@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,6 +37,13 @@ enum enum_upgrade_mode : int {
   UPGRADE_MINIMAL,
   UPGRADE_AUTO,
   UPGRADE_FORCE
+};
+
+extern TYPELIB check_table_fun_mode_typelib;
+extern const char *check_table_fun_modes[];
+enum enum_check_table_fun_mode : int {
+  CHECK_TABLE_FUN_WARN,
+  CHECK_TABLE_FUN_ABORT
 };
 
 namespace dd {

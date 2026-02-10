@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,7 @@
 */
 
 #include "http/server/bind.h"
+#include "mysql/harness/net_ts/internet.h"
 
 namespace http {
 namespace server {
@@ -31,7 +32,8 @@ namespace server {
 Bind::Bind(io_context *io_context, const std::string &address,
            const uint16_t port)
     : context_{io_context} {
-  auto resolve_res = resolver_.resolve(address, std::to_string(port));
+  auto resolve_res = resolver_.resolve(address, std::to_string(port),
+                                       net::ip::resolver_base::passive);
   if (!resolve_res) {
     throw std::system_error(resolve_res.error(),
                             "resolving " + address + " failed");

@@ -1,0 +1,92 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+CREATE USER 'u1'@'%' IDENTIFIED BY 'p1';
+CREATE USER 'u2'@'%' IDENTIFIED BY 'p2';
+CREATE USER 'u3'@'%' IDENTIFIED BY 'p3';
+CREATE USER 'u4'@'%' IDENTIFIED BY 'p4';
+CREATE USER 'u5'@'%' IDENTIFIED BY 'p5';
+CREATE USER 'u6'@'%' IDENTIFIED BY 'p6';
+CREATE USER 'u7'@'%' IDENTIFIED BY 'p7';
+CREATE USER 'u8'@'%' IDENTIFIED BY 'p8';
+CREATE USER 'u9'@'%' IDENTIFIED BY 'p9';
+
+
+## I. Create servcices that have basic-mysql authentication:
+#
+## II. Limit the hosts
+#
+
+#
+# I.1
+# Registred SERVICE at path: /svc1
+# Registred DB_SCHEMA at path: /svc1/basic1
+# Registred DB_OBJECT at path: /svc1/basic1/o1
+# Registred AUTH APP at path: /svc1
+# Limit max-attempts per host to "1"
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=
+'{"authentication":{"throttling":{"perHost":{"maximumAttemptsPerMinute":1}}}}';
+
+#
+# II.1
+# sanity check that basic1 requires auth.
+GET /svc1/basic1/o1
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+# check maximumAttemptsPerMinute (TSFR_1_1_1)
+GET /svc1/authentication/login
+
+OK
+# different user, same host should fail as max-attempts-per-minute is reached.
+GET /svc1/authentication/login
+{"message":"Too Many Requests","status":429}
+OK
+# wait 60secs to reset the rate-limiter and check that u2 can login again.
+GET /svc1/authentication/login
+
+OK
+# change the maximumAttemptsPerMinute and check if it is applied.
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=
+'{"authentication":{"throttling":{"perHost":{"maximumAttemptsPerMinute":2},"blockWhenAttemptsExceededInSeconds":2}}}';
+GET /svc1/authentication/login
+
+OK
+# different user, same host should NOT fail as max-attempts-per-minute is not reached yet.
+GET /svc1/authentication/login
+
+OK
+# different user, same host should fail as max-attempts-per-minute=2 is reached.
+GET /svc1/authentication/login
+{"message":"Too Many Requests","status":429}
+OK
+# minimumTimeBetweenRequestsInMs (TSFR_1_2_1)
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=
+'{"authentication":{"throttling":{"perHost":{"minimumTimeBetweenRequestsInMs":1000}}}}';
+GET /svc1/authentication/login
+
+OK
+GET /svc1/authentication/login
+{"message":"Too Many Requests","status":429}
+OK
+GET /svc1/authentication/login
+
+OK
+DROP USER 'u1'@'%';
+DROP USER 'u2'@'%';
+DROP USER 'u3'@'%';
+DROP USER 'u4'@'%';
+DROP USER 'u5'@'%';
+DROP USER 'u6'@'%';
+DROP USER 'u7'@'%';
+DROP USER 'u8'@'%';
+DROP USER 'u9'@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

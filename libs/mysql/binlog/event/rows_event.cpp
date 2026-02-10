@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -495,6 +495,8 @@ Rows_event::Rows_event(const char *buf, const Format_description_event *fde)
     columns_after_image = columns_before_image;
 
   data_size = READER_CALL(available_to_read);
+
+  READER_TRY_CALL(reserve, &row, data_size + 1);
   READER_TRY_CALL(assign, &row, data_size);
   // JAG: TODO: Investigate and comment here about the need of this extra byte
   row.push_back(0);

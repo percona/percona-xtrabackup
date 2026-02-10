@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -116,13 +116,6 @@ public abstract class AbstractClusterJTest extends TestCase {
      */
     private Collection<Object> tearDownInstances = new LinkedList<Object>();
 
-    /**
-     *
-     * Indicates an exception thrown in method <code>tearDown</code>.
-     * At the end of method <code>tearDown</code> this field is nullified.
-     * TODO support this feature
-     */
-//    private Throwable tearDownThrowable;
     private String NL = "\n";
 
     protected boolean debug;
@@ -153,6 +146,12 @@ public abstract class AbstractClusterJTest extends TestCase {
         }
     }
 
+    protected SessionFactory getSessionFactory(Properties customProperties) {
+        var result = ClusterJHelper.getSessionFactory(customProperties);
+        existingSessionFactories.add(result);
+        return result;
+    }
+
     /** Close any open session factories.
      * Tests can call this function to close any open session factories,
      * to prevent them from causing any interference with their testing.
@@ -181,6 +180,13 @@ public abstract class AbstractClusterJTest extends TestCase {
         }
         session = sessionFactory.getSession();
         tx = session.currentTransaction();
+    }
+
+    protected void closeSession() {
+        if (session != null && !session.isClosed()) {
+            session.close();
+            session = null;
+        }
     }
 
     protected void dumpSystemProperties() {
@@ -735,5 +741,12 @@ public abstract class AbstractClusterJTest extends TestCase {
             }
         }
     }
+
+  protected void sleep(int msec) {
+      try {
+          Thread.sleep(msec);
+      } catch(InterruptedException e) {
+      }
+  }
 
 }

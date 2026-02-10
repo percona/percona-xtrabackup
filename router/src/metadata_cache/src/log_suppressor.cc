@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -33,15 +33,15 @@ namespace metadata_cache {
 LogSuppressor::~LogSuppressor() = default;
 
 void LogSuppressor::log_message(
-    const MessageId id, const std::string &uuid, const std::string &message,
+    const MessageId id, const std::string &key, const std::string &message,
     bool invalid_condition,
     mysql_harness::logging::LogLevel invalid_condition_level,
     mysql_harness::logging::LogLevel valid_condition_level,
     const bool log_initial_valid) {
-  const auto key = std::make_pair(uuid, id);
+  const auto msg_key = std::make_pair(key, id);
   std::string last_message;
-  if (messages_.count(key) != 0) {
-    last_message = messages_[key];
+  if (messages_.count(msg_key) != 0) {
+    last_message = messages_[msg_key];
   }
 
   if (last_message == message) {
@@ -49,7 +49,7 @@ void LogSuppressor::log_message(
     return;
   }
 
-  messages_[key] = message;
+  messages_[msg_key] = message;
 
   // the caller does not want to log anything in this scenario
   if (message.empty()) {

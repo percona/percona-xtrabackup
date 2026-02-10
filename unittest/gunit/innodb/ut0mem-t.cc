@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@ namespace innodb_ut0mem_unittest {
 /* test ut_str_sql_format() */
 TEST(ut0mem, utstrsqlformat) {
   const char *buf_initial = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-  ulint buf_initial_sz = strlen(buf_initial) + 1;
+  ulint const buf_initial_sz = strlen(buf_initial) + 1;
   char buf[64];
   ulint ret;
   struct {
@@ -80,14 +80,13 @@ TEST(ut0mem, utstrsqlformat) {
       {"a'b'c'", 6, 32, 12, "'a''b''c'''"},
   };
 
-  for (ulint i = 0; i < UT_ARR_SIZE(test_data); i++) {
+  for (auto &i : test_data) {
     memcpy(buf, buf_initial, buf_initial_sz);
 
-    ret = ut_str_sql_format(test_data[i].in, test_data[i].in_len, buf,
-                            test_data[i].buf_size);
+    ret = ut_str_sql_format(i.in, i.in_len, buf, i.buf_size);
 
-    EXPECT_EQ(test_data[i].ret_expected, ret);
-    EXPECT_STREQ(test_data[i].buf_expected, buf);
+    EXPECT_EQ(i.ret_expected, ret);
+    EXPECT_STREQ(i.buf_expected, buf);
   }
 }
 

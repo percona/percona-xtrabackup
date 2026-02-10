@@ -1,5 +1,5 @@
 # -*- cperl -*-
-# Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ use strict;
 
 use base qw(Exporter);
 our @EXPORT = qw(collect_option collect_test_cases init_pattern
-  $do_test $group_replication);
+  $do_test $group_replication $router_test);
 
 use File::Basename;
 use File::Spec::Functions qw / splitdir /;
@@ -84,6 +84,8 @@ our $start_from;
 our $default_myisam = 0;
 
 our $group_replication;
+our $router_test;
+our $router_bootstrap_test;
 
 sub collect_option {
   my ($opt, $value) = @_;
@@ -584,6 +586,7 @@ sub collect_test_cases ($$$$) {
       }
     } else {
       share(\$group_replication);
+      share(\$router_test);
       share(\$some_test_found);
 
       # Array containing thread id of all the threads used for
@@ -1171,8 +1174,12 @@ sub optimize_cases {
       }
 
       if ($secondary_engine_support) {
-        optimize_secondary_engine_tests($dash_opt, $tinfo);
+        optimize_secondary_engine_opt_tests($dash_opt, $tinfo);
       }
+    }
+
+    if ($secondary_engine_support) {
+      optimize_secondary_engine_tests($tinfo);
     }
 
     if ($quick_collect && !$tinfo->{'skip'}) {
@@ -1359,6 +1366,11 @@ sub collect_one_test_case {
     # Specifies the configuration file to use for this test
     $tinfo->{'template_path'} = $test_cnf_file;
   }
+  my $test_router_cnf_file = "$testdir/$tname-router.cnf";
+  if (-f $test_router_cnf_file) {
+    # Specifies the Router configuration file to use for this test
+    $tinfo->{'router_template_path'} = $test_router_cnf_file;
+  }
 
   # master sh
   my $master_sh = "$testdir/$tname-master.sh";
@@ -1435,8 +1447,30 @@ sub collect_one_test_case {
   if ($tinfo->{'no_valgrind_without_big'} and $::opt_valgrind) {
     if (!$::opt_big_test and !$::opt_only_big_test) {
       skip_test($tinfo,
-                "Need '--big-test' or '--only-big-test' when running " .
-                  "with Valgrind.");
+                "Test needs '--big-test' or '--only-big-test' option when running " .
+                "with Valgrind.");
+      return $tinfo;
+    }
+  }
+
+  # Tests having not_asan_without_big.inc include file needs either
+  # big-test or only-big-test option to run in ASAN environment.
+  if ($tinfo->{'not_asan_without_big'} &&
+      ($::opt_sanitize || $::mysql_version_extra =~ /asan/)) {
+    if (!$::opt_big_test and !$::opt_only_big_test) {
+      skip_test($tinfo,
+                "Test needs '--big-test' or '--only-big-test' option when running with ASAN.");
+      return $tinfo;
+    }
+  }
+
+  # Tests having not_ubsan_without_big.inc include file needs either
+  # big-test or only-big-test option to run in UBSAN environment.
+  if ($tinfo->{'not_ubsan_without_big'} &&
+      ($::opt_sanitize || $::mysql_version_extra =~ /ubsan/)) {
+    if (!$::opt_big_test and !$::opt_only_big_test) {
+      skip_test($tinfo,
+                "Test needs '--big-test' or '--only-big-test' option when running with UBSAN.");
       return $tinfo;
     }
   }
@@ -1459,7 +1493,7 @@ sub collect_one_test_case {
     return $tinfo;
   }
   if ($tinfo->{'not_ubsan'} &&
-      ($::opt_sanitize || $::mysql_version_extra =~ /asan/)) {
+      ($::opt_sanitize || $::mysql_version_extra =~ /ubsan/)) {
     skip_test($tinfo, "Test should not run with UBSAN.");
     return $tinfo;
   }
@@ -1528,6 +1562,41 @@ sub collect_one_test_case {
   # Check for group replication tests
   $group_replication = 1 if ($tinfo->{'grp_rpl_test'});
 
+  # Check for router tests
+  if ($tinfo->{'router_test'}) {
+    # check if the router executable was found (built)
+    if ($::exe_mysqlrouter eq "") {
+      skip_test($tinfo, "No router executable available.");
+      return $tinfo;
+    }
+
+    if ($::plugin_mysqlrouter_routing eq "") {
+      # Packaging problem, must be deployed with MySQLRouter
+      skip_test($tinfo, "No routing plugin available.");
+      return $tinfo;
+    }
+  }
+  $router_test = 1 if ($tinfo->{'router_test'});
+
+  # Check for router-jit-executor tests
+  if ($tinfo->{'router_jit_executor_test'}) {
+    # check if the router executable was found (built)
+    if ($::plugin_mysqlrouter_jit_executor eq "") {
+      skip_test($tinfo, "No jit_executor plugin available.");
+      return $tinfo;
+    }
+  }
+
+  # Check for MySQL Router bootstrap tests
+  if ($tinfo->{'router_bootstrap_test'}) {
+    # check if the routing plugin was found (built)
+    if ($::plugin_mysqlrouter_routing eq "") {
+      # Packaging problem, must be deployed with MySQLRouter
+      skip_test($tinfo, "No routing plugin available.");
+      return $tinfo;
+    }
+  }
+
   if ($tinfo->{'not_windows'} && IS_WINDOWS) {
     skip_test($tinfo, "Test not supported on Windows");
     return $tinfo;
@@ -1558,6 +1627,15 @@ sub collect_one_test_case {
       }
     }
     $tinfo->{template_path} = $config;
+  }
+
+  if (!$tinfo->{router_template_path}) {
+    my $config = "$suitedir/my-router.cnf";
+    if (!-f $config) {
+      # Assume default conf will be used
+      $config = "include/default_my-router.cnf";
+    }
+    $tinfo->{router_template_path} = $config;
   }
 
   # Set extra config file to use
@@ -1658,9 +1736,16 @@ my @tags = (
   [ "include/not_asan.inc", "not_asan", 1 ],
   [ "include/not_ubsan.inc", "not_ubsan", 1 ],
 
+  # Tests with below .inc files are considered to be MySQL Router tests.
+  [ "have_router.inc",      "router_test", 1 ],
+  [ "have_jit_executor.inc",      "router_jit_executor_test", 1 ],
+  [ "have_router_bootstrap.inc",  "router_bootstrap_test", 1 ],
+
   # Tests with below .inc file needs either big-test or only-big-test
-  # option along with valgrind option.
-  [ "include/no_valgrind_without_big.inc", "no_valgrind_without_big", 1 ]);
+  # option along with valgrind/asan/ubsan option.
+  [ "include/no_valgrind_without_big.inc", "no_valgrind_without_big", 1 ],
+  [ "include/not_asan_without_big.inc", "not_asan_without_big", 1 ],
+  [ "include/not_ubsan_without_big.inc", "not_ubsan_without_big", 1 ]);
 
 if ($secondary_engine_support) {
   push(@tags, get_secondary_engine_tags());

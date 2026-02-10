@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -140,7 +140,7 @@ bool Ndb_metadata_change_monitor::detect_logfile_group_changes(
         continue;
       }
       // Check if the logfile group's undofiles have been created
-      if (undofile_names.size() == 0) {
+      if (undofile_names.empty()) {
         log_info(
             "No undofiles assigned to logfile group '%s' found, skip "
             "submission",
@@ -204,7 +204,7 @@ bool Ndb_metadata_change_monitor::detect_tablespace_changes(
         continue;
       }
       // Check if the tablespace's datafiles have been created
-      if (datafile_names.size() == 0) {
+      if (datafile_names.empty()) {
         log_info(
             "No datafiles assigned to tablespace '%s' found, skip submission",
             tablespace_name.c_str());
@@ -252,6 +252,8 @@ bool Ndb_metadata_change_monitor::detect_schema_changes(
     // Schema is used in NDB but does not exist in DD
     if (ndbcluster_binlog_check_schema_async(ndb_schema_name)) {
       increment_metadata_detected_count();
+      // Also add new schema to be checked for tables
+      dd_schema_names->push_back(ndb_schema_name);
     } else {
       log_info("Failed to submit schema '%s' for synchronization",
                ndb_schema_name.c_str());

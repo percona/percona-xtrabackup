@@ -1,0 +1,181 @@
+RESET BINARY LOGS AND GTIDS;
+
+--source include/have_router.inc
+
+# we fiddle with metadata version view here so we want single view name
+--source ../include/mrs/is_mrs_schema_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic_schema
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic_schema/tab/1 --wait-until-status 60 --display none
+
+--echo
+--echo I. Verify that etag for a document is the same regardless of used fields filter
+--echo
+
+--echo No fields filter used
+--let $mrs_client_arg_request_type='GET'
+--let $mrs_client_arg_display=body
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--source ../include/mrs/mrs_client.inc
+
+--echo Single field selected with a filter
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1?f=cbin'
+--source ../include/mrs/mrs_client.inc
+
+--echo Single field excluded by a filter
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1?f=!cbin'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo II. Verify that value of field configured as no_check is not used for etag calculation
+--echo
+
+--echo Configure 'cvarchar' field as no_check
+update `mysql_rest_service_metadata`.`object_field` set no_check = 1 where name = "cvarchar";
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo Check the initial etag for document id=1
+--let $mrs_client_arg_request_type='GET'
+--let $mrs_client_arg_display=body
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--source ../include/mrs/mrs_client.inc
+
+--echo Change the value of cvarchar in the document
+update basic_schema.table3 set cvarchar = "new_value" where id = 1;
+
+--echo Fetch the document again, the etag should not change
+--let $mrs_client_arg_request_type='GET'
+--let $mrs_client_arg_display=body
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--source ../include/mrs/mrs_client.inc
+
+--echo Change the value of 'cdouble' field that is not configure as no_check
+update basic_schema.table3 set cdouble = 12.12 where id = 1;
+
+--echo Fetch the document again, the etag should change now
+--let $mrs_client_arg_request_type='GET'
+--let $mrs_client_arg_display=body
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo III. Verify that the PUT is accepted if the etag sent in the request is matching the current checksum and it is rejected otherwise
+--echo
+
+--echo Get document id=1
+--let $mrs_client_arg_request_type='GET'
+--let $mrs_client_arg_display=body
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--source ../include/mrs/mrs_client.inc
+
+--echo Modify the document using etag received in the previous step, that should be accepted
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_display=body
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--let $mrs_client_arg_payload='{ "id": 1, "vec": [1.1, 2.2], "cbin": "AMMM", "cbit": true, "cset": "","geo0": {"type": "Point","coordinates": [1.0,3.0]}, "cbit1": false, "cblob": "", "cdate": "2020-12-01", "cenum": "value1", "ctext": "numeric zeros", "ctime": "12:01:50.000000", "cyear": 2020, "cbit10": "AAA=", "cfloat": 0.0, "cbigint": 0, "cdouble": 12.1, "geo4326": {"type": "Point", "coordinates": [0.0,0.0]}, "cdecimal": 0.0, "ctinyint": 0, "cvarchar": "new_value", "cdatetime": "2020-12-01 12:01:50.000000", "csmallint": 0, "cmediumint": 0, "ctimestamp": "2020-12-01 12:01:50.000000","_metadata": {"etag": "CA79107DEC51CFEC4907CBFBDE947FB6A5A254EA85FBCEB0ECF6F02E69A3D52B"}}'
+--source ../include/mrs/mrs_client.inc
+
+--echo Try that again, should be rejected as the checksum has changed due to the update in the previous step
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--let $mrs_client_arg_payload='{ "id": 1, "vec": [2.3, 2.2], "cbin": "AMM", "cbit": false, "cset": "","geo0": {"type": "Point","coordinates": [1.0,3.0]}, "cbit1": false, "cblob": "", "cdate": "2020-12-01", "cenum": "value1", "ctext": "numeric zeros", "ctime": "12:01:50.000000", "cyear": 2020, "cbit10": "AAA=", "cfloat": 0.0, "cbigint": 0, "cdouble": 12.1, "geo4326": {"type": "Point", "coordinates": [0.0,0.0]}, "cdecimal": 0.0, "ctinyint": 0, "cvarchar": "new_value", "cdatetime": "2020-12-01 12:01:50.000000", "csmallint": 0, "cmediumint": 0, "ctimestamp": "2020-12-01 12:01:50.000000","_metadata": {"etag": "CA79107DEC51CFEC4907CBFBDE947FB6A5A254EA85FBCEB0ECF6F02E69A3D52B"}}'
+--let $mrs_client_arg_expected_status=412
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo IV. Verify that the PUT is accepted if the request does not contain etag
+--echo
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--let $mrs_client_arg_payload='{ "id": 1, "vec": [2.3, 2.2], "cbin": "AMM", "cbit": false, "cset": "","geo0": {"type": "Point","coordinates": [1.0,3.0]}, "cbit1": false, "cblob": "", "cdate": "2020-12-01", "cenum": "value1", "ctext": "numeric zeros", "ctime": "12:01:50.000000", "cyear": 2020, "cbit10": "AAA=", "cfloat": 0.0, "cbigint": 0, "cdouble": 12.1, "geo4326": {"type": "Point", "coordinates": [0.0,0.0]}, "cdecimal": 0.0, "ctinyint": 0, "cvarchar": "new_value", "cdatetime": "2020-12-01 12:01:50.000000", "csmallint": 0, "cmediumint": 0, "ctimestamp": "2020-12-01 12:01:50.000000", "_metadata": {}}'
+--let $mrs_client_arg_expected_status=Ok
+--let $mrs_client_arg_display=body
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo V. Verify the POST will also have etag in response (GET and PUT checked before). Include etag in the POST request making sure it is ignored.
+--echo
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type='POST'
+--let $mrs_client_arg_path='/svc/basic_schema/tab/'
+--let $mrs_client_arg_payload='{ "vec": [2.3, 2.2], "cbin": "NEW", "cbit": false, "cset": "","geo0": {"type": "Point","coordinates": [1.0,3.0]}, "cbit1": false, "cblob": "", "cdate": "2020-12-01", "cenum": "value1", "ctext": "numeric zeros", "ctime": "12:01:50.000000", "cyear": 2020, "cbit10": "AAA=", "cfloat": 0.0, "cbigint": 0, "cdouble": 12.1, "geo4326": {"type": "Point", "coordinates": [0.0,0.0]}, "cdecimal": 0.0, "ctinyint": 0, "cvarchar": "new_value", "cdatetime": "2020-12-01 12:01:50.000000", "csmallint": 0, "cmediumint": 0, "ctimestamp": "2020-12-01 12:01:50.000000", "_metadata": {"etag": "CA79107DEC51CFEC4907CBFBDE947FB6A5A254EA85FBCEB0ECF6F02E69A3D52A"}}'
+--let $mrs_client_arg_expected_status=Ok
+--let $mrs_client_arg_display=body
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo VI. Verify the etag is ignored if PUT does an insert
+--echo
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_path='/svc/basic_schema/tab/7'
+--let $mrs_client_arg_payload='{ "id": 7, "vec": [2.3, 2.2], "cbin": "AMM", "cbit": false, "cset": "","geo0": {"type": "Point","coordinates": [1.0,3.0]}, "cbit1": false, "cblob": "", "cdate": "2020-12-01", "cenum": "value1", "ctext": "numeric zeros", "ctime": "12:01:50.000000", "cyear": 2020, "cbit10": "AAA=", "cfloat": 0.0, "cbigint": 0, "cdouble": 12.1, "geo4326": {"type": "Point", "coordinates": [0.0,0.0]}, "cdecimal": 0.0, "ctinyint": 0, "cvarchar": "new_value", "cdatetime": "2020-12-01 12:01:50.000000", "csmallint": 0, "cmediumint": 0, "ctimestamp": "2020-12-01 12:01:50.000000", "_metadata": {"etag": "CA79107DEC51CFEC4907CBFBDE947FB6A5A254EA85FBCEB0ECF6F02E69A3D52B"}}'
+--let $mrs_client_arg_expected_status=Ok
+--let $mrs_client_arg_display=body
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo VII. Verify that the PUT request containing etag of invalid type leads to BadRequest response
+--echo
+
+--echo etag is int
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--let $mrs_client_arg_payload='{ "id": 1, "vec": [2.3, 2.2], "cbin": "AMM", "cbit": false, "cset": "","geo0": {"type": "Point","coordinates": [1.0,3.0]}, "cbit1": false, "cblob": "", "cdate": "2020-12-01", "cenum": "value1", "ctext": "numeric zeros", "ctime": "12:01:50.000000", "cyear": 2020, "cbit10": "AAA=", "cfloat": 0.0, "cbigint": 0, "cdouble": 12.1, "geo4326": {"type": "Point", "coordinates": [0.0,0.0]}, "cdecimal": 0.0, "ctinyint": 0, "cvarchar": "new_value", "cdatetime": "2020-12-01 12:01:50.000000", "csmallint": 0, "cmediumint": 0, "ctimestamp": "2020-12-01 12:01:50.000000", "_metadata": {"etag": 1}}'
+--let $mrs_client_arg_expected_status=BadRequest
+--let $mrs_client_arg_display=body
+--source ../include/mrs/mrs_client.inc
+
+--echo etag is object
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--let $mrs_client_arg_payload='{ "id": 1, "vec": [2.3, 2.2], "cbin": "AMM", "cbit": false, "cset": "","geo0": {"type": "Point","coordinates": [1.0,3.0]}, "cbit1": false, "cblob": "", "cdate": "2020-12-01", "cenum": "value1", "ctext": "numeric zeros", "ctime": "12:01:50.000000", "cyear": 2020, "cbit10": "AAA=", "cfloat": 0.0, "cbigint": 0, "cdouble": 12.1, "geo4326": {"type": "Point", "coordinates": [0.0,0.0]}, "cdecimal": 0.0, "ctinyint": 0, "cvarchar": "new_value", "cdatetime": "2020-12-01 12:01:50.000000", "csmallint": 0, "cmediumint": 0, "ctimestamp": "2020-12-01 12:01:50.000000", "_metadata": {"etag": {}}}'
+--let $mrs_client_arg_expected_status=BadRequest
+--let $mrs_client_arg_display=body
+
+--echo etag is boolean
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--let $mrs_client_arg_payload='{ "id": 1, "vec": [2.3, 2.2], "cbin": "AMM", "cbit": false, "cset": "","geo0": {"type": "Point","coordinates": [1.0,3.0]}, "cbit1": false, "cblob": "", "cdate": "2020-12-01", "cenum": "value1", "ctext": "numeric zeros", "ctime": "12:01:50.000000", "cyear": 2020, "cbit10": "AAA=", "cfloat": 0.0, "cbigint": 0, "cdouble": 12.1, "geo4326": {"type": "Point", "coordinates": [0.0,0.0]}, "cdecimal": 0.0, "ctinyint": 0, "cvarchar": "new_value", "cdatetime": "2020-12-01 12:01:50.000000", "csmallint": 0, "cmediumint": 0, "ctimestamp": "2020-12-01 12:01:50.000000", "_metadata": {"etag": false}}'
+--let $mrs_client_arg_expected_status=BadRequest
+--let $mrs_client_arg_display=body
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo VIII. Verify that the PUT request containing etag that is string but not a valid checksum format is still accepted and used for check
+--echo
+
+--let $mrs_client_arg_request_type='PUT'
+--let $mrs_client_arg_path='/svc/basic_schema/tab/1'
+--let $mrs_client_arg_payload='{ "id": 1, "vec": [2.3, 2.2], "cbin": "AMM", "cbit": false, "cset": "","geo0": {"type": "Point","coordinates": [1.0,3.0]}, "cbit1": false, "cblob": "", "cdate": "2020-12-01", "cenum": "value1", "ctext": "numeric zeros", "ctime": "12:01:50.000000", "cyear": 2020, "cbit10": "AAA=", "cfloat": 0.0, "cbigint": 0, "cdouble": 12.1, "geo4326": {"type": "Point", "coordinates": [0.0,0.0]}, "cdecimal": 0.0, "ctinyint": 0, "cvarchar": "new_value", "cdatetime": "2020-12-01 12:01:50.000000", "csmallint": 0, "cmediumint": 0, "ctimestamp": "2020-12-01 12:01:50.000000", "_metadata": {"etag": "some random string"}}'
+--let $mrs_client_arg_expected_status=412
+--let $mrs_client_arg_display=body
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

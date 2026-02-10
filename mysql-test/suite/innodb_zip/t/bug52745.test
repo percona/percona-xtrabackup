@@ -1,9 +1,5 @@
 -- source include/have_innodb_max_16k.inc
 
---disable_query_log
-call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot add field.*");
---enable_query_log
-
 SET @saved_innodb_strict_mode=@@SESSION.innodb_strict_mode;
 
 let $file_per_table=`select @@innodb_file_per_table`;

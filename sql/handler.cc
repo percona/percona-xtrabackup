@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -256,7 +256,13 @@ st_plugin_int *remove_hton2plugin(uint slot) {
 }
 
 const char *ha_resolve_storage_engine_name(const handlerton *db_type) {
-  return db_type == nullptr ? "UNKNOWN" : hton2plugin(db_type->slot)->name.str;
+  return db_type == nullptr ||
+                 // May happen in unit tests.
+                 num_hton2plugins() == 0 ||
+                 // May happen in unit tests.
+                 hton2plugin(db_type->slot) == nullptr
+             ? "UNKNOWN"
+             : hton2plugin(db_type->slot)->name.str;
 }
 
 static handlerton *installed_htons[128];
@@ -354,8 +360,10 @@ handlerton *ha_default_handlerton(THD *thd) {
   return hton;
 }
 
-static plugin_ref ha_default_temp_plugin(THD *thd) {
-  if (thd->variables.temp_table_plugin) return thd->variables.temp_table_plugin;
+plugin_ref ha_default_temp_plugin(THD *thd) {
+  if (thd->variables.temp_table_plugin != nullptr) {
+    return thd->variables.temp_table_plugin;
+  }
   return my_plugin_lock(thd, &global_system_variables.temp_table_plugin);
 }
 
@@ -920,15 +928,17 @@ void ha_end() {
   my_free(handler_errmsgs);
 }
 
-static bool dropdb_handlerton(THD *, plugin_ref plugin, void *path) {
+static bool dropdb_handlerton(THD *, plugin_ref plugin, void *schema_name) {
   handlerton *hton = plugin_data<handlerton *>(plugin);
   if (hton->state == SHOW_OPTION_YES && hton->drop_database)
-    hton->drop_database(hton, (char *)path);
+    hton->drop_database(hton, static_cast<char *>(schema_name));
+
   return false;
 }
 
-void ha_drop_database(char *path) {
-  plugin_foreach(nullptr, dropdb_handlerton, MYSQL_STORAGE_ENGINE_PLUGIN, path);
+void ha_drop_database(const char *schema_name) {
+  plugin_foreach(nullptr, dropdb_handlerton, MYSQL_STORAGE_ENGINE_PLUGIN,
+                 const_cast<char *>(schema_name));
 }
 
 static bool log_ddl_drop_schema_handletron(THD *, plugin_ref plugin,
@@ -2722,7 +2732,44 @@ void HA_CREATE_INFO::init_create_options_from_share(const TABLE_SHARE *share,
   /* Copy the partitioning information that exists in the table share */
   if (share->m_part_info != nullptr) {
     part_info = share->m_part_info->get_clone(current_thd);
+    part_info->part_type = share->m_part_info->part_type;
+    /* copy the attribute names on which partitioning takes place */
+    part_info->list_of_part_fields = share->m_part_info->list_of_part_fields;
+    if (share->m_part_info->list_of_part_fields) {
+      part_info->part_func_string = nullptr;
+      part_info->part_field_list.clear();
+      for (auto &part_name : share->m_part_info->part_field_list) {
+        char *attr =
+            strmake_root(current_thd->mem_root, &part_name, strlen(&part_name));
+        part_info->part_field_list.push_back(attr);
+      }
+    } else {
+      // the arithmetic on part_func_string is to remove the surrounding ``
+      part_info->part_func_string = strmake_root(
+          current_thd->mem_root, share->m_part_info->part_func_string + 1,
+          share->m_part_info->part_func_len - 2);
+      part_info->part_func_len = share->m_part_info->part_func_len;
+    }
+    /* Subpartitioning-related info */
     part_info->subpart_type = share->m_part_info->subpart_type;
+    part_info->num_subparts = share->m_part_info->num_subparts;
+    /* copy the attribute names on which subpartitioning takes place */
+    part_info->list_of_subpart_fields =
+        share->m_part_info->list_of_subpart_fields;
+    if (share->m_part_info->list_of_subpart_fields) {
+      part_info->subpart_func_string = nullptr;
+      part_info->subpart_field_list.clear();
+      for (auto &subpart_name : share->m_part_info->subpart_field_list) {
+        char *attr = strmake_root(current_thd->mem_root, &subpart_name,
+                                  strlen(&subpart_name));
+        part_info->subpart_field_list.push_back(attr);
+      }
+    } else if (share->m_part_info->subpart_func_string != nullptr) {
+      // the arithmetic on part_func_string is to remove the surrounding ``
+      part_info->subpart_func_string = strmake_root(
+          current_thd->mem_root, share->m_part_info->subpart_func_string + 1,
+          share->m_part_info->subpart_func_len - 2);
+    }
   }
 
   if (!(used_fields & HA_CREATE_USED_AUTOEXTEND_SIZE)) {
@@ -2737,6 +2784,19 @@ void HA_CREATE_INFO::init_create_options_from_share(const TABLE_SHARE *share,
 
   if (secondary_engine_attribute.str == nullptr)
     secondary_engine_attribute = share->secondary_engine_attribute;
+}
+
+bool HA_CREATE_INFO::set_db_type(THD *thd) {
+  if ((options & HA_LEX_CREATE_TMP_TABLE) != 0U) {
+    /* Temporary tables cannot have secondary engine at this stage. This will
+     * later be set if db_type is a secondary engine,
+     * at validate_secondary_engine_temporary_table. */
+    assert(secondary_engine.str == nullptr);
+    db_type = ha_default_temp_handlerton(thd);
+  } else {
+    db_type = ha_default_handlerton(thd);
+  }
+  return false;
 }
 
 /****************************************************************************
@@ -6417,8 +6477,8 @@ ha_rows handler::multi_range_read_info_const(uint keyno, RANGE_SEQ_IF *seq,
   // Cost computation.
   assert(cost->is_zero());
   if (thd->lex->using_hypergraph_optimizer()) {
-    cost->add_cpu(
-        EstimateIndexRangeScanCost(table, keyno, n_ranges, total_rows));
+    cost->add_cpu(EstimateIndexRangeScanCost(
+        table, keyno, RangeScanType::kMultiRange, n_ranges, total_rows));
   } else {
     const Cost_model_table *const cost_model = table->cost_model();
 
@@ -7213,10 +7273,7 @@ bool DsMrr_impl::get_disk_sweep_mrr_cost(uint keynr, ha_rows rows, uint flags,
 
   assert(cost->is_zero());
 
-  if (n_full_steps) {
-    get_sort_and_sweep_cost(table, max_buff_entries, cost);
-    cost->multiply(n_full_steps);
-  } else {
+  if (n_full_steps == 0) {
     /*
       Adjust buffer size since only parts of the buffer will be used:
       1. Adjust record estimate for the last scan to reduce likelihood
@@ -7229,6 +7286,17 @@ bool DsMrr_impl::get_disk_sweep_mrr_cost(uint keynr, ha_rows rows, uint flags,
         max<ha_rows>(static_cast<ha_rows>(1.2 * rows_in_last_step), 100);
     *buffer_size = min<ulong>(*buffer_size,
                               static_cast<ulong>(keys_in_buffer) * elem_size);
+  }
+
+  if (h->ha_thd()->lex->using_hypergraph_optimizer()) {
+    cost->add_cpu(EstimateIndexRangeScanCost(
+        table, keynr, RangeScanType::kMultiRange, 1, rows));
+    return false;
+  }
+
+  if (n_full_steps > 0) {
+    get_sort_and_sweep_cost(table, max_buff_entries, cost);
+    cost->multiply(n_full_steps);
   }
 
   Cost_estimate last_step_cost;
@@ -7620,7 +7688,8 @@ int handler::compare_key(key_range *range) {
     assert(range_scan_direction == RANGE_SCAN_ASC);
     return -1;
   }
-  cmp = key_cmp(range_key_part, range->key, range->length);
+  cmp = key_cmp(range_key_part, range->key, range->length,
+                /*is_reverse_multi_valued_index_scan=*/false);
   if (!cmp) cmp = key_compare_result_on_equal;
   return cmp;
 }
@@ -7648,7 +7717,8 @@ int handler::compare_key(key_range *range) {
 int handler::compare_key_icp(const key_range *range) const {
   int cmp;
   if (!range) return 0;  // no max range
-  cmp = key_cmp(range_key_part, range->key, range->length);
+  cmp = key_cmp(range_key_part, range->key, range->length,
+                /*is_reverse_multi_valued_index_scan=*/false);
   if (!cmp) cmp = key_compare_result_on_equal;
   if (range_scan_direction == RANGE_SCAN_DESC) cmp = -cmp;
   return cmp;
@@ -7695,7 +7765,8 @@ int handler::compare_key_in_buffer(const uchar *buf) const {
   if (diff != 0) move_key_field_offsets(end_range, range_key_part, diff);
 
   // Compare the key in buf against end_range.
-  int cmp = key_cmp(range_key_part, end_range->key, end_range->length);
+  int cmp = key_cmp(range_key_part, end_range->key, end_range->length,
+                    /*is_reverse_multi_valued_index_scan=*/false);
   if (cmp == 0) cmp = key_compare_result_on_equal;
 
   // Reset the field offsets.
@@ -8404,7 +8475,12 @@ static void copy_blob_data(const TABLE *table, const MY_BITMAP *const fields,
                         After calling this function, it will be used to return
                         the value of generated column.
   @param in_purge   whether the function is called by purge thread
-
+  @param[out]    mv_data_ptr When given (not null) and the field
+                          needs to be calculated is a typed array field, it
+                          will contain pointer to field's calculated value.
+  @param[out]    mv_length Length of the data above
+  @param[in]   include_stored_gcols  if true, evaluate both stored and virtual
+                          gcols.  if false, evaluate only virtual gcol.
   @return true in case of error, false otherwise.
 */
 
@@ -8412,7 +8488,8 @@ static bool my_eval_gcolumn_expr_helper(THD *thd, TABLE *table,
                                         const MY_BITMAP *const fields,
                                         uchar *record, bool in_purge,
                                         const char **mv_data_ptr,
-                                        ulong *mv_length) {
+                                        ulong *mv_length,
+                                        bool include_stored_gcols) {
   DBUG_TRACE;
   assert(table && table->vfield);
   assert(!thd->is_error());
@@ -8477,28 +8554,28 @@ static bool my_eval_gcolumn_expr_helper(THD *thd, TABLE *table,
   dbug_tmp_use_all_columns(table, old_maps, table->read_set, table->write_set);
 
   for (Field **vfield_ptr = table->vfield; *vfield_ptr; vfield_ptr++) {
-    Field *field = *vfield_ptr;
+    Field *const field = *vfield_ptr;
+    assert(field->is_gcol());
 
-    // Check if we should evaluate this field
-    if (bitmap_is_set(&fields_to_evaluate, field->field_index()) &&
-        field->is_virtual_gcol()) {
-      assert(field->gcol_info && field->gcol_info->expr_item->fixed);
+    // Skip if not marked
+    if (!bitmap_is_set(&fields_to_evaluate, field->field_index())) continue;
 
-      const type_conversion_status save_in_field_status =
-          field->gcol_info->expr_item->save_in_field(field, false);
-      assert(!thd->is_error() || save_in_field_status != TYPE_OK);
+    // Skip if stored generated column is not asked to be evaluated
+    if (!field->is_virtual_gcol() && !include_stored_gcols) continue;
 
-      /*
-        save_in_field() may return non-zero even if there was no
-        error. This happens if a warning is raised, such as an
-        out-of-range warning when converting the result to the target
-        type of the virtual column. We should stop only if the
-        non-zero return value was caused by an actual error.
-      */
-      if (save_in_field_status != TYPE_OK && thd->is_error()) {
-        res = true;
-        break;
-      }
+    const type_conversion_status save_in_field_status =
+        field->gcol_info->expr_item->save_in_field(field, false);
+    assert(!thd->is_error() || save_in_field_status != TYPE_OK);
+
+    /*
+      save_in_field() may return non-zero if a warning is raised
+      (i.e. out-of-range warning when converting the result to the target
+      type of the virtual column). We should stop only if the
+      non-zero return value was caused by an actual error.
+    */
+    if (save_in_field_status != TYPE_OK && thd->is_error()) {
+      res = true;
+      break;
     }
   }
 
@@ -8598,7 +8675,7 @@ bool handler::my_eval_gcolumn_expr_with_open(THD *thd, const char *db_name,
 
   if (table) {
     retval = my_eval_gcolumn_expr_helper(thd, table, fields, record, true,
-                                         mv_data_ptr, mv_length);
+                                         mv_data_ptr, mv_length, false);
   }
 
   return retval;
@@ -8606,11 +8683,13 @@ bool handler::my_eval_gcolumn_expr_with_open(THD *thd, const char *db_name,
 
 bool handler::my_eval_gcolumn_expr(THD *thd, TABLE *table,
                                    const MY_BITMAP *const fields, uchar *record,
-                                   const char **mv_data_ptr, ulong *mv_length) {
+                                   const char **mv_data_ptr, ulong *mv_length,
+                                   bool include_stored_gcols) {
   DBUG_TRACE;
 
-  const bool res = my_eval_gcolumn_expr_helper(thd, table, fields, record,
-                                               false, mv_data_ptr, mv_length);
+  const bool res =
+      my_eval_gcolumn_expr_helper(thd, table, fields, record, false,
+                                  mv_data_ptr, mv_length, include_stored_gcols);
   return res;
 }
 
@@ -8944,6 +9023,72 @@ const handlerton *SecondaryEngineHandlerton(const THD *thd) {
     return nullptr;
   }
   return thd->lex->m_sql_cmd->secondary_engine();
+}
+
+std::atomic<const char *> default_secondary_engine_name;
+
+std::optional<secondary_engine_nrows_t> RetrieveSecondaryEngineNrowsHook(
+    THD *thd) {
+  const handlerton *secondary_engine = SecondaryEngineHandlerton(thd);
+  if (secondary_engine == nullptr) {
+    secondary_engine = EligibleSecondaryEngineHandlerton(thd, nullptr);
+  }
+  if (secondary_engine == nullptr) {
+    return {};
+  }
+  if (secondary_engine->secondary_engine_nrows == nullptr) {
+    return {};
+  }
+
+  return secondary_engine->secondary_engine_nrows;
+}
+
+/**
+  Retrieves the secondary engine handlerton if possible.
+
+  @param  thd       Query thd.
+  @param  secondary_engine_in_name  Name of secondary engine if available.
+
+  @retval handlerton    if secondary engine handle found.
+  @retval nullptr       if secondary engine not found.
+*/
+const handlerton *EligibleSecondaryEngineHandlerton(
+    THD *thd, const LEX_CSTRING *secondary_engine_in_name) {
+  // 1st priority - retrieve handlerton cached already in thd.
+  const handlerton *secondary_engine =
+      thd->eligible_secondary_engine_handlerton();
+  if (secondary_engine == nullptr) {
+    // 2nd priority, if secondary engine name provided, then try to
+    // use that  to retrieve handlerton.
+    const LEX_CSTRING *secondary_engine_name = secondary_engine_in_name;
+    LEX_CSTRING cur_name;
+
+    if (secondary_engine_name == nullptr &&
+        default_secondary_engine_name != nullptr) {
+      /** 3rd priority - if no secondary secondary_engine_in_name provided,
+       * attempt to retrieve secondary engine name via
+       * default_secondary_engine_name, if available. */
+      cur_name = to_lex_cstring(default_secondary_engine_name);
+      secondary_engine_name = &cur_name;
+    } else if (secondary_engine_name == nullptr && (thd->lex != nullptr) &&
+               (thd->lex->m_sql_cmd != nullptr)) {
+      /** 4th priority - attempt to retrieve secondary engine name through
+       * eligible_secondary_storage_engine function */
+      secondary_engine_name =
+          thd->lex->m_sql_cmd->eligible_secondary_storage_engine(thd);
+    }
+    /* if secondary_engine_name found via 2,3 or 4th priority lookups, use the
+     * name to retrieve the handlerton */
+    if (secondary_engine_name != nullptr) {
+      plugin_ref ref = ha_resolve_by_name(thd, secondary_engine_name, false);
+      if (ref != nullptr) {
+        thd->set_eligible_secondary_engine_handlerton(
+            plugin_data<handlerton *>(ref));
+        secondary_engine = thd->eligible_secondary_engine_handlerton();
+      }
+    }
+  }
+  return secondary_engine;
 }
 
 /**

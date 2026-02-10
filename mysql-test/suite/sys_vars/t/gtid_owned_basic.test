@@ -7,6 +7,9 @@
 SET @start_global_value = @@global.gtid_owned;
 SELECT @start_global_value;
 
+# To verify all the test scenarios start with gtid_mode=off
+--source include/rpl/set_gtid_mode_off.inc
+
 #
 # exists as global and session.
 #
@@ -41,6 +44,8 @@ set @@session.gtid_next = 'automatic';
 select @@session.gtid_owned;
 select @@global.gtid_owned;
 
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc
 #
 # See rpl_gtid_execution.test for a comprehensive test case with gtid_mode=on.
 #

@@ -6,8 +6,8 @@
 ##########################################################################
 
 --disable_query_log
-call mtr.add_suppression("\\[Error\\] .*MY-\\d+.* Cannot add field.*");
-call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot add field.*");
+call mtr.add_suppression("Trying to add or drop column.*ADD or DROP column with.*INSTANT is not allowed.");
+call mtr.add_suppression("Cannot add.*field\\(s\\) in table.*because after adding it.*");
 --enable_query_log
 SET @saved_innodb_strict_mode=@@SESSION.innodb_strict_mode;
 

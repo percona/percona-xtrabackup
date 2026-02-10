@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -259,6 +259,12 @@ public class ReconnectTest extends AbstractClusterJModelTest {
 
     private AtomicInteger retryCount = new AtomicInteger();
 
+    /*
+     * The misbehaving thread never closes its session, so the
+     * reconnect logic will wait for the full 5-second timeout
+     * specified in the reconnect() call up at line 186 and then
+     * force the session closed.
+     */
     class Misbehaving implements Runnable {
         @Override
         public void run() {
@@ -283,8 +289,8 @@ public class ReconnectTest extends AbstractClusterJModelTest {
                 }
             }
         }
-
     }
+
     /** This class implements the logic per thread. For each thread created,
      * the run method is invoked.
      * Each thread uses its own session and shares the customer, order, and order line

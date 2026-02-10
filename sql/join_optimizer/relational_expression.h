@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,20 +24,28 @@
 #ifndef SQL_JOIN_OPTIMIZER_RELATIONAL_EXPRESSION_H
 #define SQL_JOIN_OPTIMIZER_RELATIONAL_EXPRESSION_H
 
-#include <stdint.h>
+#include <sys/types.h>
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <string>
 #include <type_traits>
+#include <utility>
 
+#include "my_table_map.h"
+#include "sql/field.h"
 #include "sql/item.h"
 #include "sql/join_optimizer/bit_utils.h"
-#include "sql/join_optimizer/estimate_selectivity.h"
+#include "sql/join_optimizer/make_join_hypergraph.h"
 #include "sql/join_optimizer/node_map.h"
 #include "sql/join_optimizer/overflow_bitset.h"
 #include "sql/join_type.h"
 #include "sql/mem_root_array.h"
 #include "sql/nested_join.h"
 #include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/table.h"
 
-struct AccessPath;
 class Item_eq_base;
 class Item_func_eq;
 
@@ -45,8 +53,8 @@ class Item_func_eq;
 // have available in order to avoid computing it anew for each use of that
 // predicate.
 struct CachedPropertiesForPredicate {
-  Mem_root_array<ContainedSubquery> contained_subqueries;
-  double selectivity;
+  Mem_root_array<ContainedSubquery> contained_subqueries{};
+  double selectivity{};
 
   // For equijoins only: A bitmap of which sargable predicates
   // are part of the same multi-equality as this one (except the
@@ -54,7 +62,7 @@ struct CachedPropertiesForPredicate {
   // against it. This is used in AlreadyAppliedThroughSargable()
   // to quickly find out if we already have applied any of them
   // as a join condition.
-  OverflowBitset redundant_against_sargable_predicates;
+  OverflowBitset redundant_against_sargable_predicates{};
 };
 
 // Describes a rule disallowing specific joins; if any tables from
@@ -87,8 +95,8 @@ class CompanionSet final {
   CompanionSet(const CompanionSet &) = delete;
   CompanionSet &operator=(const CompanionSet &) = delete;
 
-  /// Add the set of equal fields specified by 'func_eq'.
-  void AddEquijoinCondition(THD *thd, const Item_func_eq &eq);
+  /// Add the set of equal fields specified by 'eq'.
+  void AddEquijoinCondition(THD *thd, const Item_eq_base &eq);
 
   /**
      If 'field' is part of an equijoin predicate in this CompanionSet, return a
@@ -242,25 +250,27 @@ struct RelationalExpression {
     sj_enabled_strategies = tl->nested_join->sj_enabled_strategies;
   }
 
-  const Mem_root_array<Item *> &pushable_conditions() const {
+  const Mem_root_array<PushableJoinCondition> &pushable_conditions() const {
     return m_pushable_conditions;
   }
 
-  /// Add a condition that can be pushed down to the acces path for 'table'.
-  void AddPushable(Item *cond) {
+  /// Add a condition that can be pushed down to the access path for 'table'.
+  void AddPushable(Item *cond, const RelationalExpression *from) {
     assert(type == TABLE);
+    assert(from->type != TABLE);
     assert(table->map() && cond->used_tables() != 0);
     // Don't add duplicates.
-    if (std::none_of(
-            m_pushable_conditions.cbegin(), m_pushable_conditions.cend(),
-            [&](const Item *other) { return ItemsAreEqual(cond, other); })) {
-      m_pushable_conditions.push_back(cond);
+    if (std::ranges::none_of(m_pushable_conditions,
+                             [&](const PushableJoinCondition &other) {
+                               return ItemsAreEqual(cond, other.cond);
+                             })) {
+      m_pushable_conditions.push_back({.cond = cond, .from = from});
     }
   }
 
  private:
-  /// Conditions that can be pushed down to the acces path for 'table'
-  Mem_root_array<Item *> m_pushable_conditions;
+  /// Conditions that can be pushed down to the access path for 'table'
+  Mem_root_array<PushableJoinCondition> m_pushable_conditions;
 };
 
 // Check conflict rules; usually, they will be empty, but the hyperedges are
@@ -285,9 +295,11 @@ inline bool OperatorIsCommutative(const RelationalExpression &expr) {
 
 // Call the given functor on each non-table operator in the tree below expr,
 // including expr itself, in post-traversal order.
-template <class Func>
-  requires std::is_invocable_v<Func, RelationalExpression *>
-void ForEachJoinOperator(RelationalExpression *expr, Func &&func) {
+template <class Operator, class Func>
+  requires std::is_same_v<RelationalExpression,
+                          std::remove_const_t<Operator>> &&
+           std::is_invocable_v<Func, Operator *>
+void ForEachJoinOperator(Operator *expr, Func &&func) {
   if (expr->type == RelationalExpression::TABLE) {
     return;
   }

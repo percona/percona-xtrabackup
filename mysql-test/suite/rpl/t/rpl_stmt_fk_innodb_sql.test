@@ -1,0 +1,6 @@
+--source include/have_binlog_format_statement.inc
+--echo # Source(InnoDB FK) -> Replica(SQL FK)
+--echo # FR 9) Replica must perform foreign key check and CASCADE when source node
+--echo # binlog_format='statement'. The binlog applier must use the local setting
+--echo # of innodb_native_foreign_keys value on the replica node
+--source common/rpl/rpl_foreign_key_interop.test

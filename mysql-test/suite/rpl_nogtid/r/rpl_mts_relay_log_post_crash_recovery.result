@@ -6,6 +6,7 @@ Note	####	Storing MySQL user name or password information in the connection meta
 #### I. Initialize ####
 [connection slave]
 include/rpl/stop_replica.inc
+SET GLOBAL replica_preserve_commit_order=FALSE;
 SET @save.innodb_lock_wait_timeout= @@global.innodb_lock_wait_timeout;
 set @@global.innodb_lock_wait_timeout=5 + 1000;
 include/rpl/start_replica.inc
@@ -18,6 +19,7 @@ CREATE TABLE d2.t (a INT PRIMARY KEY, name text) ENGINE=INNODB;
 include/rpl/sync_to_replica.inc
 BEGIN;
 INSERT INTO d2.t VALUES (2, 'Slave local');
+INSERT INTO d2.t VALUES (3, 'Slave local');
 INSERT INTO d1.t VALUES (3, 'Slave local');
 [connection master]
 INSERT INTO d1.t VALUES (1, 'T1');
@@ -44,6 +46,7 @@ DROP DATABASE d2;
 #### I. Initialize ####
 [connection slave]
 include/rpl/stop_replica.inc
+SET GLOBAL replica_preserve_commit_order=FALSE;
 SET @save.innodb_lock_wait_timeout= @@global.innodb_lock_wait_timeout;
 set @@global.innodb_lock_wait_timeout=5 + 1000;
 include/rpl/start_replica.inc
@@ -56,6 +59,7 @@ CREATE TABLE d2.t (a INT PRIMARY KEY, name text) ENGINE=INNODB;
 include/rpl/sync_to_replica.inc
 BEGIN;
 INSERT INTO d2.t VALUES (2, 'Slave local');
+INSERT INTO d2.t VALUES (3, 'Slave local');
 INSERT INTO d1.t VALUES (3, 'Slave local');
 [connection master]
 INSERT INTO d1.t VALUES (1, 'T1');

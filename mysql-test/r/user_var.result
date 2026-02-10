@@ -474,7 +474,7 @@ Warnings:
 Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
 select @var;
 @var
-15.500000000
+15.5000
 select sql_small_result @var:=avg(id), @var1:=id2 from tb1 group by id2 limit 1;
 @var:=avg(id)	@var1:=id2
 5.5000	10
@@ -768,6 +768,7 @@ Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 test.t3	analyze	status	OK
+SET explain_json_format_version = 1;
 explain format=json SELECT t1.a, t2.a, t3.a, (@var1:= @var1+0) AS var
 FROM t1
 LEFT JOIN t2 ON t1.a=t2.a AND t2.a < @var1
@@ -844,6 +845,7 @@ EXPLAIN
 Warnings:
 Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t2`.`a` AS `a`,`test`.`t3`.`a` AS `a`,(@var1:=((@`var1`) + 0)) AS `var` from `test`.`t1` left join `test`.`t2` on(((`test`.`t2`.`a` = `test`.`t1`.`a`) and (`test`.`t1`.`a` < (@`var1`)))) left join `test`.`t3` on(((`test`.`t3`.`a` = `test`.`t1`.`a`) and (`test`.`t1`.`a` < (@`var1`)))) where true
+SET explain_json_format_version = DEFAULT;
 SELECT t1.a, t2.a, t3.a, (@var1:= @var1+0) AS var
 FROM t1
 LEFT JOIN t2 ON t1.a=t2.a AND t2.a < @var1

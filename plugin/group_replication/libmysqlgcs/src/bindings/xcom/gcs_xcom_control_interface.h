@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -108,10 +108,10 @@ class Gcs_suspicions_manager {
 
   void process_view(
       synode_no const config_id, Gcs_xcom_nodes *xcom_nodes,
-      std::vector<Gcs_member_identifier *> alive_nodes,
-      std::vector<Gcs_member_identifier *> left_nodes,
-      std::vector<Gcs_member_identifier *> member_suspect_nodes,
-      std::vector<Gcs_member_identifier *> non_member_suspect_nodes,
+      const std::vector<Gcs_member_identifier *> &alive_nodes,
+      const std::vector<Gcs_member_identifier *> &left_nodes,
+      const std::vector<Gcs_member_identifier *> &member_suspect_nodes,
+      const std::vector<Gcs_member_identifier *> &non_member_suspect_nodes,
       bool is_killer_node, synode_no max_synode);
 
   /**
@@ -395,7 +395,7 @@ class Gcs_xcom_control : public Gcs_control_interface {
   explicit Gcs_xcom_control(
       Gcs_xcom_node_address *xcom_node_address,
       std::vector<Gcs_xcom_node_address *> &xcom_peers,
-      Gcs_group_identifier group_identifier, Gcs_xcom_proxy *xcom_proxy,
+      const Gcs_group_identifier &group_identifier, Gcs_xcom_proxy *xcom_proxy,
       Gcs_xcom_group_management *xcom_group_management,
       Gcs_xcom_engine *gcs_engine,
       Gcs_xcom_state_exchange_interface *state_exchange,

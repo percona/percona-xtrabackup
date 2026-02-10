@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 
 #include <mutex>
 
+#include <openssl/opensslv.h>
 #include <openssl/ssl.h>
 
 #include "mysql/harness/stdx/expected.h"
@@ -217,7 +218,11 @@ stdx::expected<SSL_SESSION *, std::error_code> TlsClientContext::get_session() {
     auto &sessions = sessions_->sessions_;
     for (auto it = sessions.cbegin(); it != sessions.cend();) {
       const auto sess = it->second.get();
+#if OPENSSL_VERSION_NUMBER >= 0x30400000L
+      const auto sess_start = SSL_SESSION_get_time_ex(sess);
+#else
       const auto sess_start = SSL_SESSION_get_time(sess);
+#endif
       if (time(nullptr) - sess_start > session_cache_timeout_.count()) {
         // session expired, remove from cache
         sessions.erase(it++);

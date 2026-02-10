@@ -3,6 +3,7 @@
 #               INFORMATION_SCHEMA.FILES TABLE
 #######################################################################
 --source include/not_windows.inc
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
 
 # This test verifies that the value of innodb_temp_data_file_path and
 # the value of FILE_NAME of innodb_temporary tablespace in

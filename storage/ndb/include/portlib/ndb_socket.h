@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -95,6 +95,22 @@ static inline int ndb_socket_reuseaddr(ndb_socket_t s, int enable) {
 static inline int ndb_socket_dual_stack(ndb_socket_t s, int enable) {
   int on = !enable;
   return ndb_setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, &on);
+}
+
+/* Attempt to disable the OS from raising SIGPIPE on write to a reset socket.
+   This is a Unix-only issue that is not relevant to Windows.
+   SO_NOSIGPIPE is generally available only on BSD systems.
+   Linux has a flag MSG_NOSIGNAL for send() but not a socket option.
+*/
+static inline int ndb_socket_disable_sigpipe(ndb_socket_t s [[maybe_unused]]) {
+#ifdef _WIN32
+  return 0;
+#elif defined SO_NOSIGPIPE
+  const int on = 1;
+  return ndb_setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &on);
+#else
+  return -1;
+#endif
 }
 
 /* Returns 0 on success, -1 on error

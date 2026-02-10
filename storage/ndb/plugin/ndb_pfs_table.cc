@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -24,37 +24,37 @@
 // Implements
 #include "storage/ndb/plugin/ndb_pfs_table.h"
 
-#include <assert.h>
+#include <cassert>
 // assert
 
 static int ndb_pfs_rnd_init(PSI_table_handle *handle, bool) {
-  Ndb_pfs_table *table = reinterpret_cast<Ndb_pfs_table *>(handle);
+  auto *table = reinterpret_cast<Ndb_pfs_table *>(handle);
   return (table->rnd_init());
 }
 
 static int ndb_pfs_rnd_next(PSI_table_handle *handle) {
-  Ndb_pfs_table *table = reinterpret_cast<Ndb_pfs_table *>(handle);
+  auto *table = reinterpret_cast<Ndb_pfs_table *>(handle);
   return (table->rnd_next());
 }
 
 static int ndb_pfs_rnd_pos(PSI_table_handle *handle) {
-  Ndb_pfs_table *table = reinterpret_cast<Ndb_pfs_table *>(handle);
+  auto *table = reinterpret_cast<Ndb_pfs_table *>(handle);
   return (table->rnd_pos());
 }
 
 static void ndb_pfs_reset_pos(PSI_table_handle *handle) {
-  Ndb_pfs_table *table = reinterpret_cast<Ndb_pfs_table *>(handle);
+  auto *table = reinterpret_cast<Ndb_pfs_table *>(handle);
   table->reset_pos();
 }
 
 static int ndb_pfs_read_column(PSI_table_handle *handle, PSI_field *field,
                                unsigned int index) {
-  Ndb_pfs_table *table = reinterpret_cast<Ndb_pfs_table *>(handle);
+  auto *table = reinterpret_cast<Ndb_pfs_table *>(handle);
   return (table->read_column_value(field, index));
 }
 
 static void ndb_pfs_close_table(PSI_table_handle *handle) {
-  Ndb_pfs_table *table = reinterpret_cast<Ndb_pfs_table *>(handle);
+  auto *table = reinterpret_cast<Ndb_pfs_table *>(handle);
   table->close();
   // Delete table which was allocated during table open
   delete table;

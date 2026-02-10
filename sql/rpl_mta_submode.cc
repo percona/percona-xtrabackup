@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -61,320 +61,6 @@
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "string_with_len.h"
-
-/**
- Does necessary arrangement before scheduling next event.
- @return 1  if  error
-          0 no error
-*/
-int Mts_submode_database::schedule_next_event(Relay_log_info *, Log_event *) {
-  /*nothing to do here*/
-  return 0;
-}
-
-/**
-  Logic to attach temporary tables.
-*/
-void Mts_submode_database::attach_temp_tables(THD *thd, const Relay_log_info *,
-                                              Query_log_event *ev) {
-  int i, parts;
-  DBUG_TRACE;
-  if (!is_mts_worker(thd) || (ev->ends_group() || ev->starts_group())) return;
-  assert(!thd->temporary_tables);
-  // in over max-db:s case just one special partition is locked
-  parts = ((ev->mts_accessed_dbs == OVER_MAX_DBS_IN_EVENT_MTS)
-               ? 1
-               : ev->mts_accessed_dbs);
-  for (i = 0; i < parts; i++) {
-    mts_move_temp_tables_to_thd(
-        thd, ev->mts_assigned_partitions[i]->temporary_tables);
-    ev->mts_assigned_partitions[i]->temporary_tables = nullptr;
-  }
-}
-
-/**
-   Function is called by Coordinator when it identified an event
-   requiring sequential execution.
-   Creating sequential context for the event includes waiting
-   for the assigned to Workers tasks to be completed and their
-   resources such as temporary tables be returned to Coordinator's
-   repository.
-   In case all workers are waited Coordinator changes its group status.
-
-   @param  rli     Relay_log_info instance of Coordinator
-   @param  ignore  Optional Worker instance pointer if the sequential context
-                   is established due for the ignore Worker. Its resources
-                   are to be retained.
-
-   @note   Resources that are not occupied by Workers such as
-           a list of temporary tables held in unused (zero-usage) records
-           of APH are relocated to the Coordinator placeholder.
-
-   @return non-negative number of released by Workers partitions
-           (one partition by one Worker can count multiple times)
-
-           or -1 to indicate there has been a failure on a not-ignored Worker
-           as indicated by its running_status so synchronization can't succeed.
-*/
-
-int Mts_submode_database::wait_for_workers_to_finish(Relay_log_info *rli,
-                                                     Slave_worker *ignore) {
-  uint ret = 0;
-  THD *thd = rli->info_thd;
-  bool cant_sync = false;
-  char llbuf[22];
-
-  DBUG_TRACE;
-
-  llstr(rli->get_event_relay_log_pos(), llbuf);
-  DBUG_PRINT("info", ("Coordinator and workers enter synchronization "
-                      "procedure when scheduling event relay-log: %s "
-                      "pos: %s",
-                      rli->get_event_relay_log_name(), llbuf));
-
-  mysql_mutex_lock(&rli->slave_worker_hash_lock);
-
-  for (const auto &key_and_value : rli->mapping_db_to_worker) {
-    db_worker_hash_entry *entry = key_and_value.second.get();
-    assert(entry);
-
-    // the ignore Worker retains its active resources
-    if (ignore && entry->worker == ignore && entry->usage > 0) {
-      continue;
-    }
-
-    if (entry->usage > 0 && !thd->killed) {
-      PSI_stage_info old_stage;
-      Slave_worker *w_entry = entry->worker;
-
-      entry->worker = nullptr;  // mark Worker to signal when  usage drops to 0
-      thd->ENTER_COND(
-          &rli->slave_worker_hash_cond, &rli->slave_worker_hash_lock,
-          &stage_replica_waiting_worker_to_release_partition, &old_stage);
-      do {
-        mysql_cond_wait(&rli->slave_worker_hash_cond,
-                        &rli->slave_worker_hash_lock);
-        DBUG_PRINT("info", ("Either got awakened of notified: "
-                            "entry %p, usage %lu, worker %lu",
-                            entry, entry->usage, w_entry->id));
-      } while (entry->usage != 0 && !thd->killed);
-      entry->worker =
-          w_entry;  // restoring last association, needed only for assert
-      mysql_mutex_unlock(&rli->slave_worker_hash_lock);
-      thd->EXIT_COND(&old_stage);
-      ret++;
-    } else {
-      mysql_mutex_unlock(&rli->slave_worker_hash_lock);
-    }
-    // resources relocation
-    mts_move_temp_tables_to_thd(thd, entry->temporary_tables);
-    entry->temporary_tables = nullptr;
-    if (entry->worker->running_status != Slave_worker::RUNNING)
-      cant_sync = true;
-    mysql_mutex_lock(&rli->slave_worker_hash_lock);
-  }
-
-  mysql_mutex_unlock(&rli->slave_worker_hash_lock);
-
-  if (!ignore) {
-    DBUG_PRINT("info", ("Coordinator synchronized with workers, "
-                        "waited entries: %d, cant_sync: %d",
-                        ret, cant_sync));
-
-    rli->mts_group_status = Relay_log_info::MTS_NOT_IN_GROUP;
-  }
-
-  return !cant_sync ? ret : -1;
-}
-
-bool Mts_submode_database::set_multi_threaded_applier_context(
-    const Relay_log_info &rli, Log_event &ev) {
-  // if this is a transaction payload event, we need to set the proper
-  // databases that its internal events update
-  if (ev.get_type_code() == mysql::binlog::event::TRANSACTION_PAYLOAD_EVENT) {
-    Mts_db_names toset;
-    bool max_mts_dbs_in_event = false;
-    std::set<std::string> dbs;
-    auto &tple = *dynamic_cast<Transaction_payload_log_event *>(&ev);
-    binlog::Decompressing_event_object_istream istream(
-        tple, *rli.get_rli_description_event(),
-        psi_memory_resource(key_memory_applier));
-
-    std::shared_ptr<Log_event> inner;
-    while (istream >> inner) {
-      Mts_db_names mts_dbs;
-
-      // This transaction payload event is already marked to run in
-      // isolation or the event being handled does not contain partition
-      // information
-      if (max_mts_dbs_in_event || !inner->contains_partition_info(true))
-        continue;
-
-      // The following queries should run in isolation, thence setting
-      // OVER_MAX_DBS_IN_EVENT_MTS
-      if ((inner->get_type_code() == mysql::binlog::event::QUERY_EVENT)) {
-        auto *qev = dynamic_cast<Query_log_event *>(inner.get());
-        if (qev->is_query_prefix_match(STRING_WITH_LEN("XA COMMIT")) ||
-            qev->is_query_prefix_match(STRING_WITH_LEN("XA ROLLBACK"))) {
-          max_mts_dbs_in_event = true;
-          continue;
-        }
-      }
-
-      // OK, now that we have ruled the exceptions, lets handle the databases
-      // in the inner event.
-      inner->get_mts_dbs(&mts_dbs, rli.rpl_filter);
-
-      // inner event has mark to run in isolation
-      if (mts_dbs.num == OVER_MAX_DBS_IN_EVENT_MTS) {
-        max_mts_dbs_in_event = true;
-        continue;
-      }
-
-      // iterate over the databases and add them to the set
-      for (int i = 0; i < mts_dbs.num; i++) {
-        dbs.insert(mts_dbs.name[i]);
-        if (dbs.size() == MAX_DBS_IN_EVENT_MTS) {
-          max_mts_dbs_in_event = true;
-          break;
-        }
-      }
-    }
-    if (istream.has_error()) {
-      LogErr(ERROR_LEVEL, ER_RPL_REPLICA_ERROR_READING_RELAY_LOG_EVENTS,
-             rli.get_for_channel_str(), istream.get_error_str().c_str());
-      return true;
-    }
-
-    // now set the database information in the event
-    if (max_mts_dbs_in_event) {
-      toset.name[0] = "\0";
-      toset.num = OVER_MAX_DBS_IN_EVENT_MTS;
-    } else {
-      int i = 0;
-      // set the databases
-      for (auto &db : dbs) toset.name[i++] = db.c_str();
-
-      // set the number of databases
-      toset.num = dbs.size();
-    }
-
-    // save the mts_dbs to the payload event
-    tple.set_mts_dbs(toset);
-  }
-
-  return false;
-}
-
-/**
- Logic to detach the temporary tables from the worker threads upon
- event execution.
- @param thd THD instance
- @param rli Relay_log_info pointer
- @param ev  Query_log_event that is being applied
-*/
-void Mts_submode_database::detach_temp_tables(THD *thd,
-                                              const Relay_log_info *rli,
-                                              Query_log_event *ev) {
-  DBUG_TRACE;
-  if (!is_mts_worker(thd)) return;
-  int parts = ((ev->mts_accessed_dbs == OVER_MAX_DBS_IN_EVENT_MTS)
-                   ? 1
-                   : ev->mts_accessed_dbs);
-  /*
-    todo: optimize for a case of
-
-    a. one db
-       Only detaching temporary_tables from thd to entry would require
-       instead of the double-loop below.
-
-    b. unchanged thd->temporary_tables.
-       In such case the involved entries would continue to hold the
-       unmodified lists provided that the attach_ method does not
-       destroy references to them.
-  */
-  for (int i = 0; i < parts; i++) {
-    ev->mts_assigned_partitions[i]->temporary_tables = nullptr;
-  }
-
-  Rpl_filter *rpl_filter = rli->rpl_filter;
-  for (TABLE *table = thd->temporary_tables; table;) {
-    int i;
-    const char *db_name = nullptr;
-
-    // find which entry to go
-    for (i = 0; i < parts; i++) {
-      db_name = ev->mts_accessed_db_names[i];
-      if (!strlen(db_name)) break;
-      // Only default database is rewritten.
-      if (!rpl_filter->is_rewrite_empty() && !strcmp(ev->get_db(), db_name)) {
-        size_t dummy_len;
-        const char *db_filtered =
-            rpl_filter->get_rewrite_db(db_name, &dummy_len);
-        // db_name != db_filtered means that db_name is rewritten.
-        if (strcmp(db_name, db_filtered)) db_name = db_filtered;
-      }
-      if (strcmp(table->s->db.str, db_name) < 0)
-        continue;
-      else {
-        // When rewrite db rules are used we can not rely on
-        // mts_accessed_db_names elements order.
-        if (!rpl_filter->is_rewrite_empty() &&
-            strcmp(table->s->db.str, db_name))
-          continue;
-        else
-          break;
-      }
-    }
-    assert(db_name && (!strcmp(table->s->db.str, db_name) || !strlen(db_name)));
-    assert(i < ev->mts_accessed_dbs);
-    // table pointer is shifted inside the function
-    table = mts_move_temp_table_to_entry(table, thd,
-                                         ev->mts_assigned_partitions[i]);
-  }
-
-  assert(!thd->temporary_tables);
-#ifndef NDEBUG
-  for (int i = 0; i < parts; i++) {
-    assert(!ev->mts_assigned_partitions[i]->temporary_tables ||
-           !ev->mts_assigned_partitions[i]->temporary_tables->prev);
-  }
-#endif
-}
-
-/**
-  Logic to get least occupied worker when the sql mts_submode= database
-  @param ws  array of worker threads
-  @return slave worker thread
- */
-Slave_worker *Mts_submode_database::get_least_occupied_worker(
-    Relay_log_info *, Slave_worker_array *ws, Log_event *) {
-  long usage = LONG_MAX;
-  Slave_worker **ptr_current_worker = nullptr, *worker = nullptr;
-
-  DBUG_TRACE;
-
-#ifndef NDEBUG
-
-  if (DBUG_EVALUATE_IF("mta_distribute_round_robin", 1, 0)) {
-    worker = ws->at(w_rr % ws->size());
-    LogErr(INFORMATION_LEVEL, ER_RPL_WORKER_ID_IS, worker->id,
-           static_cast<ulong>(w_rr % ws->size()));
-    assert(worker != nullptr);
-    return worker;
-  }
-#endif
-
-  for (Slave_worker **it = ws->begin(); it != ws->end(); ++it) {
-    ptr_current_worker = it;
-    if ((*ptr_current_worker)->usage_partition <= usage) {
-      worker = *ptr_current_worker;
-      usage = (*ptr_current_worker)->usage_partition;
-    }
-  }
-  assert(worker != nullptr);
-  return worker;
-}
 
 /* MTS submode master Default constructor */
 Mts_submode_logical_clock::Mts_submode_logical_clock() {
@@ -538,8 +224,9 @@ bool Mts_submode_logical_clock::wait_for_last_committed_trx(
   if ((!rli->info_thd->killed && !is_error) &&
       !clock_leq(last_committed_arg, get_lwm_timestamp(rli, true))) {
     PSI_stage_info old_stage;
-    auto &coord_stats = rli->get_applier_metrics();
-    coord_stats.get_transaction_dependency_wait_metric().start_timer();
+    auto guard = rli->get_applier_metrics()
+                     .get_transaction_dependency_wait_metric()
+                     .time_scope();
 
     assert(rli->gaq->get_length() >= 2);  // there's someone to wait
 
@@ -552,7 +239,6 @@ bool Mts_submode_logical_clock::wait_for_last_committed_trx(
     min_waited_timestamp.store(SEQ_UNINIT);  // reset waiting flag
     mysql_mutex_unlock(&rli->mts_gaq_LOCK);
     thd->EXIT_COND(&old_stage);
-    coord_stats.get_transaction_dependency_wait_metric().stop_timer();
   } else {
     min_waited_timestamp.store(SEQ_UNINIT);
     mysql_mutex_unlock(&rli->mts_gaq_LOCK);
@@ -578,6 +264,7 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
                                                    Log_event *ev) {
   longlong last_sequence_number = sequence_number;
   bool gap_successor = false;
+  static_assert(SEQ_UNINIT == 0, "MTA scheduling code assumes SEQ_UNINIT is 0");
 
   DBUG_TRACE;
   // We should check if the SQL thread was already killed before we schedule
@@ -638,23 +325,19 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
       ptr_group->sequence_number = sequence_number = SEQ_UNINIT;
       ptr_group->last_committed = last_committed = SEQ_UNINIT;
     }
-    /*
-      Transaction sequence as scheduled may have gaps, even in
-      relay log. In such case a transaction that succeeds a gap will
-      wait for all earlier that were scheduled to finish. It's marked
-      as gap successor now.
-    */
-    static_assert(SEQ_UNINIT == 0, "");
-    if (unlikely(sequence_number > last_sequence_number + 1)) {
-      /*
-        TODO: account autopositioning
-        assert(rli->replicate_same_server_id);
-      */
-      DBUG_PRINT("info", ("sequence_number gap found, "
-                          "last_sequence_number %lld, sequence_number %lld",
-                          last_sequence_number, sequence_number));
-      gap_successor = true;
-    }
+  }
+
+  /*
+    Transaction sequence as scheduled may have gaps, even in
+    relay log. In such case a transaction that succeeds a gap will
+    wait for all earlier that were scheduled to finish. It's marked
+    as gap successor now.
+  */
+  if (unlikely(sequence_number > last_sequence_number + 1)) {
+    DBUG_PRINT("info", ("sequence_number gap found, "
+                        "last_sequence_number %lld, sequence_number %lld",
+                        last_sequence_number, sequence_number));
+    gap_successor = true;
   }
 
   /*
@@ -747,12 +430,12 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
         The malformed group is handled exceptionally each event is executed
         as a solitary group yet by the same (zero id) worker.
     */
-    coord_metrics.get_transaction_dependency_wait_metric().start_timer();
-    bool error_on_worker_wait = (-1 == wait_for_workers_to_finish(rli));
-    coord_metrics.get_transaction_dependency_wait_metric().stop_timer();
+    {
+      auto guard =
+          coord_metrics.get_transaction_dependency_wait_metric().time_scope();
+      bool error_on_worker_wait = (-1 == wait_for_workers_to_finish(rli));
 
-    if (error_on_worker_wait) {
-      return ER_MTA_INCONSISTENT_DATA;
+      if (error_on_worker_wait) return ER_MTA_INCONSISTENT_DATA;
     }
 
     rli->mts_group_status = Relay_log_info::MTS_IN_GROUP;  // wait set it to NOT
@@ -870,7 +553,7 @@ void Mts_submode_logical_clock::detach_temp_tables(THD *thd,
 
 Slave_worker *Mts_submode_logical_clock::get_least_occupied_worker(
     Relay_log_info *rli, Slave_worker_array *ws [[maybe_unused]],
-    Log_event *ev) {
+    Log_event *ev [[maybe_unused]]) {
   Slave_worker *worker = nullptr;
   PSI_stage_info *old_stage = nullptr;
   THD *thd = rli->info_thd;
@@ -911,8 +594,9 @@ Slave_worker *Mts_submode_logical_clock::get_least_occupied_worker(
            rli->curr_group_seen_begin || rli->curr_group_seen_gtid);
 
     if (worker == nullptr) {
-      auto &coord_stats = rli->get_applier_metrics();
-      coord_stats.get_workers_available_wait_metric().start_timer();
+      auto guard = rli->get_applier_metrics()
+                       .get_workers_available_wait_metric()
+                       .time_scope();
       // Update thd info as waiting for workers to finish.
       thd->enter_stage(&stage_replica_waiting_for_workers_to_process_queue,
                        old_stage, __func__, __FILE__, __LINE__);
@@ -935,7 +619,6 @@ Slave_worker *Mts_submode_logical_clock::get_least_occupied_worker(
         worker = get_free_worker(rli);
       }
       THD_STAGE_INFO(thd, *old_stage);
-      coord_stats.get_workers_available_wait_metric().stop_timer();
 
       /*
         Even OPTION_BEGIN is set, the 'BEGIN' event is not dispatched to
@@ -953,9 +636,6 @@ Slave_worker *Mts_submode_logical_clock::get_least_occupied_worker(
   // assert that we have a worker thread for this event or the slave has
   // stopped.
   assert(worker != nullptr || thd->killed);
-  /* The master my have send  db partition info. make sure we never use them*/
-  if (ev->get_type_code() == mysql::binlog::event::QUERY_EVENT)
-    static_cast<Query_log_event *>(ev)->mts_accessed_dbs = 0;
 
   return worker;
 }

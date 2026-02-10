@@ -954,13 +954,13 @@ SELECT ADDTIME('500:00:00', '416:40:00');
 ADDTIME('500:00:00', '416:40:00')
 838:59:59
 Warnings:
-Warning	1292	Truncated incorrect time value: '916:40:00'
+Warning	6527	TIME value is out of range in 'addtime('500:00:00','416:40:00')'
 SELECT ADDTIME('916:40:00', '416:40:00');
 ADDTIME('916:40:00', '416:40:00')
 838:59:59
 Warnings:
 Warning	1292	Truncated incorrect time value: '916:40:00'
-Warning	1292	Truncated incorrect time value: '1255:39:59'
+Warning	6527	TIME value is out of range in 'addtime('916:40:00','416:40:00')'
 SELECT SUBTIME('916:40:00', '416:40:00');
 SUBTIME('916:40:00', '416:40:00')
 422:19:59
@@ -971,10 +971,15 @@ SUBTIME('-916:40:00', '416:40:00')
 -838:59:59
 Warnings:
 Warning	1292	Truncated incorrect time value: '-916:40:00'
-Warning	1292	Truncated incorrect time value: '-1255:39:59'
+Warning	6527	TIME value is out of range in 'subtime('-916:40:00','416:40:00')'
 SELECT MAKETIME(916,0,0);
 MAKETIME(916,0,0)
 838:59:59
+Warnings:
+Warning	1292	Truncated incorrect time value: '916:00:00'
+SELECT MAKETIME(-916,0,0);
+MAKETIME(-916,0,0)
+-838:59:59
 Warnings:
 Warning	1292	Truncated incorrect time value: '916:00:00'
 SELECT MAKETIME(4294967296, 0, 0);
@@ -1927,7 +1932,7 @@ timestampadd(quarter,1.212208e+308,'1995-01-05 06:32:20.859724') as result;
 result
 NULL
 Warnings:
-Warning	1441	Datetime function: date_add_interval field overflow
+Warning	6527	DATETIME value is out of range in '('1995-01-05 06:32:20.859724' + interval 1.212208e+308 quarter)'
 SELECT
 timestampadd(month ,1.212208e+308,'1995-01-05 06:32:20.859724') as result;
 result
@@ -1939,7 +1944,7 @@ timestampadd(week,1.212208e+308,'1995-01-05 06:32:20.859724') as result;
 result
 NULL
 Warnings:
-Warning	1441	Datetime function: date_add_interval field overflow
+Warning	6527	DATETIME value is out of range in '('1995-01-05 06:32:20.859724' + interval 1.212208e+308 week)'
 SELECT
 timestampadd(day ,1.212208e+308,'1995-01-05 06:32:20.859724') as result;
 result
@@ -1965,7 +1970,7 @@ NULL
 Warnings:
 Warning	1292	Truncated incorrect DECIMAL value: '1.212208'
 Warning	1292	Truncated incorrect DECIMAL value: '99999999999999999999999999999999999999999999999999999999999999999'
-Warning	1441	Datetime function: date_add_interval field overflow
+Warning	6527	DATETIME value is out of range in '('1995-01-05 06:32:20.859724' + interval 1.212208e+308 second)'
 SELECT
 timestampadd(microsecond ,1.212208e+308,'1995-01-05 06:32:20.859724') as result;
 result
@@ -1977,27 +1982,27 @@ date_add('1995-01-05', INTERVAL '9223372036854775807-02' YEAR_MONTH) as result;
 result
 NULL
 Warnings:
-Warning	1441	Datetime function: date_add_interval field overflow
+Warning	6527	DATETIME value is out of range in '('1995-01-05' + interval '9223372036854775807-02' year_month)'
 SELECT
 date_add('1995-01-05', INTERVAL '9223372036854775808-02' YEAR_MONTH) as result;
 result
 NULL
 Warnings:
-Warning	1441	Datetime function: date_add_interval field overflow
+Warning	6527	DATETIME value is out of range in '('1995-01-05' + interval '9223372036854775808-02' year_month)'
 SELECT
 date_add('1995-01-05', INTERVAL '9223372036854775808-02' DAY) as result;
 result
 NULL
 Warnings:
 Warning	1292	Truncated incorrect INTEGER value: '9223372036854775808-02'
-Warning	1441	Datetime function: date_add_interval field overflow
+Warning	6527	DATETIME value is out of range in '('1995-01-05' + interval '9223372036854775808-02' day)'
 SELECT
 date_add('1995-01-05', INTERVAL '9223372036854775808-02' WEEK) as result;
 result
 NULL
 Warnings:
 Warning	1292	Truncated incorrect INTEGER value: '9223372036854775808-02'
-Warning	1441	Datetime function: date_add_interval field overflow
+Warning	6527	DATETIME value is out of range in '('1995-01-05' + interval '9223372036854775808-02' week)'
 SELECT
 date_add('1995-01-05', INTERVAL '9223372036854775808-02' SECOND) as result;
 result
@@ -2005,7 +2010,7 @@ NULL
 Warnings:
 Warning	1292	Truncated incorrect DECIMAL value: '9223372036854775808-02'
 Warning	1292	Truncated incorrect DECIMAL value: '9223372036854775808'
-Warning	1441	Datetime function: date_add_interval field overflow
+Warning	6527	DATETIME value is out of range in '('1995-01-05' + interval '9223372036854775808-02' second)'
 SELECT
 date_add('1995-01-05', INTERVAL '9223372036854775700-02' YEAR_MONTH) as result;
 result
@@ -2127,3 +2132,75 @@ DO MIN(STR_TO_DATE('4746-12-18' ,'%D  '));
 Warnings:
 Warning	1411	Incorrect datetime value: '4746-12-18' for function str_to_date
 SET SQL_MODE=default;
+#
+# Bug#37807230: assertion null_value || current_thd->is_error failed
+#
+CREATE TABLE t1(ic INTEGER, d DATE);
+INSERT INTO t1 VALUES(NULL, DATE'2025-04-11'),
+(20250412, DATE'2025-04-11'),
+(41331246, DATE'1998-11-30'),
+(-711023684, DATE'2028-09-27');
+SELECT * FROM t1 WHERE d > TIMEDIFF(ic, NULL);
+ic	d
+Warnings:
+Warning	1292	Incorrect datetime value: '41331246'
+Warning	1292	Truncated incorrect time value: '-711023684'
+DROP TABLE t1;
+#
+# Bug#37818753: Assertion `null_value == (res == nullptr)' failed
+#
+CREATE TABLE t1(vc varchar(1));
+INSERT INTO t1 VALUES('a');
+SELECT SUBTIME('0000-00-00 00:00:00', vc) AS c FROM t1;
+c
+NULL
+Warnings:
+Warning	1292	Truncated incorrect time value: 'a'
+DROP TABLE t1;
+#
+# Bug#37864777: Assertion `null_value || current_thd->is_error()
+#
+CREATE TABLE t1(t time(3));
+INSERT INTO t1 VALUES(TIME'05:27:52.019');
+SELECT DATEDIFF('2031-08-06',
+TIMEDIFF(SUBTIME(t, '12:59:38'), '1994-01-14')) AS c
+FROM t1;
+c
+NULL
+Warnings:
+Warning	1292	Truncated incorrect time value: '1994-01-14'
+DROP TABLE t1;
+#
+# Bug#37881114: Assertion `mt.time_type == MYSQL_TIMESTAMP_DATETIME'
+#
+SELECT SUBTIME(DATE'2005-04-14', TIMESTAMPADD(YEAR, 165, DATE'2025-01-01')) c;
+c
+2005-04-14 00:00:00
+#
+# Bug#37900924: Assertion `mt.time_type == MYSQL_TIMESTAMP_DATETIME'
+#
+CREATE TABLE t1 (t time(3) NOT NULL);
+INSERT INTO t1 VALUES (TIME'00:20:01.000'), (TIME'14:46:31.033');
+SELECT *
+FROM t1
+WHERE t IN (FROM_UNIXTIME(2120220672, '%Y-%m-%d'),
+TIMESTAMP('2003-10-18', TIMESTAMPADD(QUARTER, 1, '2003-03-07'))
+);
+t
+DROP TABLE t1;
+#
+# Bug#37923312: Assertion `l_time1.time_type == MYSQL_TIMESTAMP_DATETIME'
+#
+SELECT SUBTIME(FROM_UNIXTIME(3569025024, CONCAT_WS(':', '%V', '%V', '%m', '%T')
+), '00:00:00') AS c;
+c
+2005-05-02 06:50:24
+#
+# Bug#37976294: Assertion `hour <= TIME_MAX_HOUR &&
+#                          minute <= TIME_MAX_MINUTE'
+#
+SELECT TIMEDIFF('4617000000', DATE(NULL)) AS c;
+c
+NULL
+Warnings:
+Warning	1292	Incorrect datetime value: '4617000000'

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@
 
 package com.mysql.clusterj.core;
 
+import com.mysql.clusterj.SessionFactory;
 import com.mysql.clusterj.SessionFactoryService;
 import com.mysql.clusterj.core.util.I18NHelper;
 import com.mysql.clusterj.core.util.Logger;
@@ -39,7 +40,7 @@ public class SessionFactoryServiceImpl implements SessionFactoryService {
     /** My logger */
     static final Logger logger = LoggerFactoryService.getFactory().getInstance(SessionFactoryServiceImpl.class);
 
-    public SessionFactoryImpl getSessionFactory(Map<String, String> props) {
+    public SessionFactory getSessionFactory(Map<String, String> props) {
         return SessionFactoryImpl.getSessionFactory(props);
     }
 

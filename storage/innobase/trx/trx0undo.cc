@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -1794,29 +1794,32 @@ func_exit:
   return (err);
 }
 
-/** Sets the state of the undo log segment at a transaction finish.
- @return undo log segment header page, x-latched */
-page_t *trx_undo_set_state_at_finish(
-    trx_undo_t *undo, /*!< in: undo log memory copy */
-    mtr_t *mtr)       /*!< in: mtr */
-{
-  trx_usegf_t *seg_hdr;
-  trx_upagef_t *page_hdr;
-  page_t *undo_page;
-  ulint state;
+/** Checks if undo log is reusable and can be cached.
+@param[in]  undo        undo log memory copy
+@param[in]  page_hdr    page header of page of the undo log
+@return true if undo log state should be set as cached */
+static bool trx_undo_reusable(const trx_undo_t *undo,
+                              const trx_upagef_t *page_hdr) {
+  return undo->size == 1 && mach_read_from_2(page_hdr + TRX_UNDO_PAGE_FREE) <
+                                TRX_UNDO_PAGE_REUSE_LIMIT;
+}
 
+/** Sets the state of the undo log segment at a transaction finish.
+@param[in] undo    undo log memory copy
+@param[in] mtr     Mini-transaction
+@return undo log segment header page, x-latched */
+page_t *trx_undo_set_state_at_finish(trx_undo_t *undo, mtr_t *mtr) {
   ut_a(undo->id < TRX_RSEG_N_SLOTS);
 
-  undo_page = trx_undo_page_get(page_id_t(undo->space, undo->hdr_page_no),
-                                undo->page_size, mtr);
+  page_t *undo_page = trx_undo_page_get(
+      page_id_t(undo->space, undo->hdr_page_no), undo->page_size, mtr);
 
-  seg_hdr = undo_page + TRX_UNDO_SEG_HDR;
-  page_hdr = undo_page + TRX_UNDO_PAGE_HDR;
+  trx_usegf_t *seg_hdr = undo_page + TRX_UNDO_SEG_HDR;
+  trx_upagef_t *page_hdr = undo_page + TRX_UNDO_PAGE_HDR;
 
-  if (undo->size == 1 && mach_read_from_2(page_hdr + TRX_UNDO_PAGE_FREE) <
-                             TRX_UNDO_PAGE_REUSE_LIMIT) {
+  ulint state;
+  if (trx_undo_reusable(undo, page_hdr)) {
     state = TRX_UNDO_CACHED;
-
   } else if (undo->type == TRX_UNDO_INSERT) {
     state = TRX_UNDO_TO_FREE;
   } else {

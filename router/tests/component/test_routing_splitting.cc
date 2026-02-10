@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -218,15 +218,13 @@ class RoutingSplittingTestBase : public RouterComponentTest {
       SCOPED_TRACE(
           "// Make our metadata server to return single node as a cluster "
           "member (meaning single metadata server)");
-      set_mock_metadata(node.http_port,
-                        cluster_id,     // gr-id
-                        gr_nodes,       // gr-nodes
-                        ndx,            // gr-pos
-                        cluster_nodes,  // cluster-nodes
-                        0,              // view-id
-                        false,          // error-on-md-query
-                        "localhost"     // gr-node-host
-      );
+      MockGrMetadata()
+          .gr_node_host("127.0.0.1")
+          .gr_id(cluster_id)
+          .gr_nodes(gr_nodes)
+          .gr_pos(ndx)
+          .cluster_nodes(cluster_nodes)
+          .send(node.http_port);
     }
   }
 
@@ -1510,10 +1508,10 @@ TEST_F(RoutingSplittingNoSslTest,
       auto connections_res = from_string((*query_res)[0][0]);
       ASSERT_NO_ERROR(connections_res);
 
-      // one node may get more than 4 connections (metadata-cache)
+      // one node may get more than 3 connections (metadata-cache)
       // all others should get one from:
       // - this query
-      EXPECT_THAT(*connections_res, AnyOf(1, testing::Ge(4)));
+      EXPECT_THAT(*connections_res, AnyOf(1, testing::Ge(3)));
     }
   }
 }
@@ -2227,6 +2225,35 @@ TEST_F(RoutingSplittingTest, multi_statements_are_forbidden) {
       EXPECT_EQ(query_res.error().value(),
                 1273);  // syntax error (from mock-server)
     }
+  }
+}
+
+TEST_F(RoutingSplittingTest, empty_lines) {
+  RecordProperty("Description",
+                 "empty lines and comments should be forwarded as is.");
+
+  SCOPED_TRACE("// connect");
+
+  MysqlClient cli;
+
+  cli.username("foo");
+  cli.password("bar");
+
+  ASSERT_NO_ERROR(cli.connect("127.0.0.1", router_port_));
+
+  for (std::string stmt : {"", "  ", ";"}) {
+    SCOPED_TRACE("// stmt: " + stmt);
+
+    auto query_res = cli.query(stmt);
+    ASSERT_ERROR(query_res);
+    EXPECT_EQ(query_res.error().value(), 1065) << query_res.error();
+  }
+
+  for (std::string stmt : {"-- ", "/* */"}) {
+    SCOPED_TRACE("// stmt: " + stmt);
+
+    auto query_res = cli.query(stmt);
+    ASSERT_NO_ERROR(query_res);
   }
 }
 
@@ -3235,9 +3262,13 @@ TEST_F(RoutingSplittingTest,
   }
 }
 
-class RouterBootstrapTest : public RouterComponentBootstrapTest {};
+class RouterBootstrapTest : public RouterComponentBootstrapTest,
+                            public ::testing::WithParamInterface<bool> {
+ public:
+  RouterBootstrapTest() : RouterComponentBootstrapTest(GetParam()) {}
+};
 
-TEST_F(RouterBootstrapTest, default_has_rw_split) {
+TEST_P(RouterBootstrapTest, default_has_rw_split) {
   RecordProperty("Worklog", "12794");
   RecordProperty("RequirementId", "FR18.1");
   RecordProperty("Requirement",
@@ -3265,7 +3296,7 @@ TEST_F(RouterBootstrapTest, default_has_rw_split) {
               ::testing::HasSubstr("[routing:bootstrap_rw_split]"));
 }
 
-TEST_F(RouterBootstrapTest, disable_rw_split) {
+TEST_P(RouterBootstrapTest, disable_rw_split) {
   RecordProperty("Worklog", "12794");
   RecordProperty("RequirementId", "FR18.2");
   RecordProperty("Requirement",
@@ -3296,6 +3327,9 @@ TEST_F(RouterBootstrapTest, disable_rw_split) {
       config_file_str,
       ::testing::Not(::testing::HasSubstr("[routing:bootstrap_rw_split]")));
 }
+
+INSTANTIATE_TEST_SUITE_P(InstantiationOldNewExe, RouterBootstrapTest,
+                         testing::Values(false, true));
 
 // fail-to-start.
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -79,8 +79,12 @@ int dummy_function_to_ensure_we_are_linked_into_the_server() { return 1; }
  */
 class Diagnostics_area_handler_raii {
  public:
-  Diagnostics_area_handler_raii(THD *thd, bool reset_cond_info = false)
-      : m_thd(thd), m_stmt_da(false) {
+  Diagnostics_area_handler_raii(THD *thd,
+                                bool clear_diagnostics_area_on_success,
+                                bool reset_cond_info = false)
+      : m_thd(thd),
+        m_stmt_da(false),
+        m_clear_diagnostics_area_on_success(clear_diagnostics_area_on_success) {
     if (m_thd->is_error()) {
       /*
         If a statement is being executed after an error is occurred, then push
@@ -118,13 +122,16 @@ class Diagnostics_area_handler_raii {
       }
     } else {
       // Reset caller DA if statement execution is successful.
-      if (!m_thd->is_error()) m_thd->get_stmt_da()->reset_diagnostics_area();
+      if (m_clear_diagnostics_area_on_success && !m_thd->is_error()) {
+        m_thd->get_stmt_da()->reset_diagnostics_area();
+      }
     }
   }
 
  private:
   THD *m_thd;
   Diagnostics_area m_stmt_da;
+  bool m_clear_diagnostics_area_on_success;
 };
 
 #ifdef HAVE_PSI_INTERFACE
@@ -310,7 +317,8 @@ bool Regular_statement_handle::execute() {
 bool Regular_statement_handle::execute(Server_runnable *server_runnable) {
   DBUG_TRACE;
 
-  if (m_thd->in_sub_stmt ||
+  if ((m_thd->in_sub_stmt == SUB_STMT_FUNCTION ||
+       m_thd->in_sub_stmt == SUB_STMT_TRIGGER) ||
       (m_thd->in_loadable_function &&
        DBUG_EVALUATE_IF("skip_statement_execution_within_UDF_check", false,
                         true))) {
@@ -332,7 +340,8 @@ bool Regular_statement_handle::execute(Server_runnable *server_runnable) {
   query_id_t old_query_id = m_thd->query_id;
   bool error = false;
   {
-    Diagnostics_area_handler_raii da_handler(m_thd);
+    Diagnostics_area_handler_raii da_handler(
+        m_thd, clear_diagnostics_area_on_success());
     bool general_log_temporarily_disabled = true;
 
     PFS_instrumentation_handle_raii pfs_instr_handle_raii(
@@ -342,6 +351,7 @@ bool Regular_statement_handle::execute(Server_runnable *server_runnable) {
     Prepared_statement stmt(m_thd);
     while (true) {
       error = stmt.execute_server_runnable(m_thd, server_runnable);
+      DEBUG_SYNC(m_thd, "regular_statement_execute_after");
 
       /*
         Re-enable the general log if it was temporarily disabled while
@@ -553,7 +563,8 @@ bool Prepared_statement_handle::internal_prepare() {
   DBUG_TRACE;
   DBUG_PRINT("Prepared_statement_handle", ("Got query %s\n", m_query.c_str()));
 
-  Diagnostics_area_handler_raii da_handler(m_thd, true);
+  Diagnostics_area_handler_raii da_handler(
+      m_thd, clear_diagnostics_area_on_success(), true);
 
   // Close the current statement and create new
   if (m_stmt) {
@@ -609,8 +620,9 @@ bool Prepared_statement_handle::internal_prepare() {
 
   m_thd->set_secondary_engine_optimization(saved_secondary_engine);
 
-  // Set multi-result state if statement belongs to SP.
+  // Set multi-result state if statement belongs to Stored procedure.
   if (m_use_thd_protocol && m_thd->sp_runtime_ctx != nullptr &&
+      m_thd->sp_runtime_ctx->sp->m_type == enum_sp_type::PROCEDURE &&
       set_sp_multi_result_state(m_thd, m_stmt->m_lex)) {
     return true; /* purecov: inspected */
   }
@@ -648,7 +660,8 @@ bool Prepared_statement_handle::enable_cursor() {
 bool Prepared_statement_handle::internal_execute() {
   DBUG_TRACE;
 
-  Diagnostics_area_handler_raii da_handler(m_thd, true);
+  Diagnostics_area_handler_raii da_handler(
+      m_thd, clear_diagnostics_area_on_success(), true);
 
   // Stop if prepare is not done yet.
   if (!m_stmt) {
@@ -699,14 +712,13 @@ bool Prepared_statement_handle::internal_execute() {
   expanded_query.set_charset(default_charset_info);
 
   // If no error happened while setting the parameters, execute statement.
-  bool rc = false;
-  if (!m_stmt->set_parameters(
+  bool rc =
+      m_stmt->set_parameters(
           m_thd, &expanded_query, m_bound_new_parameter_types, m_parameters,
-          Prepared_statement::enum_param_pack_type::UNPACKED)) {
-    rc = m_stmt->execute_loop(m_thd, &expanded_query, enable_cursor());
-    m_bound_new_parameter_types = false;
-    if (!is_cursor_open()) send_statement_status();
-  }
+          Prepared_statement::enum_param_pack_type::UNPACKED) ||
+      m_stmt->execute_loop(m_thd, &expanded_query, enable_cursor());
+  m_bound_new_parameter_types = false;
+  if (!is_cursor_open()) send_statement_status();
 
   m_thd->set_secondary_engine_optimization(saved_secondary_engine);
 
@@ -727,7 +739,8 @@ bool Prepared_statement_handle::internal_fetch() {
   DBUG_PRINT("Prepared_statement_handle",
              ("Asked for %zu rows\n", m_num_rows_per_fetch));
 
-  Diagnostics_area_handler_raii da_handler(m_thd, true);
+  Diagnostics_area_handler_raii da_handler(
+      m_thd, clear_diagnostics_area_on_success(), true);
 
   // Stop if statement is not prepared.
   if (!m_stmt) {

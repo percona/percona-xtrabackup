@@ -1,0 +1,28 @@
+--source include/have_debug.inc
+
+create table opening_lines (
+       id INT UNSIGNED AUTO_INCREMENT NOT NULL PRIMARY KEY,
+       opening_line TEXT(500),
+       author VARCHAR(200),
+       title VARCHAR(200),
+       FULLTEXT idx (opening_line)
+       ) ENGINE=InnoDB;
+
+insert into opening_lines(opening_line,author,title) VALUES
+       ('A screaming comes across the sky.','Thomas Pynchon','Gravity\'s Rainbow');
+select * from opening_lines WHERE MATCH(opening_line) AGAINST('screaming');
+
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+set debug='+d,fts_sync_cache_and_crash_after_commit_table';
+--error 2013
+delete from opening_lines;
+--source include/wait_until_disconnected.inc
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+
+select * from opening_lines;
+
+select * from opening_lines WHERE MATCH(opening_line) AGAINST('screaming');
+
+drop table opening_lines;

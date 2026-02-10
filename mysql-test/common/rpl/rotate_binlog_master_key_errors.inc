@@ -54,14 +54,15 @@
 # Wl#12080 Add support to binary log encryption key rotation and cleanup
 
 --source include/add_debug_point.inc
---replace_result \\ /
+--replace_regex /\d+/#####/
 --error $expected_error
 ALTER INSTANCE ROTATE BINLOG MASTER KEY;
 --source include/remove_debug_point.inc
 
 --let $rpl_log_file=$SLAVE_DATADIR$relay_log_base$before_relay_log_suffix
 --source include/rpl/get_log_encryption_key_id.inc
---let $assert_text=The before relay log is encrypted using current master key with key id: $current_master_key_id
+
+--let $assert_text=The before relay log is encrypted using current master key
 --let $assert_cond= RIGHT("$rpl_encryption_key_id", 2) = "_$current_master_key_id"
 --source include/assert.inc
 
@@ -72,18 +73,18 @@ ALTER INSTANCE ROTATE BINLOG MASTER KEY;
 
 --let $rpl_log_file=$SLAVE_DATADIR$relay_log_base$after_relay_log_suffix
 --source include/rpl/get_log_encryption_key_id.inc
---let $assert_text=The after relay log is encrypted using rotated master key with key id: $rotated_master_key_id
+--let $assert_text=The after relay log is encrypted using rotated master key
 --let $assert_cond= RIGHT("$rpl_encryption_key_id", 2) = "_$rotated_master_key_id"
 --source include/assert.inc
 
 --let $rpl_log_file=$SLAVE_DATADIR$relay_log_base$before_relay_log_suffix
 --source include/rpl/get_log_encryption_key_id.inc
---let $assert_text=The before relay log is re-encrypted using rotated master key with key id: $rotated_master_key_id
+--let $assert_text=The before relay log is re-encrypted using rotated master key
 --let $assert_cond= RIGHT("$rpl_encryption_key_id", 2) = "_$rotated_master_key_id"
 --source include/assert.inc
 
 --let $rpl_log_file=$SLAVE_DATADIR$relay_log_base$first_relay_log_suffix
 --source include/rpl/get_log_encryption_key_id.inc
---let $assert_text=The first relay log is re-encrypted using rotated master key with key id: $rotated_master_key_id
+--let $assert_text=The first relay log is re-encrypted using rotated master key
 --let $assert_cond= RIGHT("$rpl_encryption_key_id", 2) = "_$rotated_master_key_id"
 --source include/assert.inc

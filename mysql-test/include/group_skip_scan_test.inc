@@ -1043,22 +1043,18 @@ INSERT INTO t1 (a, b) VALUES (1,1), (1,2), (1,3), (1,4), (1,5),
 EXPLAIN FORMAT=TREE SELECT max(b), a FROM t1 GROUP BY a;
 FLUSH STATUS;
 SELECT max(b), a FROM t1 GROUP BY a;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'handler_read__e%';
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT max(b), a FROM t1 GROUP BY a;
 FLUSH STATUS;
 CREATE TABLE t2 SELECT max(b), a FROM t1 GROUP BY a;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'handler_read__e%';
 FLUSH STATUS;
 SELECT * FROM (SELECT max(b), a FROM t1 GROUP BY a) b;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'handler_read__e%';
 FLUSH STATUS;
 (SELECT max(b), a FROM t1 GROUP BY a) UNION
  (SELECT max(b), a FROM t1 GROUP BY a);
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'handler_read__e%';
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE (SELECT max(b), a FROM t1 GROUP BY a) UNION
@@ -1096,23 +1092,19 @@ SELECT * FROM t3;
 --enable_result_log
 FLUSH STATUS;
 INSERT INTO t3 SELECT a,MAX(b) FROM t1 GROUP BY a;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'handler_read__e%';
 DELETE FROM t3;
 FLUSH STATUS;
 INSERT INTO t3 SELECT 1, (SELECT MAX(b) FROM t1 GROUP BY a HAVING a < 2)
   FROM t1 LIMIT 1;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'handler_read__e%';
 FLUSH STATUS;
 DELETE FROM t3 WHERE (SELECT MAX(b) FROM t1 GROUP BY a HAVING a < 2) > 10000;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'handler_read__e%';
 FLUSH STATUS;
 --error ER_SUBQUERY_NO_1_ROW
 DELETE FROM t3 WHERE (SELECT (SELECT MAX(b) FROM t1 GROUP BY a HAVING a < 2) x
                       FROM t1) > 10000;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'handler_read__e%';
 
 DROP TABLE t1,t2,t3;
@@ -1586,35 +1578,30 @@ ANALYZE TABLE t;
 SELECT a, SUM(DISTINCT a), MIN(b) FROM t GROUP BY a;
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT a, SUM(DISTINCT a), MIN(b) FROM t GROUP BY a;
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'have_both_agg_distinct_and_min_max' AS OK
   FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
 SELECT a, SUM(DISTINCT a), MAX(b) FROM t GROUP BY a;
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT a, SUM(DISTINCT a), MAX(b) FROM t GROUP BY a;
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'have_both_agg_distinct_and_min_max' AS OK
   FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
 SELECT a, MAX(b) FROM t GROUP BY a HAVING SUM(DISTINCT a);
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT a, MAX(b) FROM t GROUP BY a HAVING SUM(DISTINCT a);
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'have_both_agg_distinct_and_min_max' AS OK
   FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
 SELECT SUM(DISTINCT a), MIN(b), MAX(b) FROM t;
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT SUM(DISTINCT a), MIN(b), MAX(b) FROM t;
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'have_both_agg_distinct_and_min_max' AS OK
   FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
 SELECT a, SUM(DISTINCT a), MIN(b), MAX(b) FROM t GROUP BY a;
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT a, SUM(DISTINCT a), MIN(b), MAX(b) FROM t GROUP BY a;
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'have_both_agg_distinct_and_min_max' AS OK
   FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -1665,7 +1652,6 @@ INSERT INTO t1(c1,c2) VALUES
 EXPLAIN FORMAT=TREE SELECT MAX(c2), c1 FROM t1 WHERE c1 = 4 GROUP BY c1;
 FLUSH STATUS;
 SELECT MAX(c2), c1 FROM t1 WHERE c1 = 4 GROUP BY c1;
---skip_if_hypergraph  # Depends on the query plan (loose index scan is not supported).
 SHOW SESSION STATUS LIKE 'Handler_read%';
 
 DROP TABLE t1;
@@ -1907,7 +1893,6 @@ WHERE (group_by_col IN (70, 9)) OR (aggr_col > 2) GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col) FROM a
 WHERE (group_by_col IN (70 ,9)) OR (aggr_col > 2) GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'disjuntive_predicate_present' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -1918,7 +1903,6 @@ WHERE (group_by_col IN (70, 9)) OR (aggr_col < 9) GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MAX(aggr_col) FROM a
 WHERE (group_by_col IN (70 , 9)) OR (aggr_col < 9) GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'disjuntive_predicate_present' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -1932,7 +1916,6 @@ WHERE (group_by_col IN (70 ,9)) OR (aggr_col > 2) GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col) FROM a
 WHERE (group_by_col IN (70, 9)) OR (aggr_col > 2) GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -1943,7 +1926,6 @@ WHERE (group_by_col IN (70, 9)) OR (aggr_col < 9) GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MAX(aggr_col) FROM a
 WHERE (group_by_col IN (70, 9)) OR (aggr_col < 9) GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -1955,7 +1937,6 @@ WHERE (group_by_col IN (3, 9)) OR (aggr_col = 9) GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col), MAX(aggr_col) FROM a
 WHERE (group_by_col IN (3, 9)) OR (aggr_col = 9) GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -1967,7 +1948,6 @@ WHERE (group_by_col = 3) OR (aggr_col > 8) GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col), MAX(aggr_col) FROM a
 WHERE (group_by_col = 3) OR (aggr_col > 8) GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -1984,7 +1964,6 @@ WHERE (group_by_col = 9) OR aggr_col GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col), MAX(aggr_col) FROM a
 WHERE group_by_col = 9 OR aggr_col GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -1997,7 +1976,6 @@ WHERE group_by_col OR (aggr_col < 9) GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col), MAX(aggr_col) FROM a
 WHERE group_by_col OR (aggr_col < 9) GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -2012,7 +1990,6 @@ WHERE aggr_col = group_by_col GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col), MAX(aggr_col) FROM a
 WHERE aggr_col = group_by_col GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -2024,7 +2001,6 @@ WHERE aggr_col < group_by_col GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col), MAX(aggr_col) FROM a
 WHERE aggr_col < group_by_col GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -2038,7 +2014,6 @@ WHERE aggr_col OR group_by_col GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col), MAX(aggr_col) FROM a
 WHERE aggr_col OR group_by_col GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -2050,7 +2025,6 @@ WHERE aggr_col AND group_by_col GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col), MAX(aggr_col) FROM a
 WHERE aggr_col AND group_by_col GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -2062,7 +2036,6 @@ WHERE aggr_col<>0 AND group_by_col<>0 GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col), MAX(aggr_col) FROM a
 WHERE aggr_col<>0 AND group_by_col<>0 GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -2074,7 +2047,6 @@ WHERE group_by_col OR (group_by_col < (aggr_col = 1)) GROUP BY group_by_col;
 EXPLAIN FORMAT=TREE SELECT group_by_col, MIN(aggr_col), MAX(aggr_col) FROM a
 WHERE group_by_col OR (group_by_col < (aggr_col = 1)) GROUP BY group_by_col;
 
---skip_if_hypergraph  # Does not output the same optimizer trace.
 SELECT TRACE RLIKE 'minmax_keypart_in_disjunctive_query' AS OK
                                 FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
@@ -2226,3 +2198,226 @@ FROM t1 AS ra0 LEFT JOIN t1 AS ra1
      ON ra0.k IN (SELECT COUNT(ra0.k) FROM t1);
 
 DROP TABLE t1;
+
+--echo #
+--echo # Bug#35842412 WHERE NOT IN with subquery is much slower on 8.1 than 5.7
+--echo #
+CREATE TABLE t1( b_id INTEGER NOT NULL PRIMARY KEY AUTO_INCREMENT,
+                 val VARCHAR(100) NOT NULL, val_n VARCHAR(100),
+                 KEY ix_val (val, b_id), KEY ix_val_n (val_n, b_id));
+CREATE TABLE t2( a_id INTEGER NOT NULL PRIMARY KEY AUTO_INCREMENT,
+                 val VARCHAR(100) NOT NULL, val_n VARCHAR(100),
+                 UNIQUE KEY ix_val (val), UNIQUE KEY ix_val_n (val_n));
+INSERT INTO t1(val, val_n)
+WITH RECURSIVE DataSource(num, c1, c2) AS (
+	SELECT 1, lpad(1,25,'0'), lpad(1,25,'0')
+	UNION ALL
+	SELECT num + 1, lpad(mod(num+1,30),25,'0'),
+      lpad(ELT(num%400 != 0, mod(num+1,30)), 25, '0')
+	FROM DataSource
+	WHERE num < 1000
+)
+SELECT c1, c2 from DataSource;
+INSERT INTO t2(val, val_n)
+WITH RECURSIVE DataSource(num, c1, c2) AS (
+	SELECT 1, lpad(1,25,'0'), lpad(1,25,'0')
+	UNION ALL
+	SELECT num + 1, lpad(num+1,25,'0'), lpad(ELT(num%13 != 0, num+1), 25, '0')
+	FROM DataSource
+	WHERE num < 30
+)
+SELECT c1, c2 from DataSource;
+ANALYZE TABLE t1, t2;
+
+--echo # Should use group skip scan on t1
+let query = SELECT DISTINCT val FROM t1 WHERE EXISTS
+    (SELECT * FROM t2 WHERE t2.val = t1.val);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val FROM t1 WHERE EXISTS
+    (SELECT * FROM t2 WHERE t2.val = t1.val) GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT DISTINCT val FROM t1 WHERE val IN (SELECT val FROM t2);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT DISTINCT val FROM t1 WHERE val IN
+    (SELECT val FROM t2 WHERE t2.val = t1.val);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val FROM t1 WHERE val IN (SELECT val FROM t2 ) GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val FROM t1 WHERE val IN
+    (SELECT val FROM t2 WHERE t2.val = t1.val ) GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT DISTINCT val FROM t1 WHERE NOT EXISTS
+    (SELECT * FROM t2 WHERE val = 'asd');
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val FROM t1 WHERE NOT EXISTS
+    (SELECT * FROM t2 WHERE val = 'asd' ) GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+--echo # Should use group skip scan on t1
+let query = SELECT DISTINCT val FROM t1 WHERE val NOT IN (SELECT val FROM t2);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT DISTINCT val FROM t1 WHERE val NOT IN
+    (SELECT val FROM t2 WHERE t2.val = t1.val);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val FROM t1 WHERE val NOT IN
+    (SELECT val FROM t2 ) GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val FROM t1 WHERE val NOT IN
+    (SELECT val FROM t2 WHERE t2.val = t1.val ) GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT DISTINCT val FROM t1 WHERE NOT EXISTS
+    (SELECT * FROM t2 WHERE t2.val = t1.val);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val FROM t1 WHERE NOT EXISTS
+    (SELECT * FROM t2 WHERE t2.val = t1.val) GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+--echo # Should use group skip scan on t1
+let query = SELECT DISTINCT val FROM t1 WHERE EXISTS (SELECT * FROM t2);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val FROM t1 WHERE EXISTS (SELECT * FROM t2) GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+--echo # Uses group skip scan with aggregate functions since "t2" is a const
+--echo # table. Hypergraph optimizer does not support const table optimization.
+--echo # So the plan chosen is different.
+
+let query = SELECT val, MIN(b_id), MAX(b_id) FROM t1 WHERE NOT EXISTS
+    (SELECT * FROM t2 WHERE val = 'asd') GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+--echo # Should not use group skip scan on t1. Group skip scan is not supported
+--echo # on multi-table queries with aggregate functions.
+let query = SELECT val, MIN(b_id), MAX(b_id) FROM t1 WHERE val
+    NOT IN (SELECT val FROM t2) GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val, MIN(b_id), MAX(b_id) FROM t1 WHERE EXISTS
+    (SELECT * FROM t2) GROUP BY val;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+--echo # Cover nullable column scenarios
+--echo # Should use group skip scan on t1
+let query = SELECT DISTINCT val_n FROM t1 WHERE EXISTS
+    (SELECT * FROM t2 WHERE t2.val_n = t1.val_n);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT DISTINCT val_n FROM t1 WHERE val_n IN (SELECT val_n FROM t2);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT DISTINCT val_n FROM t1 WHERE NOT EXISTS
+    (SELECT * FROM t2 WHERE val_n = 'asd');
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+--echo # Should use group skip scan on t1
+let query = SELECT DISTINCT val_n FROM t1 WHERE val_n NOT IN
+    (SELECT val_n FROM t2);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT DISTINCT val_n FROM t1 WHERE val_n NOT IN
+    (SELECT val_n FROM t2 WHERE t2.val_n = t1.val_n);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT DISTINCT val_n FROM t1 WHERE NOT EXISTS
+    (SELECT * FROM t2 WHERE t2.val_n = t1.val_n);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val_n FROM t1 WHERE NOT EXISTS
+    (SELECT * FROM t2 WHERE t2.val_n = t1.val_n) GROUP BY val_n;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+--echo # Should use group skip scan on t1
+let query = SELECT DISTINCT val_n FROM t1 WHERE EXISTS (SELECT * FROM t2);
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+--echo # Uses group skip scan with aggregate functions since "t2" is a const
+--echo # table. Hypergraph optimizer does not support const table optimization.
+--echo # So the plan chosen is different.
+let query = SELECT val_n, MIN(b_id), MAX(b_id) FROM t1 WHERE NOT EXISTS
+    (SELECT * FROM t2 WHERE val_n = 'asd') GROUP BY val_n;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+--echo # Should not use group skip scan on t1. Group skip scan is not supported
+--echo # on multi-table queries with aggregate functions.
+let query = SELECT val_n, MIN(b_id), MAX(b_id) FROM t1 WHERE val_n
+    NOT IN (SELECT val_n FROM t2) GROUP BY val_n;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+let query = SELECT val_n, MIN(b_id), MAX(b_id) FROM t1 WHERE EXISTS
+    (SELECT * FROM t2) GROUP BY val_n;
+--replace_regex $elide_costs
+eval EXPLAIN FORMAT=TREE $query;
+eval $query;
+
+DROP TABLE t1, t2;

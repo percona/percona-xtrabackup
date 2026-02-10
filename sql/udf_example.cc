@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -119,12 +119,12 @@
 **
 */
 
-#include <assert.h>
-#include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <mutex>
 #include <new>
 #include <regex>
@@ -770,7 +770,7 @@ extern "C" bool avgcost_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
 
 extern "C" void avgcost_deinit(UDF_INIT *initid) {
   void *void_ptr = initid->ptr;
-  avgcost_data *data = static_cast<avgcost_data *>(void_ptr);
+  auto *data = static_cast<avgcost_data *>(void_ptr);
   delete data;
 }
 
@@ -778,7 +778,7 @@ extern "C" void avgcost_deinit(UDF_INIT *initid) {
 
 extern "C" void avgcost_clear(UDF_INIT *initid, unsigned char *,
                               unsigned char *) {
-  struct avgcost_data *data = (struct avgcost_data *)initid->ptr;
+  auto *data = (struct avgcost_data *)initid->ptr;
   data->totalprice = 0.0;
   data->totalquantity = 0;
   data->count = 0;
@@ -787,7 +787,7 @@ extern "C" void avgcost_clear(UDF_INIT *initid, unsigned char *,
 extern "C" void avgcost_add(UDF_INIT *initid, UDF_ARGS *args, unsigned char *,
                             unsigned char *) {
   if (args->args[0] && args->args[1]) {
-    struct avgcost_data *data = (struct avgcost_data *)initid->ptr;
+    auto *data = (struct avgcost_data *)initid->ptr;
     const long long quantity = *((long long *)args->args[0]);
     const long long newquantity = data->totalquantity + quantity;
     double price = *((double *)args->args[1]);
@@ -823,7 +823,7 @@ extern "C" void avgcost_add(UDF_INIT *initid, UDF_ARGS *args, unsigned char *,
 
 extern "C" double avgcost(UDF_INIT *initid, UDF_ARGS *, unsigned char *is_null,
                           unsigned char *) {
-  struct avgcost_data *data = (struct avgcost_data *)initid->ptr;
+  auto *data = (struct avgcost_data *)initid->ptr;
   if (!data->count || !data->totalquantity) {
     *is_null = 1;
     return 0.0;
@@ -914,7 +914,7 @@ struct My_median_data {
 };
 
 extern "C" bool my_median_init(UDF_INIT *initid, UDF_ARGS *, char *message) {
-  My_median_data *data = new (std::nothrow) My_median_data;
+  auto *data = new (std::nothrow) My_median_data;
   if (!data) {
     strcpy(message, "Could not allocate memory");
     return true;
@@ -924,15 +924,13 @@ extern "C" bool my_median_init(UDF_INIT *initid, UDF_ARGS *, char *message) {
 }
 
 extern "C" void my_median_deinit(UDF_INIT *initid) {
-  My_median_data *data =
-      static_cast<My_median_data *>(static_cast<void *>(initid->ptr));
+  auto *data = static_cast<My_median_data *>(static_cast<void *>(initid->ptr));
   delete data;
 }
 
 extern "C" void my_median_add(UDF_INIT *initid, UDF_ARGS *args, unsigned char *,
                               unsigned char *) {
-  My_median_data *data =
-      static_cast<My_median_data *>(static_cast<void *>(initid->ptr));
+  auto *data = static_cast<My_median_data *>(static_cast<void *>(initid->ptr));
   if (args->args[0]) {
     void *arg0 = args->args[0];
     const long long number = *(static_cast<long long *>(arg0));
@@ -942,16 +940,15 @@ extern "C" void my_median_add(UDF_INIT *initid, UDF_ARGS *args, unsigned char *,
 
 extern "C" void my_median_clear(UDF_INIT *initid, unsigned char *,
                                 unsigned char *) {
-  My_median_data *data =
-      static_cast<My_median_data *>(static_cast<void *>(initid->ptr));
+  auto *data = static_cast<My_median_data *>(static_cast<void *>(initid->ptr));
   data->vec.clear();
 }
 
 extern "C" long long my_median(UDF_INIT *initid, UDF_ARGS *,
                                unsigned char *is_null, unsigned char *) {
-  My_median_data *data =
+  auto *data =
       static_cast<My_median_data *>(static_cast<void *>(initid->ptr));
-  if (data->vec.size() == 0) {
+  if (data->vec.empty()) {
     *is_null = 1;
     return 0;
   }

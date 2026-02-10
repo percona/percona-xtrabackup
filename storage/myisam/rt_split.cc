@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,10 +21,10 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <float.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cfloat>
 #include <cmath>
+#include <cstring>
 
 #include "my_base.h"
 #include "my_dbug.h"
@@ -239,10 +239,10 @@ int rtree_split_page(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page, uchar *key,
   uchar *source_cur, *cur1, *cur2;
   uchar *new_page = info->buff;
   int err_code = 0;
-  uint nod_flag = mi_test_if_nod(page);
-  uint full_length =
+  uint const nod_flag = mi_test_if_nod(page);
+  uint const full_length =
       key_length + (nod_flag ? nod_flag : info->s->base.rec_reflength);
-  int max_keys = (mi_getint(page) - 2) / (full_length);
+  int const max_keys = (mi_getint(page) - 2) / (full_length);
   DBUG_TRACE;
   DBUG_PRINT("rtree", ("splitting block"));
 

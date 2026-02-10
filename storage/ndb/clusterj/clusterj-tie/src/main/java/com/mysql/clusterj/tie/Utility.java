@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+ *  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License, version 2.0,
@@ -140,6 +140,17 @@ public class Utility {
         NonSevereErrorCodes.add(DUPLICATE_UNIQUE_KEY); // Duplicate unique key on insert
         NonSevereErrorCodes.add(FOREIGN_KEY_NO_PARENT); // Foreign key violation; no parent exists
         NonSevereErrorCodes.add(FOREIGN_KEY_REFERENCED_ROW_EXISTS); // Foreign key violation; referenced row exists
+
+        /* In 9.4.0 we add API handling for schema changes, so schema errors are no longer severe. */
+        NonSevereErrorCodes.add(709);   // No such table
+        NonSevereErrorCodes.add(723);   // No such table
+        NonSevereErrorCodes.add(241);   // Table definition has changed
+        NonSevereErrorCodes.add(284);   // Table definition has changed
+        NonSevereErrorCodes.add(283);   // Table is being dropped
+        NonSevereErrorCodes.add(1226);  // Table is being dropped
+        NonSevereErrorCodes.add(910);   // Index is being dropped
+        NonSevereErrorCodes.add(785);   // Schema object is busy with another transaction
+        NonSevereErrorCodes.add(4292);  // NdbRecord out of date
     }
 
     // TODO: this is intended to investigate a class loader issue with Sparc java
@@ -251,14 +262,6 @@ public class Utility {
         }
         // initialize the charset converter for latin1 and its peer collations (after peers are known)
         addCollation(collationLatin1);
-    }
-
-    /** Determine if the exception is retriable
-     * @param ex the exception
-     * @return if the status is retriable
-     */
-    public static boolean isRetriable(ClusterJDatastoreException ex) {
-        return NdbErrorConst.Status.TemporaryError == ex.getStatus();
     }
 
     private final static EndianManager endianManager = ByteOrder.BIG_ENDIAN.equals(ByteOrder.nativeOrder())?
@@ -2460,7 +2463,8 @@ public class Utility {
         }
         for (int peer: collations) {
             // for each collation that shares the same charset name, set the charset converter
-            logger.info("Adding charset converter " + charsetName + " for collation " + peer);
+            logger.debug( () -> "Adding charset converter " + charsetName +
+                                " for collation " + peer);
             charsetConverters[peer] = charsetConverter;
         }
         return charsetConverter;

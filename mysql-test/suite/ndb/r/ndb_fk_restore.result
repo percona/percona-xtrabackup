@@ -806,3 +806,101 @@ select * from t2;
 a	b	c	d	e	f	b1	c1	a1	b2	c2	a2	b3	c3	a3
 11	12	13	0	0	0	12	13	11	12	13	11	12	13	11
 drop table t2,t1;
+Show effect of --skip-fk-checks ndb_restore option
+create table parent (
+a int primary key,
+b int) engine=ndb;
+create table child (
+x int primary key,
+b int,
+c int,
+foreign key(b) references parent(a)) engine=ndb;
+insert into parent values (1,1), (2,2), (3,3), (4,4);
+insert into child values (1,1,1), (2,2,2), (3,3,3), (4,4,4);
+Go to the dark side of MySQL
+set foreign_key_checks=0;
+insert into child values (5,5,5);
+delete from parent where a=4;
+set foreign_key_checks=1;
+select * from parent order by a;
+a	b
+1	1
+2	2
+3	3
+select * from child order by x;
+x	b	c
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+# take backup and drop the tables
+drop table child;
+drop table parent;
+# Now try restoring
+# Restore schema, with indexes disabled
+# Restore data - should succeed
+# Rebuild indexes + constraints - will fail
+# Show that we can get round this by skipping the whole child table
+# Disable so that we can try again
+# Try again with skip-fk-checks
+Check data
+select * from parent order by a;
+a	b
+1	1
+2	2
+3	3
+select * from child order by x;
+x	b	c
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+Show constraint active
+insert into child values (10,10,10);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_fk_1` FOREIGN KEY (`b`) REFERENCES `parent` (`a`) ON DELETE NO ACTION ON UPDATE NO ACTION)
+delete from parent where a=1;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_fk_1` FOREIGN KEY (`b`) REFERENCES `parent` (`a`) ON DELETE NO ACTION ON UPDATE NO ACTION)
+Try adding duplicate FK - will fail due
+to inconsistencies
+ALTER TABLE child ADD FOREIGN KEY(b) references parent(a);
+ERROR HY000: Cannot add foreign key constraint
+Fix data
+insert into parent values (4,4), (5,5);
+select * from parent order by a;
+a	b
+1	1
+2	2
+3	3
+4	4
+5	5
+select * from child order by x;
+x	b	c
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+Try adding duplicate FK again
+ALTER TABLE child ADD FOREIGN KEY(b) references parent(a);
+Cleanup
+drop table child;
+drop table parent;
+Show that --restore-meta with --skip-fk-checks behaves the same as --restore-meta
+select * from parent;
+a	b
+select * from child;
+x	b	c
+insert into parent values (1,1);
+insert into child values (1,1,1);
+Show constraint active
+insert into child values (10,10,10);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_fk_1` FOREIGN KEY (`b`) REFERENCES `parent` (`a`) ON DELETE NO ACTION ON UPDATE NO ACTION)
+delete from parent where a=1;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_fk_1` FOREIGN KEY (`b`) REFERENCES `parent` (`a`) ON DELETE NO ACTION ON UPDATE NO ACTION)
+Cleanup
+delete from child;
+delete from parent;
+drop table child;
+drop table parent;

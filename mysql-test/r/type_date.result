@@ -740,3 +740,13 @@ a
 2023-03-15
 SET timestamp = DEFAULT;
 DROP TABLE t;
+#
+# Bug#38531740: Assertion failed: my_time.time_type ==
+#               MYSQL_TIMESTAMP_TIME || my_time.time_type ==
+#               MYSQL_TIMESTAMP_DATE ...
+#
+SELECT IFNULL(LAST_DAY('201:34:36.298754'), FROM_DAYS(0)) AS c;
+c
+0000-00-00
+Warnings:
+Warning	1292	Incorrect datetime value: '201:34:36.298754'

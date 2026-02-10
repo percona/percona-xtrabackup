@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +21,7 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
+#include <cassert>
 #include <cstring>
 
 #include "pfs_example_country.h"
@@ -69,7 +69,7 @@ bool is_duplicate(Country_record *record, int skip_index) {
  * in performance schema is opened.
  */
 PSI_table_handle *country_open_table(PSI_pos **pos) {
-  Country_Table_Handle *temp = new Country_Table_Handle();
+  auto *temp = new Country_Table_Handle();
   temp->current_row.name_length = 0;
   temp->current_row.continent_name_length = 0;
   temp->current_row.country_code_length = 0;
@@ -86,7 +86,7 @@ PSI_table_handle *country_open_table(PSI_pos **pos) {
  * in performance schema is closed.
  */
 void country_close_table(PSI_table_handle *handle) {
-  Country_Table_Handle *temp = (Country_Table_Handle *)handle;
+  auto *temp = (Country_Table_Handle *)handle;
   delete temp;
 }
 
@@ -107,7 +107,7 @@ static void copy_record(Country_record *dest, Country_record *source) {
 
 /* Define implementation of PFS_engine_table_proxy. */
 int country_rnd_next(PSI_table_handle *handle) {
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
 
   for (h->m_pos.set_at(&h->m_next_pos); h->m_pos.has_more(); h->m_pos.next()) {
     Country_record *record = &country_records_array[h->m_pos.get_index()];
@@ -127,7 +127,7 @@ int country_rnd_init(PSI_table_handle *, bool) { return 0; }
 
 /* Set position of a cursor on a specific index */
 int country_rnd_pos(PSI_table_handle *handle) {
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
   Country_record *record = &country_records_array[h->m_pos.get_index()];
 
   if (record->m_exist) {
@@ -141,7 +141,7 @@ int country_rnd_pos(PSI_table_handle *handle) {
 /* Initialize the table index */
 int country_index_init(PSI_table_handle *handle, unsigned int idx, bool,
                        PSI_index_handle **index) {
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
 
   /* If there are multiple indexes, initialize based on the idx provided */
   switch (idx) {
@@ -176,7 +176,7 @@ int country_index_read(PSI_index_handle *index, PSI_key_reader *reader,
                        unsigned int idx, int find_flag) {
   switch (idx) {
     case 0: {
-      Country_index_by_name *i = (Country_index_by_name *)index;
+      auto *i = (Country_index_by_name *)index;
       /* Read all keys on index one by one */
       pc_string_srv->read_key_string(reader, &i->m_country_name, find_flag);
       pc_string_srv->read_key_string(reader, &i->m_continent_name, find_flag);
@@ -195,7 +195,7 @@ int country_index_read(PSI_index_handle *index, PSI_key_reader *reader,
 
 /* Read the next indexed value */
 int country_index_next(PSI_table_handle *handle) {
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
   Country_index *i = nullptr;
 
   switch (h->index_num) {
@@ -224,16 +224,15 @@ int country_index_next(PSI_table_handle *handle) {
 
 /* Reset cursor position */
 void country_reset_position(PSI_table_handle *handle) {
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
   h->m_pos.reset();
   h->m_next_pos.reset();
-  return;
 }
 
 /* Read current row from the current_row and display them in the table */
 int country_read_column_value(PSI_table_handle *handle, PSI_field *field,
                               unsigned int index) {
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
 
   switch (index) {
     case 0: /* COUNTRY_NAME */
@@ -267,7 +266,7 @@ int country_read_column_value(PSI_table_handle *handle, PSI_field *field,
 
 /* Store row data into records array */
 int country_write_row_values(PSI_table_handle *handle) {
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
 
   native_mutex_lock(&LOCK_country_records_array);
 
@@ -293,7 +292,7 @@ int country_write_row_values(PSI_table_handle *handle) {
     int i = (country_next_available_index + 1) % COUNTRY_MAX_ROWS;
     int itr_count = 0;
     while (itr_count < COUNTRY_MAX_ROWS) {
-      if (country_records_array[i].m_exist == false) {
+      if (!country_records_array[i].m_exist) {
         country_next_available_index = i;
         break;
       }
@@ -310,7 +309,7 @@ int country_write_row_values(PSI_table_handle *handle) {
 /* Read field data from Field and store that into buffer */
 int country_write_column_value(PSI_table_handle *handle, PSI_field *field,
                                unsigned int index) {
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
 
   char *name = (char *)h->current_row.name;
   unsigned int *name_length = &h->current_row.name_length;
@@ -350,7 +349,7 @@ int country_write_column_value(PSI_table_handle *handle, PSI_field *field,
 /* Update row data in stats array */
 int country_update_row_values(PSI_table_handle *handle) {
   int result = 0;
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
 
   Country_record *cur = &country_records_array[h->m_pos.get_index()];
 
@@ -368,7 +367,7 @@ int country_update_row_values(PSI_table_handle *handle) {
 
 int country_update_column_value(PSI_table_handle *handle, PSI_field *field,
                                 unsigned int index) {
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
 
   char *name = (char *)h->current_row.name;
   unsigned int *name_length = &h->current_row.name_length;
@@ -406,7 +405,7 @@ int country_update_column_value(PSI_table_handle *handle, PSI_field *field,
 
 /* Delete row data from records array */
 int country_delete_row_values(PSI_table_handle *handle) {
-  Country_Table_Handle *h = (Country_Table_Handle *)handle;
+  auto *h = (Country_Table_Handle *)handle;
 
   Country_record *cur = &country_records_array[h->m_pos.get_index()];
 
@@ -420,17 +419,16 @@ int country_delete_row_values(PSI_table_handle *handle) {
   return 0;
 }
 
-int country_delete_all_rows(void) {
+int country_delete_all_rows() {
   native_mutex_lock(&LOCK_country_records_array);
-  for (int i = 0; i < COUNTRY_MAX_ROWS; i++)
-    country_records_array[i].m_exist = false;
+  for (auto &i : country_records_array) i.m_exist = false;
   country_rows_in_table = 0;
   country_next_available_index = 0;
   native_mutex_unlock(&LOCK_country_records_array);
   return 0;
 }
 
-unsigned long long country_get_row_count(void) { return country_rows_in_table; }
+unsigned long long country_get_row_count() { return country_rows_in_table; }
 
 void init_country_share(PFS_engine_table_share_proxy *share) {
   /* Instantiate and initialize PFS_engine_table_share_proxy */

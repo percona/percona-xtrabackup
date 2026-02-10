@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -21,21 +21,19 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/service.h>
 #include <mysql/components/service_implementation.h>
 #include <mysql/components/services/mysql_rwlock_service.h>
+#include <cassert>
 #include "component_common.h"
 
-#include <stddef.h>
+#include <cstddef>
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
-void impl_min_chassis_rwlock_register(const char *, PSI_rwlock_info *, int) {
-  return;
-}
+void impl_min_chassis_rwlock_register(const char *, PSI_rwlock_info *, int) {}
 
 int impl_min_chassis_rwlock_init(PSI_rwlock_key, mysql_rwlock_t *that,
                                  const char *, unsigned int) {

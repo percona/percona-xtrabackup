@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -48,19 +48,22 @@ std::map<std::string, GroupReplicationMember> fetch_group_replication_members(
   // replication_group_members.member_role field was introduced in 8.0.2, otoh
   // group_replication_primary_member gets removed in 8.3 so we need 2 different
   // queries depending on a server version
+  // replication_group_members.member_version was introduced in 8.0.2
   const bool has_member_role_field = connection.server_version() >= 80002;
   std::string query_sql;
   if (has_member_role_field) {
     query_sql =
         "SELECT member_id, member_host, member_port, member_state, "
-        "member_role, @@group_replication_single_primary_mode FROM "
+        "member_role, member_version, @@group_replication_single_primary_mode "
+        "FROM "
         "performance_schema.replication_group_members"
         " WHERE channel_name = 'group_replication_applier'";
   } else {
     query_sql =
         "SELECT member_id, member_host, member_port, member_state, "
         "IF(g.primary_uuid = '' OR member_id = g.primary_uuid, 'PRIMARY', "
-        "'SECONDARY') as member_role, @@group_replication_single_primary_mode "
+        "'SECONDARY') as member_role, '', "
+        "@@group_replication_single_primary_mode "
         "FROM (SELECT IFNULL(variable_value, '') AS primary_uuid FROM "
         "performance_schema.global_status WHERE variable_name = "
         "'group_replication_primary_member') g, "
@@ -82,11 +85,11 @@ std::map<std::string, GroupReplicationMember> fetch_group_replication_members(
     // +--------------------------------------+-------------+-------------+--------------+-------------+-----------------------------------------+
     // clang-format on
 
-    if (row.size() != 6) {  // TODO write a testcase for this
+    if (row.size() != 7) {  // TODO write a testcase for this
       throw metadata_cache::metadata_error(
           "Unexpected number of fields in resultset from group_replication "
           "query. "
-          "Expected = 6, got = " +
+          "Expected = 7, got = " +
           std::to_string(row.size()));
     }
 
@@ -96,8 +99,9 @@ std::map<std::string, GroupReplicationMember> fetch_group_replication_members(
     const char *member_port = row[2];
     const char *member_state = row[3];
     const char *member_role = row[4];
+    const char *member_version = row[5];
     single_primary =
-        row[5] && (strcmp(row[5], "1") == 0 || strcmp(row[5], "ON") == 0);
+        row[5] && (strcmp(row[6], "1") == 0 || strcmp(row[6], "ON") == 0);
 
     if (!member_id || !member_host || !member_port || !member_state ||
         !member_role) {
@@ -110,8 +114,9 @@ std::map<std::string, GroupReplicationMember> fetch_group_replication_members(
     // populate GroupReplicationMember with data from row
     GroupReplicationMember member;
     member.member_id = member_id;
-    member.host = member_host;
-    member.port = static_cast<uint16_t>(std::atoi(member_port));
+    member.dest = mysql_harness::TcpDestination{
+        member_host, static_cast<uint16_t>(std::atoi(member_port))};
+    member.version = member_version;
     if (std::strcmp(member_state, "ONLINE") == 0)
       member.state = GroupReplicationMember::State::Online;
     else if (std::strcmp(member_state, "OFFLINE") == 0)

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -271,8 +271,8 @@ NdbTableImpl *GlobalDictCache::put(const BaseString &name, NdbTableImpl *tab) {
 
   TableVersion &ver = vers->back();
   if (ver.m_status != RETREIVING ||
-      !(ver.m_impl == nullptr || ver.m_impl == f_invalid_table ||
-        ver.m_impl == f_altered_table) ||
+      (ver.m_impl != nullptr && ver.m_impl != f_invalid_table &&
+       ver.m_impl != f_altered_table) ||
       ver.m_version != 0 || ver.m_refCount == 0) {
     abort();
   }

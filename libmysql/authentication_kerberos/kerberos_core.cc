@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,14 +23,12 @@
 
 #include "kerberos_core.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include <krb5/krb5.h>
 #include <profile.h>
-
-extern Logger_client *g_logger_client;
 
 namespace auth_kerberos_context {
 
@@ -336,7 +334,7 @@ bool Kerberos::get_kerberos_config() {
 CLEANUP:
   profile_release(profile);
   info_stream << "destroy_tickets is: " << m_destroy_tickets;
-  log_client_info(info_stream.str().c_str());
+  log_client_info(info_stream.str());
   return res_kerberos;
 }
 
@@ -347,7 +345,7 @@ bool Kerberos::credential_valid() {
   krb5_timestamp krb_current_time;
   bool credentials_retrieve{false};
   krb5_creds matching_credential;
-  std::stringstream info_stream;
+  std::stringstream const info_stream;
 
   memset(&matching_credential, 0, sizeof(matching_credential));
   memset(&credentials, 0, sizeof(credentials));
@@ -519,9 +517,8 @@ CLEANUP:
   if (res_kerberos) {
     log(res_kerberos);
     return false;
-  } else {
-    return true;
   }
+  return true;
 }
 
 void Kerberos::log(int error_code) {
@@ -537,6 +534,5 @@ void Kerberos::log(int error_code) {
   if (err_message) {
     krb5_free_error_message(m_context, err_message);
   }
-  return;
 }
 }  // namespace auth_kerberos_context

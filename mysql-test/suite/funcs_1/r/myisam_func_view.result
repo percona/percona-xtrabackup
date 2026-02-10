@@ -956,9 +956,6 @@ NULL	NULL	1
 AaBbCcDdEeFfGgHhIiJjÄäÜüÖö	1.7976931348623e308	3
 	0	4
 	-1	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: '-1.7976931348623e308'
-Warning	1292	Truncated incorrect INTEGER value: '1.7976931348623e308'
 DROP VIEW v1;
 
 
@@ -986,9 +983,6 @@ NULL	NULL	1
 AaBbCcDdEeFfGgHhIiJjÄäÜüÖö	9999999999999999999999999999999999.999999999999999999999999999999	3
 	0.000000000000000000000000000000	4
 	-1.000000000000000000000000000000	5
-Warnings:
-Warning	1292	Truncated incorrect DECIMAL value: '-9999999999999999999999999999999999.999999999999999999999999999999'
-Warning	1292	Truncated incorrect DECIMAL value: '9999999999999999999999999999999999.999999999999999999999999999999'
 DROP VIEW v1;
 
 
@@ -2138,9 +2132,6 @@ IS NOT TRUE		2
 IS NOT TRUE	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
 IS NOT TRUE	 ---äÖüß@µ*$-- 	4
 IS     TRUE	-1	5
-Warnings:
-Warning	1292	Truncated incorrect DOUBLE value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect DOUBLE value: ' ---äÖüß@µ*$-- '
 DROP VIEW v1;
 
 
@@ -2172,11 +2163,6 @@ IS NOT TRUE	                              	2
 IS NOT TRUE	<--------30 characters------->	3
 IS NOT TRUE	 ---äÖüß@µ*$--           	4
 IS     TRUE	-1                            	5
-Warnings:
-Warning	1292	Truncated incorrect DOUBLE value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect DOUBLE value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect DOUBLE value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect DOUBLE value: '-1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 DROP VIEW v1;
 
 
@@ -2206,9 +2192,6 @@ IS NOT TRUE		2
 IS NOT TRUE	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
 IS NOT TRUE	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- 	4
 IS     TRUE	-1	5
-Warnings:
-Warning	1292	Truncated incorrect DOUBLE value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect DOUBLE value: ' ---äÖüß@µ*$-- '
 DROP VIEW v1;
 
 
@@ -2238,9 +2221,6 @@ IS NOT TRUE		2
 IS NOT TRUE	<--------30 characters------->	3
 IS NOT TRUE	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--	4
 IS     TRUE	-1	5
-Warnings:
-Warning	1292	Truncated incorrect DOUBLE value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect DOUBLE value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--'
 DROP VIEW v1;
 
 
@@ -2377,8 +2357,6 @@ NULL	NULL	1
 <---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
  ---äÖüß@µ*$-- 	 ---äÖüß@µ*$-- 	4
 -1	-1	5
-Warnings:
-Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 DROP VIEW v1;
 
 
@@ -2411,8 +2389,6 @@ NULL	NULL	1
 <--------30 characters------->	<--------30 characters------->	3
  ---äÖüß@µ*$--           	 ---äÖüß@µ*$--           	4
 -1                            	-1                            	5
-Warnings:
-Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 DROP VIEW v1;
 
 
@@ -2445,8 +2421,6 @@ NULL	NULL	1
 <---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
  ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- 	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- 	4
 -1	-1	5
-Warnings:
-Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 DROP VIEW v1;
 
 
@@ -2479,8 +2453,6 @@ NULL	NULL	1
 <--------30 characters------->	<--------30 characters------->	3
  ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--	4
 -1	-1	5
-Warnings:
-Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 DROP VIEW v1;
 
 
@@ -2640,9 +2612,6 @@ NULL	NULL	1
 9223372036854775807	1.7976931348623e308	3
 0	0	4
 18446744073709551615	-1	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: '-1.7976931348623e308'
-Warning	1292	Truncated incorrect INTEGER value: '1.7976931348623e308'
 DROP VIEW v1;
 
 
@@ -2672,9 +2641,6 @@ NULL	NULL	1
 18446744073709551615	9999999999999999999999999999999999.999999999999999999999999999999	3
 0	0.000000000000000000000000000000	4
 18446744073709551615	-1.000000000000000000000000000000	5
-Warnings:
-Warning	1292	Truncated incorrect DECIMAL value: '-9999999999999999999999999999999999.999999999999999999999999999999'
-Warning	1292	Truncated incorrect DECIMAL value: '9999999999999999999999999999999999.999999999999999999999999999999'
 DROP VIEW v1;
 
 
@@ -2732,11 +2698,6 @@ NULL	NULL	1
 0	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
 0	 ---äÖüß@µ*$-- 	4
 18446744073709551615	-1	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: ''
-Warning	1292	Truncated incorrect INTEGER value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect INTEGER value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
-Warning	1105	Cast to unsigned converted negative integer to its positive complement
 DROP VIEW v1;
 
 
@@ -2769,12 +2730,6 @@ NULL	NULL	1
 0	<--------30 characters------->	3
 0	 ---äÖüß@µ*$--           	4
 18446744073709551615	-1                            	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect INTEGER value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect INTEGER value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect INTEGER value: '-1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1105	Cast to unsigned converted negative integer to its positive complement
 DROP VIEW v1;
 
 
@@ -2806,11 +2761,6 @@ NULL	NULL	1
 0	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
 0	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- 	4
 18446744073709551615	-1	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: ''
-Warning	1292	Truncated incorrect INTEGER value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect INTEGER value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- '
-Warning	1105	Cast to unsigned converted negative integer to its positive complement
 DROP VIEW v1;
 
 
@@ -2842,11 +2792,6 @@ NULL	NULL	1
 0	<--------30 characters------->	3
 0	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--	4
 18446744073709551615	-1	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: ''
-Warning	1292	Truncated incorrect INTEGER value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect INTEGER value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--'
-Warning	1105	Cast to unsigned converted negative integer to its positive complement
 DROP VIEW v1;
 
 
@@ -3006,9 +2951,6 @@ NULL	NULL	1
 9223372036854775807	1.7976931348623e308	3
 0	0	4
 -1	-1	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: '-1.7976931348623e308'
-Warning	1292	Truncated incorrect INTEGER value: '1.7976931348623e308'
 DROP VIEW v1;
 
 
@@ -3038,9 +2980,6 @@ NULL	NULL	1
 9223372036854775807	9999999999999999999999999999999999.999999999999999999999999999999	3
 0	0.000000000000000000000000000000	4
 -1	-1.000000000000000000000000000000	5
-Warnings:
-Warning	1292	Truncated incorrect DECIMAL value: '-9999999999999999999999999999999999.999999999999999999999999999999'
-Warning	1292	Truncated incorrect DECIMAL value: '9999999999999999999999999999999999.999999999999999999999999999999'
 DROP VIEW v1;
 
 
@@ -3097,10 +3036,6 @@ NULL	NULL	1
 0	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
 0	 ---äÖüß@µ*$-- 	4
 -1	-1	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: ''
-Warning	1292	Truncated incorrect INTEGER value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect INTEGER value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
 DROP VIEW v1;
 
 
@@ -3132,11 +3067,6 @@ NULL	NULL	1
 0	<--------30 characters------->	3
 0	 ---äÖüß@µ*$--           	4
 -1	-1                            	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect INTEGER value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect INTEGER value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect INTEGER value: '-1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 DROP VIEW v1;
 
 
@@ -3167,10 +3097,6 @@ NULL	NULL	1
 0	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
 0	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- 	4
 -1	-1	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: ''
-Warning	1292	Truncated incorrect INTEGER value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect INTEGER value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- '
 DROP VIEW v1;
 
 
@@ -3201,10 +3127,6 @@ NULL	NULL	1
 0	<--------30 characters------->	3
 0	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--	4
 -1	-1	5
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: ''
-Warning	1292	Truncated incorrect INTEGER value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect INTEGER value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--'
 DROP VIEW v1;
 
 
@@ -3368,11 +3290,6 @@ NULL	NULL	1
 0.00	0	4
 -1.00	-1	5
 -3333.33	-3333.3333	30
-Warnings:
-Warning	1292	Truncated incorrect DECIMAL value: '-1.7976931348623'
-Warning	1264	Out of range value for column 'CAST(my_double AS DECIMAL(37,2))' at row 1
-Warning	1292	Truncated incorrect DECIMAL value: '1.7976931348623'
-Warning	1264	Out of range value for column 'CAST(my_double AS DECIMAL(37,2))' at row 1
 DROP VIEW v1;
 
 
@@ -3460,13 +3377,6 @@ NULL	NULL	1
 0.00	 ---äÖüß@µ*$-- 	4
 -1.00	-1	5
 -3333.33	-3333.3333	29
-Warnings:
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: ''
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: ' ---äÖüß@µ*$-- '
 DROP VIEW v1;
 
 
@@ -3504,15 +3414,6 @@ NULL	NULL	1
 0.00	 ---äÖüß@µ*$--           	4
 -1.00	-1                            	5
 -3333.33	-3333.3333                    	28
-Warnings:
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: '<--------30 characters------->'
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect DECIMAL value: '-1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect DECIMAL value: '-3333.3333\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 DROP VIEW v1;
 
 
@@ -3548,13 +3449,6 @@ NULL	NULL	1
 0.00	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- 	4
 -1.00	-1	5
 -3333.33	-3333.3333	27
-Warnings:
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: ''
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: ' ---äÖüß@µ*$-- '
 DROP VIEW v1;
 
 
@@ -3590,13 +3484,6 @@ NULL	NULL	1
 0.00	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--	4
 -1.00	-1	5
 -3333.33	-3333.3333	26
-Warnings:
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: ''
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: '<--------30 characters------->'
-Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
-Warning	1292	Truncated incorrect DECIMAL value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--'
 DROP VIEW v1;
 
 
@@ -3758,9 +3645,6 @@ NULL	1.7976931348623e308	3
 00:00:00	0	4
 -00:00:01	-1	5
 00:17:58	1758	25
-Warnings:
-Warning	1292	Truncated incorrect time value: '-1.7976931348623e308'
-Warning	1292	Truncated incorrect time value: '1.7976931348623e308'
 DROP VIEW v1;
 
 
@@ -3792,9 +3676,6 @@ NULL	9223372036854775807	3
 00:00:00	0	4
 -00:00:01	-1	5
 00:17:58	1758	24
-Warnings:
-Warning	1292	Truncated incorrect time value: '-9223372036854775808'
-Warning	1292	Truncated incorrect time value: '9223372036854775807'
 DROP VIEW v1;
 
 
@@ -3828,11 +3709,6 @@ NULL	<---------1000 characters--------------------------------------------------
 NULL	 ---äÖüß@µ*$-- 	4
 -00:00:01	-1	5
 41:58:00	1 17:58	23
-Warnings:
-Warning	1292	Truncated incorrect time value: ''
-Warning	1292	Truncated incorrect time value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
-Warning	4096	Delimiter ' ' in position 0 in datetime value ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- ' at row 1 is superfluous and is deprecated. Please remove.
 DROP VIEW v1;
 
 
@@ -3868,13 +3744,6 @@ NULL	<--------30 characters------->	3
 NULL	 ---äÖüß@µ*$--           	4
 NULL	-1                            	5
 41:58:00	1 17:58                       	22
-Warnings:
-Warning	1292	Truncated incorrect time value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect time value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	4096	Delimiter ' ' in position 0 in datetime value ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- ' at row 1 is superfluous and is deprecated. Please remove.
-Warning	1292	Truncated incorrect time value: '-1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect time value: '1 17:58\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 DROP VIEW v1;
 
 
@@ -3908,11 +3777,6 @@ NULL	<---------1000 characters--------------------------------------------------
 NULL	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- 	4
 -00:00:01	-1	5
 41:58:00	1 17:58	21
-Warnings:
-Warning	1292	Truncated incorrect time value: ''
-Warning	1292	Truncated incorrect time value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect time value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- '
-Warning	4096	Delimiter ' ' in position 0 in datetime value ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- ' at row 1 is superfluous and is deprecated. Please remove.
 DROP VIEW v1;
 
 
@@ -3946,11 +3810,6 @@ NULL	<--------30 characters------->	3
 NULL	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--	4
 -00:00:01	-1	5
 41:58:00	1 17:58	20
-Warnings:
-Warning	1292	Truncated incorrect time value: ''
-Warning	1292	Truncated incorrect time value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect time value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--'
-Warning	4096	Delimiter ' ' in position 0 in datetime value ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--' at row 1 is superfluous and is deprecated. Please remove.
 DROP VIEW v1;
 
 
@@ -3982,11 +3841,6 @@ NULL	1901	2
 NULL	2155	3
 NULL	2000	4
 NULL	2005	5
-Warnings:
-Warning	1292	Incorrect datetime value: '1901'
-Warning	1292	Incorrect datetime value: '2155'
-Warning	1292	Incorrect datetime value: '2000'
-Warning	1292	Incorrect datetime value: '2005'
 DROP VIEW v1;
 
 
@@ -4125,12 +3979,6 @@ NULL	1.7976931348623e308	3
 NULL	0	4
 NULL	-1	5
 NULL	200506271758	19
-Warnings:
-Warning	1292	Incorrect datetime value: '-1.7976931348623e308'
-Warning	1292	Incorrect datetime value: '1.7976931348623e308'
-Warning	1292	Incorrect datetime value: '0'
-Warning	1292	Incorrect datetime value: '-1'
-Warning	1292	Incorrect datetime value: '200506271758'
 DROP VIEW v1;
 
 
@@ -4165,12 +4013,6 @@ NULL	9223372036854775807	3
 NULL	0	4
 NULL	-1	5
 NULL	200506271758	18
-Warnings:
-Warning	1292	Incorrect datetime value: '-9223372036854775808'
-Warning	1292	Incorrect datetime value: '9223372036854775807'
-Warning	1292	Incorrect datetime value: '0'
-Warning	1292	Incorrect datetime value: '-1'
-Warning	1292	Incorrect datetime value: '200506271758'
 DROP VIEW v1;
 
 
@@ -4204,11 +4046,6 @@ NULL	<---------1000 characters--------------------------------------------------
 NULL	 ---äÖüß@µ*$-- 	4
 NULL	-1	5
 2005-06-27 17:58:00	2005-06-27 17:58	17
-Warnings:
-Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Incorrect datetime value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
-Warning	1292	Incorrect datetime value: '-1'
 DROP VIEW v1;
 
 
@@ -4243,12 +4080,6 @@ NULL	<--------30 characters------->	3
 NULL	 ---äÖüß@µ*$--           	4
 NULL	-1                            	5
 2005-06-27 17:58:00	2005-06-27 17:58              	16
-Warnings:
-Warning	1292	Incorrect datetime value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Incorrect datetime value: '<--------30 characters------->'
-Warning	1292	Incorrect datetime value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Incorrect datetime value: '-1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect datetime value: '2005-06-27 17:58\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 DROP VIEW v1;
 
 
@@ -4282,11 +4113,6 @@ NULL	<---------1000 characters--------------------------------------------------
 NULL	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- 	4
 NULL	-1	5
 2005-06-27 17:58:00	2005-06-27 17:58	15
-Warnings:
-Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Incorrect datetime value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- '
-Warning	1292	Incorrect datetime value: '-1'
 DROP VIEW v1;
 
 
@@ -4320,11 +4146,6 @@ NULL	<--------30 characters------->	3
 NULL	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--	4
 NULL	-1	5
 2005-06-27 17:58:00	2005-06-27 17:58	14
-Warnings:
-Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: '<--------30 characters------->'
-Warning	1292	Incorrect datetime value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--'
-Warning	1292	Incorrect datetime value: '-1'
 DROP VIEW v1;
 
 
@@ -4356,11 +4177,6 @@ NULL	1901	2
 NULL	2155	3
 NULL	2000	4
 NULL	2005	5
-Warnings:
-Warning	1292	Incorrect datetime value: '1901'
-Warning	1292	Incorrect datetime value: '2155'
-Warning	1292	Incorrect datetime value: '2000'
-Warning	1292	Incorrect datetime value: '2005'
 DROP VIEW v1;
 
 
@@ -4498,11 +4314,6 @@ NULL	1.7976931348623e308	3
 NULL	0	4
 NULL	-1	5
 2005-06-27	20050627	13
-Warnings:
-Warning	1292	Incorrect datetime value: '-1.7976931348623e308'
-Warning	1292	Incorrect datetime value: '1.7976931348623e308'
-Warning	1292	Incorrect datetime value: '0'
-Warning	1292	Incorrect datetime value: '-1'
 DROP VIEW v1;
 
 
@@ -4536,11 +4347,6 @@ NULL	9223372036854775807	3
 NULL	0	4
 NULL	-1	5
 2005-06-27	20050627	12
-Warnings:
-Warning	1292	Incorrect datetime value: '-9223372036854775808'
-Warning	1292	Incorrect datetime value: '9223372036854775807'
-Warning	1292	Incorrect datetime value: '0'
-Warning	1292	Incorrect datetime value: '-1'
 DROP VIEW v1;
 
 
@@ -4574,11 +4380,6 @@ NULL	<---------1000 characters--------------------------------------------------
 NULL	 ---äÖüß@µ*$-- 	4
 NULL	-1	5
 2005-06-27	2005-06-27	11
-Warnings:
-Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Incorrect datetime value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
-Warning	1292	Incorrect datetime value: '-1'
 DROP VIEW v1;
 
 
@@ -4613,12 +4414,6 @@ NULL	<--------30 characters------->	3
 NULL	 ---äÖüß@µ*$--           	4
 NULL	-1                            	5
 2005-06-27	2005-06-27                    	10
-Warnings:
-Warning	1292	Incorrect datetime value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Incorrect datetime value: '<--------30 characters------->'
-Warning	1292	Incorrect datetime value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Incorrect datetime value: '-1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect date value: '2005-06-27\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 DROP VIEW v1;
 
 
@@ -4652,11 +4447,6 @@ NULL	<---------1000 characters--------------------------------------------------
 NULL	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- 	4
 NULL	-1	5
 2005-06-27	2005-06-27	9
-Warnings:
-Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Incorrect datetime value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$-- '
-Warning	1292	Incorrect datetime value: '-1'
 DROP VIEW v1;
 
 
@@ -4690,11 +4480,6 @@ NULL	<--------30 characters------->	3
 NULL	 ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--	4
 NULL	-1	5
 2005-06-27	2005-06-27	8
-Warnings:
-Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: '<--------30 characters------->'
-Warning	1292	Incorrect datetime value: ' ---Ã¤Ã–Ã¼ÃŸ@Âµ*$--'
-Warning	1292	Incorrect datetime value: '-1'
 DROP VIEW v1;
 
 

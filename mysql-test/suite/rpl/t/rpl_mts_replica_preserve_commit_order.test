@@ -3,8 +3,6 @@
 --source include/not_group_replication_plugin.inc
 --source include/have_debug.inc
 --source include/have_debug_sync.inc
---source include/have_replica_parallel_workers.inc
---source include/have_replica_parallel_type_logical_clock.inc
 --source include/have_replica_preserve_commit_order.inc
 --source include/rpl/init_source_replica.inc
 
@@ -137,17 +135,5 @@ SET GLOBAL debug = @save_debug;
 
 DROP TABLE t1;
 --source include/rpl/sync_to_replica.inc
-
---echo #
---echo # Verify that it will generate a warning if slave-preserve-commit is
---echo # used with DB PARTITIONED MTS together
---echo #
---source include/rpl/stop_applier.inc
-SET GLOBAL replica_parallel_type = 'DATABASE';
---error ER_DONT_SUPPORT_REPLICA_PRESERVE_COMMIT_ORDER
-START REPLICA SQL_THREAD;
-
-SET GLOBAL replica_parallel_type = 'LOGICAL_CLOCK';
---let rpl_only_running_threads= 1;
 --source include/rpl/deinit.inc
 

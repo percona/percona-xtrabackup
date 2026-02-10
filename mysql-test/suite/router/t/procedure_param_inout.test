@@ -1,0 +1,926 @@
+# Validate handling of procedures, configured to generate a FEED response.
+#
+# Check handling of invalid: URL parameters, methods, payloads.
+# Validate the handling of input/output parameters.
+#
+#
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v4.inc #TODO add this in static file tests!
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/procedures_schema.sql
+
+--let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+--let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port --display REQUEST,BODY,RESULT
+
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+CREATE USER user_root@'%' IDENTIFIED BY 'secretpass';
+
+## Test starts here
+--echo
+--echo
+--echo ## I.  Verify error messages while providing faulty configuration to rest procedure
+--echo #
+--echo # 1. Verify that too long TEXT results in BadRequest (in-out parameter limit is 64Kbytes)
+--echo #
+--echo ## II. Verify handling of different MYSQL types used in stored procedure
+--echo ##    in-out parameter, when they are transfered in GET requests
+--echo #
+--echo # 1. Verify if input TEXT was concatanated in output of stored procedure
+--echo # 2. Verify if input TINY-TEXT value was concatanated in output of stored procedure
+--echo # 3. Verify if input VARCHAR value was concatanated in output of stored procedure
+--echo # 4. Verify if input DATE value was incremented in output of stored procedure
+--echo # 5. Verify if input YEAR value was incremented in output of stored procedure
+--echo # 6. Verify if input TIME value was incremented in output of stored procedure
+--echo # 7. Verify if input BIT(1) was inverted in output of stored procedure
+--echo # 8. Verify if input INT value was incremented in output of stored procedure
+--echo # 9. Verify if input TINYINT(1) was incremented in output of stored procedure
+--echo # 10. Verify if input TINYINT(8) was incremented in output of stored procedure
+--echo # 11. Verify if input DECIMAL was incremented in output of stored procedure
+--echo # 12. Verify if input FLOAT was incremented in output of stored procedure
+--echo # 13. Verify if input DOUBLE was incremented in output of stored procedure
+--echo # 14. Verify if input SET was concatanated in output of stored procedure
+--echo # 15. Verify if input ENUM changed to next value in output of stored procedure
+--echo # 16. Verify if input VECTOR changed to next value in output of stored procedure
+--echo #
+--echo #
+--echo ## III. Verify handling of different MYSQL types used in stored procedure
+--echo ##     in-out parameter, when they are transfered in PUT requests
+--echo #
+--echo # 1. Verify if input TEXT was concatanated in output of stored procedure
+--echo # 2. Verify if input TINY-TEXT value was concatanated in output of stored procedure
+--echo # 3. Verify if input VARCHAR value was concatanated in output of stored procedure
+--echo # 4. Verify if input DATE value was incremented in output of stored procedure
+--echo # 5. Verify if input YEAR value was incremented in output of stored procedure
+--echo # 6. Verify if input TIME value was incremented in output of stored procedure
+--echo # 7. Verify if input BIT(1) was inverted in output of stored procedure
+--echo # 8. Verify if input INT value was incremented in output of stored procedure
+--echo # 9. Verify if input TINYINT(1) was incremented in output of stored procedure
+--echo # 10. Verify if input TINYINT(8) was incremented in output of stored procedure
+--echo # 11. Verify if input DECIMAL was incremented in output of stored procedure
+--echo # 12. Verify if input FLOAT was incremented in output of stored procedure
+--echo # 13. Verify if input DOUBLE was incremented in output of stored procedure
+--echo # 14. Verify if input SET was concatanated in output of stored procedure
+--echo # 15. Verify if input ENUM changed to next value in output of stored procedure
+--echo # 16. Verify if input VECTOR changed to next value in output of stored procedure
+--echo #
+--echo #
+--echo ## IV. Verify handling of different MYSQL types used in stored procedure
+--echo ##     in-out parameter, when they are not set in GET requests
+--echo #
+--echo # 1. Verify if null TEXT in input, generates null in output of stored procedure
+--echo # 2. Verify if null TINY-TEXT in input, generates null in output of stored procedure
+--echo # 3. Verify if null VARCHAR in input, generates null in output of stored procedure
+--echo # 4. Verify if null DATE in input, generates null in output of stored procedure
+--echo # 5. Verify if null YEAR in input, generates null in output of stored procedure
+--echo # 6. Verify if null TIME in input, generates null in output of stored procedure
+--echo # 7. Verify if null BIT(1) in input, generates true in output of stored procedure
+--echo # 8. Verify if null INT in input, generates null in output of stored procedure
+--echo # 9. Verify if null TINYINT(1) in input, generates null in output of stored procedure
+--echo # 10. Verify if null TINYINT(8) in input, generates null in output of stored procedure
+--echo # 11. Verify if null DECIMAL in input, generates null in output of stored procedure
+--echo # 12. Verify if null FLOAT in input, generates null in output of stored procedure
+--echo # 13. Verify if null DOUBLE in input, generates null in output of stored procedure
+--echo # 14. Verify if null SET in input, generates null in output of stored procedure
+--echo # 15. Verify if null ENUM in input, generates null in output of stored procedure
+--echo # 16. Verify if null VECTOR in input, generates null in output of stored procedure
+--echo #
+--echo #
+--echo ## V. Verify handling of different MYSQL types used in stored procedure
+--echo ##     in-out parameter, when they are not set in PUT requests
+--echo #
+--echo # 1. Verify if null TEXT in input, generates null in output of stored procedure
+--echo # 2. Verify if null TINY-TEXT in input, generates null in output of stored procedure
+--echo # 3. Verify if null VARCHAR in input, generates null in output of stored procedure
+--echo # 4. Verify if null DATE in input, generates null in output of stored procedure
+--echo # 5. Verify if null YEAR in input, generates null in output of stored procedure
+--echo # 6. Verify if null TIME in input, generates null in output of stored procedure
+--echo # 7. Verify if null BIT(1) in input, generates true in output of stored procedure
+--echo # 8. Verify if null INT in input, generates null in output of stored procedure
+--echo # 9. Verify if null TINYINT(1) in input, generates null in output of stored procedure
+--echo # 10. Verify if null TINYINT(8) in input, generates null in output of stored procedure
+--echo # 11. Verify if null DECIMAL in input, generates null in output of stored procedure
+--echo # 12. Verify if null FLOAT in input, generates null in output of stored procedure
+--echo # 13. Verify if null DOUBLE in input, generates null in output of stored procedure
+--echo # 14. Verify if null SET in input, generates null in output of stored procedure
+--echo # 15. Verify if null ENUM in input, generates null in output of stored procedure
+--echo # 16. Verify if null VECTOR in input, generates null in output of stored procedure
+--echo #
+--echo #
+--echo ## VI. Verify handling of few MYSQL types used in stored procedure
+--echo ##     in-out parameter, when they are set to json-null in PUT requests
+--echo #
+--echo # 1. Verify if null TEXT in input, generates null in output of stored procedure
+--echo # 2. Verify if null INT in input, generates null in output of stored procedure
+--echo #
+--echo ## VII. Verify missing param handling
+--echo # 1. Missing param is treated as NULL and generates null in output of stored procedure
+--echo # 2. VARCHAR empty parameter is valid.
+--echo #
+--echo ## VIII. Verify authentication and authorization with regard to rest procedures.
+--echo #
+--echo # 1. User is not authenticated.
+--echo # 2. User is authenticated and authorized.
+--echo # 3. User is authenticated and not authorized.
+--echo #
+--echo ## IX. Check procedure with multiple resultsets and inout params.
+--echo #
+
+
+--source ../include/mrs/start_object_definition.inc
+
+# Roles
+--let $mrs_add_role_caption=ReadOnly
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=AccessAll
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,CREATE,UPDATE,DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=proc_schema
+--let $mrs_add_schema_path=/proc
+--source ../include/mrs/db_schema/add.inc
+
+# Auth
+--let $mrs_add_auth_app=default authentication
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+# Users
+--let $mrs_add_user_ext_uid='user1@%'
+--let $mrs_add_user_name='user1'
+--let $mrs_add_user_role=ReadOnly
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid='user_root@%'
+--let $mrs_add_user_name='user_root'
+--let $mrs_add_user_role=AccessAll
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_text
+--let $mrs_add_db_object_path=/inc_text
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_ttext
+--let $mrs_add_db_object_path=/inc_ttext
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_enum
+--let $mrs_add_db_object_path=/inc_enum
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_set
+--let $mrs_add_db_object_path=/inc_set
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_char
+--let $mrs_add_db_object_path=/inc_char
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_int
+--let $mrs_add_db_object_path=/inc_int
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_varchar
+--let $mrs_add_db_object_path=/inc_varchar
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_date
+--let $mrs_add_db_object_path=/inc_date
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_year
+--let $mrs_add_db_object_path=/inc_year
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_time
+--let $mrs_add_db_object_path=/inc_time
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_bit
+--let $mrs_add_db_object_path=/inc_bit
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_tinyint1
+--let $mrs_add_db_object_path=/inc_tinyint1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_tinyint8
+--let $mrs_add_db_object_path=/inc_tinyint8
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_decimal
+--let $mrs_add_db_object_path=/inc_decimal
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_float
+--let $mrs_add_db_object_path=/inc_float
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=inc_double
+--let $mrs_add_db_object_path=/inc_double
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=set_vector
+--let $mrs_add_db_object_path=/set_vector
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=proc_do_nothing
+--let $mrs_add_db_object_path=/nothing
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=string_in
+--let $mrs_add_db_object_path=/string_in
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object=mix
+--let $mrs_add_db_object_path=/mix
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+
+# Procedure that needs auth
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=procedure_first
+--let $mrs_add_db_object_path=/auth_proc
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_modify_name=result
+--let $mrs_modify_columns=result
+--let $mrs_modify_fields=my_result
+--source ../include/mrs/db_object/add_named_resultset.inc
+SET @db_object_id_func=@db_object_id;
+
+--let $mrs_sql_id_variable=@db_object_id_func
+--let $mrs_db_object_requires_auth=1
+--source ../include/mrs/db_object/modify_auth.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+# Wait until MySQLRouter fetches db-object.
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/nothing
+  --wait-until-status 60;
+
+--echo
+--echo #
+--echo # I.1
+
+
+--perl
+use File::Basename;
+use File::Spec::Functions;
+my $tmpdir = $ENV{MYSQL_TMP_DIR} or die "Need $MYSQL_TMP_DIR";
+open(FILE, ">", "$tmpdir/payload.data") or die;
+print FILE "{\"result\":\"";
+print FILE "0123456789" x 6600;
+print FILE "\"}";
+close(FILE);
+EOF
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/inc_text
+  --request-type PUT
+  --payload-file $MYSQL_TMP_DIR/payload.data
+  --expected-status BadRequest;
+
+
+--echo
+--echo #
+--echo # II.1
+--let $mrs_client_arg_path='/svc/proc/inc_text?result=10'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.2
+--let $mrs_client_arg_path='/svc/proc/inc_ttext?result=10'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.3
+--let $mrs_client_arg_path='/svc/proc/inc_varchar?result=10'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.4
+--let $mrs_client_arg_path='/svc/proc/inc_date?result=2010-10-21'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.5
+--let $mrs_client_arg_path='/svc/proc/inc_year?result=2010'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.6
+--let $mrs_client_arg_path='/svc/proc/inc_time?result=10:22'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # II.7
+--let $mrs_client_arg_path='/svc/proc/inc_bit?result=1'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit?result=0'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit?result=true'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit?result=false'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.8
+--let $mrs_client_arg_path='/svc/proc/inc_int?result=10'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.9
+--let $mrs_client_arg_path='/svc/proc/inc_tinyint1?result=10'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.10
+--let $mrs_client_arg_path='/svc/proc/inc_tinyint8?result=10'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.11
+--let $mrs_client_arg_path='/svc/proc/inc_decimal?result=10'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.12
+--let $mrs_client_arg_path='/svc/proc/inc_float?result=10'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.13
+--let $mrs_client_arg_path='/svc/proc/inc_double?result=10'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.14
+--echo # To be fixed, the test generates BASE64 responce
+--let $mrs_client_arg_path='/svc/proc/inc_set?result=one'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.15
+--echo # To be fixed, the test generates BASE64 responce
+--let $mrs_client_arg_path='/svc/proc/inc_enum?result=one'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.16
+--let $mrs_client_arg_path='/svc/proc/set_vector?result=[10,20]'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # III.1
+--let $mrs_client_arg_path='/svc/proc/inc_text'
+--let $mrs_client_arg_payload='{"result":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.2
+--let $mrs_client_arg_path='/svc/proc/inc_ttext'
+--let $mrs_client_arg_payload='{"result":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.3
+--let $mrs_client_arg_path='/svc/proc/inc_varchar'
+--let $mrs_client_arg_payload='{"result":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.4
+--let $mrs_client_arg_path='/svc/proc/inc_date'
+--let $mrs_client_arg_payload='{"result":"2010-10-21"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.5
+--let $mrs_client_arg_path='/svc/proc/inc_year'
+--let $mrs_client_arg_payload='{"result":2010}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.6
+--let $mrs_client_arg_path='/svc/proc/inc_time'
+--let $mrs_client_arg_payload='{"result":"10:22"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # III.7
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--let $mrs_client_arg_payload='{"result":1}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--let $mrs_client_arg_payload='{"result":0}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--let $mrs_client_arg_payload='{"result":true}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--let $mrs_client_arg_payload='{"result":false}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.8
+--let $mrs_client_arg_path='/svc/proc/inc_int'
+--let $mrs_client_arg_payload='{"result":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.9
+--let $mrs_client_arg_path='/svc/proc/inc_tinyint1'
+--let $mrs_client_arg_payload='{"result":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.10
+--let $mrs_client_arg_path='/svc/proc/inc_tinyint8'
+--let $mrs_client_arg_payload='{"result":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.11
+--let $mrs_client_arg_path='/svc/proc/inc_decimal'
+--let $mrs_client_arg_payload='{"result":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.12
+--let $mrs_client_arg_path='/svc/proc/inc_float'
+--let $mrs_client_arg_payload='{"result":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.13
+--let $mrs_client_arg_path='/svc/proc/inc_double'
+--let $mrs_client_arg_payload='{"result":10}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.14
+--echo # To be fixed, the test generates BASE64 response
+--let $mrs_client_arg_path='/svc/proc/inc_set'
+--let $mrs_client_arg_payload='{"result":"one"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.15
+--echo # To be fixed, the test generates BASE64 response
+--let $mrs_client_arg_path='/svc/proc/inc_enum'
+--let $mrs_client_arg_payload='{"result":"one"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.16
+--let $mrs_client_arg_path='/svc/proc/set_vector'
+--let $mrs_client_arg_payload='{"result":[10,20]}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+
+
+--echo
+--echo #
+--echo # IV.1
+--let $mrs_client_arg_path='/svc/proc/inc_text'
+--let $mrs_client_arg_request_type='GET'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.2
+--let $mrs_client_arg_path='/svc/proc/inc_ttext'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.3
+--let $mrs_client_arg_path='/svc/proc/inc_varchar'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.4
+--let $mrs_client_arg_path='/svc/proc/inc_date'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.5
+--let $mrs_client_arg_path='/svc/proc/inc_year'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.6
+--let $mrs_client_arg_path='/svc/proc/inc_time'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # IV.7
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.8
+--let $mrs_client_arg_path='/svc/proc/inc_int'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.9
+--let $mrs_client_arg_path='/svc/proc/inc_tinyint1'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.10
+--let $mrs_client_arg_path='/svc/proc/inc_tinyint8'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.11
+--let $mrs_client_arg_path='/svc/proc/inc_decimal'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.12
+--let $mrs_client_arg_path='/svc/proc/inc_float'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.13
+--let $mrs_client_arg_path='/svc/proc/inc_double'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.14
+--echo # To be fixed, the test generates BASE64 responce
+--let $mrs_client_arg_path='/svc/proc/inc_set'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.15
+--echo # To be fixed, the test generates BASE64 responce
+--let $mrs_client_arg_path='/svc/proc/inc_enum'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # IV.16
+--let $mrs_client_arg_path='/svc/proc/set_vector'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.1
+--let $mrs_client_arg_path='/svc/proc/inc_text'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.2
+--let $mrs_client_arg_path='/svc/proc/inc_ttext'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.3
+--let $mrs_client_arg_path='/svc/proc/inc_varchar'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.4
+--let $mrs_client_arg_path='/svc/proc/inc_date'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.5
+--let $mrs_client_arg_path='/svc/proc/inc_year'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.6
+--let $mrs_client_arg_path='/svc/proc/inc_time'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # V.7
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/proc/inc_bit'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.8
+--let $mrs_client_arg_path='/svc/proc/inc_int'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.9
+--let $mrs_client_arg_path='/svc/proc/inc_tinyint1'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.10
+--let $mrs_client_arg_path='/svc/proc/inc_tinyint8'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.11
+--let $mrs_client_arg_path='/svc/proc/inc_decimal'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.12
+--let $mrs_client_arg_path='/svc/proc/inc_float'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.13
+--let $mrs_client_arg_path='/svc/proc/inc_double'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.14
+--echo # To be fixed, the test generates BASE64 responce
+--let $mrs_client_arg_path='/svc/proc/inc_set'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.15
+--echo # To be fixed, the test generates BASE64 responce
+--let $mrs_client_arg_path='/svc/proc/inc_enum'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # V.16
+--let $mrs_client_arg_path='/svc/proc/set_vector'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.1
+--let $mrs_client_arg_path='/svc/proc/inc_text'
+--let $mrs_client_arg_payload='{"result":null}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VI.2
+--let $mrs_client_arg_path='/svc/proc/inc_int'
+--let $mrs_client_arg_payload='{"result":null}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VII.1
+--let $mrs_client_arg_path='/svc/proc/inc_int'
+--let $mrs_client_arg_payload='{}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VII.2
+--let $mrs_client_arg_path='/svc/proc/string_in'
+--let $mrs_client_arg_payload='{"name":"what"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # VIII.1
+exec $MRS_CLIENT_ARGS
+  --path /svc/proc/auth_proc
+  --expected-status 401;
+
+--echo
+--echo #
+--echo # VIII.2
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user_root
+  -p secretpass
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -t PUT
+  --payload '{}'
+  --path /svc/proc/auth_proc
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--echo
+--echo #
+--echo # VIII.3
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+exec $MRS_CLIENT_ARGS
+  -t PUT
+  --payload '{}'
+  --path /svc/proc/auth_proc
+  --session-file $MYSQL_TMP_DIR/user_session1.dat
+  --expected-status 403;
+
+--echo
+--echo #
+--echo # IX
+--let $mrs_client_arg_path='/svc/proc/mix'
+--let $mrs_client_arg_payload='{"a":1,"b":2}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+remove_file $MYSQL_TMP_DIR/user_session.dat;
+remove_file $MYSQL_TMP_DIR/user_session1.dat;
+drop user user1@'%';
+drop user user_root@'%';
+--source ../include/mrs/cleanup.inc
+--remove_file $MYSQL_TMP_DIR/payload.data

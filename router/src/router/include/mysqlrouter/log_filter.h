@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -28,11 +28,9 @@
 
 #include "mysqlrouter/router_mysql_export.h"
 
+#include <memory>
 #include <string>
 #include <vector>
-
-#include <regex>
-using regex_search_and_replace_patterns = std::pair<std::regex, std::string>;
 
 namespace mysqlrouter {
 
@@ -43,6 +41,9 @@ class ROUTER_MYSQL_EXPORT LogFilter {
  public:
   static const char kFillCharacter;
   static const unsigned int kFillSize = 3;
+
+  LogFilter();
+  ~LogFilter();
 
   /*
    * @param statement The string to be filtered.
@@ -67,7 +68,8 @@ class ROUTER_MYSQL_EXPORT LogFilter {
   void add_pattern(const std::string &pattern, const std::string &replacement);
 
  private:
-  std::vector<regex_search_and_replace_patterns> patterns_;
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 /**
@@ -76,6 +78,9 @@ class ROUTER_MYSQL_EXPORT LogFilter {
  */
 class SQLLogFilter : public LogFilter {
  public:
+  SQLLogFilter() { add_default_sql_patterns(); }
+
+ private:
   /*
    * Adds default patterns defined as regular expressions.
    */

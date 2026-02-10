@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -99,7 +99,8 @@ void TransporterFacade::reportError(NodeId nodeId, TransporterError errorCode,
         "Node %u disconnecting from node %u due to transporter error %u %s",
         ownId(), nodeId, errorCode, info ? info : "");
     if (nodeId == ownId()) {
-      g_eventLogger->info("Error on loopback transporter is fatal.");
+      g_eventLogger->info("Node %u loopback transporter: error is fatal",
+                          ownId());
       abort();
     }
     DEBUG_FPRINTF((stderr, "(%u)FAC:reportError(%u, %d, %s)\n", ownId(), nodeId,
@@ -370,21 +371,21 @@ void TransporterFacade::handleMissingClnt(const SignalHeader *header,
   Uint32 gsn = header->theVerId_signalNumber;
   Uint32 transId[2];
   if (gsn == GSN_TCKEYCONF || gsn == GSN_TCINDXCONF) {
-    const TcKeyConf *conf = CAST_CONSTPTR(TcKeyConf, theData);
-    if (TcKeyConf::getMarkerFlag(conf->confInfo) == false) {
+    const auto *conf = CAST_CONSTPTR(TcKeyConf, theData);
+    if (!TcKeyConf::getMarkerFlag(conf->confInfo)) {
       return;
     }
     transId[0] = conf->transId1;
     transId[1] = conf->transId2;
   } else if (gsn == GSN_TC_COMMITCONF) {
-    const TcCommitConf *conf = CAST_CONSTPTR(TcCommitConf, theData);
+    const auto *conf = CAST_CONSTPTR(TcCommitConf, theData);
     if ((conf->apiConnectPtr & 1) == 0) {
       return;
     }
     transId[0] = conf->transId1;
     transId[1] = conf->transId2;
   } else if (gsn == GSN_TCKEY_FAILCONF) {
-    const TcKeyFailConf *conf = CAST_CONSTPTR(TcKeyFailConf, theData);
+    const auto *conf = CAST_CONSTPTR(TcKeyFailConf, theData);
     if ((conf->apiConnectPtr & 1) == 0) {
       return;
     }
@@ -441,10 +442,6 @@ int TransporterFacade::start_instance(NodeId nodeId,
   assert(theOwnId == 0);
   theOwnId = nodeId;
   DEBUG_FPRINTF((stderr, "(%u)FAC:start_instance\n", ownId()));
-
-#if defined SIGPIPE && !defined _WIN32
-  (void)signal(SIGPIPE, SIG_IGN);
-#endif
 
   theTransporterRegistry = new TransporterRegistry(this, this);
   if (theTransporterRegistry == nullptr) {
@@ -544,7 +541,7 @@ void TransporterFacade::setSendThreadInterval(Uint32 ms) {
   }
 }
 
-Uint32 TransporterFacade::getSendThreadInterval(void) const {
+Uint32 TransporterFacade::getSendThreadInterval() const {
   return sendThreadWaitMillisec;
 }
 
@@ -623,7 +620,7 @@ void TransporterFacade::check_cpu_usage(NDB_TICKS currTime) {
   m_last_recv_thread_cpu_usage_in_micros = cpu_time;
   m_recv_thread_cpu_usage_in_percent = percentage;
 
-  Uint64 spin_cpu_time = (Uint64)theTransporterRegistry->get_total_spintime();
+  auto spin_cpu_time = (Uint64)theTransporterRegistry->get_total_spintime();
   theTransporterRegistry->reset_total_spintime();
   spin_cpu_time += Uint32(expired_time_in_micros / Uint64(200));
   Uint64 spin_percentage =
@@ -852,8 +849,8 @@ void TransporterFacade::remove_trp_client_from_wakeup_list(trp_client *clnt) {
  * Signal the send thread to wake up.
  * require the m_send_thread_mutex to be held by callee.
  */
-void TransporterFacade::wakeup_send_thread(void) {
-  if (m_send_thread_nodes.get(SEND_THREAD_NO) == false) {
+void TransporterFacade::wakeup_send_thread() {
+  if (!m_send_thread_nodes.get(SEND_THREAD_NO)) {
     NdbCondition_Signal(m_send_thread_cond);
   }
   m_send_thread_nodes.set(SEND_THREAD_NO);
@@ -963,7 +960,7 @@ void TransporterFacade::do_send_adaptive(const TrpBitmask &trps) {
  * to wake up immediately if required. This is used if a state of
  * high send buffer usage is detected.
  */
-void TransporterFacade::threadMainSend(void) {
+void TransporterFacade::threadMainSend() {
   while (theSendThread == nullptr) {
     /* Wait until theSendThread have been set */
     NdbSleep_MilliSleep(10);
@@ -990,7 +987,7 @@ void TransporterFacade::threadMainSend(void) {
      */
     TrpBitmask send_trps(m_has_data_trps);
 
-    if (m_send_thread_nodes.get(SEND_THREAD_NO) == false) {
+    if (!m_send_thread_nodes.get(SEND_THREAD_NO)) {
       if (!m_has_data_trps.isclear()) {
         /**
          * Take a 200us micro-nap to allow more buffered data
@@ -1218,7 +1215,7 @@ int TransporterFacade::get_recv_thread_activation_threshold() const {
  */
 bool TransporterFacade::raise_thread_prio(NdbThread *thread) {
   int ret_code = NdbThread_SetThreadPrio(thread, 9);
-  return (ret_code == 0) ? true : false;
+  return ret_code == 0;
 }
 
 static const int DEFAULT_MIN_ACTIVE_CLIENTS_RECV_THREAD = 8;
@@ -1240,7 +1237,7 @@ static const int DEFAULT_MIN_ACTIVE_CLIENTS_RECV_THREAD = 8;
   threadMainReceive(), if we get the poll right, or in the
   do_poll from the thread already having the poll rights.
 */
-void TransporterFacade::threadMainReceive(void) {
+void TransporterFacade::threadMainReceive() {
   NDB_TICKS lastCheck = NdbTick_getCurrentTicks();
   NDB_TICKS receive_activation_time;
   init_cpu_usage(lastCheck);
@@ -1335,7 +1332,7 @@ void TransporterFacade::threadMainReceive(void) {
     recv_client->complete_poll();
   }
 
-  if (recv_client->m_poll.m_poll_owner == true) {
+  if (recv_client->m_poll.m_poll_owner) {
     /*
       Ensure to release poll ownership before proceeding to delete the
       transporter client and thus close it. That code expects not to be
@@ -1736,7 +1733,7 @@ void TransporterFacade::connected() {
   signal.theTrace = 0;
   signal.theLength = AllocNodeIdConf::SignalLength;
 
-  AllocNodeIdConf *rep = CAST_PTR(AllocNodeIdConf, signal.getDataPtrSend());
+  auto *rep = CAST_PTR(AllocNodeIdConf, signal.getDataPtrSend());
   rep->senderRef = 0;
   rep->senderData = 0;
   rep->nodeId = theOwnId;
@@ -1784,7 +1781,7 @@ int TransporterFacade::close_clnt(trp_client *clnt) {
   signal.theVerId_signalNumber = GSN_CLOSE_COMREQ;
   signal.theTrace = 0;
   signal.theLength = 1;
-  CloseComReqConf *req = CAST_PTR(CloseComReqConf, signal.getDataPtrSend());
+  auto *req = CAST_PTR(CloseComReqConf, signal.getDataPtrSend());
   req->xxxBlockRef = numberToRef(clnt->m_blockNo, theOwnId);
 
   if (clnt) {
@@ -1831,7 +1828,7 @@ int TransporterFacade::close_clnt(trp_client *clnt) {
       clnt->prepare_poll();
       if (first) {
         clnt->raw_sendSignal(&signal, theOwnId);
-        clnt->do_forceSend(1);
+        clnt->do_forceSend(true);
         first = false;
       }
 
@@ -1916,7 +1913,7 @@ Uint32 TransporterFacade::open_clnt(trp_client *clnt, int blockNo) {
         clnt->complete_poll();
         DBUG_RETURN(0);
       }
-      clnt->do_forceSend(1);
+      clnt->do_forceSend(true);
       clnt->do_poll(10);
       clnt->complete_poll();
     } else {
@@ -2062,11 +2059,10 @@ int TransporterFacade::sendSignal(trp_client *clnt, const NdbApiSignal *aSignal,
               aNode == ownId()));
     }
     return (ss == SEND_OK ? 0 : -1);
-  } else {
-    g_eventLogger->info("ERR: SigLen = %u BlockRec = %u SignalNo = %d", Tlen,
-                        TBno, aSignal->theVerId_signalNumber);
-    assert(0);
-  }           // if
+  }
+  g_eventLogger->info("ERR: SigLen = %u BlockRec = %u SignalNo = %d", Tlen,
+                      TBno, aSignal->theVerId_signalNumber);
+  assert(0);
   return -1;  // Node Dead
 }
 
@@ -2166,97 +2162,95 @@ int TransporterFacade::sendFragmentedSignal(trp_client *clnt,
       this_chunk_sz += remaining_sec_sz;
       i++;
       continue;
-    } else {
-      assert(this_chunk_sz <= CHUNK_SZ);
-      /* This section doesn't fit, truncate it */
-      unsigned send_sz = CHUNK_SZ - this_chunk_sz;
-      if (i != start_i) {
-        /* We ensure that the first piece of a new section which is
-         * being truncated is a multiple of NDB_SECTION_SEGMENT_SZ
-         * (to simplify reassembly).  Subsequent non-truncated pieces
-         * will be CHUNK_SZ which is a multiple of NDB_SECTION_SEGMENT_SZ
-         * The final piece does not need to be a multiple of
-         * NDB_SECTION_SEGMENT_SZ
-         *
-         * We round down the available send space to the nearest whole
-         * number of segments.
-         * If there's not enough space for one segment, then we round up
-         * to one segment.  This can make us send more than CHUNK_SZ, which
-         * is ok as it's defined as less than the maximum message length.
-         */
-        send_sz = (send_sz / NDB_SECTION_SEGMENT_SZ) *
-                  NDB_SECTION_SEGMENT_SZ;               /* Round down */
-        send_sz = MAX(send_sz, NDB_SECTION_SEGMENT_SZ); /* At least one */
-        send_sz = MIN(send_sz, remaining_sec_sz);       /* Only actual data */
-
-        /* If we've squeezed the last bit of data in, jump out of
-         * here to send the last fragment.
-         * Otherwise, send what we've collected so far.
-         */
-        if ((send_sz == remaining_sec_sz) && /* All sent */
-            (i == secs - 1))                 /* No more sections */
-        {
-          this_chunk_sz += remaining_sec_sz;
-          i++;
-          continue;
-        }
-      }
-
-      /* At this point, there must be data to send in a further signal */
-      assert((send_sz < remaining_sec_sz) || (i < secs - 1));
-
-      /* Modify tmp generic section ptr to describe truncated
-       * section
-       */
-      tmp_ptr[i].sz = send_sz;
-      FragmentedSectionIterator *fragIter =
-          (FragmentedSectionIterator *)tmp_ptr[i].sectionIter;
-      const Uint32 total_sec_sz = ptr[i].sz;
-      const Uint32 start = (total_sec_sz - remaining_sec_sz);
-      bool ok = fragIter->setRange(start, send_sz);
-      assert(ok);
-      if (!ok) return -1;
-
-      if (fragment_info < 2)  // 1 = first fragment signal
-                              // 2 = middle fragments
-        fragment_info++;
-
-      // send tmp_signal
-      tmp_signal_data[i - start_i + 1] = unique_id;
-      tmp_signal.setLength(i - start_i + 2);
-      tmp_signal.m_fragmentInfo = fragment_info;
-      tmp_signal.m_noOfSections = i - start_i + 1;
-      // do prepare send
-      {
-        TrpId trp_id = 0;
-        SendStatus ss = theTransporterRegistry->prepareSend(
-            clnt, &tmp_signal, 1, /*JBB*/
-            tmp_signal_data, aNode, trp_id, &tmp_ptr[start_i]);
-        if (likely(ss == SEND_OK)) {
-          assert(theClusterMgr->getNodeInfo(aNode).is_confirmed() ||
-                 tmp_signal.readSignalNumber() == GSN_API_REGREQ);
-        } else {
-          if (unlikely(ss == SEND_MESSAGE_TOO_BIG)) {
-            handle_message_too_big(aNode, aSignal, &tmp_ptr[start_i], __LINE__);
-          }
-          return -1;
-        }
-      }
-      assert(remaining_sec_sz >= send_sz);
-      Uint32 remaining = remaining_sec_sz - send_sz;
-      tmp_ptr[i].sz = remaining;
-      /* Set sub-range iterator to cover remaining words */
-      ok = fragIter->setRange(start + send_sz, remaining);
-      assert(ok);
-      if (!ok) return -1;
-
-      if (remaining == 0) /* This section's done, move onto the next */
-        i++;
-
-      // setup variables for next signal
-      start_i = i;
-      this_chunk_sz = 0;
     }
+    assert(this_chunk_sz <= CHUNK_SZ);
+    /* This section doesn't fit, truncate it */
+    unsigned send_sz = CHUNK_SZ - this_chunk_sz;
+    if (i != start_i) {
+      /* We ensure that the first piece of a new section which is
+       * being truncated is a multiple of NDB_SECTION_SEGMENT_SZ
+       * (to simplify reassembly).  Subsequent non-truncated pieces
+       * will be CHUNK_SZ which is a multiple of NDB_SECTION_SEGMENT_SZ
+       * The final piece does not need to be a multiple of
+       * NDB_SECTION_SEGMENT_SZ
+       *
+       * We round down the available send space to the nearest whole
+       * number of segments.
+       * If there's not enough space for one segment, then we round up
+       * to one segment.  This can make us send more than CHUNK_SZ, which
+       * is ok as it's defined as less than the maximum message length.
+       */
+      send_sz = (send_sz / NDB_SECTION_SEGMENT_SZ) *
+                NDB_SECTION_SEGMENT_SZ;               /* Round down */
+      send_sz = MAX(send_sz, NDB_SECTION_SEGMENT_SZ); /* At least one */
+      send_sz = MIN(send_sz, remaining_sec_sz);       /* Only actual data */
+
+      /* If we've squeezed the last bit of data in, jump out of
+       * here to send the last fragment.
+       * Otherwise, send what we've collected so far.
+       */
+      if ((send_sz == remaining_sec_sz) && /* All sent */
+          (i == secs - 1))                 /* No more sections */
+      {
+        this_chunk_sz += remaining_sec_sz;
+        i++;
+        continue;
+      }
+    }
+
+    /* At this point, there must be data to send in a further signal */
+    assert((send_sz < remaining_sec_sz) || (i < secs - 1));
+
+    /* Modify tmp generic section ptr to describe truncated
+     * section
+     */
+    tmp_ptr[i].sz = send_sz;
+    auto *fragIter = (FragmentedSectionIterator *)tmp_ptr[i].sectionIter;
+    const Uint32 total_sec_sz = ptr[i].sz;
+    const Uint32 start = (total_sec_sz - remaining_sec_sz);
+    bool ok = fragIter->setRange(start, send_sz);
+    assert(ok);
+    if (!ok) return -1;
+
+    if (fragment_info < 2)  // 1 = first fragment signal
+                            // 2 = middle fragments
+      fragment_info++;
+
+    // send tmp_signal
+    tmp_signal_data[i - start_i + 1] = unique_id;
+    tmp_signal.setLength(i - start_i + 2);
+    tmp_signal.m_fragmentInfo = fragment_info;
+    tmp_signal.m_noOfSections = i - start_i + 1;
+    // do prepare send
+    {
+      TrpId trp_id = 0;
+      SendStatus ss = theTransporterRegistry->prepareSend(
+          clnt, &tmp_signal, 1, /*JBB*/
+          tmp_signal_data, aNode, trp_id, &tmp_ptr[start_i]);
+      if (likely(ss == SEND_OK)) {
+        assert(theClusterMgr->getNodeInfo(aNode).is_confirmed() ||
+               tmp_signal.readSignalNumber() == GSN_API_REGREQ);
+      } else {
+        if (unlikely(ss == SEND_MESSAGE_TOO_BIG)) {
+          handle_message_too_big(aNode, aSignal, &tmp_ptr[start_i], __LINE__);
+        }
+        return -1;
+      }
+    }
+    assert(remaining_sec_sz >= send_sz);
+    Uint32 remaining = remaining_sec_sz - send_sz;
+    tmp_ptr[i].sz = remaining;
+    /* Set sub-range iterator to cover remaining words */
+    ok = fragIter->setRange(start + send_sz, remaining);
+    assert(ok);
+    if (!ok) return -1;
+
+    if (remaining == 0) /* This section's done, move onto the next */
+      i++;
+
+    // setup variables for next signal
+    start_i = i;
+    this_chunk_sz = 0;
   }
 
   unsigned a_sz = aSignal->getLength();
@@ -2940,7 +2934,7 @@ void TransporterFacade::do_poll(trp_client *clnt, Uint32 wait_time,
 
   Uint32 elapsed_ms = 0;  //'wait_time' used so far
   do {
-    if (clnt->m_poll.m_poll_owner == false) {
+    if (!clnt->m_poll.m_poll_owner) {
       assert(wait_time >= elapsed_ms);
       const Uint32 rem_wait_time = wait_time - elapsed_ms;
       /**
@@ -3046,7 +3040,6 @@ void TransporterFacade::do_poll(trp_client *clnt, Uint32 wait_time,
   propose_poll_owner();
 
   dbg("%p->do_poll return", clnt);
-  return;
 }
 
 void TransporterFacade::wakeup(trp_client *clnt) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -27,8 +27,10 @@
 
 #include "sql/gis/gc_utils.h"
 
-#include <assert.h>
 #include <boost/geometry.hpp>  // boost::geometry::difference
+#include <cassert>
+#include <memory>
+#include <utility>
 
 // assert
 #include "sql/gis/difference_functor.h"
@@ -37,8 +39,6 @@
 #include "sql/gis/geometries_traits.h"
 #include "sql/gis/union_functor.h"
 #include "template_utils.h"  // down_cast
-
-namespace bg = boost::geometry;
 
 namespace gis {
 
@@ -94,9 +94,9 @@ void split_gc(const Geometrycollection *gc, std::unique_ptr<Multipoint> *mpt,
               std::unique_ptr<Multipolygon> *mpy) {
   switch (gc->coordinate_system()) {
     case Coordinate_system::kCartesian:
-      mpt->reset(new Cartesian_multipoint());
-      mls->reset(new Cartesian_multilinestring());
-      mpy->reset(new Cartesian_multipolygon());
+      *mpt = std::make_unique<Cartesian_multipoint>();
+      *mls = std::make_unique<Cartesian_multilinestring>();
+      *mpy = std::make_unique<Cartesian_multipolygon>();
       typed_split_gc<Cartesian_point, Cartesian_linestring, Cartesian_polygon,
                      Cartesian_geometrycollection, Cartesian_multipoint,
                      Cartesian_multilinestring, Cartesian_multipolygon>(
@@ -106,9 +106,9 @@ void split_gc(const Geometrycollection *gc, std::unique_ptr<Multipoint> *mpt,
           down_cast<Cartesian_multipolygon *>(mpy->get()));
       break;
     case Coordinate_system::kGeographic:
-      mpt->reset(new Geographic_multipoint());
-      mls->reset(new Geographic_multilinestring());
-      mpy->reset(new Geographic_multipolygon());
+      *mpt = std::make_unique<Geographic_multipoint>();
+      *mls = std::make_unique<Geographic_multilinestring>();
+      *mpy = std::make_unique<Geographic_multipolygon>();
       typed_split_gc<Geographic_point, Geographic_linestring,
                      Geographic_polygon, Geographic_geometrycollection,
                      Geographic_multipoint, Geographic_multilinestring,
@@ -126,8 +126,8 @@ void typed_gc_union(double semi_major, double semi_minor,
                     std::unique_ptr<Multipoint> *mpt,
                     std::unique_ptr<Multilinestring> *mls,
                     std::unique_ptr<Multipolygon> *mpy) {
-  Difference difference(semi_major, semi_minor);
-  Union union_(semi_major, semi_minor);
+  Difference const difference(semi_major, semi_minor);
+  Union const union_(semi_major, semi_minor);
 
   std::unique_ptr<MPy> polygons(new MPy());
   for (auto &py : *down_cast<MPy *>(mpy->get())) {
@@ -170,9 +170,9 @@ void typed_gc_union(double semi_major, double semi_minor,
   } else
     points.reset(down_cast<MPt *>(pt_difference.release()));
 
-  mpy->reset(polygons.release());
-  mls->reset(linestrings.release());
-  mpt->reset(points.release());
+  *mpy = std::move(polygons);
+  *mls = std::move(linestrings);
+  *mpt = std::move(points);
 }
 
 void gc_union(double semi_major, double semi_minor,
@@ -255,9 +255,9 @@ std::unique_ptr<gis::Geometrycollection> narrowest_multigeometry(
 
   if (!multipoint->empty())
     return std::unique_ptr<gis::Geometrycollection>(multipoint.release());
-  else if (!multilinestring->empty())
+  if (!multilinestring->empty())
     return std::unique_ptr<gis::Geometrycollection>(multilinestring.release());
-  else if (!multipolygon->empty())
+  if (!multipolygon->empty())
     return std::unique_ptr<gis::Geometrycollection>(multipolygon.release());
   assert(false);
   return geometrycollection;

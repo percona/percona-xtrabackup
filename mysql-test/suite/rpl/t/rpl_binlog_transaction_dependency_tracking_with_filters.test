@@ -17,9 +17,8 @@
 # WL#9556: Writeset-based MTS dependency tracking on master
 ################################################################################
 
---source include/rpl/init_source_replica.inc
 --source include/have_binlog_format_row.inc
---source include/not_replica_parallel_workers.inc
+--source include/rpl/init_source_replica.inc
 
 --source include/rpl/connection_replica.inc
 # Set filter rule.
@@ -30,7 +29,7 @@ CHANGE REPLICATION FILTER REPLICATE_REWRITE_DB=((db1,db2)),
 # Take backup of variables.
 SET @save_replica_parallel_workers = @@GLOBAL.replica_parallel_workers;
 # Set variables.
-SET GLOBAL replica_parallel_workers = 0;
+SET GLOBAL replica_parallel_workers = 1;
 
 --source include/rpl/connection_source.inc
 --echo #

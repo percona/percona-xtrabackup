@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -224,7 +224,7 @@ int table_variables_by_thread::make_row(PFS_thread *thread,
 
   m_row.m_thread_internal_id = thread->m_thread_internal_id;
 
-  if (m_row.m_variable_name.make_row(system_var->m_name,
+  if (m_row.m_variable_name.make_row(system_var->m_name_str,
                                      system_var->m_name_length) != 0) {
     return HA_ERR_RECORD_DELETED;
   }

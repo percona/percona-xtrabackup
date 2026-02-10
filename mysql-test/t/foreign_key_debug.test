@@ -856,3 +856,22 @@ disconnect con1;
 --source include/wait_until_disconnected.inc
 connection default;
 --disable_connect_log
+
+--echo # Code coverage for InnoDB FK code
+CREATE TABLE t1 (p INT PRIMARY KEY);
+CREATE TABLE t2 (c INT, INDEX(c), CONSTRAINT fk_t2_c FOREIGN KEY (c) REFERENCES t1(p) ON DELETE CASCADE ON UPDATE CASCADE);
+
+SET DEBUG="+d,force_innodb_fk,fk";
+SHOW VARIABLES LIKE 'innodb_native_foreign_keys';
+INSERT INTO t1 VALUES (1),(2),(3);
+INSERT INTO t2 VALUES (1),(2);
+
+INSERT INTO t2 VALUES (2);
+UPDATE t2 SET c = 3 where c = 2;
+UPDATE t1 SET p = 4 where p = 3;
+DELETE FROM t1 WHERE p=1;
+SET DEBUG="-d,force_innodb_fk,fk";
+
+SELECT * FROM t1;
+SELECT * FROM t2;
+DROP TABLE t2, t1;

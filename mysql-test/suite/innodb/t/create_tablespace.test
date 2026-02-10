@@ -3,6 +3,7 @@
 # CREATE TABLESPACE and associated SQL statements.
 #
 
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
 --echo #
 --echo # CREATE TABLESPACE related tests.
 --echo #

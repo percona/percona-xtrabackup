@@ -113,3 +113,14 @@ DROP USER 'user_with_length_32_abcdefghijkl'@'localhost';
 --echo #
 --echo # End of 5.7 tests
 --echo #
+
+--echo #
+--echo # Bug #36048754: mysqlslap response not returned
+--echo #
+
+--echo # Test: must not hang!
+--replace_regex /Warning:.*--auto-generate-sql not specified but --auto-generate-sql-execute-number options is. Turning --auto-generate-sql on!/warning/
+--exec $MYSQL_SLAP --silent --auto-generate-sql-execute-number=1 --concurrency=1 --iterations=1 --create-schema=bug36048754 2>&1
+DROP DATABASE bug36048754;
+
+--echo # End of 9.3 tests

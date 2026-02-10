@@ -291,3 +291,59 @@ SELECT j, JSON_TYPE(j->'$[0]') FROM t;
 j	JSON_TYPE(j->'$[0]')
 ["base64:type15:YWFh"]	BLOB
 DROP TABLE t;
+#
+# Bug#37219226 json value unexpected with default ''
+#
+# Strict mode:
+CREATE TABLE t0(a int, b GEOMETRY NOT NULL DEFAULT '');
+ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value
+CREATE TABLE t0(a int, b BLOB NOT NULL DEFAULT '');
+ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value
+CREATE TABLE t0(a int, b BLOB NOT NULL DEFAULT "a");
+ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value
+CREATE TABLE t0(a int, b JSON NOT NULL DEFAULT '');
+ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value
+CREATE TABLE t1(a int, b JSON NOT NULL DEFAULT 'null');
+ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value
+CREATE TABLE t1(b1 BLOB, b2 BLOB DEFAULT NULL,
+g1 GEOMETRY, g2 GEOMETRY DEFAULT NULL,
+j1 JSON, j2 JSON DEFAULT NULL);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `b1` blob,
+  `b2` blob,
+  `g1` geometry DEFAULT NULL,
+  `g2` geometry DEFAULT NULL,
+  `j1` json DEFAULT NULL,
+  `j2` json DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+SET @save_mode = @@sql_mode;
+SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION';
+CREATE TABLE t0(a int, b GEOMETRY NOT NULL DEFAULT '');
+ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value
+CREATE TABLE t0(a int, b BLOB NOT NULL DEFAULT '');
+Warnings:
+Warning	1101	BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value
+INSERT INTO t0(a) VALUES (1),(2);
+Warnings:
+Warning	1364	Field 'b' doesn't have a default value
+SHOW CREATE TABLE t0;
+Table	Create Table
+t0	CREATE TABLE `t0` (
+  `a` int DEFAULT NULL,
+  `b` blob NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+SELECT * from t0;
+a	b
+1	
+2	
+DROP TABLE t0;
+CREATE TABLE t0(a int, b BLOB NOT NULL DEFAULT "a");
+ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value
+CREATE TABLE t0(a int, b JSON NOT NULL DEFAULT '');
+ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value
+CREATE TABLE t1(a int, b JSON NOT NULL DEFAULT 'null');
+ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value
+SET SESSION sql_mode = @save_mode;

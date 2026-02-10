@@ -1,0 +1,191 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/procedures_schema.sql
+
+## Test starts here
+--echo
+--echo
+--echo ## I.1 Verify how PROCEDURES are represented using the OpenAPI in case when:
+--echo # - one resultset is returned
+--echo # - two resultsets are returned
+--echo # - three resultsets are returned
+--echo # - IN parameter is used
+--echo # - INOUT parameter is used
+--echo # - OUT parameter is used
+--echo # - empty procedure
+--echo # - parameters + resultset
+--echo #
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=proc_schema
+--let $mrs_add_schema_path=/proc
+--source ../include/mrs/db_schema/add.inc
+
+# One resultset
+
+--let $mrs_add_db_object=one_resultset
+--let $mrs_add_db_object_path=/one
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_modify_name=basicObject
+--let $mrs_modify_columns=id, name, comments, date
+--let $mrs_modify_fields=my_id, my_name, my_comments, my_date
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+# Two resultsets
+
+--let $mrs_add_db_object=two_resultsets
+--let $mrs_add_db_object_path=/two
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_modify_name=basicObjectFirst
+--let $mrs_modify_columns=count(*)
+--let $mrs_modify_fields=numberOfItems
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+--let $mrs_modify_name=basicObjectSecond
+--let $mrs_modify_columns=id, name, comments, date
+--let $mrs_modify_fields=my_id, my_name, my_comments, my_date
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+# Three resultsets
+
+--let $mrs_add_db_object=three_resultsets
+--let $mrs_add_db_object_path=/three
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_modify_name=basicObjectFirst
+--let $mrs_modify_columns=max(id)
+--let $mrs_modify_fields=last_id
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+--let $mrs_modify_name=basicObjectSecond
+--let $mrs_modify_columns=min(id)
+--let $mrs_modify_fields=first_id
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+--let $mrs_modify_name=basicObjectThird
+--let $mrs_modify_columns=id, name, comments, date
+--let $mrs_modify_fields=my_id, my_name, my_comments, my_date
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+# IN parameter
+
+--let $mrs_add_db_object=report_back_mysql_error_if
+--let $mrs_add_db_object_path=/report_back_mysql_error_if
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_modify_name=basicObject
+--let $mrs_modify_columns=number
+--let $mrs_modify_fields=my_number
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+# INOUT parameter
+
+--let $mrs_add_db_object=inc_enum
+--let $mrs_add_db_object_path=/inc_enum
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+
+# OUT parameter
+
+--let $mrs_add_db_object=no_resultset_out_param
+--let $mrs_add_db_object_path=/no_resultset_out_param
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+
+# Empty procedure
+
+--let $mrs_add_db_object=proc_do_nothing
+--let $mrs_add_db_object_path=/proc_do_nothing
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+
+# IN, OUT Parameters + resultset
+
+--let $mrs_add_db_object=in_out_and_return
+--let $mrs_add_db_object_path=/in_out_and_return
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_modify_name=basicObject
+--let $mrs_modify_columns=max(id)
+--let $mrs_modify_fields=last_id
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+--let $mrs_add_service_path="/svc2"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+if ($mrs_schema_version>2)
+{
+  --disable_query_log
+  --disable_result_log
+  UPDATE `mysql_rest_service_metadata`.`service` SET name="" WHERE url_context_root="/svc";
+  UPDATE `mysql_rest_service_metadata`.`service` SET name="" WHERE url_context_root="/svc2";
+  --enable_query_log
+  --enable_result_log
+}
+
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## Verify open-api-catalog for MRS procedure Object
+--echo #
+--echo ## I. Get OpenAPI at different levels
+--echo #
+--echo # 1. service level
+--echo # 2. schema level
+--echo # 3. object level.
+--echo #
+--echo #
+--echo ## II. Cross service
+--echo #
+--echo # 1. Check that spec is not leaked between services
+--echo #
+--echo #
+
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_arg_path='/svc/proc/open-api-catalog/'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # I.3
+--let $mrs_client_arg_path='/svc/proc/open-api-catalog/in_out_and_return'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # II.1
+--let $mrs_client_arg_path='/svc2/open-api-catalog/'
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

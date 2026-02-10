@@ -764,7 +764,7 @@ drop database if exists priv_db;
 drop user test_yesprivs@localhost;
 drop user test_noprivs@localhost;
 drop user test_noprivs;
-ERROR HY000: Operation DROP USER failed for 'test_noprivs'@'%'
+ERROR HY000: Operation DROP USER failed for 'test_noprivs'@'%' (User account does not exist)
 use test;
 drop table tb3;
 set GLOBAL sql_mode= @orig_sql_mode_global;

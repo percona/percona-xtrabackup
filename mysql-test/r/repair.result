@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 CALL mtr.add_suppression("Enabling keys got errno");
 drop table if exists t1;
 create table t1 SELECT 1,"table 1";
@@ -139,3 +140,4 @@ test.t1	repair	status	OK
 test.t2	repair	status	OK
 set @@autocommit= default;
 drop tables t1, t2;
+include/rpl/set_gtid_mode_on.inc

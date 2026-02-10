@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -216,44 +216,9 @@ bool set_dh(SSL_CTX *ctx) {
 #endif /* MYSQL_SERVER */
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
-  OSSL_PARAM params[2];
-  EVP_PKEY *dh_pkey = nullptr;
-  EVP_PKEY_CTX *pctx = nullptr;
-  const char *rfc7919_primes[] = {"ffdhe2048", "ffdhe3072", "ffdhe8192"};
-  unsigned int prime_index = 0;
-  switch (security_level) {
-    case 1:
-      [[fallthrough]];
-    case 2:
-      prime_index = 0;
-      break;
-    case 3:
-      prime_index = 1;
-      break;
-    case 4:
-      prime_index = 2;
-      break;
-    case 5:
-      /* there is no RFC7919 approved prime for sec level 5 */
-      [[fallthrough]];
-    default:
-      EVP_PKEY_CTX_free(pctx);
-      return true;
-  };
-
-  pctx = EVP_PKEY_CTX_new_from_name(nullptr, "DH", nullptr);
-  params[0] = OSSL_PARAM_construct_utf8_string(
-      "group", const_cast<char *>(rfc7919_primes[prime_index]), 0);
-  params[1] = OSSL_PARAM_construct_end();
-  EVP_PKEY_keygen_init(pctx);
-  EVP_PKEY_CTX_set_params(pctx, params);
-  EVP_PKEY_generate(pctx, &dh_pkey);
-  if (SSL_CTX_set0_tmp_dh_pkey(ctx, dh_pkey) == 0) {
-    EVP_PKEY_free(dh_pkey);
-    EVP_PKEY_CTX_free(pctx);
+  if (SSL_CTX_set_dh_auto(ctx, 1) == 0) {
     return true;
   }
-  EVP_PKEY_CTX_free(pctx);
 #else /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
 
   DH *dh = nullptr;

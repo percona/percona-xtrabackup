@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -64,19 +64,17 @@
   elapsed_time= (time2 - time1) - overhead
 */
 
-#include <stdint.h>
-#include <stdio.h>
+#include "my_rdtsc.h"
 
 #include "my_config.h"
 #include "my_inttypes.h"
-#include "my_rdtsc.h"
 #if defined(_WIN32)
 #include "windows.h"
 #endif
 
 #if defined(TIME_WITH_SYS_TIME)
 #include <sys/time.h>
-#include <time.h> /* for clock_gettime */
+#include <ctime> /* for clock_gettime */
 #endif
 
 #if defined(HAVE_SYS_TIMES_H) && defined(HAVE_TIMES)
@@ -95,7 +93,7 @@
   gethrtime which is okay for solaris.
 */
 
-ulonglong my_timer_cycles(void) {
+ulonglong my_timer_cycles() {
 #if defined(__GNUC__) && defined(__i386__)
   /* This works much better if compiled with "gcc -O3". */
   ulonglong result;
@@ -191,7 +189,7 @@ ulonglong my_timer_cycles(void) {
   (b) really has nanosecond resolution.
 */
 
-ulonglong my_timer_nanoseconds(void) {
+ulonglong my_timer_nanoseconds() {
 #if defined(HAVE_SYS_TIMES_H) && defined(HAVE_GETHRTIME)
   /* SunOS 5.10+, Solaris, HP-UX: hrtime_t gethrtime(void) */
   return (ulonglong)gethrtime();
@@ -223,7 +221,7 @@ ulonglong my_timer_nanoseconds(void) {
   the frequency is same as the cycle frequency.)
 */
 
-ulonglong my_timer_microseconds(void) {
+ulonglong my_timer_microseconds() {
 #if defined(HAVE_GETTIMEOFDAY)
   {
     struct timeval tv;
@@ -262,7 +260,7 @@ ulonglong my_timer_microseconds(void) {
   GetSystemTimeAsFileTime.
 */
 
-ulonglong my_timer_milliseconds(void) {
+ulonglong my_timer_milliseconds() {
 #if defined(HAVE_GETTIMEOFDAY)
   {
     struct timeval tv;
@@ -299,7 +297,7 @@ ulonglong my_timer_milliseconds(void) {
   bad, sometimes even worse than gettimeofday's overhead.
 */
 
-ulonglong my_timer_ticks(void) {
+ulonglong my_timer_ticks() {
 #if defined(HAVE_SYS_TIMES_H) && defined(HAVE_TIMES)
   {
     struct tms times_buf;
@@ -316,7 +314,7 @@ ulonglong my_timer_ticks(void) {
   THREAD_CPU timer.
   Expressed in nanoseconds.
 */
-ulonglong my_timer_thread_cpu(void) {
+ulonglong my_timer_thread_cpu() {
 #if defined(HAVE_CLOCK_GETTIME) && defined(CLOCK_THREAD_CPUTIME_ID)
   {
     struct timespec tp;
@@ -371,8 +369,8 @@ ulonglong my_timer_thread_cpu(void) {
 */
 
 static void my_timer_init_overhead(ulonglong *overhead,
-                                   ulonglong (*cycle_timer)(void),
-                                   ulonglong (*this_timer)(void),
+                                   ulonglong (*cycle_timer)(),
+                                   ulonglong (*this_timer)(),
                                    ulonglong best_timer_overhead) {
   ulonglong time1, time2;
   int i;
@@ -401,7 +399,7 @@ static void my_timer_init_overhead(ulonglong *overhead,
   Often GetTickCount() has resolution = 15.
   We don't check with ticks because they take too long.
 */
-static ulonglong my_timer_init_resolution(ulonglong (*this_timer)(void),
+static ulonglong my_timer_init_resolution(ulonglong (*this_timer)(),
                                           ulonglong overhead_times_2) {
   ulonglong time1, time2;
   ulonglong best_jump;
@@ -453,6 +451,13 @@ static ulonglong my_timer_init_frequency(MY_TIMER_INFO *mti) {
   time4 = my_timer_cycles() - mti->cycles.overhead;
   time4 -= mti->microseconds.overhead;
 
+  if (time4 <= time1) {
+    /*
+      Seen happening on Sparc S7 when execution during measurement switched to
+      different CPU that has different value of the tick.
+    */
+    return 0;
+  }
   if (time3 <= time2) {
     /*
       Seen happening with ASAN / UBSAN builds.
@@ -475,7 +480,7 @@ static ulonglong my_timer_init_frequency(MY_TIMER_INFO *mti) {
 */
 
 void my_timer_init(MY_TIMER_INFO *mti) {
-  ulonglong (*best_timer)(void);
+  ulonglong (*best_timer)();
   ulonglong best_timer_overhead;
 
   /* cycles */
@@ -684,17 +689,26 @@ void my_timer_init(MY_TIMER_INFO *mti) {
         mti->microseconds.resolution > 100)
       mti->cycles.frequency = mti->microseconds.frequency;
     else {
-      ulonglong time1, time2, lowest;
-      time1 = my_timer_init_frequency(mti);
-      /* Repeat once in case there was an interruption. */
-      time2 = my_timer_init_frequency(mti);
-
-      lowest = 0;
-      if (time1 != 0) {
-        lowest = time1;
-      }
-      if ((time2 != 0) && (time2 < lowest)) {
-        lowest = time2;
+      ulonglong lowest = 0;
+      int values = 0;
+      /*
+        We measure frequency for 200us, there is some probability we will end up
+        switched off the cpu entirely, or be switched to different CPU that has
+        different values of tick. We measure till we have 3 values that are less
+        than 1THz, as a higher value would yield 0 ticks per picosecond leading
+        to useless calculations later on, and in itself look incorrect. We give
+        up after taking 10 readouts.
+      */
+      for (int i = 10; i-- > 0;) {
+        const auto freq = my_timer_init_frequency(mti);
+        if (freq != 0 && freq <= 1'000'000'000'000) {
+          if (lowest == 0 || freq < lowest) {
+            lowest = freq;
+          }
+          if (++values >= 3) {
+            break;
+          }
+        }
       }
 
       mti->cycles.frequency = lowest;

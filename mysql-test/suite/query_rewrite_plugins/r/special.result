@@ -11,8 +11,8 @@ INSERT INTO t1 VALUES ( 1, 'd', 'a' ),
 ( 7, 'e', 'b' );
 # Query rewrite plugin was installed.
 INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
-VALUES ( 'SELECT c1, c2 FROM test.t1 ORDER BY ?',
-'SELECT c1, c2 FROM test.t1 ORDER BY 2, ? DESC' );
+VALUES ( 'SELECT c1, c2 FROM test.t1 ORDER BY 1',
+'SELECT c1, c2 FROM test.t1 ORDER BY 2, 1 DESC' );
 CALL query_rewrite.flush_rewrite_rules();
 # Should be rewritten.
 SELECT c1, c2 FROM test.t1 ORDER BY 1;
@@ -131,8 +131,11 @@ c1 + 3
 11
 10
 INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
-VALUES ( 'SELECT COUNT( c1 ), c2, c3 FROM test.t1 GROUP BY ?, ?',
-'SELECT SUM( c1 ), c2, c3 FROM test.t1 GROUP BY ?, ?' );
+VALUES ( 'SELECT COUNT( c1 ), c2, c3 FROM test.t1 GROUP BY 2, 3',
+'SELECT SUM( c1 ), c2, c3 FROM test.t1 GROUP BY 2, 3' );
+INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
+VALUES ( 'SELECT COUNT( c1 ), c2, c3 FROM test.t1 GROUP BY 3, 2',
+'SELECT SUM( c1 ), c2, c3 FROM test.t1 GROUP BY 3, 2' );
 CALL query_rewrite.flush_rewrite_rules();
 # Should be rewritten.
 SELECT COUNT( c1 ), c2, c3 FROM test.t1 GROUP BY 2, 3;
@@ -169,8 +172,12 @@ COUNT( c1 )	c2	c3
 1	f	c
 2	d	a
 INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
-VALUES ( 'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY ?, ? HAVING c > ?',
-'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY ?, ? HAVING c < ?'
+VALUES ( 'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY 2, 3 HAVING c > ?',
+'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY 2, 3 HAVING c < ?'
+         );
+INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
+VALUES ( 'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY 3, 2 HAVING c > ?',
+'SELECT COUNT(c1) as c, c2, c3 FROM test.t1 GROUP BY 3, 2 HAVING c < ?'
          );
 CALL query_rewrite.flush_rewrite_rules();
 SELECT COUNT( c1 ) as c, c2, c3 FROM test.t1 GROUP BY 2, 3 HAVING c > 2;
@@ -228,8 +235,8 @@ SET sql_mode = 'PIPES_AS_CONCAT';
 INSERT INTO query_rewrite.rewrite_rules ( pattern, replacement )
 VALUES ( 'SELECT c1,c2,c3 FROM test.t1 WHERE c1=? ' ||
 'UNION ' ||
-'SELECT c1 FROM test.t1 WHERE c1=? ORDER BY ?',
-'SELECT c1,c2, c3 FROM test.t1 WHERE c1 IN ( ?,? ) ORDER BY ?' );
+'SELECT c1 FROM test.t1 WHERE c1=? ORDER BY 2',
+'SELECT c1,c2, c3 FROM test.t1 WHERE c1 IN ( ?,? ) ORDER BY 2' );
 CALL query_rewrite.flush_rewrite_rules();
 # That's right, query does not compile unless rewritten.
 SELECT c1, c2, c3 FROM test.t1 WHERE c1 = 1
@@ -282,7 +289,7 @@ WHERE test.t1.c2=tc.c2 AND tc.c1 < 0' rewritten to 'SELECT test.t1.c1, test.t2.c
 # Check our status variables:.
 SHOW STATUS LIKE 'Rewriter%';
 Variable_name	Value
-Rewriter_number_loaded_rules	11
+Rewriter_number_loaded_rules	13
 Rewriter_number_reloads	12
 Rewriter_number_rewritten_queries	15
 Rewriter_reload_error	OFF

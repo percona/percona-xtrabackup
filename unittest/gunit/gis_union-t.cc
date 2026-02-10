@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +48,7 @@ struct UnionTest : Gis_test<Types> {
                         gis::Geometry &expected_result) {
     std::unique_ptr<gis::Geometry> result;
     bool is_null = false;
-    bool error =
+    bool const error =
         gis::union_(this->m_srs.get(), &g1, &g2, "unittest", &result, &is_null);
     EXPECT_FALSE(error);
     EXPECT_FALSE(is_null);
@@ -60,7 +60,7 @@ struct UnionTest : Gis_test<Types> {
 
     // Verify result is correct.
     bool is_equals = false;
-    bool equals_error =
+    bool const equals_error =
         gis::equals(this->m_srs.get(), &expected_result, result.get(),
                     "unittest", &is_equals, &is_null);
     EXPECT_FALSE(equals_error);
@@ -77,7 +77,7 @@ TYPED_TEST_SUITE(UnionTest, gis_typeset::Test_both);
 
 TYPED_TEST(UnionTest, PointPoint) {
   typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0, 0.1};
+  typename TypeParam::Point const pt2{0, 0.1};
   typename TypeParam::Multipoint expected_result{};
 
   expected_result.push_back(pt1);
@@ -88,9 +88,9 @@ TYPED_TEST(UnionTest, PointPoint) {
 }
 
 TYPED_TEST(UnionTest, PointMultipoint) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0, 0.1};
-  typename TypeParam::Point pt3{0.1, 0.1};
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0, 0.1};
+  typename TypeParam::Point const pt3{0.1, 0.1};
   typename TypeParam::Multipoint mpt = simple_mpt<TypeParam>();
   typename TypeParam::Multipoint expected_result{};
 
@@ -104,8 +104,8 @@ TYPED_TEST(UnionTest, PointMultipoint) {
 }
 
 TYPED_TEST(UnionTest, PointLinestring) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0.1, 0.1};
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0.1, 0.1};
   typename TypeParam::Linestring ls = simple_ls<TypeParam>();
   typename TypeParam::Geometrycollection expected_result{};
 
@@ -119,8 +119,8 @@ TYPED_TEST(UnionTest, PointLinestring) {
 }
 
 TYPED_TEST(UnionTest, PointMultiLinestring) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0.1, 0.1};
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0.1, 0.1};
   typename TypeParam::Multilinestring mls = simple_mls<TypeParam>();
   typename TypeParam::Geometrycollection expected_result{};
 
@@ -134,8 +134,8 @@ TYPED_TEST(UnionTest, PointMultiLinestring) {
 }
 
 TYPED_TEST(UnionTest, PointPolygon) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0, 0.2};
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0, 0.2};
   typename TypeParam::Polygon py = base_py<TypeParam>();
   typename TypeParam::Geometrycollection expected_result{};
 
@@ -149,8 +149,8 @@ TYPED_TEST(UnionTest, PointPolygon) {
 }
 
 TYPED_TEST(UnionTest, PointMultipolygon) {
-  typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0, 0.2};
+  typename TypeParam::Point const pt1{0, 0};
+  typename TypeParam::Point const pt2{0, 0.2};
   typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection expected_result{};
 
@@ -209,7 +209,7 @@ TYPED_TEST(UnionTest, MultipointMultilinestring) {
 
 TYPED_TEST(UnionTest, MultipointPolygon) {
   typename TypeParam::Multipoint mpt = simple_mpt<TypeParam>();
-  typename TypeParam::Polygon py = base_py<TypeParam>();
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
   typename TypeParam::Geometrycollection expected_result{};
 
   mpt.push_back(typename TypeParam::Point{0.0, 0.2});
@@ -237,7 +237,7 @@ TYPED_TEST(UnionTest, MultipointMultipolygon) {
 
 TYPED_TEST(UnionTest, LinestringLinestring) {
   typename TypeParam::Linestring ls1 = simple_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = diagonal_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = diagonal_ls<TypeParam>();
   typename TypeParam::Multilinestring expected_result{};
 
   expected_result.push_back(ls1);
@@ -249,7 +249,7 @@ TYPED_TEST(UnionTest, LinestringLinestring) {
 
 TYPED_TEST(UnionTest, LinestringMultilinestring) {
   typename TypeParam::Multilinestring mls = simple_mls<TypeParam>();
-  typename TypeParam::Linestring ls2 = diagonal_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = diagonal_ls<TypeParam>();
   typename TypeParam::Multilinestring expected_result{};
 
   this->test_valid_input(mls[0], mls, mls[0]);
@@ -264,15 +264,15 @@ TYPED_TEST(UnionTest, LinestringMultilinestring) {
 }
 
 TYPED_TEST(UnionTest, LinestringPolygon) {
-  typename TypeParam::Linestring ls1 = diagonal_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = ls_crossing_base_py<TypeParam>();
+  typename TypeParam::Linestring const ls1 = diagonal_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = ls_crossing_base_py<TypeParam>();
   typename TypeParam::Polygon py = base_py<TypeParam>();
   typename TypeParam::Geometrycollection expected_result{};
-  typename TypeParam::Multilinestring ls_result =
+  typename TypeParam::Multilinestring const ls_result =
       ls_crossing_base_py_difference<TypeParam>();
 
   expected_result.push_back(py);
-  for (typename TypeParam::Linestring ls : ls_result)
+  for (const typename TypeParam::Linestring &ls : ls_result)
     expected_result.push_back(ls);
 
   this->test_valid_input(ls1, py, py);
@@ -282,8 +282,9 @@ TYPED_TEST(UnionTest, LinestringPolygon) {
 }
 
 TYPED_TEST(UnionTest, LinestringMultiPolygon) {
-  typename TypeParam::Linestring ls1 = diagonal_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = ls_overlapping_base_py<TypeParam>();
+  typename TypeParam::Linestring const ls1 = diagonal_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 =
+      ls_overlapping_base_py<TypeParam>();
   typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection expected_result{};
 
@@ -316,7 +317,7 @@ TYPED_TEST(UnionTest, MultilinestringMultilinestring) {
 
 TYPED_TEST(UnionTest, MultilinestringPolygon) {
   typename TypeParam::Multilinestring mls = simple_mls<TypeParam>();
-  typename TypeParam::Polygon py = base_py<TypeParam>();
+  typename TypeParam::Polygon const py = base_py<TypeParam>();
   typename TypeParam::Geometrycollection expected_result{};
 
   mls.push_back(ls_overlapping_base_py<TypeParam>());
@@ -343,9 +344,9 @@ TYPED_TEST(UnionTest, MultilinestringMultipolygon) {
 // union_(..., polygon, *, ...)
 
 TYPED_TEST(UnionTest, PolygonPolygon) {
-  typename TypeParam::Polygon py1 = base_py<TypeParam>();
-  typename TypeParam::Polygon py2 = overlapping_py<TypeParam>();
-  typename TypeParam::Polygon py3 = disjoint_py<TypeParam>();
+  typename TypeParam::Polygon const py1 = base_py<TypeParam>();
+  typename TypeParam::Polygon const py2 = overlapping_py<TypeParam>();
+  typename TypeParam::Polygon const py3 = disjoint_py<TypeParam>();
   typename TypeParam::Polygon expected_result_py =
       base_union_overlapping_py<TypeParam>();
   typename TypeParam::Multipolygon expected_result_mpy{};
@@ -358,9 +359,9 @@ TYPED_TEST(UnionTest, PolygonPolygon) {
 }
 
 TYPED_TEST(UnionTest, PolygonMultipolygon) {
-  typename TypeParam::Polygon py1 = base_py<TypeParam>();
-  typename TypeParam::Polygon py2 = overlapping_py<TypeParam>();
-  typename TypeParam::Polygon py3 = disjoint_py<TypeParam>();
+  typename TypeParam::Polygon const py1 = base_py<TypeParam>();
+  typename TypeParam::Polygon const py2 = overlapping_py<TypeParam>();
+  typename TypeParam::Polygon const py3 = disjoint_py<TypeParam>();
   typename TypeParam::Multipolygon mpy{};
   typename TypeParam::Multipolygon expected_result{};
 
@@ -376,12 +377,12 @@ TYPED_TEST(UnionTest, PolygonMultipolygon) {
 // union_(..., multipolygon, *, ...)
 
 TYPED_TEST(UnionTest, MultipolygonMultipolygon) {
-  typename TypeParam::Polygon py1 = base_py<TypeParam>();
-  typename TypeParam::Polygon py2 = overlapping_py<TypeParam>();
-  typename TypeParam::Polygon py3 = disjoint_py<TypeParam>();
-  typename TypeParam::Multipolygon mpy1 = simple_mpy<TypeParam>();
+  typename TypeParam::Polygon const py1 = base_py<TypeParam>();
+  typename TypeParam::Polygon const py2 = overlapping_py<TypeParam>();
+  typename TypeParam::Polygon const py3 = disjoint_py<TypeParam>();
+  typename TypeParam::Multipolygon const mpy1 = simple_mpy<TypeParam>();
   typename TypeParam::Multipolygon mpy2{};
-  typename TypeParam::Polygon expected_result_py =
+  typename TypeParam::Polygon const expected_result_py =
       base_union_overlapping_py<TypeParam>();
   typename TypeParam::Multipolygon expected_result_mpy{};
 
@@ -396,42 +397,42 @@ TYPED_TEST(UnionTest, MultipolygonMultipolygon) {
 // union_(..., geometrycollection, *, ...)
 
 TYPED_TEST(UnionTest, GeometrycollectionPoint) {
-  typename TypeParam::Geometrycollection gc{};
+  typename TypeParam::Geometrycollection const gc{};
   typename TypeParam::Point pt{0, 0};
   this->test_valid_input(gc, pt, pt);
   this->test_valid_input(pt, gc, pt);
 }
 
 TYPED_TEST(UnionTest, GeometrycollectionMultipoint) {
-  typename TypeParam::Geometrycollection gc{};
+  typename TypeParam::Geometrycollection const gc{};
   typename TypeParam::Multipoint mpt = simple_mpt<TypeParam>();
   this->test_valid_input(gc, mpt, mpt[0]);
   this->test_valid_input(mpt, gc, mpt[0]);
 }
 
 TYPED_TEST(UnionTest, GeometrycollectionLinestring) {
-  typename TypeParam::Geometrycollection gc{};
+  typename TypeParam::Geometrycollection const gc{};
   typename TypeParam::Linestring ls = simple_ls<TypeParam>();
   this->test_valid_input(gc, ls, ls);
   this->test_valid_input(ls, gc, ls);
 }
 
 TYPED_TEST(UnionTest, GeometrycollectionMultilinestring) {
-  typename TypeParam::Geometrycollection gc{};
+  typename TypeParam::Geometrycollection const gc{};
   typename TypeParam::Multilinestring mls = simple_mls<TypeParam>();
   this->test_valid_input(gc, mls, mls[0]);
   this->test_valid_input(mls, gc, mls[0]);
 }
 
 TYPED_TEST(UnionTest, GeometrycollectionPolygon) {
-  typename TypeParam::Geometrycollection gc{};
+  typename TypeParam::Geometrycollection const gc{};
   typename TypeParam::Polygon py = base_py<TypeParam>();
   this->test_valid_input(gc, py, py);
   this->test_valid_input(py, gc, py);
 }
 
 TYPED_TEST(UnionTest, GeometrycollectionMultipolygon) {
-  typename TypeParam::Geometrycollection gc{};
+  typename TypeParam::Geometrycollection const gc{};
   typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
   this->test_valid_input(gc, mpy, mpy[0]);
   this->test_valid_input(mpy, gc, mpy[0]);
@@ -441,12 +442,12 @@ TYPED_TEST(UnionTest, GeometrycollectionGeometrycollection) {
   typename TypeParam::Geometrycollection gc{};
   this->test_valid_input(gc, gc, gc);
 
-  typename TypeParam::Point pt{0, 0};
-  typename TypeParam::Linestring ls = ls_overlapping_base_py<TypeParam>();
-  typename TypeParam::Polygon py = overlapping_py<TypeParam>();
-  typename TypeParam::Multipoint mpt = simple_mpt<TypeParam>();
-  typename TypeParam::Multilinestring mls = simple_mls<TypeParam>();
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Point const pt{0, 0};
+  typename TypeParam::Linestring const ls = ls_overlapping_base_py<TypeParam>();
+  typename TypeParam::Polygon const py = overlapping_py<TypeParam>();
+  typename TypeParam::Multipoint const mpt = simple_mpt<TypeParam>();
+  typename TypeParam::Multilinestring const mls = simple_mls<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection gc1{};
   gc1.push_back(typename TypeParam::Point{0.0, 0.5});
   gc.push_back(pt);

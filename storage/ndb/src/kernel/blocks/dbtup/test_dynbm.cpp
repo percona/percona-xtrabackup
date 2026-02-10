@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,11 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include <assert.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "my_config.h"
 
 #define N (1024 * 1024)
@@ -180,7 +180,7 @@ static void setbits(const Uint32 *src, Uint32 *dst, Uint32 bit_pos,
 /****************************************************************************/
 
 /* Set up a bunch of test bit fields. */
-void fill(void) {
+void fill() {
   uint32_t i, j;
   uint32_t p = 0;
 
@@ -195,7 +195,7 @@ void fill(void) {
   }
 }
 
-void write(void) {
+void write() {
   uint32_t i, idx;
 
   for (i = 0, idx = 0; i < N; i++, idx += S) {
@@ -204,7 +204,7 @@ void write(void) {
   }
 }
 
-void read(void) {
+void read() {
   uint32_t buf[4];
   uint32_t i;
 
@@ -214,7 +214,7 @@ void read(void) {
   }
 }
 
-int main(int argc, char *argv[]) {
+int main(int /*argc*/, char * /*argv*/[]) {
   uint32_t i;
 
   srand(1);

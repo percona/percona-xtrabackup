@@ -30,6 +30,11 @@ IF(APPLE)
   STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-shorten-64-to-32")
 ENDIF()
 
+# Some of our .proto files generate ASAN failures, disable them.
+IF(HAVE_ASAN AND WIN32_VS)
+  ADD_DEFINITIONS(-DHAVE_ASAN_WIN32_VS=1)
+ENDIF()
+
 # Inhibit warning messages
 IF(MSVC AND NOT WIN32_CLANG)
   # no suitable definition provided for explicit template instantiation
@@ -158,6 +163,14 @@ ENDIF()
 MY_CHECK_CXX_COMPILER_WARNING("-Wchar-subscripts" HAS_WARN_FLAG)
 IF(HAS_WARN_FLAG)
   STRING_APPEND(CMAKE_CXX_FLAGS " ${HAS_WARN_FLAG}")
+ENDIF()
+
+# gcc/ubsan bug ?:
+# member call on address ... which does point to ... OptionProvider
+# object is of type GeneratedOptionProvider
+IF(MY_COMPILER_IS_GNU AND WITH_UBSAN AND
+    CMAKE_CXX_COMPILER_VERSION VERSION_LESS "14")
+  STRING_APPEND(CMAKE_CXX_FLAGS " -fno-sanitize=vptr")
 ENDIF()
 
 SET(protobuf_BUILD_TESTS OFF CACHE INTERNAL "")

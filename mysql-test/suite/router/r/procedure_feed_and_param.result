@@ -1,0 +1,197 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+CREATE SCHEMA `mrs`;
+CREATE PROCEDURE `mrs`.`mirror` (IN input VARCHAR(3), OUT output1 VARCHAR(3), OUT output2 VARCHAR(3))
+BEGIN
+SELECT input INTO output1;
+SELECT input  INTO output2;
+SELECT input  AS output3, input  AS output4;
+SELECT input  AS output5;
+END;//
+CREATE PROCEDURE `mrs`.`hello_proc` (IN name CHAR(20))
+BEGIN
+SELECT CONCAT('Hello ',name,'!') as result;
+END;//
+CREATE PROCEDURE `mrs`.`proc_do_nothing` ()
+BEGIN
+END;//
+
+
+## I. Verify that mixing feed response and in/out parameters as expected in GET request
+#
+# 1. Use SP that transforms input parameter into feed response
+# 2. Use SP that transforms input parameter into feed response and output parameters
+#
+## II. Verify that mixing feed response and in/out parameters as expected in PUT request
+#
+# 1. Use SP that transforms input parameter into feed response
+# 2. Use SP that transforms input parameter into feed response and output parameters
+#
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/proc
+# Registred DB_OBJECT at path: /svc/proc/mirror
+# Registred DB_OBJECT at path: /svc/proc/nothing
+# Registred DB_OBJECT at path: /svc/proc/hello_proc
+GET /svc/proc/nothing
+{
+    "resultSets": []
+}
+OK
+
+#
+# I.1
+GET /svc/proc/hello_proc?name=Andresz
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "result": "Hello Andresz!"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "result",
+                        "type": "VARCHAR(27)"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# I.2
+GET /svc/proc/mirror?input=1
+{
+    "resultSets": [
+        {
+            "type": "FirstResultset",
+            "items": [
+                {
+                    "output3": "1",
+                    "output4": "1"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "output3",
+                        "type": "VARCHAR(3)"
+                    },
+                    {
+                        "name": "output4",
+                        "type": "VARCHAR(3)"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "SecondResultset",
+            "items": [
+                {
+                    "output5": "1"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "output5",
+                        "type": "VARCHAR(3)"
+                    }
+                ]
+            }
+        }
+    ],
+    "outParameters": {
+        "output1": "1",
+        "output2": "1"
+    }
+}
+OK
+
+#
+# II.1
+PUT /svc/proc/hello_proc (payload-size:19)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "result": "Hello Andresz!"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "result",
+                        "type": "VARCHAR(27)"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# II.2
+PUT /svc/proc/mirror (payload-size:12)
+{
+    "resultSets": [
+        {
+            "type": "FirstResultset",
+            "items": [
+                {
+                    "output3": "10",
+                    "output4": "10"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "output3",
+                        "type": "VARCHAR(3)"
+                    },
+                    {
+                        "name": "output4",
+                        "type": "VARCHAR(3)"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "SecondResultset",
+            "items": [
+                {
+                    "output5": "10"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "output5",
+                        "type": "VARCHAR(3)"
+                    }
+                ]
+            }
+        }
+    ],
+    "outParameters": {
+        "output1": "10",
+        "output2": "10"
+    }
+}
+OK
+DROP SCHEMA mrs;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

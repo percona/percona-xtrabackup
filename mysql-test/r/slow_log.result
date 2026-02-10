@@ -92,7 +92,7 @@ SET @my_start=CURRENT_TIMESTAMP(6);
 CREATE USER 'duplicate_user'@'%' IDENTIFIED BY 'mypassword';
 # This fails, but the password is still correctly obfuscated.
 CREATE USER 'duplicate_user'@'%' IDENTIFIED BY 'mypassword';
-ERROR HY000: Operation CREATE USER failed for 'duplicate_user'@'%'
+ERROR HY000: Operation CREATE USER failed for 'duplicate_user'@'%' (User account already exists)
 
 # Since we throw an error during the parse stage, we don't know which
 # part of the statement is the password (or whether there even is one),

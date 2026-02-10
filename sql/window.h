@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1599,5 +1599,11 @@ struct Window_evaluation_requirements {
         row_optimizable(true),
         range_optimizable(true) {}
 };
+
+/**
+  Shallow clone the list of ORDER objects using mem_root and return
+  the cloned list.
+*/
+ORDER *clone(THD *thd, ORDER *order);
 
 #endif /* WINDOWS_INCLUDED */

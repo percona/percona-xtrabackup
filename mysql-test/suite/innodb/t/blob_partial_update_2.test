@@ -28,6 +28,7 @@ ANALYZE TABLE tab;
 --echo # Sven
 select json_extract(j1, '$[1]') from tab;
 
+SET explain_json_format_version = 1;
 let $sql_to_do= UPDATE tab SET j1 = JSON_SET(j1, '$[1]', concat('Viswa',@chars128));
 --source suite/innodb/include/explain_then_rollback_and_commit.inc
 

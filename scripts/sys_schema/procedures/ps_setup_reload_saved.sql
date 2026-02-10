@@ -1,4 +1,4 @@
--- Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+-- Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -66,7 +66,9 @@ BEGIN
     END;
 
     SET @log_bin := @@sql_log_bin;
-    SET sql_log_bin = 0;
+    IF ((@log_bin = 1) AND (@@binlog_format = 'STATEMENT')) THEN
+       SET sql_log_bin = 0;
+    END IF;
 
     SELECT IS_USED_LOCK('sys.ps_setup_save') INTO v_lock_used_by;
 
@@ -140,7 +142,9 @@ BEGIN
 
     SELECT RELEASE_LOCK('sys.ps_setup_save') INTO v_lock_result;
 
-    SET sql_log_bin = @log_bin; 
+    IF ((@log_bin = 1) AND (@@binlog_format = 'STATEMENT')) THEN
+	SET sql_log_bin = @log_bin;
+    END IF;
 END$$
 
 DELIMITER ;

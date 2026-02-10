@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,29 +34,6 @@ namespace component_load_parser_unittest {
 
 class ComponentLoadParser_test : public ::testing::Test {};
 
-std::string group_separator = ";";
-std::string component_separator = ",";
-
-void get_next_group(std::string &groups, std::string &one_group) {
-  if (groups.find(group_separator) != std::string::npos) {
-    one_group = groups.substr(0, groups.find(group_separator));
-    groups.erase(0, groups.find(group_separator) + 1);
-  } else {
-    one_group = groups;
-    groups.clear();
-  }
-}
-
-void get_next_component(std::string &components, std::string &one_component) {
-  if (components.find(component_separator) != std::string::npos) {
-    one_component = components.substr(0, components.find(component_separator));
-    components.erase(0, components.find(component_separator) + 1);
-  } else {
-    one_component = components;
-    components.clear();
-  }
-}
-
 // Use myu::IsSpace rather than ::isspace to avoid linker warnings on MacOS.
 void remove_spaces(std::string &groups) {
   groups.erase(std::remove_if(groups.begin(), groups.end(), myu::IsSpace),
@@ -67,7 +44,7 @@ TEST_F(ComponentLoadParser_test, Parser) {
   std::string with_spaces =
       "   file://component1, file://component2, file://component3; "
       "file://component4, file://component5, file://component6 ;   ";
-  std::string without_spaces =
+  std::string const without_spaces =
       "file://component1,file://component2,file://component3;file://"
       "component4,file://component5,file://component6;";
   ;

@@ -1,4 +1,6 @@
 
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
+
 --echo #
 --echo # Bug#19904800 - MISSING DBUG_RETURN IN HA_INNOBASE::UPDATE_ROW
 --echo #

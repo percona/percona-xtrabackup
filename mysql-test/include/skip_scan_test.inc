@@ -4,13 +4,13 @@
 # These queries should do loose index scans.
 
 # Skip scan is used if 'skip_scan=on'
---let $query= SELECT b, d FROM t WHERE d < 2
---let $hint_query= SELECT /*+ SKIP_SCAN(t) */ b, d FROM t WHERE d < 2
+--let $query= SELECT b, c from t where b = 2 and c < 3
+--let $hint_query= SELECT /*+ SKIP_SCAN(t) */ b, c FROM t WHERE b = 2 and c < 3
 --source include/skip_scan_query.inc
 
 # Skip scan is used if 'skip_scan=on'
---let $query = SELECT b, d FROM t WHERE d > 4
---let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, d FROM t WHERE d > 4
+--let $query = SELECT b, c from t where b = 1 and c > 4
+--let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c from t where b = 1 and c > 4
 --source include/skip_scan_query.inc
 
 # Skip scan is not used if 'skip_scan=on' due to cost
@@ -49,8 +49,8 @@
 --source include/skip_scan_query.inc
 
 # Skip scan is used if 'skip_scan=on'
---let $query = SELECT a+1, b, c, d FROM t WHERE a = 5 AND d < 3
---let $hint_query = SELECT /*+ SKIP_SCAN(t) */ a+1, b, c, d FROM t WHERE a = 5 AND d < 3
+--let $query =  SELECT b, c FROM t WHERE b BETWEEN 1 AND 2 AND c > 4
+--let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c FROM t WHERE b BETWEEN 1 AND 2 AND c > 4
 --source include/skip_scan_query.inc
 
 # Skip scan is not used if 'skip_scan=on' due to cost
@@ -69,13 +69,13 @@
 --source include/skip_scan_query.inc
 
 # Skip scan is used if 'skip_scan=on'
---let $query = SELECT b, c, d FROM t WHERE a = 5 AND c > 10 AND d < 3 ORDER BY d, c
---let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE a = 5 AND c > 10 AND d < 3 ORDER BY d, c
+--let $query = SELECT b, c, d FROM t WHERE b = 5 AND c > 10 AND d < 3 ORDER BY d, c
+--let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE b = 5 AND c > 10 AND d < 3 ORDER BY d, c
 --source include/skip_scan_query.inc
 
 # Skip scan is used if 'skip_scan=on'
---let $query = SELECT b, c, d FROM t WHERE a = 5 AND c > 1 AND d < 3 ORDER BY d, c * -1
---let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE a = 5 AND c > 1 AND d < 3 ORDER BY d, c * -1
+--let $query = SELECT b, c, d FROM t WHERE  b = 5 AND c > 1 AND d < 3 ORDER BY d, c * -1
+--let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE b = 5 AND c > 1 AND d < 3 ORDER BY d, c * -1
 --source include/skip_scan_query.inc
 
 # Skip scan is not used since field 'e' is not part of the index.
@@ -89,56 +89,56 @@
 --source include/skip_scan_query.inc
 
 # Testing aggregate functions.
---let $query = SELECT count(a), count(b), count(c)  FROM t WHERE a = 5 AND c > 10 AND d < 3
+--let $query = SELECT count(a), count(b), count(c)  FROM t WHERE b = 5 AND c > 10 AND d < 3
 --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ count(a), count(b), count(c) FROM t WHERE a = 5 AND c > 10 AND d < 3
 --source include/skip_scan_query.inc
 
---let $query = SELECT min(a), max(b), min(c)  FROM t WHERE a = 5 AND c > 10 AND d < 3
+--let $query = SELECT min(a), max(b), min(c)  FROM t WHERE b = 5 AND c > 10 AND d < 3
 --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ min(a), max(b), min(c) FROM t WHERE a = 5 AND c > 10 AND d < 3
 --source include/skip_scan_query.inc
 
---let $query = SELECT sum(a), sum(b), sum(c)  FROM t WHERE a = 5 AND c > 10 AND d < 3
+--let $query = SELECT sum(a), sum(b), sum(c)  FROM t WHERE b = 5 AND c > 10 AND d < 3
 --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ sum(a), avg(b), sum(c) FROM t WHERE a = 5 AND c > 10 AND d < 3
 --source include/skip_scan_query.inc
 
---let $query = SELECT count(*) FROM t WHERE d < 2;
---let $hint_query = SELECT /*+ SKIP_SCAN(t) */ count(*) FROM t WHERE d < 2;
+--let $query = SELECT count(*) FROM t WHERE d < 2
+--let $hint_query = SELECT /*+ SKIP_SCAN(t) */ count(*) FROM t WHERE  b = 1 AND d < 2
 --source include/skip_scan_query.inc
+
 
 if ($engine == 'innodb' )
 {
   --echo Testing DESC index with skip scan.
-  ALTER TABLE t DROP PRIMARY KEY;
   ALTER TABLE t DROP KEY b;
-  ALTER TABLE t ADD PRIMARY KEY(a DESC, b, c DESC, d);
+  ALTER TABLE t ADD KEY(a DESC, b, c DESC, d);
   ANALYZE TABLE t;
 
-  --let $query = SELECT b, c, d FROM t WHERE a = 5 AND c > 3 AND d < 3;
-  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE a = 5 AND c > 3 AND d < 3;
+  --let $query = SELECT b, c, d FROM t WHERE b = 2 AND c > 3 AND d < 3
+  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE b = 2 AND c > 3 AND d < 3
   --source include/skip_scan_query.inc
 
-  --let $query = SELECT b, c, d FROM t WHERE a = 5 AND c < 3 AND d < 3;
-  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE a = 5 AND c < 3 AND d < 3;
+  --let $query = SELECT b, c, d FROM t WHERE b = 2 AND c < 3 AND d < 3
+  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE b = 2 AND c < 3 AND d < 3
   --source include/skip_scan_query.inc
 
-  --let $query = SELECT b, c, d FROM t WHERE a = 5 AND c = 3 AND d < 3;
-  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE a = 5 AND c = 3 AND d < 3;
+  --let $query = SELECT b, c, d FROM t WHERE b = 2 AND c = 3 AND d < 3
+  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE b = 2 AND c = 3 AND d < 3
   --source include/skip_scan_query.inc
 
-  --let $query = SELECT b, c, d FROM t WHERE a = 5 AND c BETWEEN 3 AND 5 AND d < 3;
-  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE a = 5 AND c BETWEEN 3 AND 5 AND d < 3;
+  --let $query = SELECT b, c, d FROM t WHERE b = 2 AND c BETWEEN 3 AND 5 AND d < 3
+  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE b = 2 AND c BETWEEN 3 AND 5 AND d < 3
   --source include/skip_scan_query.inc
 
-  --let $query = SELECT b, c, d FROM t WHERE c BETWEEN 3 AND 5 AND d < 3;
-  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE c BETWEEN 3 AND 5 AND d < 3;
+  --let $query = SELECT b, c, d FROM t WHERE b BETWEEN 3 AND 5 AND d < 3
+  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE b BETWEEN 3 AND 5 AND d < 3
   --source include/skip_scan_query.inc
 
-  --let $query = SELECT b, c, d FROM t WHERE d < 3;
-  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE d < 3;
+  --let $query = SELECT b, c, d FROM t WHERE b = 3
+  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ b, c, d FROM t WHERE b = 3
   --source include/skip_scan_query.inc
 
-  --let $query = SELECT a, b, c, d FROM t WHERE a IN (1, 3, 5) AND d >= 5
-  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ a, b, c, d FROM t WHERE a IN (1, 3, 5) AND d >= 5
+  --let $query = SELECT a, b, c, d FROM t WHERE b = 1 AND c IN (1, 3, 5) AND d >= 5
+  --let $hint_query = SELECT /*+ SKIP_SCAN(t) */ a, b, c, d FROM t WHERE b = 1 AND c IN (1, 3, 5) AND d >= 5
   --source include/skip_scan_query.inc
 
  --let $query = SELECT a, b, c, d FROM t WHERE a IN (1, 5, 3) AND b IN (1, 2) AND d >= 5
@@ -246,35 +246,35 @@ CREATE UNIQUE INDEX i1_t1 ON t1(c1,c2,c3);
 CREATE UNIQUE INDEX i2_t1 ON t1(c1,c2,c4);
 INSERT INTO t1 VALUES (1,1,1,1), (1,1,2,2), (1,3,3,3), (1,4,4,4), (1,5,5,5),
                       (2,1,1,1), (2,2,2,2), (2,3,3,3), (2,4,4,4), (2,5,5,5);
-INSERT INTO t1 SELECT c1, c2, c3+5, c4+10  FROM t1;
-INSERT INTO t1 SELECT c1, c2, c3+10, c4+20 FROM t1;
-INSERT INTO t1 SELECT c1, c2, c3+20, c4+40 FROM t1;
-INSERT INTO t1 SELECT c1, c2, c3+40, c4+80 FROM t1;
+INSERT INTO t1 SELECT c1, c2, c3+20, c4+10  FROM t1;
+INSERT INTO t1 SELECT c1, c2, c3+40, c4+20 FROM t1;
+INSERT INTO t1 SELECT c1, c2+20, c3, c4+40 FROM t1;
+INSERT INTO t1 SELECT c1, c2+40, c3, c4+80 FROM t1;
 ANALYZE TABLE t1;
 
 --replace_regex $elide_costs
-EXPLAIN FORMAT=tree SELECT c1, c2 FROM t1 WHERE c2 > 40;
+EXPLAIN FORMAT=tree SELECT c1, c2 FROM t1 WHERE c2 = 40;
 
 # the other index(i2_t1) should be used for skip_scan
 --replace_regex $elide_costs
-EXPLAIN FORMAT=tree SELECT /*+NO_SKIP_SCAN(t1 i1_t1)*/ c1, c2 FROM t1 WHERE c2 > 40;
+EXPLAIN FORMAT=tree SELECT /*+NO_SKIP_SCAN(t1 i1_t1)*/ c1, c2 FROM t1 WHERE c2 = 40;
 
 # index i1_t1 should be used for skip_scan
 --replace_regex $elide_costs
-EXPLAIN FORMAT=tree SELECT /*+NO_SKIP_SCAN(t1 i2_t1)*/ c1, c2 FROM t1 WHERE c2 > 40;
+EXPLAIN FORMAT=tree SELECT /*+NO_SKIP_SCAN(t1 i2_t1)*/ c1, c2 FROM t1 WHERE c2 = 40;
 
 # skip_scan should not be used for table t1
 --replace_regex $elide_costs
-EXPLAIN FORMAT=tree SELECT /*+NO_SKIP_SCAN(t1)*/  c1, c2 FROM t1 WHERE c2 > 40;
+EXPLAIN FORMAT=tree SELECT /*+NO_SKIP_SCAN(t1)*/  c1, c2 FROM t1 WHERE c2 = 40;
 
 # force skip_scan to use index i2_t1
 --replace_regex $elide_costs
-EXPLAIN FORMAT=tree SELECT /*+SKIP_SCAN(t1 i2_t1)*/  c1, c2 FROM t1 WHERE c2 > 40;
+EXPLAIN FORMAT=tree SELECT /*+SKIP_SCAN(t1 i2_t1)*/  c1, c2 FROM t1 WHERE c2 = 40;
 
 SET OPTIMIZER_SWITCH = 'skip_scan=off';
 # skip_scan should not be used
 --replace_regex $elide_costs
-EXPLAIN FORMAT=tree SELECT c1, c2 FROM t1 WHERE c2 > 40;
+EXPLAIN FORMAT=tree SELECT c1, c2 FROM t1 WHERE c2 = 40;
 
 DROP TABLE t1;
 SET OPTIMIZER_SWITCH = default;

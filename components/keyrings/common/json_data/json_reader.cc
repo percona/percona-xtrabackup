@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -114,7 +114,7 @@ Json_reader::Json_reader() : Json_reader(schema_version_1_0, "") {}
   @returns property value string in case property is present,
   empty string otherwise.
 */
-std::string Json_reader::property(const std::string property_key) const {
+std::string Json_reader::property(const std::string &property_key) const {
   if (!valid_) return {};
   return document_[property_key.c_str()].Get<std::string>();
 }

@@ -56,6 +56,3 @@ DROP TABLE t2;
 
 # Cleanup
 SET GTID_NEXT='AUTOMATIC';
---let $rpl_gtid_mode= OFF
---let $rpl_set_enforce_gtid_consistency= 0
---source include/rpl/set_gtid_mode.inc

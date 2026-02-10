@@ -1,0 +1,297 @@
+include/group_replication.inc [rpl_server_count=3]
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection server1]
+[connection server1]
+include/start_and_bootstrap_group_replication.inc
+[connection server2]
+include/start_group_replication.inc
+[connection server3]
+include/start_group_replication.inc
+[connection server1]
+# MySQL InnoDB Cluster schema created.
+# MySQL Router metadata user created.
+# * insert three R/W nodes into MySQL InnoDB Cluster.
+include/rpl/sync.inc
+# Wait for the Router to update the metadata after we created the Cluster
+include/wait_for_pattern_in_file.inc [.*Potential changes detected in cluster after metadata refresh.*]
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `proc_schema` - created
+# DB `func_schema` - created
+# DB `basic_schema` - created
+
+
+## I.  Verify the _metadata.gtid is in the response when expected for requests for TABLE object
+#
+# 1. Verify the _metadata.gtid is not present for table GET
+# 2. Verify the _metadata.gtid is present for table PUT
+# 3. Verify the _metadata.gtid is present for table POST
+# 4. Verify the _metadata.gtid is present for table DELETE of existing row
+# 5. Verify the _metadata.gtid is not present for table DELETE of not existing row
+#
+## II.  Verify the _metadata.gtid is in the response when expected for requests for PROCEDURE object
+#
+# 1. Verify the _metadata.gtid is present for procedure PUT when the procedure with params
+#    inserts data into table
+# 2. Verify the _metadata.gtid is present for procedure PUT when the procedure with params
+#    inserts data into table and then returns resultset
+# 3. Verify the _metadata.gtid is present for procedure GET when the procedure with no params
+#    inserts data into table and returns resultset
+# 4. Verify the _metadata.gtid is not present for procedure GET when the procedure does not do
+#    update/insert only returns resultset
+# 5. Verify the _metadata.gtid is not present for procedure GET when the procedure does not do
+#    update/insert only returns via output parameter
+#
+## III.  Verify the _metadata.gtid is in the response when expected for requests for FUNCTION object
+#
+# 1. Verify the _metadata.gtid is present for function PUT when the function
+#    inserts data into table
+# 2. Verify the _metadata.gtid is present for function GET when the function
+#    inserts data into table
+# 3. Verify the _metadata.gtid is not present for function GET when the function
+#    does not do any insert/update
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+# Registred DB_OBJECT at path: /svc/basic/t1
+# Registred DB_SCHEMA at path: /svc/proc
+# Registred DB_OBJECT at path: /svc/proc/insert_data
+# Registred DB_OBJECT at path: /svc/proc/insert_and_return
+# Registred DB_OBJECT at path: /svc/proc/insert_no_param
+# Registred DB_OBJECT at path: /svc/proc/sum
+# Registred DB_OBJECT at path: /svc/proc/sum_out
+# Registred DB_SCHEMA at path: /svc/func
+# Registred DB_OBJECT at path: /svc/func/insert_and_return
+# Registred DB_OBJECT at path: /svc/func/insert_and_return_no_param
+# Registred DB_OBJECT at path: /svc/func/sum
+include/rpl/sync.inc
+
+#
+# I.1
+GET /svc/basic/t1
+{
+    "items": [
+        {
+            "id": 1
+        },
+        {
+            "id": 20
+        },
+        {
+            "id": 30
+        },
+        {
+            "id": 31
+        },
+        {
+            "id": 50
+        },
+        {
+            "id": 100
+        }
+    ]
+}
+OK
+
+#
+# I.2
+PUT /svc/basic/t1/101 (payload-size:2)
+{
+    "id": 101,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1/101"
+        }
+    ],
+    "_metadata": {
+        "etag": "14DC1536CE527BF1F900B1AE743E2B3194879FBF7F38941971B5E5608381BD4E",
+        "gtid": "%GTID%"
+    }
+}
+OK
+
+#
+# I.3
+POST /svc/basic/t1 (payload-size:9)
+{
+    "id": 33,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic/t1/33"
+        }
+    ],
+    "_metadata": {
+        "etag": "8075D25A352CD2C2905180D91C0B44A25DE8C1C8361FA6EAD7EBA9A2E4FC91F6",
+        "gtid": "%GTID%"
+    }
+}
+OK
+
+#
+# I.4
+DELETE /svc/basic/t1/101
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "%GTID%"
+    }
+}
+OK
+
+#
+# I.5
+DELETE /svc/basic/t1/102
+{
+    "itemsDeleted": 0
+}
+OK
+
+#
+# II.1
+PUT /svc/proc/insert_data (payload-size:52)
+{
+    "resultSets": [],
+    "_metadata": {
+        "gtid": "%GTID%"
+    }
+}
+OK
+
+#
+# II.2
+PUT /svc/proc/insert_and_return (payload-size:51)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "min(id)": 1
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "min(id)",
+                        "type": " INTEGER"
+                    }
+                ]
+            }
+        }
+    ],
+    "_metadata": {
+        "gtid": "%GTID%"
+    }
+}
+OK
+
+#
+# II.3
+GET /svc/proc/insert_no_param
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "min(id)": 1
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "min(id)",
+                        "type": " INTEGER"
+                    }
+                ]
+            }
+        }
+    ],
+    "_metadata": {
+        "gtid": "%GTID%"
+    }
+}
+OK
+
+#
+# II.4
+GET /svc/proc/sum?a=10&b=20
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "result": 30
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "result",
+                        "type": "BIGINT"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+
+#
+# II.5
+GET /svc/proc/sum_out?a=10&b=20
+{
+    "resultSets": [],
+    "outParameters": {
+        "result": 30
+    }
+}
+OK
+
+#
+# III.1
+PUT /svc/func/insert_and_return (payload-size:16)
+{
+    "result": 1,
+    "_metadata": {
+        "gtid": "%GTID%"
+    }
+}
+OK
+
+#
+# III.2
+GET /svc/func/insert_and_return_no_param
+{
+    "result": 1,
+    "_metadata": {
+        "gtid": "%GTID%"
+    }
+}
+OK
+
+#
+# III.3
+GET /svc/func/sum?a=10&b=20
+{
+    "result": 30
+}
+OK
+DROP SCHEMA basic_schema;
+DROP SCHEMA func_schema;
+DROP SCHEMA proc_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;
+DROP SCHEMA mysql_innodb_cluster_metadata;
+DROP USER IF EXISTS 'mysqlrouter'@'%';
+include/rpl/sync.inc
+include/group_replication_end.inc

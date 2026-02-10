@@ -1,0 +1,212 @@
+# Verify authentication support per service where user session is identified
+# by cookie.
+#
+# The test assigns "authentication application", to a service and
+# checks if default permissions allow to access all object under
+# the service that require authentication.
+#
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+CREATE USER 'u1'@'%' IDENTIFIED BY 'p1';
+CREATE USER 'u2'@'%' IDENTIFIED BY 'p2';
+CREATE USER 'u3'@'%' IDENTIFIED BY 'p3';
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Create servcices that have basic-mysql authentication:
+--echo #
+--echo ## II. Limit the hosts
+--echo #
+
+--echo
+--echo #
+--echo # I.1
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc1"
+--let $mrs_add_host_name=""
+--let $mrs_add_service_options='{"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}'
+--source ../include/mrs/service/add.inc
+
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic1
+--let $mrs_add_schema_auth=TRUE
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/o1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_auth_app=default authentication
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc1
+--source ../include/mrs/auth_app/add.inc
+
+--echo # Limit max-attempts per user to "1"
+
+
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=
+  '{"authentication":{"throttling":{"perAccount":{"maximumAttemptsPerMinute":1}}}}';
+
+--source ../include/mrs/end_object_definition.inc
+
+--echo
+--echo #
+--echo # II.1
+--source ../include/mrs/changes/fetch_object.inc
+
+--echo # sanity check that basic1 requires auth.
+exec $MRS_CLIENT_ARGS
+  --wait-until-status 60
+  --expected-status Unauthorized
+  --path /svc1/basic1/o1;
+
+# check maximumAttemptsPerMinute (TSFR_1_1_1)
+
+--echo # try to auth 'u1'
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u1
+  -p p1
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+--echo # Different users may access the server one after another.
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u2
+  -p p2
+  --session-file $MYSQL_TMP_DIR/user2_1_session.dat;
+
+--echo # Same users gets throttled and gets asked to retry after 60seconds.
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u2
+  -p p2
+  --expected-status=TooManyRequests
+  --expected-header=Retry-After=60
+  --session-file $MYSQL_TMP_DIR/user2_2_session.dat;
+
+--echo # Different users may still access the server.
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u3
+  -p p3
+  --session-file $MYSQL_TMP_DIR/user3_1_session.dat;
+
+--echo # wait 60secs to reset the rate-limiter and check that u2 can login again.
+--sleep 66
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u2
+  -p p2
+  --session-file $MYSQL_TMP_DIR/user2_3_session.dat;
+
+--echo # change the maximumAttemptsPerMinute and check if it is applied.
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=
+  '{"authentication":{"throttling":{"perAccount":{"maximumAttemptsPerMinute":2},"blockWhenAttemptsExceededInSeconds":2}}}';
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # check that u3 can login.
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u3
+  -p p3
+  --session-file $MYSQL_TMP_DIR/user3_2_session.dat;
+
+--echo # check that u3 can still login.
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u3
+  -p p3
+  --session-file $MYSQL_TMP_DIR/user3_3_session.dat;
+
+--echo # check that u3 fails with the max-attempts-per-minute and check that 'block-when-attempts...' forwarded to 'Retry-After'. (TSFR_1_3_1)
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u3
+  -p p3
+  --expected-status=TooManyRequests
+  --expected-header=Retry-After=2
+  --session-file $MYSQL_TMP_DIR/user3_4_session.dat;
+
+remove_file $MYSQL_TMP_DIR/user1_session.dat;
+remove_file $MYSQL_TMP_DIR/user2_1_session.dat;
+remove_file $MYSQL_TMP_DIR/user2_2_session.dat;
+remove_file $MYSQL_TMP_DIR/user2_3_session.dat;
+remove_file $MYSQL_TMP_DIR/user3_1_session.dat;
+remove_file $MYSQL_TMP_DIR/user3_2_session.dat;
+remove_file $MYSQL_TMP_DIR/user3_3_session.dat;
+remove_file $MYSQL_TMP_DIR/user3_4_session.dat;
+
+--echo # minimumTimeBetweenRequestsInMs (TSFR_1_2_1)
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=
+  '{"authentication":{"throttling":{"perAccount":{"minimumTimeBetweenRequestsInMs":1000}}}}';
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u1
+  -p p1
+  --session-file $MYSQL_TMP_DIR/user1_1_session.dat;
+
+# waiting 2 seconds is fine.
+--sleep 2
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u1
+  -p p1
+  --session-file $MYSQL_TMP_DIR/user1_2_session.dat;
+
+# without the sleep, it should trigger the "min-time-between-requests".
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u1
+  -p p1
+  --expected-status=TooManyRequests
+  --expected-header=Retry-After=1
+  --session-file $MYSQL_TMP_DIR/user1_3_session.dat;
+
+# after a bit of wait it should work again.
+--sleep 2
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u u1
+  -p p1
+  --session-file $MYSQL_TMP_DIR/user1_4_session.dat;
+
+
+remove_file $MYSQL_TMP_DIR/user1_1_session.dat;
+remove_file $MYSQL_TMP_DIR/user1_2_session.dat;
+remove_file $MYSQL_TMP_DIR/user1_3_session.dat;
+remove_file $MYSQL_TMP_DIR/user1_4_session.dat;
+
+# Cleanup
+DROP USER 'u1'@'%';
+DROP USER 'u2'@'%';
+DROP USER 'u3'@'%';
+
+--source ../include/mrs/cleanup.inc

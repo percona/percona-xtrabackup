@@ -4,6 +4,7 @@ Warnings:
 Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 Warnings:
 Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+include/rpl/set_gtid_mode_off.inc
 #
 # 1.5) ALTER TABLE RENAME which fails at the late stage for SEs
 #      supporting and not supporting atomic DDL.
@@ -11,6 +12,8 @@ Warning	1287	'@@binlog_format' is deprecated and will be removed in a future rel
 CREATE TABLE t1 (i INT) ENGINE=InnoDB;
 CREATE TABLE t2 (i INT) ENGINE=MyISAM;
 LOCK TABLES t1 WRITE, t2 WRITE;
+Warnings:
+Warning	6414	Combining the storage engines MyISAM and InnoDB is deprecated, but the statement or transaction updates both the MyISAM table test.t2 and the InnoDB table test.t1.
 SET @@debug='+d,injecting_fault_writing';
 ALTER TABLE t1 RENAME TO t3;
 ERROR HY000: Error writing file 'binlog' ((errno: #)
@@ -51,6 +54,8 @@ DROP TABLES t1, t4;
 CREATE TABLE t1 (i INT) ENGINE=InnoDB;
 CREATE TABLE t2 (i INT) ENGINE=MyISAM;
 LOCK TABLES t1 WRITE, t2 WRITE;
+Warnings:
+Warning	6414	Combining the storage engines MyISAM and InnoDB is deprecated, but the statement or transaction updates both the MyISAM table test.t2 and the InnoDB table test.t1.
 SET @@debug='+d,injecting_fault_writing';
 ALTER TABLE t1 ADD COLUMN j INT, RENAME TO t3, ALGORITHM=INPLACE;
 ERROR HY000: Error writing file 'binlog' ((errno: #)
@@ -91,6 +96,8 @@ CREATE TABLE t1 (i INT) ENGINE=InnoDB;
 CREATE TABLE t2 (i INT) ENGINE=MyISAM;
 CREATE DATABASE mysqltest;
 LOCK TABLES t1 WRITE, t2 WRITE;
+Warnings:
+Warning	6414	Combining the storage engines MyISAM and InnoDB is deprecated, but the statement or transaction updates both the MyISAM table test.t2 and the InnoDB table test.t1.
 SET @@debug='+d,injecting_fault_writing';
 ALTER TABLE t1 ADD COLUMN j INT, RENAME TO t3, ALGORITHM=COPY;
 ERROR HY000: Error writing file 'binlog' ((errno: #)
@@ -155,6 +162,8 @@ DROP DATABASE mysqltest;
 CREATE TABLE t1 (pk INT PRIMARY KEY) ENGINE=InnoDB;
 CREATE TABLE t2 (fk INT) ENGINE=MyISAM;
 LOCK TABLES t2 WRITE, t1 WRITE;
+Warnings:
+Warning	6414	Combining the storage engines InnoDB and MyISAM is deprecated, but the statement or transaction updates both the InnoDB table test.t1 and the MyISAM table test.t2.
 SET @@debug='+d,injecting_fault_writing';
 ALTER TABLE t2 ADD FOREIGN KEY (fk) REFERENCES t1(pk), ENGINE=InnoDB, RENAME TO t3, ALGORITHM=COPY;
 ERROR HY000: Error writing file 'binlog' ((errno: #)
@@ -172,8 +181,9 @@ ERROR HY000: Lock wait timeout exceeded; try restarting transaction
 SELECT * FROM t3;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
 SET @@lock_wait_timeout= @old_lock_wait_timeout;
-# And delete from parent table is possible and doesn't cause asserts.
+# And delete from parent table fails and doesn't cause asserts.
 DELETE FROM t1;
+ERROR HY000: Table 't3' was not locked with LOCK TABLES
 UNLOCK TABLES;
 DROP TABLES t3, t1;
 #
@@ -245,3 +255,4 @@ drop tables t1, t2;
 set debug_sync='RESET';
 Warnings:
 Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+include/rpl/set_gtid_mode_on.inc

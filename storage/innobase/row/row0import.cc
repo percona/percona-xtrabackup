@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -63,9 +63,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ut0new.h"
 #include "zlob0first.h"
 
-#include <vector>
-
-#include "my_aes.h"
 #include "my_dbug.h"
 
 /** The size of the buffer to use for IO. Note: os_file_read() doesn't expect
@@ -1768,7 +1765,38 @@ dberr_t row_import::add_instant_dropped_columns(dict_table_t *target_table) {
       index->get_field(i)->col = target_table->get_col(mapping[i]);
     }
   }
+
   ut::delete_arr(mapping);
+
+  /* Correct field mapping for secondary indexes too. */
+  for (auto *secondary_index : m_table->indexes) {
+    if (secondary_index == index) continue;
+
+    auto secondary_mapping =
+        std::make_unique<uint16_t[]>(secondary_index->n_fields);
+
+    for (size_t i = 0; i < secondary_index->n_fields; i++) {
+      secondary_mapping[i] = secondary_index->get_field(i)->col->ind;
+    }
+
+    /* Allocate memory for n_fields (secondary_index->n_fields). No need to
+     allocate for n_dropped_cols, because instant column drop is not supported
+     for columns that are part of secondary index. */
+    {
+      dict_field_t *fields = secondary_index->fields;
+      secondary_index->fields = (dict_field_t *)mem_heap_alloc(
+          secondary_index->heap,
+          1 + secondary_index->n_fields * sizeof(dict_field_t));
+      memcpy(secondary_index->fields, fields,
+             1 + secondary_index->n_fields * sizeof(dict_field_t));
+
+      /* Fix field->col pointers with the mapping created. */
+      for (size_t i = 0; i < secondary_index->n_fields; i++) {
+        secondary_index->get_field(i)->col =
+            target_table->get_col(secondary_mapping[i]);
+      }
+    }
+  }
 
   /* Set initial/current/total_col_count for table */
   target_table->initial_col_count = m_initial_column_count;
@@ -1974,13 +2002,22 @@ dberr_t row_import::adjust_instant_metadata_in_taregt_table(
   m_table->current_row_version = m_current_row_version;
 
   ut_ad(m_table->has_row_versions());
-  dict_index_t &first_index = *m_table->first_index();
-  first_index.row_versions = true;
-  first_index.rec_cache.offsets = nullptr;
-  first_index.rec_cache.nullable_cols = 0;
-  /* Recreate fields array for clustered index */
-  first_index.create_fields_array();
-  first_index.create_nullables(m_table->current_row_version);
+
+  /* Reset field cache for every index, because it becomes invalid in case
+   of instant column add or drop. */
+  for (auto *index : m_table->indexes) {
+    if (index == m_table->first_index()) {
+      ut_ad(index->is_clustered());
+
+      index->row_versions = true;
+
+      /* Recreate fields array for clustered index */
+      index->create_fields_array();
+      index->create_nullables(m_table->current_row_version);
+    }
+    index->rec_cache.offsets = nullptr;
+    index->rec_cache.nullable_cols = 0;
+  }
 
   /* FIXME: Force to discard the table, in case of any rollback later. */
   //    m_table->discard_after_ddl = true;
@@ -2109,11 +2146,18 @@ dberr_t row_import::set_instant_info(THD *thd,
   ut_ad(m_table->has_instant_cols());
   m_table->set_upgraded_instant();
 
-  dict_index_t &first_index = *m_table->first_index();
-  first_index.instant_cols = true;
-  first_index.rec_cache.offsets = nullptr;
-  first_index.rec_cache.nullable_cols = 0;
-  first_index.set_instant_nullable(m_n_instant_nullable);
+  /* Reset field cache for every index, because it becomes invalid in case
+   of instant columns. */
+  for (auto *index : m_table->indexes) {
+    if (index == m_table->first_index()) {
+      ut_ad(index->is_clustered());
+      index->instant_cols = true;
+      index->set_instant_nullable(m_n_instant_nullable);
+    }
+    index->rec_cache.offsets = nullptr;
+    index->rec_cache.nullable_cols = 0;
+  }
+
   /* FIXME: Force to discard the table, in case of any rollback later. */
   //    m_table->discard_after_ddl = true;
 
@@ -2981,12 +3025,12 @@ static void row_import_discard_changes(
     ulint len;
     const byte *field;
     mem_heap_t *heap = nullptr;
-    ulint offsets_[1 + REC_OFFS_HEADER_SIZE];
+    ulint offsets_array[1 + REC_OFFS_HEADER_SIZE];
     ulint *offsets;
 
-    rec_offs_init(offsets_);
+    rec_offs_init(offsets_array);
 
-    offsets = rec_get_offsets(rec, index, offsets_, ULINT_UNDEFINED,
+    offsets = rec_get_offsets(rec, index, offsets_array, ULINT_UNDEFINED,
                               UT_LOCATION_HERE, &heap);
 
     field = rec_get_nth_field(index, rec, offsets,
@@ -3024,15 +3068,7 @@ static void row_import_discard_changes(
   } else if (row_id > 0) {
     /* Update the system row id if the imported index row id is
     greater than the max system row id. */
-
-    dict_sys_mutex_enter();
-
-    if (row_id >= dict_sys->row_id) {
-      dict_sys->row_id = row_id + 1;
-      dict_hdr_flush_row_id();
-    }
-
-    dict_sys_mutex_exit();
+    dict_sys_set_min_next_row_id(row_id + 1);
   }
 
   return (DB_SUCCESS);

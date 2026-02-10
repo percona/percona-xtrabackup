@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2024, Oracle and/or its affiliates.
+Copyright (c) 1997, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -91,7 +91,6 @@ introduced where a call to log_free_check() is bypassed. */
   online = dict_index_is_online_ddl(index);
   if (online) {
     ut_ad(node->trx.dict_operation_lock_mode != RW_X_LATCH);
-    ut_ad(node->table->id != DICT_INDEXES_ID);
     mtr_s_lock(dict_index_get_lock(index), &mtr, UT_LOCATION_HERE);
   }
 

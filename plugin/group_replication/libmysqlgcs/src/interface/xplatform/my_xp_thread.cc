@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_thread.h"
 
-#include <errno.h>
+#include <cerrno>
 
 #include "my_compiler.h"
 #include "mysql/psi/mysql_thread.h"
@@ -59,7 +59,7 @@ int My_xp_thread_server::create_detached(PSI_thread_key key [[maybe_unused]],
 
   My_xp_thread_util::attr_setdetachstate(attr, NATIVE_THREAD_CREATE_DETACHED);
 
-  int ret_status = create(key, attr, func, arg);
+  int const ret_status = create(key, attr, func, arg);
 
   if (using_my_attr) My_xp_thread_util::attr_destroy(&my_attr);
 

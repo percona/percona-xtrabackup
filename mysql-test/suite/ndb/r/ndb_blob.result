@@ -540,49 +540,49 @@ insert into t1 (a,b,c,d,t) values ('a',1110,'a',1,@v1);
 insert into t1 (a,b,c,d,t) values ('b',1110,'a',2,@v2);
 insert into t1 (a,b,c,d,t) values ('a',1110,'b',3,@v3);
 insert into t1 (a,b,c,d,t) values ('b',1110,'b',4,@v4);
-select a,b,c,d,sha1(t) from t1 order by c,a;
-a	b	c	d	sha1(t)
-a	1110	a	1	558a30713786aa72f66abc1e6a521d55aacdeeb5
-b	1110	a	2	b238654911689bfb626a3ef9dba4a1ca074e6a5e
-a	1110	b	3	2b6515f29c20b8e9e17cc597527e516c0de8d612
+select a,b,c,d,sha2(t,256) from t1 order by c,a;
+a	b	c	d	sha2(t,256)
+a	1110	a	1	7bda5885182ec3f95e52d3702ca0cca9d478a86cba0a18aee6ead6d8664cd240
+b	1110	a	2	0fd095f30c18c8f06a7e377c45f8ef932e17a7b0310287297c75f4a9680bcd64
+a	1110	b	3	189955da2c8837a9753beced9af20f10ead973289fc014b47131d3c95d5ccdbf
 b	1110	b	4	NULL
-select a,b,c,d,sha1(t) from t1 where a='a' and b=1110 and c='a';
-a	b	c	d	sha1(t)
-a	1110	a	1	558a30713786aa72f66abc1e6a521d55aacdeeb5
-select a,b,c,d,sha1(t) from t1 where a='a' and b=1110 and c='b';
-a	b	c	d	sha1(t)
-a	1110	b	3	2b6515f29c20b8e9e17cc597527e516c0de8d612
+select a,b,c,d,sha2(t,256) from t1 where a='a' and b=1110 and c='a';
+a	b	c	d	sha2(t,256)
+a	1110	a	1	7bda5885182ec3f95e52d3702ca0cca9d478a86cba0a18aee6ead6d8664cd240
+select a,b,c,d,sha2(t,256) from t1 where a='a' and b=1110 and c='b';
+a	b	c	d	sha2(t,256)
+a	1110	b	3	189955da2c8837a9753beced9af20f10ead973289fc014b47131d3c95d5ccdbf
 update t1 set t=@v4 where a='b' and b=1110 and c='a';
 update t1 set t=@v2 where a='b' and b=1110 and c='b';
-select a,b,c,d,sha1(t) from t1 order by c,a;
-a	b	c	d	sha1(t)
-a	1110	a	1	558a30713786aa72f66abc1e6a521d55aacdeeb5
+select a,b,c,d,sha2(t,256) from t1 order by c,a;
+a	b	c	d	sha2(t,256)
+a	1110	a	1	7bda5885182ec3f95e52d3702ca0cca9d478a86cba0a18aee6ead6d8664cd240
 b	1110	a	2	NULL
-a	1110	b	3	2b6515f29c20b8e9e17cc597527e516c0de8d612
-b	1110	b	4	b238654911689bfb626a3ef9dba4a1ca074e6a5e
+a	1110	b	3	189955da2c8837a9753beced9af20f10ead973289fc014b47131d3c95d5ccdbf
+b	1110	b	4	0fd095f30c18c8f06a7e377c45f8ef932e17a7b0310287297c75f4a9680bcd64
 update t1 set t=@v2 where d=2;
 update t1 set t=@v4 where d=4;
-select a,b,c,d,sha1(t) from t1 order by c,a;
-a	b	c	d	sha1(t)
-a	1110	a	1	558a30713786aa72f66abc1e6a521d55aacdeeb5
-b	1110	a	2	b238654911689bfb626a3ef9dba4a1ca074e6a5e
-a	1110	b	3	2b6515f29c20b8e9e17cc597527e516c0de8d612
+select a,b,c,d,sha2(t,256) from t1 order by c,a;
+a	b	c	d	sha2(t,256)
+a	1110	a	1	7bda5885182ec3f95e52d3702ca0cca9d478a86cba0a18aee6ead6d8664cd240
+b	1110	a	2	0fd095f30c18c8f06a7e377c45f8ef932e17a7b0310287297c75f4a9680bcd64
+a	1110	b	3	189955da2c8837a9753beced9af20f10ead973289fc014b47131d3c95d5ccdbf
 b	1110	b	4	NULL
 update t1 set t=@v4 where a='b' and c='a';
 update t1 set t=@v2 where a='b' and c='b';
-select a,b,c,d,sha1(t) from t1 order by c,a;
-a	b	c	d	sha1(t)
-a	1110	a	1	558a30713786aa72f66abc1e6a521d55aacdeeb5
+select a,b,c,d,sha2(t,256) from t1 order by c,a;
+a	b	c	d	sha2(t,256)
+a	1110	a	1	7bda5885182ec3f95e52d3702ca0cca9d478a86cba0a18aee6ead6d8664cd240
 b	1110	a	2	NULL
-a	1110	b	3	2b6515f29c20b8e9e17cc597527e516c0de8d612
-b	1110	b	4	b238654911689bfb626a3ef9dba4a1ca074e6a5e
+a	1110	b	3	189955da2c8837a9753beced9af20f10ead973289fc014b47131d3c95d5ccdbf
+b	1110	b	4	0fd095f30c18c8f06a7e377c45f8ef932e17a7b0310287297c75f4a9680bcd64
 update t1 set t=@v2 where b+d=1112;
 update t1 set t=@v4 where b+d=1114;
-select a,b,c,d,sha1(t) from t1 order by c,a;
-a	b	c	d	sha1(t)
-a	1110	a	1	558a30713786aa72f66abc1e6a521d55aacdeeb5
-b	1110	a	2	b238654911689bfb626a3ef9dba4a1ca074e6a5e
-a	1110	b	3	2b6515f29c20b8e9e17cc597527e516c0de8d612
+select a,b,c,d,sha2(t,256) from t1 order by c,a;
+a	b	c	d	sha2(t,256)
+a	1110	a	1	7bda5885182ec3f95e52d3702ca0cca9d478a86cba0a18aee6ead6d8664cd240
+b	1110	a	2	0fd095f30c18c8f06a7e377c45f8ef932e17a7b0310287297c75f4a9680bcd64
+a	1110	b	3	189955da2c8837a9753beced9af20f10ead973289fc014b47131d3c95d5ccdbf
 b	1110	b	4	NULL
 delete from t1 where a='a' and b=1110 and c='a';
 delete from t1 where a='b' and c='a';
@@ -644,12 +644,12 @@ giga longblob)
 engine=ndb;
 set @stuff = '1234567890';
 insert into t1 values (0, repeat(@stuff, 2000));
-select sha1(repeat(@stuff, 2000));
-sha1(repeat(@stuff, 2000))
-c8d94eb4127361ac22cf1c8a8f1178a37fb25e41
-select sha1(giga) from t1;
-sha1(giga)
-c8d94eb4127361ac22cf1c8a8f1178a37fb25e41
+select sha2(repeat(@stuff, 2000),256);
+sha2(repeat(@stuff, 2000),256)
+cfcc205120a2f4870b3860991974021c11274febcce77561db6957cd4d35afd2
+select sha2(giga,256) from t1;
+sha2(giga,256)
+cfcc205120a2f4870b3860991974021c11274febcce77561db6957cd4d35afd2
 select (giga = repeat(@stuff, 2000)) from t1 where a=0;
 (giga = repeat(@stuff, 2000))
 1
@@ -774,5 +774,7 @@ update `t1` set `a`=1 where `a`!= 1;
 select * from t1;
 a	b
 1	Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! Hei og hopp! 
+drop table t1;
+create table t1(256 blobs) engine=ndbcluster
 drop table t1;
 End of 5.6 tests

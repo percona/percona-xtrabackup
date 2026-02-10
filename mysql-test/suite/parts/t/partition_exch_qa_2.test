@@ -1,6 +1,8 @@
 # Author: Horst Hunger
 # Created: 2010-07-05
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 let $engine_table= InnoDB;
 let $engine_part= InnoDB;
@@ -76,4 +78,5 @@ ALTER TABLE tp EXCHANGE PARTITION p0 WITH TABLE t_100;
 ALTER TABLE tp EXCHANGE PARTITION p2 WITH TABLE t_10;
 
 --source suite/parts/inc/part_exch_drop_tabs.inc
-
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

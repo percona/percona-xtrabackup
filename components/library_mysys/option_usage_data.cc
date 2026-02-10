@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -39,7 +39,7 @@ const size_t small_usage_data_size = 4096;
 const size_t max_usage_data_size = 65536;
 
 bool Option_usage_data::set(bool is_used) {
-  my_service<SERVICE_TYPE(mysql_option_tracker_usage)> usage(
+  my_service<SERVICE_TYPE(mysql_option_tracker_usage)> const usage(
       "mysql_option_tracker_usage", m_registry);
   if (!usage.is_valid()) return false;
 

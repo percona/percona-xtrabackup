@@ -1,0 +1,21 @@
+# Verify authentication support per service where user session is identified
+# by JWT token using POST data authentication where credentials are stored
+# in authenitcation header basic.
+#
+# The test assigns "authentication application", to a service and
+# checks if default permissions allow to access all object under
+# the service that require authentication.
+
+
+# Verify authentication support per service where user session is identified
+# by JWT token.
+#
+# The test assigns "authentication application", to a service and
+# checks if default permissions allow to access all object under
+# the service that require authentication.
+#
+#
+
+--let $test_session_type=jwt
+--let $test_scram=scram_get
+--source ../include/test/authentication_mrs.inc

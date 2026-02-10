@@ -1,0 +1,184 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+create user mrsuser@'%' identified by 'S3kre7';
+grant all on *.* to mrsuser@'%';
+create function basic_schema.whoami() returns text deterministic return current_user();
+
+
+## I. Create two servcices that have basic-mysql authentication:
+#
+# 1. under first service create a schema that requires authentication
+#    and create two objects that doesn't require authenticatin, still
+#    they inherits authentication requirement from schema.
+# 2. under second service create a schema that doest require authentication
+#    and create two objects that one requires authentication.
+#       srv1(basic auth)->schema1(requires-auth)->object1(doesn't require)
+#       srv1(basic auth)->schema1(requires-auth)->object2(doesn't require)
+#       srv2(basic auth)->schema2(doesn't require)->object3(requires)
+#       srv2(basic auth)->schema2(doesn't require)->object4(doesn't require)
+# 3. create service with configured validation of onCompleteRedirection pattern
+#
+## II. Verify that non authorized request
+#
+# 1. Have access to db-object (/srv2/schema2/object4)
+# 2. Doesn't have access to db-object (object1,object2,object3)
+#
+## III. Authenticate user1 against service: /srv1, and verify it
+#
+# 1. Have access to db-object (object1,object2,object4)
+# 2. Doesn't have access to db-object (object3)
+#
+## IV. Authenticate user2 against service: /srv2, and verify it
+#
+# 1. Have access to db-object (object3,object4)
+# 2. Doesn't have access to db-object (object1,object2)
+#
+## V. Authenticate using
+#
+# 1. svc_local and empty redirection (unauthorized)
+# 2. svc_local and non matching redirection (unauthorized)
+# 3. svc_bad and any redirection (unauthorized)
+# 4. svc_aaa and any "aaa!" redirection (unauthorized)
+# 5. svc_local and matching redirection (ok)
+#
+
+#
+# I.1
+# Registred SERVICE at path: /svc1
+# Registred DB_SCHEMA at path: /svc1/basic1
+# Registred DB_OBJECT at path: /svc1/basic1/o1
+# Registred DB_OBJECT at path: /svc1/basic1/o2
+# Registred DB_OBJECT at path: /svc1/basic1/whoami
+# Registred AUTH APP at path: /svc1
+
+#
+# I.2
+# Registred SERVICE at path: /svc2
+# Registred DB_SCHEMA at path: /svc2/basic2
+# Registred DB_OBJECT at path: /svc2/basic2/o3
+# Registred DB_OBJECT at path: /svc2/basic2/o4
+# Registred AUTH APP at path: /svc2
+
+#
+# I.3
+# Registred SERVICE at path: /svc_local
+# Registred SERVICE at path: /svc_aaa
+# Registred SERVICE at path: /svc_bad
+# Registred AUTH APP at path: NULL
+
+#
+# II.1
+GET /svc2/basic2/o4
+
+OK
+
+#
+# II.2
+GET /svc2/basic2/o3
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc1/basic1/o1
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc1/basic1/o2
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+
+#
+# III.1
+GET /svc1/authentication/login
+
+OK
+GET /svc2/authentication/login
+
+OK
+GET /svc1/basic1/o1
+
+OK
+GET /svc1/basic1/o2
+
+OK
+GET /svc2/basic2/o4
+
+OK
+
+#
+# III.2
+GET /svc2/basic2/o3
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+
+#
+# IV.1
+GET /svc2/basic2/o3
+
+OK
+
+#
+# IV.2
+GET /svc1/basic1/o1
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc1/basic1/o2
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc2/basic2/o4
+
+OK
+
+#
+# V.1
+GET /svc_local/authentication/login?onCompletionRedirect=
+
+OK
+
+#
+# V.2
+GET /svc_local/authentication/login?onCompletionRedirect=/remote/index.html
+
+OK
+
+#
+# V.3
+GET /svc_bad/authentication/login?onCompletionRedirect=/something/here/file.txt
+
+OK
+
+#
+# V.4
+GET /svc_aaa/authentication/login?onCompletionRedirect=aaa!
+
+OK
+
+#
+# V.5
+GET /svc_local/authentication/login?onCompletionRedirect=/local/something/1
+
+OK
+drop user mrsuser@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

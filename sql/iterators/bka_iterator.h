@@ -1,7 +1,7 @@
 #ifndef SQL_ITERATORS_BKA_ITERATOR_H_
 #define SQL_ITERATORS_BKA_ITERATOR_H_
 
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,6 +52,7 @@
 #include <sys/types.h>
 #include <iterator>
 #include <memory>
+#include <span>
 
 #include "my_alloc.h"
 
@@ -70,6 +71,7 @@ class Item;
 class JOIN;
 class MultiRangeRowIterator;
 class THD;
+struct AccessPath;
 struct Index_lookup;
 struct KEY_MULTI_RANGE;
 struct TABLE;
@@ -107,6 +109,8 @@ class BKAIterator final : public RowIterator {
       ignored.
     @param mrr_iterator Pointer to the MRR iterator at the bottom of
       inner_input. Used to send row ranges and buffers.
+    @param single_row_index_lookups All the single-row index lookups that
+      provide input to this iterator.
     @param join_type What kind of join we are executing.
    */
   BKAIterator(THD *thd, unique_ptr_destroy_only<RowIterator> outer_input,
@@ -116,11 +120,9 @@ class BKAIterator final : public RowIterator {
               size_t mrr_bytes_needed_for_single_inner_row,
               float expected_inner_rows_per_outer_row, bool store_rowids,
               table_map tables_to_get_rowid_for,
-              MultiRangeRowIterator *mrr_iterator, JoinType join_type);
-
-  bool Init() override;
-
-  int Read() override;
+              MultiRangeRowIterator *mrr_iterator,
+              std::span<AccessPath *> single_row_index_lookups,
+              JoinType join_type);
 
   void SetNullRowFlag(bool is_null_row) override {
     m_outer_input->SetNullRowFlag(is_null_row);
@@ -142,6 +144,9 @@ class BKAIterator final : public RowIterator {
   }
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   /// Clear out the MEM_ROOT and prepare for reading rows anew.
   void BeginNewBatch();
 
@@ -248,6 +253,9 @@ class BKAIterator final : public RowIterator {
   /// See mrr_iterator in the constructor.
   MultiRangeRowIterator *const m_mrr_iterator;
 
+  // All the single-row index lookups that provide rows to this iterator.
+  std::span<AccessPath *> m_single_row_index_lookups;
+
   /// The join type of the BKA join.
   JoinType m_join_type;
 
@@ -342,19 +350,19 @@ class MultiRangeRowIterator final : public TableRowIterator {
     return m_match_flag_buffer[row_number / 8] & (1 << (row_number % 8));
   }
 
+ private:
   /**
     Do the actual multi-range read with the rows given by set_rows() and using
     the temporary buffer given in set_mrr_buffer().
    */
-  bool Init() override;
+  bool DoInit() override;
 
   /**
     Read another inner row (if any) and load the appropriate outer row(s)
     into the associated table buffers.
    */
-  int Read() override;
+  int DoRead() override;
 
- private:
   // Thunks from function pointers to the actual callbacks.
   static range_seq_t MrrInitCallbackThunk(void *init_params, uint n_ranges,
                                           uint flags) {

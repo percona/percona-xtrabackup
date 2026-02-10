@@ -1,0 +1,111 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"responseCache":{"maxCacheSize":200}, "fileCache":{"maxCacheSize":80}}');
+# Registred SERVICE at path: /svc
+# Registred CONTENT_SET at path: /svc/static
+# Registred CONTENT_FILE at path: /svc/static/file1
+# Registred CONTENT_FILE at path: /svc/static/file2
+"FR1 - access files from cache"
+"cache file1, file2"
+TEST FILE 1 CONTENT
+END OF FILE
+
+TEST FILE 2 CONTENT
+END OF FILE
+
+stats
+{"files": 2, "items": 0, "fileHits": 0.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 2.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 2.0, "itemEjects": 0.0, "itemMisses": 0.0}
+"access files from cache"
+TEST FILE 1 CONTENT
+END OF FILE
+
+TEST FILE 2 CONTENT
+END OF FILE
+
+stats
+{"files": 2, "items": 0, "fileHits": 2.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 0.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 0.0, "itemEjects": 0.0, "itemMisses": 0.0}
+truncate mysql_rest_service_metadata.router_status;
+# restart
+"FR4 - the cache must be reset when the content_set table changes"
+"update content_set table"
+"cache file1, file2"
+TEST FILE 1 CONTENT
+END OF FILE
+
+TEST FILE 2 CONTENT
+END OF FILE
+
+stats
+{"files": 2, "items": 0, "fileHits": 0.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 2.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 2.0, "itemEjects": 0.0, "itemMisses": 0.0}
+"access files from cache"
+TEST FILE 1 CONTENT
+END OF FILE
+
+TEST FILE 2 CONTENT
+END OF FILE
+
+stats
+{"files": 2, "items": 0, "fileHits": 2.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 0.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 0.0, "itemEjects": 0.0, "itemMisses": 0.0}
+"========================"
+"update content_set table"
+truncate mysql_rest_service_metadata.router_status;
+UPDATE `mysql_rest_service_metadata`.`content_set` SET request_path = "/newpath";
+stats
+{"files": 0, "items": 0, "fileHits": 0.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 0.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 0.0, "itemEjects": 0.0, "itemMisses": 0.0}
+UPDATE `mysql_rest_service_metadata`.`content_set` SET request_path = "/static";
+"FR5 - oldest entries in the cache must be expunged to fit when maxCacheSize reduced"
+stats
+{"files": 0, "items": 0, "fileHits": 0.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 0.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 0.0, "itemEjects": 0.0, "itemMisses": 0.0}
+"cache file1, file2"
+TEST FILE 1 CONTENT
+END OF FILE
+
+TEST FILE 2 CONTENT
+END OF FILE
+
+stats
+{"files": 2, "items": 0, "fileHits": 0.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 2.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 2.0, "itemEjects": 0.0, "itemMisses": 0.0}
+"reduce maxCacheSize"
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"responseCache":{"maxCacheSize":200}, "fileCache":{"maxCacheSize":40}}');
+"access file2 from cache"
+TEST FILE 2 CONTENT
+END OF FILE
+
+stats
+{"files": 1, "items": 0, "fileHits": 0.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 1.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 1.0, "itemEjects": 0.0, "itemMisses": 0.0}
+truncate mysql_rest_service_metadata.router_status;
+# restart
+"FR6 - verify status variables"
+"cache file1"
+TEST FILE 1 CONTENT
+END OF FILE
+
+stats
+{"files": 1, "items": 0, "fileHits": 0.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 1.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 1.0, "itemEjects": 0.0, "itemMisses": 0.0}
+"access file1 from cache"
+TEST FILE 1 CONTENT
+END OF FILE
+
+stats
+{"files": 1, "items": 0, "fileHits": 1.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 0.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 0.0, "itemEjects": 0.0, "itemMisses": 0.0}
+"access file2, file1 will be evicted from cache"
+truncate mysql_rest_service_metadata.router_status;
+TEST FILE 2 CONTENT
+END OF FILE
+
+stats
+{"files": 1, "items": 0, "fileHits": 0.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 1.0, "itemLoads": 0.0, "fileEjects": 1.0, "fileMisses": 1.0, "itemEjects": 0.0, "itemMisses": 0.0}
+"access file2 from cache"
+TEST FILE 2 CONTENT
+END OF FILE
+
+stats
+{"files": 1, "items": 0, "fileHits": 1.0, "itemHits": 0.0, "endpoints": 2, "fileLoads": 0.0, "itemLoads": 0.0, "fileEjects": 0.0, "fileMisses": 0.0, "itemEjects": 0.0, "itemMisses": 0.0}
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

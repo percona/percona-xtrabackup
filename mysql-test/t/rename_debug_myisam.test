@@ -4,6 +4,8 @@
 
 # Some parts of the test require enabled binary log.
 --source include/have_log_bin.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 --echo #
 --echo # Part of test coverage for WL#9826 "Allow RENAME TABLES under
@@ -132,3 +134,5 @@ connection default;
 UNLOCK TABLES;
 DROP TABLES t01;
 DROP DATABASE mysqltest;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

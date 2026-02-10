@@ -1,0 +1,27 @@
+--source include/have_router_bootstrap.inc
+
+--source ../include/mrs/initialize_schema.inc
+
+#create a b/s user without expected permissions
+
+CREATE USER mrs_bootstrap_user IDENTIFIED BY 'pass';
+
+replace_regex
+   / Bootstrapping MySQL Router.* instance at '.*'.*/ Bootstrapping MySQL Router instance at 'DIRECTORY'/
+   /Creating configuration .*mysqlrouter.conf/Creating configuration ...\/mysqlrouter.conf/
+   /.*mysqlrouter.* -c .*mysqlrouter.conf/$ mysqlrouter -c ...\/mysqlrouter.conf/
+   /.*Adjusting permissions of generated files.*\n//
+   ;
+
+--error 1,2,256
+exec $MYSQLROUTER_BOOTSTRAP
+   --name MyRouterName
+   --conf-set-option=DEFAULT.plugin_folder=$ROUTER_PLUGIN_DIRECTORY
+   -B mrs_bootstrap_user:pass@127.0.0.1:$MASTER_MYPORT
+   --directory $MYSQL_TMP_DIR/bootstrap_folder/
+   --mrs --mrs-global-secret something_important 2>&1;
+
+# Cleanup
+DROP USER 'mrs_bootstrap_user'@'%';
+--let $cleanup_arg_mrs_skip_service_disable=1
+--source ../include/mrs/cleanup.inc

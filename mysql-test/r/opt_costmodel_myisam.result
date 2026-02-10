@@ -26,6 +26,7 @@ INSERT INTO t1 VALUES (1, "Ullensvang"), (2, "Odda"), (3, "Jondal");
 # 1. Should be executed as an index-only range scan
 # 2. Cost estimate: "read_cost" - "eval_cost" should be approximately
 #    the cost of reading one page from memory, ie. about 0.5.
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON
 SELECT i1 FROM t1 WHERE i1 > 1;
 EXPLAIN
@@ -65,6 +66,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`i1` AS `i1` from `test`.`t1` where (`test`.`t1`.`i1` > 1)
+SET explain_json_format_version = DEFAULT;
 DROP TABLE t1;
 UPDATE mysql.engine_cost
 SET cost_value=DEFAULT;

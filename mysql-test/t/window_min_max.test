@@ -34,8 +34,10 @@ SELECT i, j, MAX(i+j) OVER (ORDER BY j DESC ROWS UNBOUNDED PRECEDING) max FROM t
 
 --echo Check that we eliminate redundant sorting in ORDER BY even with wfs
 SELECT i, j, MIN(i+j) OVER (ROWS UNBOUNDED PRECEDING) min FROM t ORDER BY NULL DESC;
+SET explain_json_format_version = 1;
 --skip_if_hypergraph  # Depends on the query plan.
 EXPLAIN FORMAT=JSON SELECT i, j, MIN(i+j) OVER (ROWS UNBOUNDED PRECEDING) min FROM t ORDER BY NULL DESC;
+SET explain_json_format_version = DEFAULT;
 --echo With LIMIT
 --skip_if_hypergraph  # Nondeterministic query, hypergraph optimizer gives different result.
 SELECT i, j, MIN(i+j) OVER (ROWS UNBOUNDED PRECEDING) min FROM t ORDER BY j DESC LIMIT 3;
@@ -593,3 +595,11 @@ SELECT MIN(DATE'2000-01-01') OVER () AS c1,
        MIN(TIME'12:00:00') OVER () = TIME '12:00:00' AS c6,
        MIN(TIMESTAMP'2000-01-01 12:00:00') OVER () =
          TIMESTAMP'2000-01-01 12:00:00' AS c7;
+
+--echo #
+--echo # Bug#36182490 MIN, as window function, returns wrong NULL result
+--echo #
+CREATE TABLE t(a INT);
+INSERT INTO t VALUES (null), (1), (2);
+SELECT a, MIN(a) OVER (ORDER BY a ROWS UNBOUNDED PRECEDING) FROM t;
+DROP TABLE t;

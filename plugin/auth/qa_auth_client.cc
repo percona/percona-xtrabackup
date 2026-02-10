@@ -1,4 +1,4 @@
-/*  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
 
 #include <mysql/client_plugin.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 /**
   first byte of the question string is the question "type".

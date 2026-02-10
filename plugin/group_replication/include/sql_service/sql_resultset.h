@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -366,7 +366,7 @@ class Sql_resultset {
   /*
     get field flag.
     Check
-      https://dev.mysql.com/doc/refman/5.7/en/c-api-data-structures.html
+      https://dev.mysql.com/doc/refman/en/c-api-data-structures.html
     for all flags
   */
   unsigned int get_flags(uint rowIndex = 0) {

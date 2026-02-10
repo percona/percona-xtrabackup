@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -474,10 +474,6 @@ void lock_sys_close(void) {
 
   lock_sys = nullptr;
 }
-
-/** Gets the size of a lock struct.
- @return size in bytes */
-ulint lock_get_size(void) { return ((ulint)sizeof(lock_t)); }
 
 bool lock_is_waiting(const lock_t &lock) {
   ut_ad(locksys::owns_lock_shard(&lock));
@@ -964,34 +960,19 @@ The difficulties to keep in mind here:
                  the seen trx_id is still active or not
 */
 static bool can_older_trx_be_still_active(trx_id_t max_old_active_id) {
-  if (mutex_enter_nowait(&trx_sys->mutex) != 0) {
-    ut_ad(!trx_sys_mutex_own());
-    /* The mutex is currently locked by somebody else. Instead of wasting time
-    on spinning and waiting to acquire it, we loop over the shards and check if
-    any of them contains a value in the range (-infinity,max_old_active_id].
-    NOTE: Do not be tempted to "cache" the minimum, until you also enforce that
-    transactions are inserted to shards in a monotone order!
-    Current implementation heavily depends on the property that even if we put
-    a trx with smaller id to any structure later, it could not have modified a
-    row the caller saw earlier. */
-    static_assert(TRX_SHARDS_N < 1000, "The loop should be short");
-    for (auto &shard : trx_sys->shards) {
-      if (shard.active_rw_trxs.peek().min_id() <= max_old_active_id) {
-        return true;
-      }
-    }
-    return false;
-  }
-  ut_ad(trx_sys_mutex_own());
-  const trx_t *trx = UT_LIST_GET_LAST(trx_sys->rw_trx_list);
-  if (trx == nullptr) {
-    trx_sys_mutex_exit();
-    return false;
-  }
-  assert_trx_in_rw_list(trx);
-  const trx_id_t min_active_now_id = trx->id;
-  trx_sys_mutex_exit();
-  return min_active_now_id <= max_old_active_id;
+  /* We call get_better_lower_bound_for_already_active_id() only if the
+  secondary index page is one of those (hopefully few) which were modified
+  "recently" w.r.t. get_cheap_lower_bound_for_already_active_id(). This update
+  is made here, as opposed to Trx_by_id_with_min::erase(id), because the later
+  is called for each commit and in a typical workload, where transactions commit
+  roughly in FIFO order, the erased id would indeed be minimal most of the time,
+  so we'd probably try to update the lower bound on almost each commit, even
+  though a better upper bound is needed only when the old one is not good
+  enough, which we check here. */
+  return Trx_by_id_with_min::get_cheap_lower_bound_for_already_active_id() <=
+             max_old_active_id &&
+         Trx_by_id_with_min::get_better_lower_bound_for_already_active_id() <=
+             max_old_active_id;
 }
 
 /** Checks if some transaction has an implicit x-lock on a record in a secondary
@@ -1109,6 +1090,15 @@ ulint lock_number_of_tables_locked(const trx_t *trx) {
   return count;
 }
 
+lock_t *lock_alloc_from_heap(mem_heap_t *heap, size_t bitmap_bytes) {
+  const size_t n_bytes = sizeof(lock_t) + bitmap_bytes;
+  static_assert(alignof(lock_t) <= UNIV_MEM_ALIGNMENT,
+                "heap allocator must ensure lock_t is properly aligned");
+  auto ptr = mem_heap_alloc(heap, n_bytes);
+  ut_a(ut::is_aligned_as<lock_t>(ptr));
+  return reinterpret_cast<lock_t *>(ptr);
+}
+
 /*============== RECORD LOCK CREATION AND QUEUE MANAGEMENT =============*/
 
 /**
@@ -1159,11 +1149,7 @@ lock_t *RecLock::lock_alloc(trx_t *trx, dict_index_t *index, ulint mode,
 
   if (trx->lock.rec_cached >= trx->lock.rec_pool.size() ||
       sizeof(*lock) + size > REC_LOCK_SIZE) {
-    ulint n_bytes = size + sizeof(*lock);
-    mem_heap_t *heap = trx->lock.lock_heap;
-    auto ptr = mem_heap_alloc(heap, n_bytes);
-    ut_a(ut::is_aligned_as<lock_t>(ptr));
-    lock = reinterpret_cast<lock_t *>(ptr);
+    lock = lock_alloc_from_heap(trx->lock.lock_heap, size);
   } else {
     lock = trx->lock.rec_pool[trx->lock.rec_cached];
     ++trx->lock.rec_cached;
@@ -1184,17 +1170,9 @@ lock_t *RecLock::lock_alloc(trx_t *trx, dict_index_t *index, ulint mode,
 
   /* Predicate lock always on INFIMUM (0) */
 
-  if (is_predicate_lock(mode)) {
-    rec_lock.n_bits = 8;
-
-    memset(&lock[1], 0x0, 1);
-
-  } else {
-    ut_ad(8 * size < UINT32_MAX);
-    rec_lock.n_bits = static_cast<uint32_t>(8 * size);
-
-    memset(&lock[1], 0x0, size);
-  }
+  ut_ad(size < UINT32_MAX / 8);
+  rec_lock.n_bits = is_predicate_lock(mode) ? 8 : 8 * size;
+  lock_rec_bitmap_reset(lock);
 
   rec_lock.page_id = rec_id.get_page_id();
 
@@ -3294,9 +3272,7 @@ static inline lock_t *lock_table_create(
   } else if (trx->lock.table_cached < trx->lock.table_pool.size()) {
     lock = trx->lock.table_pool[trx->lock.table_cached++];
   } else {
-    auto ptr = mem_heap_alloc(trx->lock.lock_heap, sizeof(*lock));
-    ut_a(ut::is_aligned_as<lock_t>(ptr));
-    lock = static_cast<lock_t *>(ptr);
+    lock = lock_alloc_from_heap(trx->lock.lock_heap);
   }
   lock->type_mode = uint32_t(type_mode | LOCK_TABLE);
   lock->trx = trx;
@@ -3404,17 +3380,6 @@ static inline void lock_table_remove_autoinc_lock(
 lock_guid_t::lock_guid_t(const lock_t &lock)
     : m_trx_guid(*(lock.trx)),
       m_immutable_id(reinterpret_cast<uint64_t>(&lock)) {}
-
-const lock_t *lock_find_table_lock_by_guid(const dict_table_t *table,
-                                           const lock_guid_t &guid) {
-  ut_ad(locksys::owns_table_shard(*table));
-  for (const lock_t *lock : table->locks) {
-    if (lock_guid_t(*lock) == guid) {
-      return lock;
-    }
-  }
-  return nullptr;
-}
 
 /** Removes a table lock request from the queue and the trx list of locks;
  this is a low-level function which does NOT check if waiting requests

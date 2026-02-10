@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,12 +21,12 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <errno.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cerrno>
+#include <cmath>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "sql_string.h"
@@ -72,7 +72,7 @@ bool from_string_to_vector(const CHARSET_INFO *cs, const char *input,
   }
 
   // Check for memory region overlap
-  size_t output_len = sizeof(float) * (*max_output_dims);
+  size_t const output_len = sizeof(float) * (*max_output_dims);
   String temp_output(output, output_len, nullptr);
   if (output + output_len >= input && input + input_len >= output) {
     temp_output = String(output_len);
@@ -134,7 +134,7 @@ bool from_vector_to_string(const char *input, uint32_t input_dims, char *output,
   }
 
   // Check for memory region overlap
-  size_t input_len = input_dims * sizeof(float);
+  size_t const input_len = input_dims * sizeof(float);
   String temp_output(output, *max_output_len, nullptr);
   if (output + *max_output_len >= input && input + input_len >= output) {
     temp_output = String(*max_output_len);
@@ -145,13 +145,13 @@ bool from_vector_to_string(const char *input, uint32_t input_dims, char *output,
   write_ptr[0] = '[';
   write_ptr += 1;
   for (uint32_t i = 0; i < input_dims; i++) {
-    int remaining_bytes = *max_output_len - total_length;
+    int const remaining_bytes = *max_output_len - total_length;
     int nchars = 0;
     if (*max_output_len <= total_length + end_cushion) {
       nchars = snprintf(write_ptr, remaining_bytes, "...");
       i = input_dims;
     } else {
-      char delimiter = (i == input_dims - 1) ? ']' : ',';
+      char const delimiter = (i == input_dims - 1) ? ']' : ',';
       float input_value = 0;
       memcpy(&input_value, input + i * sizeof(float), sizeof(float));
       nchars = snprintf(write_ptr, remaining_bytes, "%.5e%c", input_value,

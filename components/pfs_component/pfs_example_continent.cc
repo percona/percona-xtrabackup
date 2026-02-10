@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +21,7 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
+#include <cassert>
 #include <cstring>
 
 #include "pfs_example_continent.h"
@@ -39,10 +39,9 @@ unsigned int continent_next_available_index = 0;
 
 Continent_record continent_records_array[CONTINENT_MAX_ROWS] = {{"", 0, false}};
 
-int continent_delete_all_rows(void) {
+int continent_delete_all_rows() {
   native_mutex_lock(&LOCK_continent_records_array);
-  for (int i = 0; i < CONTINENT_MAX_ROWS; i++)
-    continent_records_array[i].m_exist = false;
+  for (auto &i : continent_records_array) i.m_exist = false;
   continent_rows_in_table = 0;
   continent_next_available_index = 0;
   native_mutex_unlock(&LOCK_continent_records_array);
@@ -54,7 +53,7 @@ int continent_delete_all_rows(void) {
  * in performance schema is opened.
  */
 PSI_table_handle *continent_open_table(PSI_pos **pos) {
-  Continent_Table_Handle *temp = new Continent_Table_Handle();
+  auto *temp = new Continent_Table_Handle();
   temp->current_row.name_length = 0;
 
   *pos = (PSI_pos *)(&temp->m_pos);
@@ -66,7 +65,7 @@ PSI_table_handle *continent_open_table(PSI_pos **pos) {
  * in performance schema is closed.
  */
 void continent_close_table(PSI_table_handle *handle) {
-  Continent_Table_Handle *temp = (Continent_Table_Handle *)handle;
+  auto *temp = (Continent_Table_Handle *)handle;
   delete temp;
 }
 
@@ -79,7 +78,7 @@ static void copy_record(Continent_record *dest, Continent_record *source) {
 
 /* Define implementation of PFS_engine_table_proxy. */
 int continent_rnd_next(PSI_table_handle *handle) {
-  Continent_Table_Handle *h = (Continent_Table_Handle *)handle;
+  auto *h = (Continent_Table_Handle *)handle;
 
   for (h->m_pos.set_at(&h->m_next_pos); h->m_pos.has_more(); h->m_pos.next()) {
     Continent_record *record = &continent_records_array[h->m_pos.get_index()];
@@ -99,7 +98,7 @@ int continent_rnd_init(PSI_table_handle *, bool) { return 0; }
 
 /* Set position of a cursor on a specific index */
 int continent_rnd_pos(PSI_table_handle *handle) {
-  Continent_Table_Handle *h = (Continent_Table_Handle *)handle;
+  auto *h = (Continent_Table_Handle *)handle;
   Continent_record *record = &continent_records_array[h->m_pos.get_index()];
 
   if (record->m_exist) {
@@ -113,7 +112,7 @@ int continent_rnd_pos(PSI_table_handle *handle) {
 /* Initialize the table index */
 int continent_index_init(PSI_table_handle *handle, unsigned int idx, bool,
                          PSI_index_handle **index) {
-  Continent_Table_Handle *h = (Continent_Table_Handle *)handle;
+  auto *h = (Continent_Table_Handle *)handle;
 
   /* If there are multiple indexes, initialize based on the idx provided */
   switch (idx) {
@@ -140,7 +139,7 @@ int continent_index_read(PSI_index_handle *index, PSI_key_reader *reader,
                          unsigned int idx, int find_flag) {
   switch (idx) {
     case 0: {
-      Continent_index_by_name *i = (Continent_index_by_name *)index;
+      auto *i = (Continent_index_by_name *)index;
       /* Read all keys on index one by one */
       pc_string_srv->read_key_string(reader, &i->m_name, find_flag);
       /* Remember the number of key parts found. */
@@ -157,7 +156,7 @@ int continent_index_read(PSI_index_handle *index, PSI_key_reader *reader,
 
 /* Read the next indexed value */
 int continent_index_next(PSI_table_handle *handle) {
-  Continent_Table_Handle *h = (Continent_Table_Handle *)handle;
+  auto *h = (Continent_Table_Handle *)handle;
   Continent_index *i = nullptr;
 
   switch (h->index_num) {
@@ -186,16 +185,15 @@ int continent_index_next(PSI_table_handle *handle) {
 
 /* Reset cursor position */
 void continent_reset_position(PSI_table_handle *handle) {
-  Continent_Table_Handle *h = (Continent_Table_Handle *)handle;
+  auto *h = (Continent_Table_Handle *)handle;
   h->m_pos.reset();
   h->m_next_pos.reset();
-  return;
 }
 
 /* Read current row from the current_row and display them in the table */
 int continent_read_column_value(PSI_table_handle *handle, PSI_field *field,
                                 unsigned int index) {
-  Continent_Table_Handle *h = (Continent_Table_Handle *)handle;
+  auto *h = (Continent_Table_Handle *)handle;
 
   switch (index) {
     case 0: /* NAME */
@@ -233,7 +231,7 @@ int write_rows_from_component(Continent_Table_Handle *handle) {
     int i = (continent_next_available_index + 1) % CONTINENT_MAX_ROWS;
     int itr_count = 0;
     while (itr_count < CONTINENT_MAX_ROWS) {
-      if (continent_records_array[i].m_exist == false) {
+      if (!continent_records_array[i].m_exist) {
         continent_next_available_index = i;
         break;
       }
@@ -246,9 +244,7 @@ int write_rows_from_component(Continent_Table_Handle *handle) {
   return 0;
 }
 
-unsigned long long continent_get_row_count(void) {
-  return continent_rows_in_table;
-}
+unsigned long long continent_get_row_count() { return continent_rows_in_table; }
 
 void init_continent_share(PFS_engine_table_share_proxy *share) {
   /* Instantiate and initialize PFS_engine_table_share_proxy */

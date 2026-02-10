@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,7 @@
 #include <cstring>
 #include <memory>
 #include <new>
+#include <span>
 
 #include "map_helpers.h"
 #include "my_alloc.h"
@@ -102,7 +103,7 @@ SortFileIndirectIterator::~SortFileIndirectIterator() {
   my_free(m_io_cache);
 }
 
-bool SortFileIndirectIterator::Init() {
+bool SortFileIndirectIterator::DoInit() {
   m_sum_ref_length = 0;
 
   for (TABLE *table : m_tables) {
@@ -153,7 +154,7 @@ static int HandleError(THD *thd, TABLE *table, int error) {
   }
 }
 
-int SortFileIndirectIterator::Read() {
+int SortFileIndirectIterator::DoRead() {
   for (;;) {
     if (my_b_read(m_io_cache, m_ref_pos, m_sum_ref_length))
       return -1; /* End of file */
@@ -225,7 +226,7 @@ SortFileIterator<Packed_addon_fields>::~SortFileIterator() {
     -1   There is no record to be read anymore.
 */
 template <bool Packed_addon_fields>
-int SortFileIterator<Packed_addon_fields>::Read() {
+int SortFileIterator<Packed_addon_fields>::DoRead() {
   uchar *destination = m_rec_buf;
   if (Packed_addon_fields) {
     const uint len_sz = Addon_fields::size_of_length_field;
@@ -268,7 +269,7 @@ SortBufferIterator<Packed_addon_fields>::~SortBufferIterator() {
 }
 
 template <bool Packed_addon_fields>
-bool SortBufferIterator<Packed_addon_fields>::Init() {
+bool SortBufferIterator<Packed_addon_fields>::DoInit() {
   m_unpack_counter = 0;
   return false;
 }
@@ -292,7 +293,7 @@ bool SortBufferIterator<Packed_addon_fields>::Init() {
     -1   There is no record to be read anymore.
 */
 template <bool Packed_addon_fields>
-int SortBufferIterator<Packed_addon_fields>::Read() {
+int SortBufferIterator<Packed_addon_fields>::DoRead() {
   if (m_unpack_counter ==
       m_sort_result->found_records)  // XXX send in as a parameter?
     return -1;                       /* End of buffer */
@@ -326,7 +327,7 @@ SortBufferIndirectIterator::~SortBufferIndirectIterator() {
   }
 }
 
-bool SortBufferIndirectIterator::Init() {
+bool SortBufferIndirectIterator::DoInit() {
   m_sum_ref_length = 0;
   for (TABLE *table : m_tables) {
     // The sort's source iterator could have initialized an index
@@ -359,7 +360,7 @@ bool SortBufferIndirectIterator::Init() {
   return false;
 }
 
-int SortBufferIndirectIterator::Read() {
+int SortBufferIndirectIterator::DoRead() {
   for (;;) {
     if (m_cache_pos == m_cache_end) return -1; /* End of file */
     uchar *cache_pos = m_cache_pos;
@@ -397,14 +398,14 @@ int SortBufferIndirectIterator::Read() {
   }
 }
 
-SortingIterator::SortingIterator(THD *thd, Filesort *filesort,
-                                 unique_ptr_destroy_only<RowIterator> source,
-                                 ha_rows num_rows_estimate,
-                                 table_map tables_to_get_rowid_for,
-                                 ha_rows *examined_rows)
+SortingIterator::SortingIterator(
+    THD *thd, Filesort *filesort, unique_ptr_destroy_only<RowIterator> source,
+    std::span<AccessPath *> single_row_index_lookups, ha_rows num_rows_estimate,
+    table_map tables_to_get_rowid_for, ha_rows *examined_rows)
     : RowIterator(thd),
       m_filesort(filesort),
       m_source_iterator(std::move(source)),
+      m_single_row_index_lookups(single_row_index_lookups),
       m_num_rows_estimate(num_rows_estimate),
       m_tables_to_get_rowid_for(tables_to_get_rowid_for),
       m_examined_rows(examined_rows) {}
@@ -435,18 +436,27 @@ void SortingIterator::ReleaseBuffers() {
   // Keep the sort buffer in m_fs_info.
 }
 
-bool SortingIterator::Init() {
+bool SortingIterator::DoInit() {
   ReleaseBuffers();
 
-  // Both empty result and error count as errors. (TODO: Why? This is a legacy
-  // choice that doesn't always seem right to me, although it should nearly
-  // never happen in practice.)
-  if (DoSort() != 0) return true;
+  // Invalidate the cache in all single-row index lookups below us. The previous
+  // execution of the sorting iterator may have overwritten the cached value in
+  // EQRefIterator with a value from a different row, and the next read from the
+  // EQRefIterator must read the correct value from the index.
+  for (AccessPath *lookup : m_single_row_index_lookups) {
+    lookup->eq_ref().ref->key_err = true;
+  }
+
+  if (DoSort()) return true;
 
   // Prepare the result iterator for actually reading the data. Read()
   // will proxy to it.
   Mem_root_array<TABLE *> tables(thd()->mem_root, m_filesort->tables);
-  if (m_sort_result.io_cache && my_b_inited(m_sort_result.io_cache)) {
+  if (m_sort_result.found_records == 0) {
+    // There were no rows to sort.
+    m_result_iterator.reset(new (&m_result_iterator_holder.zero_rows)
+                                ZeroRowsIterator(thd(), {}));
+  } else if (m_sort_result.io_cache && my_b_inited(m_sort_result.io_cache)) {
     // Test if ref-records was used
     if (m_fs_info.using_addon_fields()) {
       DBUG_PRINT("info", ("using SortFileIterator"));
@@ -510,18 +520,14 @@ void SortingIterator::SetNullRowFlag(bool is_null_row) {
   }
 }
 
-/*
+/**
   Do the actual sort, by calling filesort. The result will be left in one of
   several places depending on what sort strategy we chose; it is up to Init() to
   figure out what happened and create the appropriate iterator to read from it.
 
-  RETURN VALUES
-    0		ok
-    -1		Some fatal error
-    1		No records
+  @return false on success, true on error.
 */
-
-int SortingIterator::DoSort() {
+bool SortingIterator::DoSort() {
   assert(m_sort_result.io_cache == nullptr);
   m_sort_result.io_cache =
       (IO_CACHE *)my_malloc(key_memory_TABLE_sort_io_cache, sizeof(IO_CACHE),

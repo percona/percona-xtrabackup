@@ -1,4 +1,4 @@
-// Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -42,8 +42,10 @@ void Log_sanitizer::process_logs(Type_reader &reader,
                                  const std::list<std::string> &list_of_files,
                                  MYSQL_BIN_LOG &log) {
   // function we run for relay logs
+  this->m_skip_prepared_xids = true;
   for (auto rit = list_of_files.rbegin(); rit != list_of_files.rend(); ++rit) {
     this->m_validation_started = false;
+    this->m_in_transaction = false;
     if (process_one_log(reader, *rit) || rit == --list_of_files.rend()) {
       // valid log file found or no valid position was found in relay logs
       // remove relay logs containing no valid positions in case a valid
