@@ -5,20 +5,8 @@
 %define xb_rpm_version_extra @@XB_RPM_VERSION_EXTRA@@
 %define xb_revision       @@XB_REVISION@@
 %define rpm_release       @@RPM_RELEASE@@
-%if 0%{?rhel} == 8
-%define cmake_bin cmake
-%else
-%define cmake_bin cmake3
-%endif
+
 %global mysqldatadir /var/lib/mysql
-
-%if 0%{?rhel} == 7
-%global __python %{__python3}
-%endif
-
-%if 0%{?rhel} == 6
-%global __python /opt/rh/rh-python36/root/usr/bin/python3
-%endif
 
 #####################################
 Name:           percona-xtrabackup-%{xb_version_major}%{xb_version_minor}
@@ -26,18 +14,17 @@ Version:        %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}
 Release:        %{xb_rpm_version_extra}%{?dist}
 Summary:        XtraBackup online backup for MySQL / InnoDB
 
-Group:          Applications/Databases
 License:        GPLv2
 URL:            http://www.percona.com/software/percona-xtrabackup
 Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
 Source999:      call-home.sh
+BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
 
-BuildRequires:  %{cmake_bin}, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
-BuildRequires:  libcurl-devel
+BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel
+BuildRequires:  zlib-devel, libev-devel, openssl-devel, libcurl-devel, patchelf
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24
 Requires:       perl(DBD::mysql), rsync, zstd
-Requires:	perl(Digest::MD5), lz4
-BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
+Requires:       perl(Digest::MD5), lz4
 
 
 %description
@@ -59,75 +46,88 @@ This package contains the test suite for Percona XtraBackup %{version}%{xb_versi
 %bcond_with dummy
 
 %build
-#
 %if %{with dummy}
-# Dummy binaries that avoid compilation
-echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xtrabackup
-echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbstream
-echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbcrypt
-echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbcloud
-#
+echo 'int main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xtrabackup
+echo 'int main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbstream
+echo 'int main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbcrypt
+echo 'int main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbcloud
 %else
-#
+
 export CC=${CC-"gcc"}
 export CXX=${CXX-"g++"}
 export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
-#
-sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/subunit2junitxml
-sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/tests/sample-two-script.py
-sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/tests/sample-script.py
-sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/run.py
-# debug
+
+# Fix ambiguous python shebangs (EL8+ brp-mangle-shebangs rejects '#!/usr/bin/env python')
+find . -name '*.py' -o -name 'subunit2junitxml' | \
+  xargs sed -i 's|#!/usr/bin/env python$|#!/usr/bin/env python3|g' 2>/dev/null || true
+
+# Use ccache if available for faster rebuilds
+if command -v ccache &>/dev/null; then
+  export CMAKE_C_COMPILER_LAUNCHER=ccache
+  export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+fi
+
+# Common cmake flags (shell variable — works on all rpmbuild versions)
+CMAKE_FLAGS="-DBUILD_CONFIG=xtrabackup_release"
+CMAKE_FLAGS+=" -DCMAKE_INSTALL_PREFIX=%{_prefix}"
+CMAKE_FLAGS+=" -DWITH_SSL=system"
+CMAKE_FLAGS+=" -DINSTALL_MANDIR=%{_mandir}"
+CMAKE_FLAGS+=" -DWITH_MAN_PAGES=1"
+CMAKE_FLAGS+=" -DMINIMAL_RELWITHDEBINFO=OFF"
+CMAKE_FLAGS+=" -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}"
+CMAKE_FLAGS+=" -DDOWNLOAD_BOOST=1"
+CMAKE_FLAGS+=" -DWITH_BOOST=%{_builddir}/boost"
+CMAKE_FLAGS+=" -DMYSQL_UNIX_ADDR=%{mysqldatadir}/mysql.sock"
+CMAKE_FLAGS+=" -DINSTALL_PLUGINDIR=%{_lib}/xtrabackup/plugin"
+CMAKE_FLAGS+=" -DFORCE_INSOURCE_BUILD=1"
+CMAKE_FLAGS+=" -DWITH_ZLIB=bundled"
+CMAKE_FLAGS+=" -DWITH_ZSTD=bundled"
+CMAKE_FLAGS+=" -DWITH_PROTOBUF=bundled"
+
+# Shared boost directory — downloaded once by debug build, reused by release
+mkdir -p %{_builddir}/boost
+
+# Debug build (runs first, downloads boost)
 mkdir debug
-(
-  cd debug
-  %{cmake_bin} .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-  -DWITH_SSL=system -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \
-  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} \
-  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMINIMAL_RELWITHDEBINFO=OFF -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
-  -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin" -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
-  make %{?_smp_mflags}
-  cd ..
-  ls -la debug
-)
-# release
-%{cmake_bin} . -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-  -DWITH_SSL=system -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \
-  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} \
-  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMINIMAL_RELWITHDEBINFO=OFF -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
-  -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin" -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
-#
+cd debug
+cmake .. ${CMAKE_FLAGS} -DCMAKE_BUILD_TYPE=Debug
 make %{?_smp_mflags}
-#
+cd ..
+
+# Release build (reuses cached boost)
+cmake . ${CMAKE_FLAGS}
+make %{?_smp_mflags}
+
 %endif
-#
+
 %install
-rm -rf $RPM_BUILD_ROOT
-make install DESTDIR=$RPM_BUILD_ROOT
-cp -v debug/bin/xtrabackup $RPM_BUILD_ROOT/%{_bindir}/xtrabackup-debug
-patchelf --debug --set-rpath '$ORIGIN/../lib/private' $RPM_BUILD_ROOT/%{_bindir}/xtrabackup-debug
-rm -rf $RPM_BUILD_ROOT/%{_libdir}/libmysqlservices.a
-rm -rf $RPM_BUILD_ROOT/usr/lib/libmysqlservices.a
-rm -rf $RPM_BUILD_ROOT/usr/docs/INFO_SRC
-rm -rf $RPM_BUILD_ROOT/%{_mandir}/man8
-rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/c*
-rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/m*
-rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/i*
-rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/l*
-rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/p*
-rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/z*
+make install DESTDIR=%{buildroot}
+
+cp -v debug/bin/xtrabackup %{buildroot}/%{_bindir}/xtrabackup-debug
+patchelf --set-rpath '$ORIGIN/../lib/private' %{buildroot}/%{_bindir}/xtrabackup-debug
+
+# Remove unwanted artifacts
+rm -f  %{buildroot}/%{_libdir}/libmysqlservices.a \
+       %{buildroot}/usr/lib/libmysqlservices.a
+rm -rf %{buildroot}/usr/docs/INFO_SRC \
+       %{buildroot}/%{_mandir}/man8
+
+# Keep only xtrabackup/xbstream/xbcrypt/xbcloud man pages
+find %{buildroot}/%{_mandir}/man1 -type f \
+    ! -name 'xtrabackup*' \
+    ! -name 'xbstream*' \
+    ! -name 'xbcrypt*' \
+    ! -name 'xbcloud*' \
+    -delete
 
 %post
 cp %SOURCE999 /tmp/ 2>/dev/null ||
 bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
 rm -f /tmp/call-home.sh
 
-%clean
-rm -rf $RPM_BUILD_ROOT
-
 %files
-%defattr(-,root,root,-)
+%license LICENSE
 %{_bindir}/xtrabackup
 %{_bindir}/xtrabackup-debug
 %{_bindir}/xbstream
@@ -145,44 +145,12 @@ rm -rf $RPM_BUILD_ROOT
 /usr/lib/libkmip.a
 /usr/lib/libkmippp.a
 %{_libdir}/xtrabackup/plugin/component_keyring_kmip.so
-%doc LICENSE
-%doc %{_mandir}/man1/*.1.gz
+%{_mandir}/man1/*.1*
 
 %files -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
-%defattr(-,root,root,-)
 %{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 
 %changelog
 * Fri Aug 31 2018 Evgeniy Patlan <evgeniy.patlan@percona.com>
 - Packaging for 8.0
 
-* Wed Feb 03 2016 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Packaging updates for version 2.4.0-rc1
-
-* Mon Dec 14 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.3.3
-
-* Fri Oct 16 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.3.2
-- Renamed the package to percona-xtrabackup since 2.3 became GA
-
-* Fri May 15 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.3.1beta1
-
-* Thu Oct 30 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.3.0alpha1
-
-* Mon Sep 29 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.2.6
-
-* Fri Sep 26 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.2.5
-
-* Thu Sep 11 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Changed options to build with system zlib
-
-* Tue Jun 10 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- renamed package from percona-xtrabackup-22 to percona-xtrabackup
-
-* Wed Mar 26 2014 Alexey Bychko <alexey.bychko@percona.com>
-- initial alpha release for 2.2 (2.2.1-alpha1)
