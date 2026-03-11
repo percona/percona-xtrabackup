@@ -201,6 +201,12 @@ get_system(){
         export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
         export OS_NAME="el$RHEL"
         export OS="rpm"
+    elif [ -f /etc/amazon-linux-release ]; then
+        GLIBC_VER_TMP="$(rpm glibc -qa --qf %{VERSION})"
+        export RHEL=$(rpm --eval %amzn)
+        export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
+        export OS_NAME="amzn$RHEL"
+        export OS="rpm"
     else
         GLIBC_VER_TMP="$(dpkg-query -W -f='${Version}' libc6 | awk -F'-' '{print $1}')"
         export ARCH=$(uname -m)
@@ -247,25 +253,30 @@ install_deps() {
         yum -y install git wget yum-utils curl
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         if [ x"$ARCH" = "xx86_64" ]; then
-            if [ $RHEL = 9 ]; then
-                yum-config-manager --enable ol9_distro_builder
-                yum-config-manager --enable ol9_codeready_builder
-                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+            if [ ${RHEL} = 9 -o ${RHEL} = 10 ]; then
+                yum-config-manager --enable ol${RHEL}_distro_builder
+                yum-config-manager --enable ol${RHEL}_codeready_builder
+                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${RHEL}.noarch.rpm
             else
-                add_percona_yum_repo
+                # add_percona_yum_repo
                 percona-release enable tools testing
             fi
         else
             yum-config-manager --enable ol"${RHEL}"_codeready_builder
-            yum -y install epel-release
+            if [ ${RHEL} = 10 ]; then
+                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+                yum -y install epel-release
+            else
+                yum -y install epel-release
+            fi
         fi
-        if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
-            PKGLIST+=" binutils-devel python3-pip python3-setuptools libtirpc-devel"
+        if [[ "${RHEL}" = "8" || "${RHEL}" = "9" || "${RHEL}" = "2023" || "${RHEL}" = "10" ]]; then
+            PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel"
-            PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
-            if [ $RHEL = 9 ]; then
-                PKGLIST+=" rsync procps-ng-devel python3-sphinx gcc gcc-c++"
+            PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel libtirpc-devel"
+            if [[ "${RHEL}" = "9" || "${RHEL}" = "2023" || "${RHEL}" = "10" ]]; then
+                PKGLIST+=" rsync procps-ng-devel python3-sphinx gcc gcc-c++ gcc-gfortran"
             else
                 if [ x"$ARCH" = "xx86_64" ]; then
                     yum-config-manager --enable powertools
@@ -357,12 +368,12 @@ install_deps() {
         PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev vim-common"
         PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev pkg-config"
         PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf libicu-dev"
-        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" ]; then
+        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
             PKGLIST+=" libproc2-dev"
         else
             PKGLIST+=" libprocps-dev"
         fi
-        if [ "${OS_NAME}" == "noble" ]; then
+        if [ "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
             wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
             dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
         fi
@@ -372,10 +383,10 @@ install_deps() {
         if [ "${OS_NAME}" == "focal" ]; then
             PKGLIST+=" gcc-10 g++-10"
         fi
-        if [ "${OS_NAME}" == "noble" ]; then
+        if [ "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
             PKGLIST+=" libtirpc-dev"
         fi
-        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" ]; then
+        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
         else
             PKGLIST+=" python-sphinx python-docutils"
@@ -524,11 +535,18 @@ build_rpm(){
 
     enable_venv
 
-    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .el${RHEL}" --rebuild rpmbuild/SRPMS/${SRCRPM}
+    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .${OS_NAME}" --rebuild rpmbuild/SRPMS/${SRCRPM}
     return_code=$?
     if [ $return_code != 0 ]; then
         exit $return_code
     fi
+
+    # Verify RPMs were actually produced
+    if [ -z "$(find ${WORKDIR}/rpmbuild/RPMS -name '*.rpm' 2>/dev/null)" ]; then
+        echo "ERROR: rpmbuild succeeded but no RPM files were generated!"
+        exit 1
+    fi
+
     mkdir -p ${WORKDIR}/rpm
     mkdir -p ${CURDIR}/rpm
     cp rpmbuild/RPMS/*/*.rpm ${WORKDIR}/rpm
@@ -611,6 +629,18 @@ build_deb(){
     dpkg-source -x $DSC
     cd $DIRNAME
     dch -m -D "$OS_NAME" --force-distribution -v "$VERSION-$DEB_RELEASE.$OS_NAME" 'Update distribution'
+    cd debian/
+    wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
+    sed -i 's:exit 0::' percona-xtrabackup-91.postinst
+    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> percona-xtrabackup-91.postinst
+    cat call-home.sh >> percona-xtrabackup-91.postinst
+    echo "CALLHOME" >> percona-xtrabackup-91.postinst
+    echo "bash +x /tmp/call-home.sh -f \"PRODUCT_FAMILY_PXB\" -v \"${VERSION}-${DEB_RELEASE}\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtrabackup-91.postinst
+    echo "rm -rf /tmp/call-home.sh" >> percona-xtrabackup-91.postinst
+    echo "exit 0" >> percona-xtrabackup-91.postinst
+    rm -f call-home.sh
+    cd ../
+
     dpkg-buildpackage -rfakeroot -uc -us -b
 
     cd ${WORKDIR}
