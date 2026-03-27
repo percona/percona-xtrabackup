@@ -304,6 +304,9 @@ ADD_SUBDIRECTORY(authentication_kerberos)
 # authentication IAM client plug-in
 ADD_SUBDIRECTORY(authentication_oci_client)
 
+# authentication OpenID Connect client plug-in
+ADD_SUBDIRECTORY(authentication_openid_connect_client)
+
 # Fido and Webauthn clients
 ADD_SUBDIRECTORY(fido_client)
 

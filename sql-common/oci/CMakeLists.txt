@@ -25,7 +25,6 @@ ADD_WSHADOW_WARNING()
 
 SET(OCI_SOURCES
   signing_key.cc
-  ssl.cc
   utilities.cc
   )
 
