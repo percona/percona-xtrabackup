@@ -6,7 +6,7 @@ function usage() {
     cat <<EOF
 Usage: $0 [OPTIONS]
     The following options may be given :
-        --type=             Pass innodb80 or xtradb80 for DB type(default=xtradb80)
+        --type=             Pass innodb9x or xtradb9x for DB type(default=xtradb9x)
         --pxb-type=         Specify release or debug build of PXB used for tests(default=release)
         --version=          Version of tarball
         --destdir=          OPTIONAL: Destination directory where the tarball will be extracted(default=\"./server\")
@@ -33,7 +33,7 @@ function glibc_version() {
     glibc=$(ldd --version | head -1 | awk '{print $NF}')
     case ${glibc} in
         2.12|2.17|2.27|2.28|2.31|2.34|2.35) ;;
-        2.36|2.39) echo 2.35; return;;
+        2.36|2.39|2.40) echo 2.35; return;;
 
         *)
             >&2 echo "tarball for your glibc version (${glibc}) is not available"
@@ -112,8 +112,8 @@ main () {
     mkdir "${DESTDIR}"
 
     case "${TYPE}" in
-        innodb80)
-            url="https://dev.mysql.com/get/Downloads/MySQL-8.4"
+        innodb9x)
+            url="https://dev.mysql.com/get/Downloads/MySQL-9.6"
             fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
 	    # Strip '-<number>' where <number> is 1-100
             clean_version="${VERSION%-[0-9][0-9]}"
@@ -121,22 +121,20 @@ main () {
 
             tarball="mysql-${clean_version}-linux-glibc2.28-${arch}.tar.xz"
             ;;
-        xtradb80)
-            url="https://downloads.percona.com/downloads/Percona-Server-8.4/Percona-Server-${VERSION}/binary/tarball"
+        xtradb9x)
+            url="https://downloads.percona.com/downloads/Percona-Server-Innovation-Release/Percona-Server-${VERSION}/binary/tarball"
             fallback_url="https://downloads.percona.com/downloads/TESTING/ps-${VERSION}"
-            short_version=$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
                 SUFFIX="-debug"
               else
                 SUFFIX="-minimal"
             fi
             tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc$(glibc_version)${SUFFIX}.tar.gz"
-
             ;;
         *) 
             echo "Err: Specified unsupported ${TYPE}."
-            echo "Supported types are: innodb80, xtradb80."
-            echo "Example: $0 --type=xtradb80 --version=8.0.18-9"
+            echo "Supported types are: innodb9x, xtradb9x."
+            echo "Example: $0 --type=xtradb9x --version=9.6.0-1"
             exit 1
             ;;
     esac
@@ -176,9 +174,9 @@ main () {
     fi
 }
 
-TYPE="xtradb80"
+TYPE="xtradb9x"
 PXB_TYPE="release"
-VERSION="8.4.4-4"
+VERSION="9.6.0-1"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main
