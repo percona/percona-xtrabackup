@@ -398,6 +398,10 @@ static longlong innobase_redo_log_capacity_save;
 
 static char *srv_temp_dir = nullptr;
 
+/* innodb_undo_tablespaces was removed in MySQL 9.6. We still need it in
+xtrabackup for --copy-back. */
+ulong srv_undo_tablespaces = FSP_IMPLICIT_UNDO_TABLESPACES;
+
 /* set true if corresponding variable set as option config file or
 command argument */
 bool innodb_log_checksums_specified = false;
@@ -1623,7 +1627,7 @@ Disable with --skip-innodb-checksums.",
     {"innodb_undo_tablespaces", OPT_INNODB_UNDO_TABLESPACES,
      "Number of undo tablespaces to use.", (G_PTR *)&srv_undo_tablespaces,
      (G_PTR *)&srv_undo_tablespaces, 0, GET_ULONG, REQUIRED_ARG,
-     FSP_IMPLICIT_UNDO_TABLESPACES, FSP_MIN_UNDO_TABLESPACES,
+     FSP_IMPLICIT_UNDO_TABLESPACES, FSP_IMPLICIT_UNDO_TABLESPACES,
      FSP_MAX_UNDO_TABLESPACES, 0, 1, 0},
 
     {"innodb_redo_log_encrypt", OPT_INNODB_REDO_LOG_ENCRYPT,

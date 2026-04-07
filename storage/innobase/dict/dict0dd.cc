@@ -459,29 +459,19 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
 
     std::string file_table_name(space->name);
 
-    /* 8.0.19 and below can have upper case separators in partition
-    names, 8.0.20 and above have always lower case separators */
-    bool is_upper = false;
     if (file_table_name.find("#P#") != std::string::npos) {
-      is_upper = true;
-    } else if (file_table_name.find("#p#") != std::string::npos) {
-      is_upper = false;
-    } else {
-      /* This shouldn't happen, a partition should either have have
-      #P# or #p# in its name */
+      /* This shouldn't happen, a partition should not  have
+      #P# in its name */
       ut_ad(0);
     }
 
     if (dd_part->parent_partition() == nullptr) {
       snprintf(table_name, sizeof table_name, "%s/%s%s%s", tmp_schema,
-               tmp_tablename, is_upper ? ALT_PART_SEPARATOR : PART_SEPARATOR,
-               dd_part->name().c_str());
+               tmp_tablename, PART_SEPARATOR, dd_part->name().c_str());
     } else {
       snprintf(table_name, sizeof table_name, "%s/%s%s%s%s%s", tmp_schema,
-               tmp_tablename, is_upper ? ALT_PART_SEPARATOR : PART_SEPARATOR,
-               dd_part->name().c_str(),
-               is_upper ? ALT_SUB_PART_SEPARATOR : SUB_PART_SEPARATOR,
-               dd_part->parent_partition()->name().c_str());
+               tmp_tablename, PART_SEPARATOR, dd_part->name().c_str(),
+               SUB_PART_SEPARATOR, dd_part->parent_partition()->name().c_str());
     }
   } else {
     snprintf(table_name, sizeof table_name, "%s/%s", tmp_schema, tmp_tablename);

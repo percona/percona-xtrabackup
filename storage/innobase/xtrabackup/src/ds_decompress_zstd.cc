@@ -28,7 +28,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "ds_istream.h"
 #include "msg.h"
 #define XXH_STATIC_LINKING_ONLY
-#include "my_xxhash.h"
+#include "extra/xxhash/my_xxhash.h"
 
 #define LAST_BLOCK_MASK ((1 << 1) - 1)
 #define BLOCK_TYPE_MASK ((1 << 2) - 1)

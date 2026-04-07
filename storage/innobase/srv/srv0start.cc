@@ -731,13 +731,10 @@ If we are making a new database, these have been created.
 If doing recovery, these should exist and may be needed for recovery.
 If we fail to open any of these it is a fatal error.
 @return DB_SUCCESS or error code */
-dberr_t srv_undo_tablespaces_open(bool backup_mode) {
+dberr_t srv_undo_tablespaces_open() {
   /* Open all existing implicit and explicit undo tablespaces.
   The tablespace scan has completed and the undo::space_id_bank has been
   filled with the space Ids that were found. */
-  if (backup_mode) {
-    return DB_SUCCESS;
-  }
 
   undo::spaces->x_lock();
   ut_ad(undo::spaces->size() == 0);
@@ -1064,7 +1061,7 @@ dberr_t srv_undo_tablespaces_init(bool create_new_db, bool backup_mode) {
 
   /* Open any existing implicit undo tablespaces. */
   if (!create_new_db) {
-    err = srv_undo_tablespaces_open(backup_mode);
+    err = srv_undo_tablespaces_open();
     if (err != DB_SUCCESS) {
       return (err);
     }

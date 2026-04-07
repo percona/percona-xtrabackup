@@ -3873,7 +3873,7 @@ bool meb_scan_log_recs(
 
 #ifndef UNIV_HOTBACKUP
     if (recv_heap_used() > *max_memory) {
-      recv_apply_hashed_log_recs(log, false);
+      recv_apply_hashed_log_recs(log);
     }
 #endif /* !UNIV_HOTBACKUP */
 
@@ -4145,10 +4145,6 @@ static void recv_init_crash_recovery() {
 
 dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
                                             lsn_t to_lsn) {
-  /* Initialize red-black tree for fast insertions into the
-  flush_list during recovery process. */
-  buf_flush_init_flush_rbt();
-
   if (srv_force_recovery >= SRV_FORCE_NO_LOG_REDO) {
     ib::info(ER_IB_MSG_728);
 

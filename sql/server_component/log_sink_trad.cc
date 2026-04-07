@@ -349,10 +349,11 @@ int log_sink_trad(void *instance [[maybe_unused]], log_line *ll) {
       // write log-event to log-file
       log_write_errstream(buff_line, len, log_type);
 #else
-      fprintf(stderr, "%.*s %u [%.*s] [MY-%06u] [%.*s] %.*s\n", (int)iso_len,
+      FILE *stream = (log_type == LOG_TYPE_DIAG) ? stdout : stderr;
+      fprintf(stream, "%.*s %u [%.*s] [MY-%06u] [%.*s] %.*s\n", (int)iso_len,
               iso_timestamp, thread_id, (int)label_len, label, errcode,
               (int)subsys_len, subsys, (int)msg_len, msg);
-      fflush(stderr);
+      fflush(stream);
 
 #endif /* !XTRABACKUP */
     }

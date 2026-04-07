@@ -4808,7 +4808,16 @@ bool fil_system_get_file_by_space_id(space_id_t space_id, std::string &name) {
   ut_a(dict_sys_t::is_reserved(space_id) || srv_is_upgrade_mode);
 #endif /* !XTRABACKUP */
 
-  return fil_system->get_file_by_space_id(space_id, name);
+  auto result = fil_system->get_scanned_filename_by_space_id(space_id);
+
+  if (result.second != nullptr) {
+    ut_a(result.second->size() == 1);
+    name = result.first + result.second->front();
+    return true;
+  }
+
+  name = "";
+  return false;
 }
 
 bool fil_system_get_file_by_space_num(space_id_t space_num,
@@ -11201,7 +11210,7 @@ const byte *fil_tablespace_redo_delete(
     success = fil_tablespace_open_for_recovery(page_id.space());
 
     if (!success) {
-      xb::info(ER_IB_MSG_356) << "Delete " << name << " failed!";
+      xb::info() << "Delete " << name << " failed!";
       return (ptr);
     }
 
@@ -12241,7 +12250,9 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache IF_XB(, bool only_undo)) {
 
 /** Discover tablespaces by reading the header from .ibd files.
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces() { return fil_system->scan(); }
+dberr_t fil_scan_for_tablespaces() {
+  return fil_system->scan(false IF_XB(, false));
+}
 #endif /* !UNIV_HOTBACKUP */
 
 void fil_set_scan_dir(const std::string &directory, bool is_undo_dir) {

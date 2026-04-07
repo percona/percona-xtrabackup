@@ -3376,7 +3376,7 @@ void mysql_extension_bind_free(MYSQL_EXTENSION *ext) {
   memset(&ext->bind_info, 0, sizeof(ext->bind_info));
 }
 
-#ifdef MYSQL_SERVER
+#if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
 /**
   Release services.
 
@@ -3509,7 +3509,7 @@ static void mysql_command_service_extn_free(MYSQL_EXTENSION *ext) {
   my_free(mcs_ext);
   ext->mcs_extn = nullptr;
 }
-#endif
+#endif /* MYSQL_SERVER && ! XTRABACKUP */
 
 void mysql_extension_free(MYSQL_EXTENSION *ext) {
   if (!ext) return;
@@ -3536,9 +3536,9 @@ void mysql_extension_free(MYSQL_EXTENSION *ext) {
     my_free(ext->mysql_async_context);
     ext->mysql_async_context = nullptr;
   }
-#ifdef MYSQL_SERVER
+#if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
   mysql_command_service_extn_free(ext);
-#endif
+#endif /* MYSQL_SERVER && ! XTRABACKUP */
   // free state change related resources.
   free_state_change_info(ext);
   mysql_extension_bind_free(ext);

@@ -1626,6 +1626,13 @@ empty string if the space_num is not found. */
 bool fil_system_get_file_by_space_num(space_id_t space_num,
                                       space_id_t &space_id, std::string &name);
 
+/** Fetch the file name opened for a space_id during recovery.
+@param[in]   space_id  Tablespace ID
+@param[out]  name      the scanned filename
+@return true if the space_id was found. The name is set to an
+empty string if the space_id is not found. */
+bool fil_system_get_file_by_space_id(space_id_t space_id, std::string &name);
+
 /** Truncate the tablespace to needed size.
 @param[in]      space_id        Tablespace ID to truncate
 @param[in]      size_in_pages   Truncate size.

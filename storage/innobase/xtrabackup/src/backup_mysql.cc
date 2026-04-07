@@ -68,6 +68,8 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xtrabackup.h"
 #include "xtrabackup_version.h"
 
+extern ulong srv_undo_tablespaces;
+
 #include "backup_mysql.h"
 #include "fsp0fsp.h"
 #include "xb_regex.h"
