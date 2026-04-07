@@ -90,7 +90,7 @@ done
 
 xb_pid=`cat $pid_file`
 
-run_cmd $MYSQL $MYSQL_ARGS --force --batch  test <<EOF
+run_cmd $MYSQL $MYSQL_ARGS --force --batch --commands test <<EOF
     select concat('KILL ',id,';') from information_schema.processlist
     where state = 'Waiting for table backup lock' into outfile '$MYSQLD_TMPDIR/kill.sql';
     source $MYSQLD_TMPDIR/kill.sql;
