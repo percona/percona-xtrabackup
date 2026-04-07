@@ -7295,13 +7295,9 @@ static int init_ssl() {
 }
 
 static int init_ssl_communication() {
-<<<<<<< HEAD
 #if !defined(XTRABACKUP)
-||||||| 61a3a1d8ef1
-=======
   my_ssl_algorithm_cache_load();
 
->>>>>>> tags/mysql-9.6.0
   if (TLS_channel::singleton_init(&mysql_main, mysql_main_channel,
                                   &server_main_callback, opt_initialize))
     return 1;
@@ -9131,50 +9127,9 @@ Manifest_file_option_parser_helper::Manifest_file_option_parser_helper(
   res = (char **)(ptr);
   memcpy((uchar *)res, (char *)(argv), (argc) * sizeof(char *));
 
-<<<<<<< HEAD
-    /*
-      create temporary args list and pass it to handle_options.
-      We do this because we don't want to mess with the actual
-      argument list. handle_options() trims the processed parts.
-    */
-    MEM_ROOT alloc{PSI_NOT_INSTRUMENTED, 512};
-    if (!(ptr =
-              (char *)alloc.Alloc(sizeof(alloc) + (argc + 1) * sizeof(char *))))
-      return;
-    memset(ptr, 0, (sizeof(char *) * (argc + 1)));
-    res = (char **)(ptr);
-    memcpy((uchar *)res, (char *)(argv), (argc) * sizeof(char *));
-
-    my_getopt_skip_unknown = true;
-    if (my_handle_options(&argc, &res, datadir_options, nullptr, nullptr, true,
-                          false)) {
-      my_getopt_skip_unknown = false;
-      return;
-    }
-||||||| 61a3a1d8ef1
-    /*
-      create temporary args list and pass it to handle_options.
-      We do this because we don't want to mess with the actual
-      argument list. handle_options() trims the processed parts.
-    */
-    MEM_ROOT alloc{PSI_NOT_INSTRUMENTED, 512};
-    if (!(ptr =
-              (char *)alloc.Alloc(sizeof(alloc) + (argc + 1) * sizeof(char *))))
-      return;
-    memset(ptr, 0, (sizeof(char *) * (argc + 1)));
-    res = (char **)(ptr);
-    memcpy((uchar *)res, (char *)(argv), (argc) * sizeof(char *));
-
-    my_getopt_skip_unknown = true;
-    if (my_handle_options(&argc, &res, datadir_options, nullptr, nullptr,
-                          true)) {
-      my_getopt_skip_unknown = false;
-      return;
-    }
-=======
   my_getopt_skip_unknown = true;
-  if (my_handle_options(&argc, &res, dir_options, nullptr, nullptr, true)) {
->>>>>>> tags/mysql-9.6.0
+  if (my_handle_options(&argc, &res, dir_options, nullptr, nullptr, true,
+                        false)) {
     my_getopt_skip_unknown = false;
     return;
   }

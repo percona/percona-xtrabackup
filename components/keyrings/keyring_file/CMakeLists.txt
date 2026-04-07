@@ -94,16 +94,9 @@ MYSQL_ADD_COMPONENT(keyring_file
   LINK_LIBRARIES ${KEYRING_FILE_LIBRARIES}
   MODULE_ONLY
 )
-<<<<<<< HEAD
 IF(APPLE)
   SET_TARGET_PROPERTIES(component_keyring_file PROPERTIES
     LINK_FLAGS "-undefined dynamic_lookup")
 ENDIF()
 
-
 DOWNGRADE_STRINGOP_WARNINGS(component_keyring_file)
-||||||| 61a3a1d8ef1
-
-DOWNGRADE_STRINGOP_WARNINGS(component_keyring_file)
-=======
->>>>>>> tags/mysql-9.6.0

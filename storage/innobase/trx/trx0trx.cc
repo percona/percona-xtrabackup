@@ -863,36 +863,14 @@ static trx_t *trx_resurrect_insert(trx_undo_t *undo, trx_rseg_t *rseg,
       ib::info(ER_IB_MSG_1204) << "Transaction " << trx_get_id_for_print(trx)
                                << " was in the XA prepared state.";
 
-<<<<<<< HEAD
-      if (srv_force_recovery == 0) {
-        if (!srv_rollback_prepared_trx) {
-          trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
-          ++trx_sys->n_prepared_trx;
-        } else {
-          /* XtraBackup is asked to rollback prepared XA
-          transactions */
-          trx->state.store(TRX_STATE_ACTIVE, std::memory_order_relaxed);
-        }
-      } else {
-        ib::info(ER_IB_MSG_1205) << "Since innodb_force_recovery"
-                                    " > 0, we will force a rollback.";
-
-        trx->state.store(TRX_STATE_ACTIVE, std::memory_order_relaxed);
-      }
-||||||| 61a3a1d8ef1
-      if (srv_force_recovery == 0) {
+      if (!srv_rollback_prepared_trx) {
         trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
         ++trx_sys->n_prepared_trx;
       } else {
-        ib::info(ER_IB_MSG_1205) << "Since innodb_force_recovery"
-                                    " > 0, we will force a rollback.";
-
+        /* XtraBackup is asked to rollback prepared XA
+        transactions */
         trx->state.store(TRX_STATE_ACTIVE, std::memory_order_relaxed);
       }
-=======
-      trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
-      ++trx_sys->n_prepared_trx;
->>>>>>> tags/mysql-9.6.0
     } else {
       trx->state.store(TRX_STATE_COMMITTED_IN_MEMORY,
                        std::memory_order_relaxed);
@@ -973,45 +951,25 @@ static void trx_resurrect_update_in_prepared_state(trx_t *trx,
   ib::info(ER_IB_MSG_1206) << "Transaction " << trx_get_id_for_print(trx)
                            << " was in the XA prepared state.";
 
-<<<<<<< HEAD
-    if (!srv_rollback_prepared_trx) {
-      if (trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
-        ++trx_sys->n_prepared_trx;
-      } else {
-        ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
-      }
-||||||| 61a3a1d8ef1
+  ut_ad(trx->state.load(std::memory_order_relaxed) !=
+        TRX_STATE_FORCED_ROLLBACK);
+
+  if (!srv_rollback_prepared_trx) {
     if (trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
       ++trx_sys->n_prepared_trx;
     } else {
       ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
     }
-=======
-  ut_ad(trx->state.load(std::memory_order_relaxed) !=
-        TRX_STATE_FORCED_ROLLBACK);
->>>>>>> tags/mysql-9.6.0
 
-<<<<<<< HEAD
-      trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
-    } else {
-      if (!trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
-        ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
-      }
-      /* XtraBackup is asked to rollback prepared XA
-      transactions */
-      trx->state.store(TRX_STATE_ACTIVE, std::memory_order_relaxed);
-    }
-||||||| 61a3a1d8ef1
     trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
-=======
-  if (trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
-    ++trx_sys->n_prepared_trx;
->>>>>>> tags/mysql-9.6.0
   } else {
-    ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
+    if (!trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
+      ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
+    }
+    /* XtraBackup is asked to rollback prepared XA
+    transactions */
+    trx->state.store(TRX_STATE_ACTIVE, std::memory_order_relaxed);
   }
-
-  trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
 }
 
 /** Resurrect the transactions that were doing updates the time of the
@@ -1159,26 +1117,10 @@ static inline void trx_remove_from_rw_trx_list(trx_t *trx) {
 void trx_lists_init_at_db_start(void) {
   ut_a(srv_is_being_started);
 
-<<<<<<< HEAD
   if (srv_apply_log_only) {
     return;
   }
 
-  /* Look through the rollback segments in the TRX_SYS for
-  transaction undo logs. */
-  for (auto rseg : trx_sys->rsegs) {
-    trx_resurrect(rseg);
-  }
-
-||||||| 61a3a1d8ef1
-  /* Look through the rollback segments in the TRX_SYS for
-  transaction undo logs. */
-  for (auto rseg : trx_sys->rsegs) {
-    trx_resurrect(rseg);
-  }
-
-=======
->>>>>>> tags/mysql-9.6.0
   /* Look through the rollback segments in each RSEG_ARRAY for
   transaction undo logs. */
   ut::vector<trx_t *> trxs;

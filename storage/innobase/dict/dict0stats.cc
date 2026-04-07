@@ -767,17 +767,11 @@ static void dict_stats_update_transient_for_index(
     dict_index_t *index,             /*!< in/out: index */
     dict_index_stats_t *index_stats) /*!< out: computed index statistics */
 {
-<<<<<<< HEAD
-  if (!srv_apply_log_only && srv_force_recovery >= SRV_FORCE_NO_TRX_UNDO &&
-||||||| 61a3a1d8ef1
-  if (srv_force_recovery >= SRV_FORCE_NO_TRX_UNDO &&
-=======
   ut_ad(index);
   ut_ad(index->table->stats_compute_mutex_created);
   ut_ad(mutex_own(index->table->stats_compute_mutex));
 
-  if (srv_force_recovery >= SRV_FORCE_NO_TRX_UNDO &&
->>>>>>> tags/mysql-9.6.0
+  if (!srv_apply_log_only && srv_force_recovery >= SRV_FORCE_NO_TRX_UNDO &&
       (srv_force_recovery >= SRV_FORCE_NO_LOG_REDO || !index->is_clustered())) {
     /* If we have set a high innodb_force_recovery
     level, do not calculate statistics, as a badly

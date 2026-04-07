@@ -8962,22 +8962,6 @@ static void get_table_parts(const std::string &dict_name, std::string &schema,
     /* Extract partition details converting to system cs. */
     get_partition(partition, true, part, sub_part);
 
-<<<<<<< HEAD
-    /* During upgrade from 5.7 it is possible to have upper case
-    names from SYS tables. */
-    if (srv_is_upgrade_mode) {
-      to_lower(part);
-      to_lower(sub_part);
-    }
-
-||||||| 61a3a1d8ef1
-    /* During upgrade from 5.7 it is possible to have upper case
-    names from SYS tables. */
-    if (srv_is_upgrade_mode) {
-      to_lower(part);
-      to_lower(sub_part);
-    }
-
 #ifdef UNIV_DEBUG
     /* Validate that the names are in lower case. */
     std::string save_part(part);
@@ -8988,18 +8972,6 @@ static void get_table_parts(const std::string &dict_name, std::string &schema,
     to_lower(sub_part);
     ut_ad(save_sub_part.compare(sub_part) == 0);
 #endif  // UNIV_DEBUG
-=======
-#ifdef UNIV_DEBUG
-    /* Validate that the names are in lower case. */
-    std::string save_part(part);
-    to_lower(part);
-    ut_ad(save_part.compare(part) == 0);
-
-    std::string save_sub_part(sub_part);
-    to_lower(sub_part);
-    ut_ad(save_sub_part.compare(sub_part) == 0);
-#endif  // UNIV_DEBUG
->>>>>>> tags/mysql-9.6.0
 
     /* Build partition string. No conversion required. */
     partition.clear();

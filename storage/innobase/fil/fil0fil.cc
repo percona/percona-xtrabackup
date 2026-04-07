@@ -524,14 +524,8 @@ class Tablespace_dirs {
   @param[in] only_undo            if true, only the undo tablespaces are
                                   discovered
   @return DB_SUCCESS if all goes well */
-<<<<<<< HEAD
   [[nodiscard]] dberr_t scan(bool populate_fil_cache IF_XB(, bool only_undo));
-||||||| 61a3a1d8ef1
-  [[nodiscard]] dberr_t scan();
-=======
-  [[nodiscard]] dberr_t scan();
 #endif /* !UNIV_HOTBACKUP */
->>>>>>> tags/mysql-9.6.0
 
   /** Clear all the tablespace file data but leave the list of
   scanned directories in place. */
@@ -1718,7 +1712,6 @@ class Fil_system {
 
 #ifndef UNIV_HOTBACKUP
   /** Scan the directories to build the tablespace ID to file name
-<<<<<<< HEAD
   mapping table
   @param[in] populate_fil_cache   if true, tablespace are loaded to cache
   @param[in] only_undo            if true, only the undo tablespaces are
@@ -1738,14 +1731,7 @@ class Fil_system {
   [[nodiscard]] bool insert(space_id_t space_id, const std::string &filename) {
     return (m_dirs.insert(space_id, filename));
   }
-||||||| 61a3a1d8ef1
-  mapping table. */
-  dberr_t scan() { return m_dirs.scan(); }
-=======
-  mapping table. */
-  dberr_t scan() { return m_dirs.scan(); }
 #endif /* !UNIV_HOTBACKUP */
->>>>>>> tags/mysql-9.6.0
 
   /** Get the tablespace ID from an .ibd and/or an undo tablespace. If the
   read failed or the ID is 0 on the first page or there is a mismatch of
@@ -4812,7 +4798,6 @@ static void fil_op_write_log(mlog_id_t type, space_id_t space_id,
   }
 }
 
-<<<<<<< HEAD
 #endif /* !XTRABACKUP */
 
 bool fil_system_get_file_by_space_id(space_id_t space_id, std::string &name) {
@@ -4826,15 +4811,6 @@ bool fil_system_get_file_by_space_id(space_id_t space_id, std::string &name) {
   return fil_system->get_file_by_space_id(space_id, name);
 }
 
-||||||| 61a3a1d8ef1
-bool fil_system_get_file_by_space_id(space_id_t space_id, std::string &name) {
-  ut_a(dict_sys_t::is_reserved(space_id) || srv_is_upgrade_mode);
-
-  return fil_system->get_file_by_space_id(space_id, name);
-}
-
-=======
->>>>>>> tags/mysql-9.6.0
 bool fil_system_get_file_by_space_num(space_id_t space_num,
                                       space_id_t &space_id, std::string &name) {
   return fil_system->get_file_by_space_num(space_num, space_id, name);
@@ -5246,24 +5222,12 @@ static void fil_name_write_rename(space_id_t space_id, const char *old_name,
 @param[in]      size            Number of bytes by which the file
                                 is extended starting from the offset
 @param[in,out]  mtr             Mini-transaction */
-<<<<<<< HEAD
 #ifdef XTRABACKUP
 [[maybe_unused]]
 #endif /* XTRABACKUP */
 static void
 fil_op_write_space_extend(space_id_t space_id, os_offset_t offset,
                           os_offset_t size, mtr_t *mtr) {
-  ut_ad(space_id != TRX_SYS_SPACE);
-
-||||||| 61a3a1d8ef1
-static void fil_op_write_space_extend(space_id_t space_id, os_offset_t offset,
-                                      os_offset_t size, mtr_t *mtr) {
-  ut_ad(space_id != TRX_SYS_SPACE);
-
-=======
-static void fil_op_write_space_extend(space_id_t space_id, os_offset_t offset,
-                                      os_offset_t size, mtr_t *mtr) {
->>>>>>> tags/mysql-9.6.0
   byte *log_ptr;
 
   if (!mlog_open(mtr, 7 + 8 + 8, log_ptr)) {
@@ -7043,33 +7007,11 @@ bool Fil_shard::space_extend(fil_space_t *space, page_no_t size) {
 
     ut_ad(len > 0);
 
-<<<<<<< HEAD
 #if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP) && defined(UNIV_LINUX)
-    /* Do not write redo log record for temporary tablespace
-    and the system tablespace as they don't need to be recreated.
-    Temporary tablespaces are reinitialized during startup and
-    hence need not be recovered during recovery. The system
-    tablespace is neither recreated nor resized and hence we do
-    not need to redo log any operations on it. */
-    if (!recv_recovery_is_on() && space->purpose != FIL_TYPE_TEMPORARY &&
-        space->id != TRX_SYS_SPACE) {
-||||||| 61a3a1d8ef1
-#if !defined(UNIV_HOTBACKUP) && defined(UNIV_LINUX)
-    /* Do not write redo log record for temporary tablespace
-    and the system tablespace as they don't need to be recreated.
-    Temporary tablespaces are reinitialized during startup and
-    hence need not be recovered during recovery. The system
-    tablespace is neither recreated nor resized and hence we do
-    not need to redo log any operations on it. */
-    if (!recv_recovery_is_on() && space->purpose != FIL_TYPE_TEMPORARY &&
-        space->id != TRX_SYS_SPACE) {
-=======
-#if !defined(UNIV_HOTBACKUP) && defined(UNIV_LINUX)
     /* Do not write redo log, during replay and, for temporary tablespaces
     because they are reinitialized during startup hence they need not be
     recovered during replay. */
     if (!recv_recovery_is_on() && space->purpose != FIL_TYPE_TEMPORARY) {
->>>>>>> tags/mysql-9.6.0
       /* Write the redo log record for extending the space */
       mtr_t mtr;
       mtr_start(&mtr);
@@ -10904,28 +10846,6 @@ const byte *fil_tablespace_redo_create(
 
   /* Duplicates should have been sorted out before we get here. */
   ut_a(result.second->size() == 1);
-<<<<<<< HEAD
-
-  /* It's possible that the tablespace file was renamed later. */
-  if (result.second->front().compare(abs_file_path) == 0) {
-    dberr_t success = fil_tablespace_open_for_recovery(page_id.space());
-
-    if (success != DB_SUCCESS) {
-      ib::info(ER_IB_MSG_356) << "Create '" << abs_file_path << "' failed!";
-    }
-  }
-||||||| 61a3a1d8ef1
-
-  /* It's possible that the tablespace file was renamed later. */
-  if (result.second->front().compare(abs_name) == 0) {
-    dberr_t success = fil_tablespace_open_for_recovery(page_id.space());
-
-    if (success != DB_SUCCESS) {
-      ib::info(ER_IB_MSG_356) << "Create '" << abs_name << "' failed!";
-    }
-  }
-=======
->>>>>>> tags/mysql-9.6.0
 #endif /* UNIV_HOTBACKUP */
 
   return ptr;
@@ -11073,16 +10993,7 @@ const byte *fil_tablespace_redo_extend(const byte *ptr, const byte *end,
     return ptr;
   }
 
-<<<<<<< HEAD
 #if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
-  const auto result =
-      fil_system->get_scanned_filename_by_space_id(page_id.space());
-||||||| 61a3a1d8ef1
-#ifndef UNIV_HOTBACKUP
-  const auto result =
-      fil_system->get_scanned_filename_by_space_id(page_id.space());
-=======
-#ifndef UNIV_HOTBACKUP
   dberr_t err = DB_SUCCESS;
   if (page_id.space() == TRX_SYS_SPACE) {
     /* System tablespace must have been loaded in the fil system at the time
@@ -11092,7 +11003,6 @@ const byte *fil_tablespace_redo_extend(const byte *ptr, const byte *end,
   } else {
     const auto result =
         fil_system->get_scanned_filename_by_space_id(page_id.space());
->>>>>>> tags/mysql-9.6.0
 
     if (result.second == nullptr) {
       /* No files found for this tablespace ID. It's possible that the
@@ -12046,23 +11956,13 @@ void Tablespace_dirs::print_duplicates(const Space_id_set &duplicates) {
   }
 }
 
-<<<<<<< HEAD
 #ifndef XTRABACKUP
-static bool fil_get_partition_file(const std::string &old_path [[maybe_unused]],
-                                   ib_file_suffix extn [[maybe_unused]],
-                                   std::string &new_path [[maybe_unused]]) {
-||||||| 61a3a1d8ef1
-static bool fil_get_partition_file(const std::string &old_path [[maybe_unused]],
-                                   ib_file_suffix extn [[maybe_unused]],
-                                   std::string &new_path [[maybe_unused]]) {
-=======
 [[maybe_unused]] static bool fil_get_partition_file(const std::string &old_path
                                                     [[maybe_unused]],
                                                     ib_file_suffix extn
                                                     [[maybe_unused]],
                                                     std::string &new_path
                                                     [[maybe_unused]]) {
->>>>>>> tags/mysql-9.6.0
   /* Safe check. Never needed on Windows. */
 #ifdef _WIN32
   return false;
@@ -12352,7 +12252,6 @@ void fil_set_scan_dirs(const std::string &directories) {
   fil_system->set_scan_dirs(directories);
 }
 
-<<<<<<< HEAD
 /** Discover tablespaces by reading the header from .ibd files.
 @param[in] populate_fil_cache   Whether to load tablespaces into fil cache
 @param[in] only_undo            if true, only the undo tablespaces are
@@ -12366,13 +12265,6 @@ dberr_t fil_scan_for_tablespaces(
 /** Open all known tablespaces. */
 void fil_open_ibds() { fil_system->open_ibds(); }
 
-||||||| 61a3a1d8ef1
-/** Discover tablespaces by reading the header from .ibd files.
-@return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces() { return fil_system->scan(); }
-
-=======
->>>>>>> tags/mysql-9.6.0
 /** Check if a path is known to InnoDB meaning that it is in or under
 one of the four path settings scanned at startup for file discovery.
 @param[in]  path    Path to check

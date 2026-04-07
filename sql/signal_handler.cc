@@ -362,18 +362,8 @@ static void print_fatal_signal(int sig, siginfo_t *info [[maybe_unused]]) {
   }
   my_safe_printf_stderr(
       "%s",
-<<<<<<< HEAD
       "\n"
       "Please report a bug at https://jira.percona.com/projects/PXB\n");
-||||||| 61a3a1d8ef1
-      "The manual page at "
-      "http://dev.mysql.com/doc/mysql/en/crashing.html contains\n"
-      "information that should help you find out what is causing the crash.\n");
-=======
-      "The manual page at "
-      "https://dev.mysql.com/doc/mysql/en/crashing.html contains\n"
-      "information that should help you find out what is causing the crash.\n");
->>>>>>> tags/mysql-9.6.0
 
 #endif /* HAVE_STACKTRACE */
 }

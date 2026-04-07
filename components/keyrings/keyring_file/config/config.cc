@@ -97,14 +97,11 @@ bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod,
     err = "Failed to set path to configuration file";
     return true;
   }
-<<<<<<< HEAD
+
 #ifdef XTRABACKUP
   path = xtrabackup::components::component_config_path;
 #endif
-||||||| 61a3a1d8ef1
 
-=======
->>>>>>> tags/mysql-9.6.0
   /* Read config file that's located at shared library location */
   std::unique_ptr<Config_reader> config_reader(new (std::nothrow)
                                                    Config_reader(path));

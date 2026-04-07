@@ -347,8 +347,7 @@ int log_sink_trad(void *instance [[maybe_unused]], log_line *ll) {
       }
 
       // write log-event to log-file
-<<<<<<< HEAD
-      log_write_errstream(buff_line, len);
+      log_write_errstream(buff_line, len, log_type);
 #else
       fprintf(stderr, "%.*s %u [%.*s] [MY-%06u] [%.*s] %.*s\n", (int)iso_len,
               iso_timestamp, thread_id, (int)label_len, label, errcode,
@@ -356,11 +355,6 @@ int log_sink_trad(void *instance [[maybe_unused]], log_line *ll) {
       fflush(stderr);
 
 #endif /* !XTRABACKUP */
-||||||| 61a3a1d8ef1
-      log_write_errstream(buff_line, len);
-=======
-      log_write_errstream(buff_line, len, log_type);
->>>>>>> tags/mysql-9.6.0
     }
   }
 

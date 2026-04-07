@@ -530,17 +530,9 @@ int my_handle_options2(int *argc, char ***argv,
                                          EE_OPTION_IGNORED_DUE_TO_INVALID_VALUE,
                                          my_progname, optp->name, optend);
                 continue;
-<<<<<<< HEAD
               } else if (!validate_only) {
                 *((bool *)value) = ret;
               }
-||||||| 61a3a1d8ef1
-              } else
-                *((bool *)value) = ret;
-=======
-              }
-              *((bool *)value) = ret;
->>>>>>> tags/mysql-9.6.0
             }
             if (get_one_option &&
                 get_one_option(
@@ -591,8 +583,8 @@ int my_handle_options2(int *argc, char ***argv,
                 if (get_one_option && get_one_option(optp->id, optp, argument))
                   return EXIT_UNSPECIFIED_ERROR;
                 continue;
-              }
-              if (optp->arg_type == REQUIRED_ARG || optp->arg_type == OPT_ARG) {
+              } else if (optp->arg_type == REQUIRED_ARG ||
+                         optp->arg_type == OPT_ARG) {
                 if (*(optend + 1)) {
                   /* The rest of the option is option argument */
                   argument = optend + 1;
@@ -1260,7 +1252,7 @@ static ulonglong getopt_ull(const char *arg, bool set_maximum_value,
   ulonglong num;
 
   /* If a negative number is specified as a value for the option. */
-  if (arg == nullptr || is_negative_num(arg)) {
+  if (arg == nullptr || is_negative_num(arg) == true) {
     num = (ulonglong)optp->min_value;
     my_getopt_error_reporter(WARNING_LEVEL,
                              EE_ADJUSTED_ULONGLONG_VALUE_FOR_OPTION, optp->name,

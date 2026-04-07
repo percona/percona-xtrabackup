@@ -378,24 +378,6 @@ void trx_sys_update_mysql_binlog_offset(trx_t *trx, mtr_t *mtr) {
   write_binlog_position(file_name, offset, binlog_pos, mtr);
 }
 
-<<<<<<< HEAD
-/** Find the page number in the TRX_SYS page for a given slot/rseg_id
-@param[in]      rseg_id         slot number in the TRX_SYS page rseg array
-@return page number from the TRX_SYS page rseg array */
-page_no_t trx_sysf_rseg_find_page_no(ulint rseg_id) {
-  page_no_t page_no;
-  mtr_t mtr;
-  mtr.start();
-
-  trx_sysf_t *sys_header = trx_sysf_get(&mtr);
-
-  page_no = trx_sysf_rseg_get_page_no(sys_header, rseg_id, &mtr);
-
-  mtr.commit();
-
-  return (page_no);
-}
-
 /*****************************************************************/ /**
  Read WSREP XID information from the trx system header if the magic value
  shows it is valid. This code has been copied from MySQL patches by Codership
@@ -436,26 +418,6 @@ bool trx_sys_read_wsrep_checkpoint(XID *xid)
   return (true);
 }
 
-||||||| 61a3a1d8ef1
-/** Find the page number in the TRX_SYS page for a given slot/rseg_id
-@param[in]      rseg_id         slot number in the TRX_SYS page rseg array
-@return page number from the TRX_SYS page rseg array */
-page_no_t trx_sysf_rseg_find_page_no(ulint rseg_id) {
-  page_no_t page_no;
-  mtr_t mtr;
-  mtr.start();
-
-  trx_sysf_t *sys_header = trx_sysf_get(&mtr);
-
-  page_no = trx_sysf_rseg_get_page_no(sys_header, rseg_id, &mtr);
-
-  mtr.commit();
-
-  return (page_no);
-}
-
-=======
->>>>>>> tags/mysql-9.6.0
 /** Look for a free slot for a rollback segment in the trx system file copy.
 @param[in,out]  mtr             mtr
 @return slot index or ULINT_UNDEFINED if not found */

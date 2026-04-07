@@ -390,24 +390,11 @@ telemetry_pfs_metrics.cc
 )
 MYSQL_ADD_PLUGIN(perfschema ${PERFSCHEMA_SOURCES}
   STORAGE_ENGINE MANDATORY STATIC_ONLY
-<<<<<<< HEAD
-  LINK_LIBRARIES extra::rapidjson ext::zlib mysql_gtid
-  SYSTEM_INCLUDE_DIRECTORIES 
-  ${CMAKE_SOURCE_DIR}/extra/unordered_dense/unordered_dense-4.4.0/include)
-
-IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
-||||||| 61a3a1d8ef1
-  LINK_LIBRARIES extra::rapidjson ext::zlib mysql_gtid
-  SYSTEM_INCLUDE_DIRECTORIES 
-  ${CMAKE_SOURCE_DIR}/extra/unordered_dense/unordered_dense-4.4.0/include)
-
-IF(WITH_UNIT_TESTS)
-=======
   LINK_LIBRARIES extra::rapidjson extra::boost
     ext::zlib mysql_gtid extra::unordered_dense
   )
-IF(WITH_UNIT_TESTS)
->>>>>>> tags/mysql-9.6.0
+
+IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
   ADD_SUBDIRECTORY(unittest)
 ENDIF()
 

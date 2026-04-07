@@ -79,12 +79,6 @@ void trx_sys_create(void);
 /** Creates and initializes the transaction system at the database creation. */
 void trx_sys_create_sys_pages(void);
 
-<<<<<<< HEAD
-/** Find the page number in the TRX_SYS page for a given slot/rseg_id
-@param[in]      rseg_id         slot number in the TRX_SYS page rseg array
-@return page number from the TRX_SYS page rseg array */
-page_no_t trx_sysf_rseg_find_page_no(ulint rseg_id);
-
 /*****************************************************************/ /**
  Read WSREP XID information from the trx system header if the magic value
  shows it is valid. This code has been copied from MySQL patches by Codership
@@ -93,14 +87,6 @@ page_no_t trx_sysf_rseg_find_page_no(ulint rseg_id);
  return false and leave 'xid' unchanged. */
 bool trx_sys_read_wsrep_checkpoint(XID *xid);
 
-||||||| 61a3a1d8ef1
-/** Find the page number in the TRX_SYS page for a given slot/rseg_id
-@param[in]      rseg_id         slot number in the TRX_SYS page rseg array
-@return page number from the TRX_SYS page rseg array */
-page_no_t trx_sysf_rseg_find_page_no(ulint rseg_id);
-
-=======
->>>>>>> tags/mysql-9.6.0
 /** Look for a free slot for a rollback segment in the trx system file copy.
 @param[in,out]  mtr             mtr
 @return slot index or ULINT_UNDEFINED if not found */

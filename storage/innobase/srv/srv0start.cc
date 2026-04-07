@@ -731,76 +731,14 @@ If we are making a new database, these have been created.
 If doing recovery, these should exist and may be needed for recovery.
 If we fail to open any of these it is a fatal error.
 @return DB_SUCCESS or error code */
-<<<<<<< HEAD
-static dberr_t srv_undo_tablespaces_open(bool backup_mode) {
-  dberr_t err;
-
-  if (!backup_mode) {
-    /* If upgrading from 5.7, build a list of existing undo tablespaces
-    from the references in the TRX_SYS page. (not including the system
-    tablespace) */
-    trx_rseg_get_n_undo_tablespaces(trx_sys_undo_spaces);
-
-    /* If undo tablespaces are being tracked in trx_sys then these
-    will need to be replaced by independent undo tablespaces with
-    reserved space_ids and RSEG_ARRAY pages. */
-    if (trx_sys_undo_spaces->size() > 0) {
-      /* Open each undo tablespace tracked in TRX_SYS. */
-      for (const auto space_id : *trx_sys_undo_spaces) {
-        fil_set_max_space_id_if_bigger(space_id);
-
-        /* Check if this undo tablespace was in the process of being truncated.
-        If so, just delete the file since it will be replaced. */
-        if (DB_TABLESPACE_DELETED == srv_undo_tablespace_fixup_57(space_id)) {
-          continue;
-        }
-
-        err = srv_undo_tablespace_open_by_id(space_id);
-        if (err != DB_SUCCESS) {
-          xb::error(ER_IB_MSG_CANNOT_OPEN_57_UNDO, ulong{space_id});
-          return (err);
-        }
-      }
-    }
-  }
-
-||||||| 61a3a1d8ef1
-static dberr_t srv_undo_tablespaces_open() {
-  dberr_t err;
-
-  /* If upgrading from 5.7, build a list of existing undo tablespaces
-  from the references in the TRX_SYS page. (not including the system
-  tablespace) */
-  trx_rseg_get_n_undo_tablespaces(trx_sys_undo_spaces);
-
-  /* If undo tablespaces are being tracked in trx_sys then these
-  will need to be replaced by independent undo tablespaces with
-  reserved space_ids and RSEG_ARRAY pages. */
-  if (trx_sys_undo_spaces->size() > 0) {
-    /* Open each undo tablespace tracked in TRX_SYS. */
-    for (const auto space_id : *trx_sys_undo_spaces) {
-      fil_set_max_space_id_if_bigger(space_id);
-
-      /* Check if this undo tablespace was in the process of being truncated.
-      If so, just delete the file since it will be replaced. */
-      if (DB_TABLESPACE_DELETED == srv_undo_tablespace_fixup_57(space_id)) {
-        continue;
-      }
-
-      err = srv_undo_tablespace_open_by_id(space_id);
-      if (err != DB_SUCCESS) {
-        ib::error(ER_IB_MSG_CANNOT_OPEN_57_UNDO, ulong{space_id});
-        return (err);
-      }
-    }
-  }
-
-=======
-static dberr_t srv_undo_tablespaces_open() {
->>>>>>> tags/mysql-9.6.0
+dberr_t srv_undo_tablespaces_open(bool backup_mode) {
   /* Open all existing implicit and explicit undo tablespaces.
   The tablespace scan has completed and the undo::space_id_bank has been
   filled with the space Ids that were found. */
+  if (backup_mode) {
+    return DB_SUCCESS;
+  }
+
   undo::spaces->x_lock();
   ut_ad(undo::spaces->size() == 0);
 
@@ -2047,17 +1985,9 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
       DBUG_SUICIDE();
     });
 
-<<<<<<< HEAD
     if (!recv_sys->is_cloned_db && !dict_metadata->empty()
                                         IF_XB(&&!srv_apply_log_only)) {
-      ut_a(redo_writes_allowed);
-||||||| 61a3a1d8ef1
-    if (!recv_sys->is_cloned_db && !dict_metadata->empty()) {
-      ut_a(redo_writes_allowed);
-=======
-    if (!recv_sys->is_cloned_db && !dict_metadata->empty()) {
       ut_a(!srv_read_only_mode);
->>>>>>> tags/mysql-9.6.0
 
       /* Open this table in case dict_metadata should be applied to this
       table before checkpoint. And because DD is not fully up yet, the table
@@ -2094,17 +2024,11 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
 
     log_sys->m_allow_checkpoints.store(true, std::memory_order_release);
 
-<<<<<<< HEAD
+    /* for a restored database we reset creator for log. To do this we stop
+    background log processing for unknown reason, possibly just in case. */
     if (IF_XB((!srv_apply_log_only && !srv_read_only_mode) ||)
             recv_sys->is_cloned_db ||
         recv_sys->is_meb_db) {
-||||||| 61a3a1d8ef1
-    if (recv_sys->is_cloned_db || recv_sys->is_meb_db) {
-=======
-    /* for a restored database we reset creator for log. To do this we stop
-    background log processing for unknown reason, possibly just in case. */
-    if (recv_sys->is_cloned_db || recv_sys->is_meb_db) {
->>>>>>> tags/mysql-9.6.0
       buf_pool_wait_for_no_pending_io();
 
       ut_a(!srv_read_only_mode);
@@ -2112,7 +2036,6 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
       log_stop_background_threads(*log_sys);
 
       ut_ad(buf_pool_pending_io_reads_count() == 0);
-<<<<<<< HEAD
 
 #ifdef XTRABACKUP
       /* we have to recreate redo log file always during PXB prepare because
@@ -2123,21 +2046,12 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
       recreate_redo_files(redo_log_flushed_lsn);
 #else
 
-||||||| 61a3a1d8ef1
-
-=======
->>>>>>> tags/mysql-9.6.0
       err = log_files_reset_creator_and_set_full(*log_sys);
       if (err != DB_SUCCESS) {
         return srv_init_abort(err);
       }
-<<<<<<< HEAD
 #endif  // XTRABACKUP
 
-||||||| 61a3a1d8ef1
-
-=======
->>>>>>> tags/mysql-9.6.0
       log_start_background_threads(*log_sys);
     }
 

@@ -6165,48 +6165,7 @@ double CostingReceiver::FindAlreadyAppliedSelectivity(const JoinPredicate *edge,
     const CachedPropertiesForPredicate &properties =
         edge->expr->properties_for_equijoin_conditions[join_cond_idx];
 
-<<<<<<< HEAD
-    MY_COMPILER_DIAGNOSTIC_PUSH()
-    MY_COMPILER_GCC_DIAGNOSTIC_IGNORE("-Wunused-variable")
-    const auto [already_applied_as_sargable, subsumed] =
-        AlreadyAppliedAsSargable(condition, left_path, right_path);
-    MY_COMPILER_DIAGNOSTIC_POP()
-    if (already_applied_as_sargable) {
-      // This predicate was already applied as a ref access earlier.
-      // Make sure not to double-count its selectivity, and also
-      // that we don't reapply it if it was subsumed by the ref access.
-      const int position = m_graph->FindSargableJoinPredicate(condition);
-      already_applied *= m_graph->predicates[position].selectivity;
-    } else if (RedundantThroughSargable(
-                   properties.redundant_against_sargable_predicates, left_path,
-                   right_path, left, right)) {
-      if (TraceStarted(m_thd)) {
-        Trace(m_thd)
-            << " - " << PrintAccessPath(*right_path, *m_graph, "")
-            << " has a sargable predicate that is redundant with our join "
-               "predicate, skipping\n";
-      }
-||||||| 61a3a1d8ef1
-    const auto [already_applied_as_sargable, subsumed] =
-        AlreadyAppliedAsSargable(condition, left_path, right_path);
-    if (already_applied_as_sargable) {
-      // This predicate was already applied as a ref access earlier.
-      // Make sure not to double-count its selectivity, and also
-      // that we don't reapply it if it was subsumed by the ref access.
-      const int position = m_graph->FindSargableJoinPredicate(condition);
-      already_applied *= m_graph->predicates[position].selectivity;
-    } else if (RedundantThroughSargable(
-                   properties.redundant_against_sargable_predicates, left_path,
-                   right_path, left, right)) {
-      if (TraceStarted(m_thd)) {
-        Trace(m_thd)
-            << " - " << PrintAccessPath(*right_path, *m_graph, "")
-            << " has a sargable predicate that is redundant with our join "
-               "predicate, skipping\n";
-      }
-=======
     if (process_condition(condition, properties)) {
->>>>>>> tags/mysql-9.6.0
       return -1.0;
     }
   }
