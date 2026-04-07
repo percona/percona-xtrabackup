@@ -33,7 +33,7 @@ function glibc_version() {
     glibc=$(ldd --version | head -1 | awk '{print $NF}')
     case ${glibc} in
         2.12|2.17|2.27|2.28|2.31|2.34|2.35) ;;
-        2.36|2.39|2.40) echo 2.35; return;;
+        2.36|2.39|2.40|2.41) echo 2.35; return;;
 
         *)
             >&2 echo "tarball for your glibc version (${glibc}) is not available"
