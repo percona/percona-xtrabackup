@@ -91,6 +91,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <api0api.h>
 #include <api0misc.h>
 
+#include "mysql/components/library_mysys/my_system.h"
 #include "sql_thd_internal_api.h"
 
 #define G_PTR uchar *
@@ -6752,6 +6753,8 @@ skip_check:
 
   if (xtrabackup_init_temp_log()) goto error_cleanup;
 
+  init_container_aware(false);
+
   if (innodb_init_param()) {
     goto error_cleanup;
   }
@@ -7115,6 +7118,8 @@ skip_check:
   my_thread_end();
   Tablespace_map::instance().serialize();
 
+  deinit_container_aware();
+
   cleanup_mysql_environment();
 
   xb_filters_free();
@@ -7128,6 +7133,8 @@ error_cleanup:
   my_thread_end();
 
   xtrabackup_close_temp_log(false);
+
+  deinit_container_aware();
 
   cleanup_mysql_environment();
 
