@@ -32,17 +32,13 @@
 #include <components/keyrings/common/component_helpers/include/keyring_load_service_definition.h>
 /* Keyring_keys_metadata_iterator_service_impl */
 #include <components/keyrings/common/component_helpers/include/keyring_keys_metadata_iterator_service_definition.h>
-/* Log_builtins_keyring */
-#include <components/keyrings/common/component_helpers/include/keyring_log_builtins_definition.h>
 /* Keyring_metadata_query_service_impl */
 #include <components/keyrings/common/component_helpers/include/keyring_metadata_query_service_definition.h>
 /* Keyring_reader_service_impl */
 #include <components/keyrings/common/component_helpers/include/keyring_reader_service_definition.h>
 /* Keyring_writer_service_impl */
 #include <components/keyrings/common/component_helpers/include/keyring_writer_service_definition.h>
-
 #include <mysql/components/services/component_sys_var_service.h>
-#include <mysql/components/services/psi_memory.h>
 
 #include <cstring>
 #include <iostream>
@@ -58,7 +54,7 @@ using keyring_vault::config::g_instance_path;
 /** Dependencies */
 REQUIRES_SERVICE_PLACEHOLDER(log_builtins);
 REQUIRES_SERVICE_PLACEHOLDER(log_builtins_string);
-
+REQUIRES_SERVICE_PLACEHOLDER(registry_registration);
 SERVICE_TYPE(log_builtins) * log_bi;
 SERVICE_TYPE(log_builtins_string) * log_bs;
 
@@ -182,9 +178,6 @@ KEYRING_COMPONENT_STATUS_IMPLEMENTOR(component_keyring_vault);
 KEYRING_COMPONENT_METADATA_QUERY_IMPLEMENTOR(component_keyring_vault);
 KEYRING_READER_IMPLEMENTOR(component_keyring_vault);
 KEYRING_WRITER_IMPLEMENTOR(component_keyring_vault);
-/* Used if log_builtins is not available */
-KEYRING_LOG_BUILTINS_IMPLEMENTOR(component_keyring_vault);
-KEYRING_LOG_BUILTINS_STRING_IMPLEMENTOR(component_keyring_vault);
 
 /** Component provides */
 BEGIN_COMPONENT_PROVIDES(component_keyring_vault)
@@ -196,17 +189,12 @@ PROVIDES_SERVICE(component_keyring_vault, keyring_aes),
     PROVIDES_SERVICE(component_keyring_vault, keyring_component_metadata_query),
     PROVIDES_SERVICE(component_keyring_vault, keyring_reader_with_status),
     PROVIDES_SERVICE(component_keyring_vault, keyring_writer),
-    PROVIDES_SERVICE(component_keyring_vault, log_builtins),
-    PROVIDES_SERVICE(component_keyring_vault, log_builtins_string),
     END_COMPONENT_PROVIDES();
-
-REQUIRES_PSI_MEMORY_SERVICE_PLACEHOLDER;
 
 /** List of dependencies */
 BEGIN_COMPONENT_REQUIRES(component_keyring_vault)
 REQUIRES_SERVICE(registry), REQUIRES_SERVICE(log_builtins),
-    REQUIRES_SERVICE(log_builtins_string), REQUIRES_PSI_MEMORY_SERVICE,
-    END_COMPONENT_REQUIRES();
+    REQUIRES_SERVICE(log_builtins_string), END_COMPONENT_REQUIRES();
 
 /** Component description */
 BEGIN_COMPONENT_METADATA(component_keyring_vault)

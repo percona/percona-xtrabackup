@@ -33,9 +33,6 @@
 #include "backend/backend.h"
 #include "config/config.h"
 
-extern SERVICE_TYPE(log_builtins) * log_bi;
-extern SERVICE_TYPE(log_builtins_string) * log_bs;
-
 namespace keyring_vault {
 /** Keyring operations object */
 extern std::unique_ptr<keyring_common::operations::Keyring_operations<
