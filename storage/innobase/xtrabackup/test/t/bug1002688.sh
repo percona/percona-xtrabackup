@@ -3,7 +3,7 @@
 ############################################################################
 . inc/common.sh
 
-start_server --innodb_file_per_table
+start_server --innodb_file_per_table --gtid_mode=OFF --enforce_gtid_consistency=OFF
 load_sakila
 
 # Full backup
@@ -52,7 +52,7 @@ vlog "Copying files to their original locations"
 xtrabackup --copy-back --target-dir=$full_backup_dir
 vlog "Data restored"
 
-start_server --innodb_file_per_table
+start_server --innodb_file_per_table --gtid_mode=OFF --enforce_gtid_consistency=OFF
 
 vlog "Checking checksums"
 checksum_b=`checksum_table newdb actor_copy`

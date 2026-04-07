@@ -86,13 +86,13 @@ load_dbase_schema incremental_sample
 multi_row_insert incremental_sample.test \({1..999},100\)
 
 vlog "Creating a MyISAM-powered clone of the incremental_sample.test"
-mysql -e "show create table incremental_sample.test;" \
+mysql --commands -e "show create table incremental_sample.test;" \
     | tail -n +2 \
     | $SED -r 's/test\s+CREATE TABLE `test`/CREATE TABLE `test_MyISAM`/' \
     | $SED 's/ENGINE=InnoDB/ENGINE=MyISAM/' \
     > $topdir/test_myISAM.sql
 
-mysql incremental_sample <<EOF
+mysql --commands incremental_sample <<EOF
 $(cat $topdir/test_myISAM.sql);
 insert into test_MyISAM select * from test;
 EOF

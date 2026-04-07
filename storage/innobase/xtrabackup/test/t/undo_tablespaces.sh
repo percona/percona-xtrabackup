@@ -28,7 +28,6 @@ mkdir -p $undo_directory_ext
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_file_per_table=1
 innodb_undo_directory=$undo_directory
-innodb_undo_tablespaces=4
 innodb_directories=$undo_directory_ext
 "
 
@@ -37,6 +36,8 @@ start_server
 # create some undo tablespaces
 mysql -e "CREATE UNDO TABLESPACE undo1 ADD DATAFILE '$undo_directory_ext/undo1.ibu'"
 mysql -e "CREATE UNDO TABLESPACE undo2 ADD DATAFILE 'undo2.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo_001 ADD DATAFILE 'undo_001.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo_002 ADD DATAFILE 'undo_002.ibu'"
 
 mysql -e "ALTER UNDO TABLESPACE innodb_undo_001 SET INACTIVE"
 mysql -e "ALTER UNDO TABLESPACE innodb_undo_002 SET INACTIVE"
@@ -111,7 +112,6 @@ mkdir -p $undo_directory_ext
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_file_per_table=1
-innodb_undo_tablespaces=4
 innodb_directories=$undo_directory_ext
 "
 
@@ -119,6 +119,8 @@ start_server
 # create some undo tablespaces
 mysql -e "CREATE UNDO TABLESPACE undo1 ADD DATAFILE '$undo_directory_ext/undo1.ibu'"
 mysql -e "CREATE UNDO TABLESPACE undo2 ADD DATAFILE '$undo_directory_ext/undo2.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo_001 ADD DATAFILE 'undo_001.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo_002 ADD DATAFILE 'undo_002.ibu'"
 mysql -e "CREATE UNDO TABLESPACE undo3 ADD DATAFILE 'undo3.ibu'"
 mysql -e "CREATE UNDO TABLESPACE undo4 ADD DATAFILE 'undo4.ibu'"
 
@@ -189,7 +191,6 @@ mkdir -p $undo_directory_ext
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_file_per_table=1
 innodb_undo_directory=$undo_directory
-innodb_undo_tablespaces=4
 innodb_directories=$undo_directory_ext
 "
 start_server
@@ -197,6 +198,8 @@ start_server
 # create some undo tablespaces
 mysql -e "CREATE UNDO TABLESPACE undo1 ADD DATAFILE '$undo_directory_ext/undo1.ibu'"
 mysql -e "CREATE UNDO TABLESPACE undo2 ADD DATAFILE '$undo_directory_ext/undo2.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo_001 ADD DATAFILE 'undo_001.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo_002 ADD DATAFILE 'undo_002.ibu'"
 mysql -e "CREATE UNDO TABLESPACE undo3 ADD DATAFILE 'undo3.ibu'"
 mysql -e "CREATE UNDO TABLESPACE undo4 ADD DATAFILE 'undo4.ibu'"
 

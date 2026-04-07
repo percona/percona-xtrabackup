@@ -96,7 +96,7 @@ function grep_in_history_table() {
   run_cmd $XB_BIN $XB_ARGS --history --backup -u pxb $additional_options\
   --transition-key=$password_string --target-dir=$topdir/backup 2>&1 | tee $topdir/pxb.log
 
-  row_count=`$MYSQL $MYSQL_ARGS -Ns -e "select count(1) from PERCONA_SCHEMA.xtrabackup_history where tool_command like '%$password_string%'" | awk {'print $1'}`
+  row_count=`$MYSQL $MYSQL_ARGS --commands -Ns -e "select count(1) from PERCONA_SCHEMA.xtrabackup_history where tool_command like '%$password_string%'" | awk {'print $1'}`
   if [ "$row_count" != 0 ]; then
     mysql -e "select * from PERCONA_SCHEMA.xtrabackup_history where tool_command like '%$password_string%'"
     die "found entry of $password_string in history table"

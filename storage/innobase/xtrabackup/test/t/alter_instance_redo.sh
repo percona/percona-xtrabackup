@@ -18,8 +18,6 @@ while true ; do
     mysql -e "INSERT INTO t SELECT * FROM t limit 100" test 2>/dev/null >/dev/null
 done &
 
-
-
 vlog "### case #1 check when redo log is disabled ###"
 mysql -e "alter instance disable innodb redo_log"
 run_cmd_expect_failure xtrabackup --backup \

@@ -4,7 +4,7 @@
 ##########################################################################
 . inc/common.sh
 
-start_server --innodb_file_per_table
+start_server --innodb_file_per_table --gtid_mode=OFF --enforce_gtid_consistency=OFF
 load_sakila
 
 # Full backup

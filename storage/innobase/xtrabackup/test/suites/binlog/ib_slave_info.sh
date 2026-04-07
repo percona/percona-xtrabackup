@@ -1,6 +1,8 @@
 . inc/common.sh
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
+gtid_mode=OFF
+enforce_gtid_consistency=OFF
 relay_log_recovery=on
 skip-slave-start
 "
@@ -33,10 +35,10 @@ function test_slave_info() {
   slave_id=$3
 
   switch_server $slave_id
-  if ! mysql -e "SHOW REPLICA STATUS\G" | grep -q 'Last_IO_Errno: 0' ; then
+  if ! mysql --commands -e "SHOW REPLICA STATUS\G" | grep -q 'Last_IO_Errno: 0' ; then
     die 'Slave IO error'
   fi
-  if ! mysql -e "SHOW REPLICA STATUS\G" | grep -q 'Last_SQL_Errno: 0' ; then
+  if ! mysql --commands -e "SHOW REPLICA STATUS\G" | grep -q 'Last_SQL_Errno: 0' ; then
     die 'Slave SQL error'
   fi
   stop_server_with_id $slave_id
@@ -49,10 +51,10 @@ function test_slave_info() {
   mysql -e "START REPLICA"
   sync_slave_with_master $master_id $slave_id
   switch_server $slave_id
-  if ! mysql -e "SHOW REPLICA STATUS\G" | grep -q 'Last_IO_Errno: 0' ; then
+  if ! mysql --commands -e "SHOW REPLICA STATUS\G" | grep -q 'Last_IO_Errno: 0' ; then
     die 'Slave IO error'
   fi
-  if ! mysql -e "SHOW REPLICA STATUS\G" | grep -q 'Last_SQL_Errno: 0' ; then
+  if ! mysql --commands -e "SHOW REPLICA STATUS\G" | grep -q 'Last_SQL_Errno: 0' ; then
     die 'Slave SQL error'
   fi
 }

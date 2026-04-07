@@ -49,7 +49,10 @@ fi
 
 echo -n >$OUTFILE
 rm -rf $topdir/backup
-MYSQLD_EXTRA_MY_CNF_OPTS=
+MYSQLD_EXTRA_MY_CNF_OPTS="
+gtid_mode=off
+enforce_gtid_consistency=off
+"
 
 stop_server
 start_server

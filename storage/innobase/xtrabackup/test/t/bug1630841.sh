@@ -62,6 +62,7 @@ run_cmd ${MYSQL} \
 	--ssl-ca=${PWD}/inc/ssl-certs/cacert.pem \
 	--ssl-cert=${PWD}/inc/ssl-certs/client-cert.pem \
 	--ssl-key=${PWD}/inc/ssl-certs/client-key.pem \
+	--commands \
 	-e '\s'
 
 vlog 'connecting with xtrabackup'
@@ -115,6 +116,7 @@ run_cmd ${MYSQL} \
 	--password=password1 \
 	--host=127.0.0.1 \
 	--port=${MYSQLD_PORT} \
+	--commands \
 	-e '\s'
 
 vlog 'connecting with xtrabackup'
