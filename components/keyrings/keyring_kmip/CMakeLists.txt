@@ -74,7 +74,8 @@ SET(KEYRING_KMIP_SOURCE
 
 SET(KEYRING_KMIP_LIBRARIES
   keyring_common
-  ${SSL_LIBRARIES}
+  OpenSSL::SSL
+  OpenSSL::Crypto
   kmippp
 )
 
@@ -83,6 +84,9 @@ MYSQL_ADD_COMPONENT(keyring_kmip
   LINK_LIBRARIES ${KEYRING_KMIP_LIBRARIES}
   MODULE_ONLY
 )
+
+TARGET_LINK_OPTIONS(component_keyring_kmip PRIVATE "${LINK_FLAG_NO_UNDEFINED}")
+
 IF(APPLE)
   SET_TARGET_PROPERTIES(component_keyring_kmip PROPERTIES
     LINK_FLAGS "-undefined dynamic_lookup")

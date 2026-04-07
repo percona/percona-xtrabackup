@@ -53,7 +53,9 @@
 #endif
 
 #include <boost/algorithm/hex.hpp>
-#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 const constexpr auto AWS_DATE_HEADER = "X-Amz-Date";
 const constexpr auto AWS_CONTENT_SHA256_HEADER = "X-Amz-Content-SHA256";

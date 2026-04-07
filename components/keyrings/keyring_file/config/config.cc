@@ -33,9 +33,6 @@
 
 #include <components/keyrings/common/config/config_reader.h> /* Config_reader */
 #include <include/mysql/components/component_implementation.h>
-#ifdef XTRABACKUP
-#include <storage/innobase/xtrabackup/src/keyring_components.h>
-#endif
 
 using keyring_common::config::Config_reader;
 using keyring_file::g_config_pod;
@@ -97,11 +94,6 @@ bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod,
     err = "Failed to set path to configuration file";
     return true;
   }
-
-#ifdef XTRABACKUP
-  path = xtrabackup::components::component_config_path;
-#endif
-
   /* Read config file that's located at shared library location */
   std::unique_ptr<Config_reader> config_reader(new (std::nothrow)
                                                    Config_reader(path));

@@ -75,13 +75,15 @@ set(KEYRING_VAULT_SOURCE
   component_callbacks.cc
 )
 
-set(KEYRING_VAULT_LIBRARIES keyring_common ext::curl extra::rapidjson)
+set(KEYRING_VAULT_LIBRARIES keyring_common ext::curl extra::rapidjson OpenSSL::Crypto)
 
 MYSQL_ADD_COMPONENT(keyring_vault
   ${KEYRING_VAULT_SOURCE}
   LINK_LIBRARIES ${KEYRING_VAULT_LIBRARIES}
   MODULE_ONLY
 )
+
+TARGET_LINK_OPTIONS(component_keyring_vault PRIVATE "${LINK_FLAG_NO_UNDEFINED}")
 
 target_compile_definitions(component_keyring_vault PRIVATE LOG_COMPONENT_TAG="component_keyring_vault")
 

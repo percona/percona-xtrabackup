@@ -16,9 +16,6 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
 #include "vault_parser_composer.h"
-#include <algorithm>
-#include <sstream>
-#include <vector>
 
 #include "components/keyrings/keyring_vault/config/config.h"
 #include "vault_base64.h"
@@ -33,7 +30,6 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/lexical_cast/try_lexical_convert.hpp>
-#include <boost/optional.hpp>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 // if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
@@ -185,7 +181,7 @@ bool Keyring_vault_parser_composer::parse_errors(const pfs_string &payload,
   const rapidjson::Value &errors_node = it->value;
   if (!errors_node.IsArray()) return true;
 
-  pfs_secure_ostringstream oss;
+  pfs_ostringstream oss;
   for (std::size_t u = 0; u < errors_node.Size(); ++u) {
     if (u != 0) oss << '\n';
     const rapidjson::Value &first_error_node = errors_node[u];

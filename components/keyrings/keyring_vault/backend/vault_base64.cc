@@ -24,6 +24,8 @@
 #include <algorithm>
 #include <memory>
 
+#include <mysql/components/library_mysys/my_memory.h>
+
 namespace keyring_vault::backend {
 
 bool Vault_base64::encode(const void *src, size_t src_len, pfs_string *encoded,
@@ -35,7 +37,7 @@ bool Vault_base64::encode(const void *src, size_t src_len, pfs_string *encoded,
   // provide access to underlying  data when they are empty. Calling reserve on
   // those containers does not help.
   if (::base64_encode(src, src_len, base64_encoded_text.get()) != 0) {
-    memset_s(base64_encoded_text.get(), memory_needed, 0, memory_needed);
+    my_memset_s(base64_encoded_text.get(), memory_needed, 0, memory_needed);
     return true;
   }
 
@@ -49,7 +51,7 @@ bool Vault_base64::encode(const void *src, size_t src_len, pfs_string *encoded,
   // base64 encode below returns data with NULL terminating string - which we do
   // not care about
   encoded->assign(base64_encoded_text.get(), memory_needed - 1);
-  memset_s(base64_encoded_text.get(), memory_needed, 0, memory_needed);
+  my_memset_s(base64_encoded_text.get(), memory_needed, 0, memory_needed);
 
   return false;
 }
@@ -59,7 +61,7 @@ bool Vault_base64::decode(const pfs_string &src, pfs_string *dst) {
   uint64 data_length = 0;
   if (decode(src, data, &data_length)) return true;
   dst->assign(data.get(), data_length);
-  memset_s(data.get(), data_length, 0, data_length);
+  my_memset_s(data.get(), data_length, 0, data_length);
   return false;
 }
 
@@ -74,8 +76,8 @@ bool Vault_base64::decode(const pfs_string &src, std::unique_ptr<char[]> &dst,
       ::base64_decode(src.c_str(), src.length(), data.get(), nullptr, 0);
 
   if (decoded_length <= 0) {
-    memset_s(data.get(), base64_length_of_memory_needed_for_decode, 0,
-             base64_length_of_memory_needed_for_decode);
+    my_memset_s(data.get(), base64_length_of_memory_needed_for_decode, 0,
+                base64_length_of_memory_needed_for_decode);
     return true;
   }
 

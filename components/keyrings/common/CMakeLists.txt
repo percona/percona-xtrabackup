@@ -34,7 +34,6 @@ SET(KEYRING_COMMON_SOURCES
   # Data representation
   data/data.cc
   data/meta.cc
-  data/pfs_string.cpp
   # File reader/writer
   data_file/reader.cc
   data_file/writer.cc

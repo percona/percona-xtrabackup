@@ -61,7 +61,7 @@ Data &Data::operator=(Data &&src) noexcept {
 
 /** Destructor */
 Data::~Data() {
-  data_ = Sensitive_data();
+  data_.mask();
   valid_ = false;
 }
 

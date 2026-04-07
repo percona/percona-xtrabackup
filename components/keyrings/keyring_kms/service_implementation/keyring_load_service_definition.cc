@@ -38,19 +38,22 @@ DEFINE_BOOL_METHOD(Keyring_load_service_impl::load,
                    (const char *component_path, const char *instance_path)) {
   try {
     if (set_paths(component_path, instance_path) == true) {
-      LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_NOT_INITIALIZED);
+      LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_NOT_INITIALIZED,
+                      "Failed to set path to component");
       return true;
     }
 
     if (init_or_reinit_keyring() == true) {
-      LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_NOT_INITIALIZED);
+      LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_NOT_INITIALIZED,
+                      "Failed to initialize or reinitialize keyring");
       return true;
     }
     g_keyring_kms_inited = true;
     LogComponentErr(INFORMATION_LEVEL, ER_NOTE_KEYRING_COMPONENT_INITIALIZED);
     return false;
   } catch (...) {
-    LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_NOT_INITIALIZED);
+    LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_NOT_INITIALIZED,
+                    "Got an exception while loading component");
     return true;
   }
 }

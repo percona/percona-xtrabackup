@@ -20,7 +20,6 @@ along with this program; if not, write to the Free Software
 #define KEYRING_I_VAULT_CURL_INCLUDED
 
 #include <components/keyrings/common/data/data.h>
-#include <components/keyrings/common/data/keyring_alloc.h>
 #include <components/keyrings/common/data/meta.h>
 #include <components/keyrings/common/data/pfs_string.h>
 #include <components/keyrings/keyring_vault/config/config.h>
@@ -29,13 +28,11 @@ along with this program; if not, write to the Free Software
 
 namespace keyring_vault::backend {
 
-using keyring_common::data::Comp_keyring_alloc;
 using keyring_common::data::Data;
 using keyring_common::meta::Metadata;
 using keyring_vault::config::Vault_version_type;
 
-class IKeyring_vault_curl : public Comp_keyring_alloc,
-                            private boost::noncopyable {
+class IKeyring_vault_curl : private boost::noncopyable {
  public:
   virtual bool init() = 0;
   virtual bool list_keys(pfs_string *response) = 0;
