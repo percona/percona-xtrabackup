@@ -72,6 +72,14 @@ void trx_rollback_or_clean_recovered(
     bool all); /*!< in: false=roll back dictionary transactions;
                 true=roll back all non-PREPARED transactions */
 
+#ifdef XTRABACKUP
+/** Rollback all recovered transactions in XA PREPARED state.
+Called when --rollback-prepared-trx is specified. Follows the server's
+XA ROLLBACK path: transitions undo states from PREPARED to ACTIVE,
+then performs the actual rollback. */
+void trx_rollback_recovered_prepared();
+#endif /* XTRABACKUP */
+
 /** Rollback or clean up any incomplete transactions which were
 encountered in crash recovery.  If the transaction already was
 committed, then we clean up a possible insert undo log. If the

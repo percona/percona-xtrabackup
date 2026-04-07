@@ -863,14 +863,8 @@ static trx_t *trx_resurrect_insert(trx_undo_t *undo, trx_rseg_t *rseg,
       ib::info(ER_IB_MSG_1204) << "Transaction " << trx_get_id_for_print(trx)
                                << " was in the XA prepared state.";
 
-      if (!srv_rollback_prepared_trx) {
-        trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
-        ++trx_sys->n_prepared_trx;
-      } else {
-        /* XtraBackup is asked to rollback prepared XA
-        transactions */
-        trx->state.store(TRX_STATE_ACTIVE, std::memory_order_relaxed);
-      }
+      trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
+      ++trx_sys->n_prepared_trx;
     } else {
       trx->state.store(TRX_STATE_COMMITTED_IN_MEMORY,
                        std::memory_order_relaxed);
@@ -954,22 +948,13 @@ static void trx_resurrect_update_in_prepared_state(trx_t *trx,
   ut_ad(trx->state.load(std::memory_order_relaxed) !=
         TRX_STATE_FORCED_ROLLBACK);
 
-  if (!srv_rollback_prepared_trx) {
-    if (trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
-      ++trx_sys->n_prepared_trx;
-    } else {
-      ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
-    }
-
-    trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
+  if (trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
+    ++trx_sys->n_prepared_trx;
   } else {
-    if (!trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
-      ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
-    }
-    /* XtraBackup is asked to rollback prepared XA
-    transactions */
-    trx->state.store(TRX_STATE_ACTIVE, std::memory_order_relaxed);
+    ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
   }
+
+  trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
 }
 
 /** Resurrect the transactions that were doing updates the time of the

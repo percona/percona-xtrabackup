@@ -75,6 +75,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <sql_locale.h>
 #include <srv0srv.h>
 #include <srv0start.h>
+#include <trx0roll.h>
 #include "sql/xa/transaction_cache.h"
 
 #include <clone0api.h>
@@ -2534,6 +2535,10 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
 
   if (srv_thread_is_active(srv_threads.m_trx_recovery_rollback)) {
     srv_threads.m_trx_recovery_rollback.wait();
+  }
+
+  if (srv_rollback_prepared_trx) {
+    trx_rollback_recovered_prepared();
   }
 
   innodb_inited = 1;

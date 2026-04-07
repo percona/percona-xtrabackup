@@ -36,9 +36,6 @@ echo "exit" >&3
 exec 3>&-
 wait $client_pid
 
-echo xtrabackup --prepare --target-dir=$topdir/full --rollback-prepared-trx
-echo sleeping
-sleep 1000
 xtrabackup --prepare --target-dir=$topdir/full --rollback-prepared-trx
 
 if ! egrep -q "Rollback of trx with id [0-9]+ completed" $OUTFILE ; then
