@@ -91,3 +91,18 @@ extern "C" void my_free(void *ptr) {
   MEM_FREELIKE_BLOCK(ptr, 0);
   free(mh);
 }
+
+extern "C" void my_memset_s(void *dest, size_t dest_max, int c, size_t n) {
+#if defined(HAVE_MEMSET_S)
+  memset_s(dest, dest_max, c, n);
+#else
+#if defined(WIN32)
+  SecureZeroMemory(dest, n);
+#else
+  volatile unsigned char *p = static_cast<unsigned char *>(dest);
+  while (dest_max-- && n--) {
+    *p++ = c;
+  }
+#endif
+#endif
+}
